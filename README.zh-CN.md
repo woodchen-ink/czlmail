@@ -103,7 +103,7 @@ Windows 上可以用 `build.bat v0.1.0` 一次生成程序与 NSIS 安装包。
 
 ## 反馈
 
-使用中遇到问题或有建议，欢迎提 [Issue](https://github.com/woodchen-ink/czlmail/issues)，或到[论坛反馈帖](https://sunai.net/c/feedback)留言。
+使用中遇到问题或有建议，欢迎提 [Issue](https://github.com/woodchen-ink/czlmail/issues)，或到[论坛反馈帖](https://sunai.net/t/topic/1485)留言。
 
 ## 许可证
 

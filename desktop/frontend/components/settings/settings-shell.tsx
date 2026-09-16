@@ -133,7 +133,7 @@ const GROUPS: { title: string; items: { id: Section; label: string; icon: typeof
 ];
 
 export const GITHUB_URL = "https://github.com/woodchen-ink/czlmail";
-export const FORUM_URL = "https://sunai.net/c/feedback";
+export const FORUM_URL = "https://sunai.net/t/topic/1485";
 
 export function SettingsShell({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
   const [section, setSection] = useState<Section>("account");

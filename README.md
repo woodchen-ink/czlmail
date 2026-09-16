@@ -114,7 +114,7 @@ Integration tests run against a live server and are skipped unless credentials c
 ## Feedback
 
 Questions, bugs and ideas: open an [issue](https://github.com/woodchen-ink/czlmail/issues) or leave a
-comment in the [forum thread](https://sunai.net/c/feedback).
+comment in the [forum thread](https://sunai.net/t/topic/1485).
 
 ## License
 
