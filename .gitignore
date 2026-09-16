@@ -1,0 +1,39 @@
+# Go
+/desktop/czlmail
+/desktop/czlmail.exe
+/desktop/mcp/czlmail-mcp
+/desktop/mcp/czlmail-mcp.exe
+*.test
+*.out
+
+# Wails
+/desktop/build/bin/
+/desktop/frontend/out/
+/desktop/frontend/.next/
+/desktop/frontend/node_modules/
+
+# 本地数据与凭据
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Wails 生成物 (每次 build 重新生成)
+/desktop/frontend/wailsjs/
+/desktop/build/bin/
+
+# Wails 生成的依赖指纹
+/desktop/frontend/package.json.md5
+
+# 本地开发备注
+TODO.local.md
+CLAUDE.md
+AGENTS.md

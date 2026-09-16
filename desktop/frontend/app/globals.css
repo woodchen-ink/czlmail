@@ -1,0 +1,213 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-folder-inbox: var(--folder-inbox);
+  --color-folder-drafts: var(--folder-drafts);
+  --color-folder-scheduled: var(--folder-scheduled);
+  --color-folder-sent: var(--folder-sent);
+  --color-folder-archive: var(--folder-archive);
+  --color-folder-junk: var(--folder-junk);
+  --color-folder-trash: var(--folder-trash);
+  --color-brand-from: var(--brand-from);
+  --color-brand-to: var(--brand-to);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* CZL 冷感中性色板, 见仓库 CLAUDE.md。组件中禁止硬编码颜色, 一律用这些 token。 */
+  --background: #F6F7F8;
+  --foreground: #10131A;
+  --card: #FCFCFD;
+  --card-foreground: #10131A;
+  --popover: #FCFCFD;
+  --popover-foreground: #10131A;
+  --primary: #1B2152;
+  --primary-foreground: #F6F7F8;
+  --secondary: #E9EEF5;
+  --secondary-foreground: #2A313A;
+  --muted: #D9E1EC;
+  --muted-foreground: #687280;
+  --accent: #4B669A;
+  --accent-foreground: #F6F7F8;
+  --destructive: #9D6877;
+  --border: #D5DCE5;
+  --input: #D5DCE5;
+  --ring: #4B669A;
+  /* chart-1/2 为中性层级, 3=成功 4=喜爱 5=高亮底 (仅作背景标记, 禁止当文字色) */
+  --chart-1: #4B669A;
+  --chart-2: #687280;
+  --chart-3: #5E7E80;
+  --chart-4: #756B80;
+  --chart-5: #D9E6F5;
+  /* 品牌渐变, 仅用于 logo / 核心标题 / 激活指示条, 禁止大面积铺 */
+  --brand-from: #1D2088;
+  --brand-to: #2EA7E0;
+  /* 亮色邮件正文的纸面色。两个主题下都是白色: 多数邮件按白底设计。 */
+  --paper: #FFFFFF;
+  /* 文件夹类别色。只用于侧栏的小图标，面积小，不违背整体低饱和的基调。 */
+  --folder-inbox: #3F6FB5;
+  --folder-drafts: #7B67B5;
+  --folder-scheduled: #3A8BB0;
+  --folder-sent: #4E956A;
+  --folder-archive: #B8843A;
+  --folder-junk: #B5565E;
+  --folder-trash: #687280;
+  /* 日历默认色，服务器未给日历设色时按序取。低饱和，与文件夹色同一基调。 */
+  --event-1: #3F6FB5;
+  --event-2: #4E956A;
+  --event-3: #B8843A;
+  --event-4: #7B67B5;
+  --event-5: #B5565E;
+  --event-6: #3A8BB0;
+  --radius: 0.5rem;
+  --sidebar: #E7ECF2;
+  --sidebar-foreground: #2A313A;
+  --sidebar-primary: #1B2152;
+  --sidebar-primary-foreground: #F6F7F8;
+  --sidebar-accent: #D9E1EC;
+  --sidebar-accent-foreground: #10131A;
+  --sidebar-border: #D5DCE5;
+  --sidebar-ring: #4B669A;
+}
+
+.dark {
+  --background: #10141C;
+  --foreground: #EEF3F8;
+  --card: #171C25;
+  --card-foreground: #EEF3F8;
+  --popover: #171C25;
+  --popover-foreground: #EEF3F8;
+  --primary: #2A367A;
+  --primary-foreground: #EEF3F8;
+  --secondary: #1D2430;
+  --secondary-foreground: #D5DCE5;
+  --muted: #253042;
+  --muted-foreground: #95A0AE;
+  --accent: #7B90BF;
+  --accent-foreground: #10141C;
+  --destructive: #C08998;
+  --border: #253042;
+  --input: #253042;
+  --ring: #7B90BF;
+  --chart-1: #7B90BF;
+  --chart-2: #95A0AE;
+  --chart-3: #7E9FA1;
+  --chart-4: #908095;
+  --chart-5: #2B3B57;
+  --brand-from: #1D2088;
+  --brand-to: #2EA7E0;
+  --paper: #FFFFFF;
+  --folder-inbox: #7FA3DA;
+  --folder-drafts: #A898D6;
+  --folder-scheduled: #74B3D0;
+  --folder-sent: #86BF9A;
+  --folder-archive: #D6AE72;
+  --folder-junk: #D48C93;
+  --folder-trash: #95A0AE;
+  --event-1: #7FA3DA;
+  --event-2: #86BF9A;
+  --event-3: #D6AE72;
+  --event-4: #A898D6;
+  --event-5: #D48C93;
+  --event-6: #74B3D0;
+  --sidebar: #171C25;
+  --sidebar-foreground: #D5DCE5;
+  --sidebar-primary: #2A367A;
+  --sidebar-primary-foreground: #EEF3F8;
+  --sidebar-accent: #253042;
+  --sidebar-accent-foreground: #EEF3F8;
+  --sidebar-border: #253042;
+  --sidebar-ring: #7B90BF;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+/* 原生细滚动条。颜色取边框 token，悬停时加深，两个主题自动跟随。 */
+@layer components {
+  .czl-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .czl-scroll:hover {
+    scrollbar-color: var(--muted-foreground) transparent;
+  }
+}
+
+/* 富文本编辑器内容。只定义结构样式, 颜色跟随主题 token; 用户设置的文字颜色以内联值写入邮件。 */
+@layer components {
+  .czl-editor p { margin: 0.35em 0; }
+  .czl-editor h1 { font-size: 1.5em; font-weight: 600; margin: 0.6em 0 0.3em; }
+  .czl-editor h2 { font-size: 1.25em; font-weight: 600; margin: 0.6em 0 0.3em; }
+  .czl-editor ul { list-style: disc; padding-left: 1.5em; }
+  .czl-editor ol { list-style: decimal; padding-left: 1.5em; }
+  .czl-editor blockquote { border-left: 3px solid var(--border); padding-left: 0.8em; color: var(--muted-foreground); }
+  .czl-editor pre { background: var(--secondary); border-radius: 4px; padding: 0.6em 0.8em; font-family: var(--font-mono); font-size: 0.9em; }
+  .czl-editor a { color: var(--accent); text-decoration: underline; }
+  .czl-editor table { border-collapse: collapse; margin: 0.5em 0; }
+  .czl-editor td, .czl-editor th { border: 1px solid var(--border); padding: 0.3em 0.6em; min-width: 3em; }
+  .czl-editor img { max-width: 100%; }
+  .czl-editor p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    color: var(--muted-foreground);
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+  /* 签名与引用预览: 用户的 HTML 签名原样显示, 只限制图片宽度。 */
+  .czl-signature img { max-width: 100%; height: auto; display: inline-block; }
+  .czl-signature a { color: var(--accent); }
+}

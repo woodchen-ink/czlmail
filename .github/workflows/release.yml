@@ -1,0 +1,112 @@
+# 打 v* tag 时构建 Windows 安装包与 macOS 应用, 生成 SHA256SUMS 并发布 GitHub Release。
+# 桌面端的在线更新读取这里发布的 Release, 并用 SHA256SUMS 校验下载的安装包。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号 (如 v0.1.0), 仅构建不发布"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  WAILS_VERSION: v2.12.0
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: desktop/frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: desktop/frontend/pnpm-lock.yaml
+
+      - name: Install Wails CLI and NSIS
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) { choco install nsis -y --no-progress }
+
+      - name: Build
+        shell: pwsh
+        run: ./build.ps1 ${{ github.event.inputs.version || github.ref_name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: desktop/build/bin/czlmail-amd64-installer.exe
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: desktop/frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: desktop/frontend/pnpm-lock.yaml
+
+      - name: Build
+        working-directory: desktop
+        env:
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+          PRODUCT_VERSION="${VERSION#v}"; PRODUCT_VERSION="${PRODUCT_VERSION%%-*}"
+          sed -i '' -E "s/\"productVersion\": *\"[^\"]*\"/\"productVersion\": \"${PRODUCT_VERSION}\"/" wails.json
+          "$(go env GOPATH)/bin/wails" build -platform darwin/universal -ldflags "-X main.version=${VERSION}"
+          cd build/bin && app=$(ls -d *.app | head -n1) && ditto -c -k --keepParent "$app" czlmail-darwin-universal.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: desktop/build/bin/czlmail-darwin-universal.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [windows, macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum czlmail-* > SHA256SUMS && cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

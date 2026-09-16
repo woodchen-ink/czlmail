@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "czlmail",
+  "outputfilename": "czlmail",
+  "frontend:dir": "frontend",
+  "frontend:install": "pnpm install",
+  "frontend:build": "pnpm run build",
+  "frontend:dev:watcher": "pnpm run dev",
+  "frontend:dev:serverUrl": "http://localhost:3000",
+  "author": {
+    "name": "wood"
+  },
+  "info": {
+    "companyName": "CZL",
+    "productName": "CZL Mail",
+    "productVersion": "0.0.3",
+    "copyright": "Copyright © 2026 CZL",
+    "comments": "JMAP desktop mail client"
+  }
+}
