@@ -753,6 +753,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                   currentEmail.current = e;
                 }}
                 revision={revision}
+                onOpenEmail={(id) => setEmailId(id)}
               />
             ) : (
               <div className="text-muted-foreground flex h-full items-center justify-center text-sm">选择一封邮件</div>

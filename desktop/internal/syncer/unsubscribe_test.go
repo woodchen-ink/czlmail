@@ -30,3 +30,15 @@ func TestParseUnsubscribe(t *testing.T) {
 		}
 	}
 }
+
+func TestReceiptAddress(t *testing.T) {
+	for in, want := range map[string]string{
+		"Alice <alice@example.com>": "alice@example.com",
+		"bob@example.com":           "bob@example.com",
+		"not an address":            "",
+	} {
+		if got := receiptAddress(in); got != want {
+			t.Errorf("%q → %q, want %q", in, got, want)
+		}
+	}
+}

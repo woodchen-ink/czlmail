@@ -305,3 +305,75 @@ func (a *App) defaultCalendar(accountID string) (string, error) {
 	}
 	return first, nil
 }
+
+// ThreadEmails 列出与某封邮件同一会话的全部邮件(时间正序), 供阅读栏展示往来记录。
+func (a *App) ThreadEmails(accountID, threadID string) ([]store.EmailSummary, error) {
+	st, err := a.currentStore()
+	if err != nil {
+		return nil, err
+	}
+	if threadID == "" {
+		return nil, nil
+	}
+	return st.ThreadEmails(a.ctx, accountID, threadID, 200)
+}
+
+// SendReadReceipt 回复发件人的已读回执请求, 并打上 $mdnsent 避免重复提示。
+//
+// 服务器没有 JMAP MDN 扩展(RFC 9007), 这里发一封纯文本回执; 主流客户端都能看懂。
+func (a *App) SendReadReceipt(accountID, emailID string) error {
+	st, err := a.currentStore()
+	if err != nil {
+		return err
+	}
+	d, err := st.Email(a.ctx, accountID, emailID)
+	if err != nil {
+		return err
+	}
+	if d.Unsubscribe == nil || d.Unsubscribe.ReceiptTo == "" {
+		return fmt.Errorf("2226 this email did not request a read receipt")
+	}
+	ids, err := a.ListIdentities(accountID)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("2223 no sender identity")
+	}
+	identity := ids[0]
+	recipients := map[string]bool{}
+	for _, list := range [][]store.Address{d.To, d.CC, d.BCC} {
+		for _, addr := range list {
+			recipients[strings.ToLower(addr.Email)] = true
+		}
+	}
+	for _, id := range ids {
+		if recipients[strings.ToLower(id.Email)] {
+			identity = id
+			break
+		}
+	}
+	now := time.Now().Format("2006-01-02 15:04")
+	body := fmt.Sprintf("您发送的邮件已被阅读。\n\n主题：%s\n收件人：%s\n阅读时间：%s\n\n"+
+		"This is a receipt for the mail you sent.\nSubject: %s\nRead at: %s\n",
+		d.Subject, identity.Email, now, d.Subject, now)
+	if err := a.SendEmail(ComposeRequest{
+		AccountID: accountID, IdentityID: identity.ID,
+		To:        []store.Address{{Email: d.Unsubscribe.ReceiptTo}},
+		Subject:   "已读：" + d.Subject,
+		TextBody:  body,
+		InReplyTo: d.MessageID,
+	}); err != nil {
+		return err
+	}
+	return a.IgnoreReadReceipt(accountID, emailID)
+}
+
+// IgnoreReadReceipt 不发回执, 只打标记, 以后不再提示。
+func (a *App) IgnoreReadReceipt(accountID, emailID string) error {
+	s, err := a.currentSyncer()
+	if err != nil {
+		return err
+	}
+	return s.SetKeyword(a.ctx, accountID, []string{emailID}, "$mdnsent", true)
+}

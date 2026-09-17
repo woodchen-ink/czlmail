@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarDays, Check, Loader2, MailX, MapPin } from "lucide-react";
+import { CalendarDays, Check, Loader2, MailCheck, MailX, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,13 +19,81 @@ import { api, errorMessage, type EmailDetail, type Invite, type Unsubscribe } fr
 import { send } from "@/lib/app-bus";
 import { parseLocalDateTime, shortDate, hm } from "@/lib/date";
 
-/** 邮件顶部的横幅: 日历邀请与退订。 */
-export function EmailBanners({ accountId, email }: { accountId: string; email: EmailDetail }) {
+/** 邮件顶部的横幅: 日历邀请、已读回执请求与退订。 */
+export function EmailBanners({
+  accountId,
+  email,
+  ownAddresses,
+}: {
+  accountId: string;
+  email: EmailDetail;
+  /** 自己的发件地址; 自己发出的邮件不提示回执。 */
+  ownAddresses: Set<string>;
+}) {
+  const [info, setInfo] = useState<Unsubscribe | null>(email.unsubscribe ?? null);
+
+  useEffect(() => {
+    setInfo(email.unsubscribe ?? null);
+    // 正文在这些功能加入前就已缓存的邮件没有邮件头信息, 后台补查一次。
+    if (email.bodyFetched && !email.unsubscribe) {
+      let cancelled = false;
+      api
+        .loadListHeaders(accountId, email.id)
+        .then((u) => !cancelled && setInfo(u))
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [accountId, email]);
+
+  const fromSelf = (email.from ?? []).some((a) => ownAddresses.has((a.email || "").toLowerCase()));
+
   return (
     <>
       <InviteBanner accountId={accountId} email={email} />
-      <UnsubscribeBanner accountId={accountId} email={email} />
+      {info?.receiptTo && !email.mdnSent && !email.isDraft && !fromSelf && (
+        <ReceiptBanner accountId={accountId} email={email} to={info.receiptTo} />
+      )}
+      <UnsubscribeBanner accountId={accountId} email={email} info={info} />
     </>
+  );
+}
+
+function ReceiptBanner({ accountId, email, to }: { accountId: string; email: EmailDetail; to: string }) {
+  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
+  if (state === "done") return null;
+
+  async function run(sendIt: boolean) {
+    setState("busy");
+    try {
+      if (sendIt) {
+        await api.sendReadReceipt(accountId, email.id);
+        toast.success("已发送已读回执");
+      } else {
+        await api.ignoreReadReceipt(accountId, email.id);
+      }
+      setState("done");
+    } catch (err) {
+      toast.error(errorMessage(err));
+      setState("idle");
+    }
+  }
+
+  return (
+    <div className="border-border bg-secondary flex flex-wrap items-center gap-3 rounded-md border px-4 py-2.5 text-sm">
+      <MailCheck className="text-muted-foreground size-4 shrink-0" />
+      <span className="min-w-0 flex-1">
+        发件人请求已读回执<span className="text-muted-foreground">（发送到 {to}）</span>
+      </span>
+      <Button size="sm" variant="outline" className="h-7" disabled={state === "busy"} onClick={() => run(true)}>
+        {state === "busy" && <Loader2 className="size-3.5 animate-spin" />}
+        发送回执
+      </Button>
+      <Button size="sm" variant="ghost" className="h-7" disabled={state === "busy"} onClick={() => run(false)}>
+        不发送
+      </Button>
+    </div>
   );
 }
 
@@ -129,26 +197,10 @@ function InviteBanner({ accountId, email }: { accountId: string; email: EmailDet
   );
 }
 
-function UnsubscribeBanner({ accountId, email }: { accountId: string; email: EmailDetail }) {
-  const [info, setInfo] = useState<Unsubscribe | null>(email.unsubscribe ?? null);
+function UnsubscribeBanner({ accountId, email, info }: { accountId: string; email: EmailDetail; info: Unsubscribe | null }) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
-
-  useEffect(() => {
-    setInfo(email.unsubscribe ?? null);
-    // 正文在这个功能加入前就已缓存的邮件没有退订信息, 后台补查一次。
-    if (email.bodyFetched && !email.unsubscribe) {
-      let cancelled = false;
-      api
-        .loadListHeaders(accountId, email.id)
-        .then((u) => !cancelled && setInfo(u))
-        .catch(() => {});
-      return () => {
-        cancelled = true;
-      };
-    }
-  }, [accountId, email]);
 
   if (!info || (!info.http && !info.mailto)) return null;
 

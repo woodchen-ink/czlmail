@@ -34,3 +34,8 @@ DELETE FROM sync_state WHERE data_type = 'ContactCard';
 const migration010 = `
 ALTER TABLE emails ADD COLUMN list_unsubscribe TEXT;
 `
+
+// migration011 邮件头信息里新增已读回执地址, 清空已检查标记让打开时重新补查。
+const migration011 = `
+UPDATE emails SET list_unsubscribe = NULL;
+`

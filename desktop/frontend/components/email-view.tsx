@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { AttachmentList } from "@/components/attachment-list";
 import { EmailBanners } from "@/components/email-banners";
+import { ThreadList } from "@/components/thread-list";
 import { EmailBody } from "@/components/email-body";
 import { EmailToolbar, type ToolbarActions } from "@/components/email-toolbar";
 import { SenderAvatar } from "@/components/sender-avatar";
@@ -19,6 +20,7 @@ import {
   runAI,
   type AIConfig,
   type EmailDetail,
+  type EmailSummary,
   type Mailbox,
 } from "@/lib/api";
 import { main } from "@/wailsjs/go/models";
@@ -44,6 +46,8 @@ interface Props {
   onLoaded: (email: EmailDetail | null) => void;
   /** 外壳在标签、星标等变化后递增，触发重新读取。 */
   revision: number;
+  /** 打开同一会话里的另一封邮件。 */
+  onOpenEmail?: (id: string) => void;
 }
 
 export function EmailView({
@@ -58,6 +62,7 @@ export function EmailView({
   actions,
   onLoaded,
   revision,
+  onOpenEmail,
 }: Props) {
   const [email, setEmail] = useState<EmailDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -74,6 +79,28 @@ export function EmailView({
     total: number;
   }>(null);
   const translateAbort = useRef<AbortController | null>(null);
+  const [thread, setThread] = useState<EmailSummary[]>([]);
+  const [own, setOwn] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    api
+      .listIdentities(accountId)
+      .then((ids) => setOwn(new Set((ids ?? []).map((i) => i.email.toLowerCase()))))
+      .catch(() => {});
+  }, [accountId]);
+
+  const threadId = email?.threadId ?? "";
+  useEffect(() => {
+    if (!threadId) return;
+    let cancelled = false;
+    api
+      .threadEmails(accountId, threadId)
+      .then((list) => !cancelled && setThread(list ?? []))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, threadId, revision]);
 
   useEffect(() => {
     api
@@ -304,6 +331,15 @@ export function EmailView({
             </span>
           </div>
 
+          {thread.length > 1 && (
+            <ThreadList
+              thread={thread}
+              currentId={email.id}
+              own={own}
+              onOpen={(id) => onOpenEmail?.(id)}
+            />
+          )}
+
           <Separator />
 
           {ai?.enabled && ai.hasKey && ai.model && email.bodyFetched && (
@@ -354,7 +390,7 @@ export function EmailView({
             </div>
           ) : (
             <>
-              <EmailBanners accountId={accountId} email={email} />
+              <EmailBanners accountId={accountId} email={email} ownAddresses={own} />
               {/* 附件放在正文上方：长邮件里附件沉在底部，用户常常读完才发现有附件。 */}
               <AttachmentList
                 accountId={accountId}

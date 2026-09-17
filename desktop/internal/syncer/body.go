@@ -177,6 +177,10 @@ func ParseUnsubscribe(headers []*email.Header) store.Unsubscribe {
 					u.Mailto = v
 				}
 			}
+		case "disposition-notification-to":
+			if u.ReceiptTo == "" {
+				u.ReceiptTo = receiptAddress(unfold(h.Value))
+			}
 		case "list-unsubscribe-post":
 			post = strings.Contains(strings.ToLower(unfold(h.Value)), "list-unsubscribe=one-click")
 		}
@@ -187,4 +191,18 @@ func ParseUnsubscribe(headers []*email.Header) store.Unsubscribe {
 
 func unfold(v string) string {
 	return strings.Join(strings.Fields(v), " ")
+}
+
+// receiptAddress 从 "Name <addr>" 或裸地址里取出邮箱。
+func receiptAddress(v string) string {
+	if i := strings.LastIndex(v, "<"); i >= 0 {
+		if j := strings.Index(v[i:], ">"); j > 0 {
+			v = v[i+1 : i+j]
+		}
+	}
+	v = strings.TrimSpace(strings.Split(v, ",")[0])
+	if !strings.Contains(v, "@") || strings.ContainsAny(v, " <>") {
+		return ""
+	}
+	return v
 }

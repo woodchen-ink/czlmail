@@ -259,6 +259,9 @@ export const api = {
   unsubscribe: guard(App.Unsubscribe),
   getInvite: guard(App.GetInvite),
   addInviteToCalendar: guard(App.AddInviteToCalendar),
+  threadEmails: guard(App.ThreadEmails),
+  sendReadReceipt: guard(App.SendReadReceipt),
+  ignoreReadReceipt: guard(App.IgnoreReadReceipt),
 };
 
 /** 订阅后端事件，返回取消订阅函数。 */

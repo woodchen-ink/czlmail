@@ -44,6 +44,8 @@ type EmailDetail struct {
 	BodyFetched bool     `json:"bodyFetched"`
 	// Unsubscribe 是 List-Unsubscribe 解析结果; nil 表示还没检查过。
 	Unsubscribe *Unsubscribe `json:"unsubscribe"`
+	// MDNSent 表示已回复或已忽略已读回执请求($mdnsent)。
+	MDNSent bool `json:"mdnSent"`
 }
 
 // Unsubscribe 是邮件的退订方式(RFC 2369 / RFC 8058)。三个字段都为空表示邮件没有退订头。
@@ -51,6 +53,8 @@ type Unsubscribe struct {
 	HTTP     string `json:"http"`
 	Mailto   string `json:"mailto"`
 	OneClick bool   `json:"oneClick"`
+	// ReceiptTo 是发件人请求已读回执的地址(Disposition-Notification-To), 与退订信息一起从邮件头解析。
+	ReceiptTo string `json:"receiptTo"`
 }
 
 // 已读与星标是"某个 keyword 是否存在", 用 EXISTS 子查询而不是 JOIN 聚合:
@@ -116,6 +120,23 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 	return out, wrap(CodeQuery, "iterate email summaries", rows.Err())
 }
 
+// ThreadEmails 按时间正序列出同一会话的邮件(跨文件夹), 最多 limit 封。
+func (s *Store) ThreadEmails(ctx context.Context, accountID, threadID string, limit int) ([]EmailSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
+		       e.preview, e.has_attachment, e.size,`+keywordFlags+`
+		FROM emails e
+		WHERE e.account_id = ? AND e.thread_id = ?
+		ORDER BY e.received_at ASC
+		LIMIT ?`,
+		accountID, threadID, limit)
+	if err != nil {
+		return nil, wrap(CodeQuery, "query thread", err)
+	}
+	defer rows.Close()
+	return scanSummaries(rows)
+}
+
 // Email 读单封邮件的完整信息。正文未缓存时 BodyFetched 为 false,
 // 调用方据此决定是否发起一次按需拉取。
 func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDetail, error) {
@@ -133,7 +154,9 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 		       e.preview, e.has_attachment, e.size,`+keywordFlags+`,
 		       e.to_json, e.cc_json, e.bcc_json, e.reply_to_json,
 		       e.blob_id, e.message_id, e.in_reply_to, e.attachments_json,
-		       e.body_text, e.body_html, e.body_fetched_at, e.list_unsubscribe
+		       e.body_text, e.body_html, e.body_fetched_at, e.list_unsubscribe,
+		       EXISTS (SELECT 1 FROM email_keywords k
+		               WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$mdnsent')
 		FROM emails e
 		WHERE e.account_id = ? AND e.id = ?`,
 		accountID, emailID,
@@ -143,7 +166,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 		&unread, &flagged, &draft,
 		&toJSON, &ccJSON, &bccJSON, &replyToJSON,
 		&d.BlobID, &d.MessageID, &d.InReplyTo, &attachmentsJSON,
-		&bodyText, &bodyHTML, &bodyFetchedAt, &unsubscribe,
+		&bodyText, &bodyHTML, &bodyFetchedAt, &unsubscribe, &d.MDNSent,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
