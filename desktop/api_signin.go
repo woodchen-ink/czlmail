@@ -71,8 +71,10 @@ func (a *App) SignIn(mailHost string) error {
 
 	meta, err := auth.DiscoverForResource(ctx, mailHost)
 	if err != nil {
+		a.log.Warn("oauth discover failed", "host", mailHost, "err", err)
 		return err
 	}
+	a.log.Info("oauth discovered", "issuer", meta.Issuer, "registration", meta.RegistrationEndpoint != "")
 
 	listener, redirectURI, err := auth.ListenLoopback()
 	if err != nil {
@@ -90,8 +92,10 @@ func (a *App) SignIn(mailHost string) error {
 	if cfg.ClientID == "" || cfg.RedirectURI != redirectURI || cfg.Issuer != meta.Issuer {
 		info, err := auth.Register(ctx, meta, redirectURI)
 		if err != nil {
+			a.log.Warn("oauth register failed", "err", err)
 			return err
 		}
+		a.log.Info("oauth client registered", "redirect", redirectURI)
 		cfg.ClientID = info.ID
 		cfg.RedirectURI = redirectURI
 	}
@@ -109,11 +113,14 @@ func (a *App) SignIn(mailHost string) error {
 		Scopes:      cfg.Scopes,
 	}, listener)
 	if err != nil {
+		a.log.Warn("oauth authorize failed", "err", err)
 		return err
 	}
+	a.log.Info("oauth token received", "refreshToken", tok.RefreshToken != "", "expiry", tok.Expiry)
 
 	// 先连通再落盘, 避免把一组用不了的凭据写进密钥库。
 	if err := a.connect(cfg, a.oauthClient(cfg, meta, tok)); err != nil {
+		a.log.Warn("oauth session connect failed", "err", err)
 		return err
 	}
 
@@ -124,7 +131,12 @@ func (a *App) SignIn(mailHost string) error {
 	if err := SaveConfig(connected); err != nil {
 		return err
 	}
-	return SaveToken(connected.Issuer, tok)
+	if err := SaveToken(connected.Issuer, tok); err != nil {
+		a.log.Error("oauth save token failed", "err", err)
+		return err
+	}
+	a.log.Info("oauth sign-in complete", "username", connected.Username)
+	return nil
 }
 
 // CancelSignIn 中止正在进行的登录。

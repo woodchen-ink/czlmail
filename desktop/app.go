@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
 	_ "git.sr.ht/~rockorager/go-jmap/core" // 注册 Core capability, 否则会话解析不出限制值
@@ -45,11 +46,17 @@ type App struct {
 	// signInGen 标识当前流程, 使收尾时能分辨句柄归属。
 	cancelSignIn context.CancelFunc
 	signInGen    uint64
+
+	// ready 在启动时读完配置后关闭。界面启动时查询会话状态要等它,
+	// 否则会在库还没打开时读到"未配置", 把已登录的用户显示成登录页。
+	ready     chan struct{}
+	readyOnce sync.Once
 }
 
 func NewApp() *App {
 	return &App{
-		log: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		log:   newLogger(),
+		ready: make(chan struct{}),
 	}
 }
 
@@ -60,6 +67,16 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.startTray()
+	defer a.markReady()
+
+	// 配置先读: 缓存库打不开时也要知道用户已经登录过, 不能把人赶回登录页。
+	cfg, err := LoadConfig()
+	if err != nil {
+		a.log.Error("load config", "err", err)
+	}
+	a.mu.Lock()
+	a.cfg = cfg
+	a.mu.Unlock()
 
 	dbPath, err := DatabasePath()
 	if err != nil {
@@ -73,15 +90,10 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 
-	cfg, err := LoadConfig()
-	if err != nil {
-		a.log.Error("load config", "err", err)
-	}
-
 	a.mu.Lock()
 	a.store = st
-	a.cfg = cfg
 	a.mu.Unlock()
+	a.markReady()
 
 	a.log.Info("store ready", "path", dbPath)
 
@@ -200,13 +212,38 @@ func basicAuthClient(username, password string) *http.Client {
 }
 
 // connect 用已认证的 HTTP 客户端建立 JMAP 会话并启动后台同步。
+func (a *App) markReady() {
+	a.readyOnce.Do(func() { close(a.ready) })
+}
+
+// waitReady 等启动读完配置与缓存库, 最多等 timeout。
+func (a *App) waitReady(timeout time.Duration) {
+	select {
+	case <-a.ready:
+	case <-time.After(timeout):
+	}
+}
+
 func (a *App) connect(cfg Config, httpClient *http.Client) error {
+	a.waitReady(30 * time.Second)
+	if _, err := a.currentStore(); err != nil {
+		return err
+	}
 	client := &jmap.Client{
 		SessionEndpoint: cfg.SessionEndpoint,
 		HttpClient:      httpClient,
 	}
-	if err := client.Authenticate(); err != nil {
-		return a.classifyAuthFailure(cfg.SessionEndpoint, httpClient, err)
+	// go-jmap 的 Authenticate 不接受 context, 客户端又不能设全局超时(推送连接是长连接),
+	// 在这里单独限时, 服务器无响应时报错而不是让登录界面一直转圈。
+	authErr := make(chan error, 1)
+	go func() { authErr <- client.Authenticate() }()
+	select {
+	case err := <-authErr:
+		if err != nil {
+			return a.classifyAuthFailure(cfg, httpClient, err)
+		}
+	case <-time.After(45 * time.Second):
+		return fmt.Errorf("2063 mail server did not respond while opening the session")
 	}
 
 	cfg.Username = client.Session.Username
@@ -259,8 +296,10 @@ func (a *App) connect(cfg Config, httpClient *http.Client) error {
 // go-jmap 对任何非 200 响应都只返回 "couldn't authenticate", 分不出是密码错、
 // 地址错, 还是服务器不可达。这三种情况用户的补救动作完全不同, 因此失败后
 // 再发一次请求拿到真实状态码。最常见的是账号走 SSO 却填了 SSO 密码。
-func (a *App) classifyAuthFailure(endpoint string, httpClient *http.Client, cause error) error {
-	req, err := http.NewRequestWithContext(a.ctx, http.MethodGet, endpoint, nil)
+func (a *App) classifyAuthFailure(cfg Config, httpClient *http.Client, cause error) error {
+	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.SessionEndpoint, nil)
 	if err != nil {
 		return fmt.Errorf("2062 invalid server address: %w", err)
 	}
@@ -273,6 +312,10 @@ func (a *App) classifyAuthFailure(endpoint string, httpClient *http.Client, caus
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
+		if cfg.AuthMethod == AuthOAuth {
+			// 邮件服务器把认证委托给外部 IdP 时只认 IdP 的令牌, 自己签发的令牌会被拒。
+			return fmt.Errorf("2064 the mail server rejected the OAuth token (HTTP %d); sign in with an app password instead", resp.StatusCode)
+		}
 		return fmt.Errorf("2060 authentication failed: check the email address and app password (an SSO password will not work here)")
 	case http.StatusNotFound:
 		return fmt.Errorf("2061 no JMAP service found at this server address")

@@ -5,6 +5,7 @@ const schemaVersion = 10
 
 // migrations 按索引顺序执行, 索引 i 把 schema 从版本 i 升到 i+1。
 // 已发布的迁移不可修改, 只能追加新的一条。
+// 迁移必须向后兼容: 只加表、加列、清同步状态, 不删改已有列 —— 用户装回旧版本时旧程序仍要能打开这个库。
 var migrations = []string{
 	migration001,
 	migration002,

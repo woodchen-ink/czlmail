@@ -40,6 +40,7 @@ type SessionStatus struct {
 }
 
 func (a *App) GetSessionStatus() SessionStatus {
+	a.waitReady(15 * time.Second)
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return SessionStatus{

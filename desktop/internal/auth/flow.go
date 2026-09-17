@@ -86,7 +86,10 @@ func Authorize(ctx context.Context, cfg *Config, listener net.Listener) (*oauth2
 		if res.err != nil {
 			return nil, res.err
 		}
-		tok, err := oc.Exchange(ctx, res.code, oauth2.VerifierOption(verifier))
+		// 换令牌必须有自己的超时: 授权上下文还剩几分钟, 令牌端点卡住时界面会一直停在"请在浏览器中完成授权"。
+		exCtx, exCancel := context.WithTimeout(context.WithValue(ctx, oauth2.HTTPClient, httpClient), 30*time.Second)
+		defer exCancel()
+		tok, err := oc.Exchange(exCtx, res.code, oauth2.VerifierOption(verifier))
 		if err != nil {
 			return nil, fmt.Errorf("3022 exchange authorization code: %w", err)
 		}

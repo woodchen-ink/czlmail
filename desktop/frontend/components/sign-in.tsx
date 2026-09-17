@@ -41,7 +41,7 @@ export function SignIn({ onSignedIn }: Props) {
       }
       onSignedIn();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(signInError(errorMessage(err)));
     } finally {
       setBusy(false);
     }
@@ -178,4 +178,22 @@ function Field({
       {hint && <p className="text-muted-foreground text-xs leading-relaxed">{hint}</p>}
     </div>
   );
+}
+
+/** 把登录流程的错误码转成用户能照着处理的说明; 未收录的原样显示, 方便反馈时对照日志。 */
+function signInError(msg: string): string {
+  const code = msg.slice(0, 4);
+  const map: Record<string, string> = {
+    "2060": "认证失败：请检查邮箱地址与应用专用密码（单点登录的密码在这里不能用）。",
+    "2061": "这个地址上没有找到 JMAP 服务，请确认服务器地址。",
+    "2062": "连不上邮件服务器，请检查网络与服务器地址。",
+    "2063": "邮件服务器没有正常响应，请稍后重试。",
+    "2064": "邮件服务器不接受这次浏览器授权得到的令牌（服务器可能把认证交给了外部身份提供商）。请改用应用专用密码登录。",
+    "3001": "这个服务器没有提供浏览器授权登录，请改用应用专用密码。",
+    "3021": "浏览器授权超时或已取消。",
+    "3022": "换取令牌失败，请重试；多次失败请改用应用专用密码登录。",
+    "3023": "授权被拒绝。",
+    "3024": "授权状态校验失败，请重新登录。",
+  };
+  return map[code] ? `${map[code]}（${code}）` : msg;
 }

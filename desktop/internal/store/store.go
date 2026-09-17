@@ -67,12 +67,10 @@ func (s *Store) migrate(ctx context.Context) error {
 		return wrap(CodeMigrate, "read user_version", err)
 	}
 
+	// 库比程序新: 用户装回了旧版本。迁移只追加列和表(见 schema.go 的约定), 旧程序忽略新列即可正常读写,
+	// 拒绝打开会让用户连登录状态都丢掉(启动读不到缓存就无法进入界面)。
 	if current > schemaVersion {
-		return &Error{
-			Code: CodeMigrate,
-			Msg: fmt.Sprintf("database schema version %d is newer than supported version %d",
-				current, schemaVersion),
-		}
+		return nil
 	}
 
 	for v := current; v < schemaVersion; v++ {
