@@ -22,6 +22,8 @@ const (
 	progMailto    = "CZLMail.mailto"
 	progICS       = "CZLMail.ics"
 	progWebcal    = "CZLMail.webcal"
+	// progLink 直接以协议名作为类名: 自有协议不需要用户在默认应用里确认。
+	progLink = linkScheme
 )
 
 func exePath() (string, error) {
@@ -75,6 +77,7 @@ func registerHandlers() error {
 		{progMailto, "CZL Mail 邮件链接"},
 		{progICS, "CZL Mail 日历文件"},
 		{progWebcal, "CZL Mail 日历订阅"},
+		{progLink, "URL:CZL Mail 邮件链接"},
 	}
 	for _, p := range progIDs {
 		if err := setValues(`Software\Classes\`+p.id, map[string]string{"": p.name}); err != nil {

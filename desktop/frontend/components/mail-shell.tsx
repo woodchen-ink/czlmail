@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ComposePane, type ComposeDraft } from "@/components/compose/compose-pane";
+import { EmailContextMenu, type EmailMenuActions } from "@/components/email-context-menu";
 import { EmailList } from "@/components/email-list";
 import { EmailView } from "@/components/email-view";
 import { MailSidebar } from "@/components/mail-sidebar";
@@ -100,7 +101,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   // 否则慢的那次返回会覆盖快的那次，列表显示成上一个邮箱的内容。
   const loadToken = useRef(0);
 
-  const mailboxes = mailboxesByAccount[accountId] ?? [];
+  const mailboxes = useMemo(() => mailboxesByAccount[accountId] ?? [], [mailboxesByAccount, accountId]);
   const currentKind = mailboxes.find((m) => m.id === mailboxId)?.kind ?? "";
 
   /* ---------- 账号与邮箱 ---------- */
@@ -158,15 +159,47 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
   /* ---------- 邮件列表 ---------- */
 
+  // 乐观更新的覆盖层。删除、移动、标记等操作发出后界面立刻显示预期结果, 请求在后台完成;
+  // 完成前任何一次重新加载(同步推送、翻页、搜索)的结果都要套上这层, 否则刚删掉的邮件会闪回来。
+  // 条目记下操作序号, 同一封邮件连续操作时只由最后一次操作撤掉。
+  const hiddenIds = useRef(new Map<string, number>());
+  const patchedIds = useRef(new Map<string, { patch: Partial<EmailSummary>; seq: number }>());
+  const mutationSeq = useRef(0);
+  // 正在清空的文件夹(账号/文件夹): 后台逐批删除期间列表保持为空。
+  const emptying = useRef(new Set<string>());
+
+  const overlay = useCallback((list: EmailSummary[]) => {
+    const hidden = hiddenIds.current;
+    const patched = patchedIds.current;
+    if (hidden.size === 0 && patched.size === 0) return list;
+    return list
+      .filter((e) => !hidden.has(e.id))
+      .map((e) => {
+        const p = patched.get(e.id);
+        return p ? ({ ...e, ...p.patch } as EmailSummary) : e;
+      });
+  }, []);
+
   const loadPage = useCallback(
     async (offset: number, token: number) => {
       if (!accountId || !mailboxId) return;
+      if (emptying.current.has(`${accountId}/${mailboxId}`)) {
+        setEmails([]);
+        setHasMore(false);
+        return;
+      }
       setLoading(true);
       try {
         const page = await api.listEmails(accountId, mailboxId, PAGE_SIZE, offset);
         if (token !== loadToken.current) return;
         const list = page ?? [];
-        setEmails((prev) => (offset === 0 ? list : [...prev, ...list]));
+        const shown = overlay(list);
+        setEmails((prev) => {
+          if (offset === 0) return shown;
+          // 乐观移除的邮件让 offset 比服务端少算几封, 下一页开头可能与已有的重叠。
+          const have = new Set(prev.map((e) => e.id));
+          return [...prev, ...shown.filter((e) => !have.has(e.id))];
+        });
         setHasMore(list.length === PAGE_SIZE);
       } catch (err) {
         if (token === loadToken.current) toast.error(errorMessage(err));
@@ -174,7 +207,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         if (token === loadToken.current) setLoading(false);
       }
     },
-    [accountId, mailboxId],
+    [accountId, mailboxId, overlay],
   );
 
   // 从通知或其它模块打开某封邮件时, 切换账号会触发下面的列表重置;
@@ -282,7 +315,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       try {
         const found = await api.searchEmails(accountId, q, 100);
         if (token !== loadToken.current) return;
-        setEmails(found ?? []);
+        setEmails(overlay(found ?? []));
         setHasMore(false);
       } catch (err) {
         toast.error(errorMessage(err));
@@ -294,25 +327,181 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     return () => clearTimeout(timer);
     // searching 由本 effect 自己设置，列进依赖会造成循环。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, accountId, reload]);
+  }, [query, accountId, reload, overlay]);
 
   /* ---------- 操作 ---------- */
 
-  /** 执行一个会让当前邮件离开列表的操作，然后选中下一封，避免阅读栏突然变空。 */
-  const runAndAdvance = useCallback(
-    async (id: string, op: () => Promise<unknown>, done?: string) => {
-      const idx = emails.findIndex((e) => e.id === id);
-      const next = emails[idx + 1] ?? emails[idx - 1];
-      try {
-        await op();
-        if (done) toast.success(done);
-        setEmailId(next?.id ?? "");
-        reload();
-      } catch (err) {
-        toast.error(errorMessage(err));
+  // 列表的最新值, 供乐观更新在回调里计算下一封与未读数, 不必把 emails 列进每个操作的依赖。
+  const emailsRef = useRef(emails);
+  useEffect(() => {
+    emailsRef.current = emails;
+  }, [emails]);
+
+  const refreshCurrent = useCallback(() => {
+    setRevision((r) => r + 1);
+    reload();
+  }, [reload]);
+
+  /** 调整侧栏某个文件夹的未读数, 同步回来前先显示预期值。 */
+  const adjustUnread = useCallback((acc: string, box: string, delta: number | "zero") => {
+    if (delta === 0) return;
+    setMailboxesByAccount((prev) => {
+      const list = prev[acc];
+      if (!list) return prev;
+      return {
+        ...prev,
+        [acc]: list.map((m) =>
+          m.id === box
+            ? ({ ...m, unreadEmails: delta === "zero" ? 0 : Math.max(0, m.unreadEmails + delta) } as Mailbox)
+            : m,
+        ),
+      };
+    });
+  }, []);
+
+  /**
+   * 乐观执行一个邮件操作: 立刻按预期结果更新界面, 请求在后台提交。
+   * remove 表示邮件会离开当前列表(删除、移动、归档、垃圾邮件), 选中的邮件随之跳到下一封;
+   * patch 是对摘要字段的预期修改(已读、星标、固定)。
+   * 失败时提示并重新加载, 界面回到服务器的真实状态。
+   */
+  const mutate = useCallback(
+    (m: { ids: string[]; op: () => Promise<unknown>; remove?: boolean; patch?: Partial<EmailSummary>; done?: string }) => {
+      const ids = m.ids;
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      const seq = ++mutationSeq.current;
+      const acc = accountId;
+      const box = mailboxId;
+      const list = emailsRef.current;
+
+      if (m.remove) {
+        for (const id of ids) hiddenIds.current.set(id, seq);
+        adjustUnread(acc, box, -list.filter((e) => idSet.has(e.id) && e.isUnread).length);
+        // 阅读栏不突然变空: 选中的邮件被移走时, 跳到它后面(没有则前面)第一封没被移走的。
+        setEmailId((cur) => {
+          if (!idSet.has(cur)) return cur;
+          const idx = list.findIndex((e) => e.id === cur);
+          const after = list.slice(idx + 1).find((e) => !idSet.has(e.id));
+          const before = list
+            .slice(0, Math.max(0, idx))
+            .reverse()
+            .find((e) => !idSet.has(e.id));
+          return (after ?? before)?.id ?? "";
+        });
+        setEmails((prev) => prev.filter((e) => !idSet.has(e.id)));
+        setChecked((prev) => {
+          if (![...prev].some((id) => idSet.has(id))) return prev;
+          return new Set([...prev].filter((id) => !idSet.has(id)));
+        });
       }
+      if (m.patch) {
+        const patch = m.patch;
+        if (patch.isUnread !== undefined) {
+          const changed = list.filter((e) => idSet.has(e.id) && e.isUnread !== patch.isUnread).length;
+          adjustUnread(acc, box, patch.isUnread ? changed : -changed);
+        }
+        for (const id of ids) {
+          patchedIds.current.set(id, { patch: { ...patchedIds.current.get(id)?.patch, ...patch }, seq });
+        }
+        setEmails((prev) => prev.map((e) => (idSet.has(e.id) ? ({ ...e, ...patch } as EmailSummary) : e)));
+      }
+      if (m.done) toast.success(m.done);
+
+      m.op()
+        .catch((err) => toast.error(errorMessage(err)))
+        .finally(() => {
+          for (const id of ids) {
+            if (hiddenIds.current.get(id) === seq) hiddenIds.current.delete(id);
+            if (patchedIds.current.get(id)?.seq === seq) patchedIds.current.delete(id);
+          }
+          // 成功时后端已同步完, 重新加载读到的就是结果; 失败时重新加载把界面恢复原样。
+          loadMailboxes(acc);
+          // 阅读栏只显示星标; 已读、固定变化不重载正文, 否则打开未读邮件时正文会闪一下。
+          if (m.patch?.isFlagged !== undefined) refreshCurrent();
+          else reload();
+        });
     },
-    [emails, reload],
+    [accountId, mailboxId, adjustUnread, loadMailboxes, reload, refreshCurrent],
+  );
+
+  const trashIds = useCallback(
+    (ids: string[]) => {
+      if (currentKind === "trash") {
+        const what = ids.length > 1 ? `选中的 ${ids.length} 封邮件` : "这封邮件";
+        if (!window.confirm(`彻底删除${what}？此操作无法撤销。`)) return;
+        mutate({ ids, remove: true, op: () => api.deleteEmails(accountId, ids), done: "已彻底删除" });
+        return;
+      }
+      mutate({ ids, remove: true, op: () => api.trashEmails(accountId, ids), done: "已删除" });
+    },
+    [accountId, currentKind, mutate],
+  );
+
+  const archiveIds = useCallback(
+    (ids: string[]) => mutate({ ids, remove: true, op: () => api.archiveEmails(accountId, ids), done: "已归档" }),
+    [accountId, mutate],
+  );
+
+  const moveIds = useCallback(
+    (ids: string[], target: string) => {
+      const box = mailboxes.find((m) => m.id === target);
+      mutate({
+        ids,
+        remove: true,
+        op: () => api.moveEmails(accountId, ids, target),
+        done: box ? `已移动到「${mailboxLabel(box)}」` : "已移动",
+      });
+    },
+    [accountId, mailboxes, mutate],
+  );
+
+  const junkIds = useCallback(
+    (ids: string[], junk: boolean) =>
+      mutate({
+        ids,
+        remove: true,
+        op: () => api.markJunk(accountId, ids, junk),
+        done: junk ? "已标记为垃圾邮件" : "已移回收件箱",
+      }),
+    [accountId, mutate],
+  );
+
+  const markReadIds = useCallback(
+    (ids: string[], read: boolean) =>
+      mutate({ ids, patch: { isUnread: !read }, op: () => api.markRead(accountId, ids, read) }),
+    [accountId, mutate],
+  );
+
+  const flagIds = useCallback(
+    (ids: string[], flagged: boolean) =>
+      mutate({ ids, patch: { isFlagged: flagged }, op: () => api.markFlagged(accountId, ids, flagged) }),
+    [accountId, mutate],
+  );
+
+  const toggleFlag = useCallback(
+    (email: EmailSummary | EmailDetail) => flagIds([email.id], !email.isFlagged),
+    [flagIds],
+  );
+
+  const togglePin = useCallback(
+    (email: EmailSummary) =>
+      mutate({
+        ids: [email.id],
+        patch: { isPinned: !email.isPinned },
+        op: () => api.setPinned(accountId, [email.id], !email.isPinned),
+      }),
+    [accountId, mutate],
+  );
+
+  const setLabelIds = useCallback(
+    (ids: string[], label: string, set: boolean) => {
+      api
+        .setLabel(accountId, ids, label, set)
+        .then(refreshCurrent)
+        .catch((err) => toast.error(errorMessage(err)));
+    },
+    [accountId, refreshCurrent],
   );
 
   /** 列表里点选邮件。草稿直接进入编辑。 */
@@ -333,19 +522,6 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       }
     },
     [emails, currentKind, accountId, setDraft],
-  );
-
-  /** 列表悬停的删除按钮: 已删除文件夹里彻底删除, 其它文件夹移到已删除。 */
-  const deleteFromList = useCallback(
-    (email: EmailSummary) => {
-      if (currentKind === "trash") {
-        if (!window.confirm("彻底删除这封邮件？此操作无法撤销。")) return;
-        runAndAdvance(email.id, () => api.deleteEmails(accountId, [email.id]), "已彻底删除");
-        return;
-      }
-      runAndAdvance(email.id, () => api.trashEmails(accountId, [email.id]), "已删除");
-    },
-    [accountId, currentKind, runAndAdvance],
   );
 
   const checkEmail = useCallback(
@@ -369,33 +545,6 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     [emails],
   );
 
-  /** 对勾选的邮件执行批量操作。 */
-  const bulk = useCallback(
-    async (op: (ids: string[]) => Promise<unknown>, done?: string, leavesList = true) => {
-      const ids = [...checked];
-      if (ids.length === 0) return;
-      try {
-        await op(ids);
-        if (done) toast.success(done);
-        if (leavesList) {
-          if (ids.includes(emailId)) setEmailId("");
-          setChecked(new Set());
-        }
-        refreshCurrent();
-      } catch (err) {
-        toast.error(errorMessage(err));
-      }
-    },
-    // refreshCurrent 定义在下方, 由闭包在调用时读取。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [checked, emailId],
-  );
-
-  const refreshCurrent = useCallback(() => {
-    setRevision((r) => r + 1);
-    reload();
-  }, [reload]);
-
   async function sync() {
     if (!accountId || syncing) return;
     setSyncing(true);
@@ -409,79 +558,141 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     }
   }
 
-  const toggleFlag = useCallback(
-    async (email: EmailSummary | EmailDetail) => {
+  const importInto = useCallback(
+    async (acc: string, box: string) => {
       try {
-        await api.markFlagged(accountId, [email.id], !email.isFlagged);
-        refreshCurrent();
+        const res = await api.importEmails(acc, box);
+        if (!res || (res.imported === 0 && res.failed === 0)) return;
+        if (res.failed > 0) {
+          toast.warning(`导入 ${res.imported} 封，失败 ${res.failed} 封：${res.firstError}`);
+        } else {
+          toast.success(`已导入 ${res.imported} 封`);
+        }
+        loadMailboxes(acc);
+        if (acc === accountId && box === mailboxId) reload();
       } catch (err) {
         toast.error(errorMessage(err));
       }
     },
-    [accountId, refreshCurrent],
+    [accountId, mailboxId, loadMailboxes, reload],
   );
 
-  const importEmails = useCallback(async () => {
+  const importEmails = useCallback(() => {
     if (!accountId || !mailboxId) {
       toast.error("请先选择一个文件夹");
       return;
     }
-    try {
-      const res = await api.importEmails(accountId, mailboxId);
-      if (!res || (res.imported === 0 && res.failed === 0)) return;
-      if (res.failed > 0) {
-        toast.warning(`导入 ${res.imported} 封，失败 ${res.failed} 封：${res.firstError}`);
-      } else {
-        toast.success(`已导入 ${res.imported} 封`);
+    importInto(accountId, mailboxId);
+  }, [accountId, mailboxId, importInto]);
+
+  /** 侧栏文件夹右键菜单里涉及邮件的操作。标记已读与清空同样先显示结果, 后台逐批处理。 */
+  const folderAction = useCallback(
+    async (acc: string, action: "markRead" | "import" | "empty" | "refresh", box: Mailbox) => {
+      const name = mailboxLabel(box);
+      const isCurrent = acc === accountId && box.id === mailboxId;
+      const toastId = `folder:${action}:${acc}/${box.id}`;
+      switch (action) {
+        case "import":
+          return importInto(acc, box.id);
+        case "refresh":
+          try {
+            await api.syncNow(acc);
+            loadMailboxes(acc);
+            if (isCurrent) reload();
+          } catch (err) {
+            toast.error(errorMessage(err));
+          }
+          return;
+        case "markRead":
+          adjustUnread(acc, box.id, "zero");
+          if (isCurrent) {
+            setEmails((prev) => prev.map((e) => (e.isUnread ? ({ ...e, isUnread: false } as EmailSummary) : e)));
+          }
+          toast.loading(`正在将「${name}」标记为已读…`, { id: toastId });
+          try {
+            const n = await api.markMailboxRead(acc, box.id);
+            toast.success(n > 0 ? `已将 ${n} 封标记为已读` : "没有未读邮件", { id: toastId });
+          } catch (err) {
+            toast.error(errorMessage(err), { id: toastId });
+          }
+          loadMailboxes(acc);
+          if (isCurrent) reload();
+          return;
+        case "empty": {
+          if (!window.confirm(`彻底删除「${name}」里的全部 ${box.totalEmails} 封邮件？此操作无法撤销。`)) return;
+          const key = `${acc}/${box.id}`;
+          emptying.current.add(key);
+          adjustUnread(acc, box.id, "zero");
+          if (isCurrent) {
+            setEmails([]);
+            setEmailId("");
+            setChecked(new Set());
+            setHasMore(false);
+          }
+          toast.loading(`正在清空「${name}」…`, { id: toastId });
+          try {
+            const n = await api.emptyMailbox(acc, box.id);
+            toast.success(`已清空「${name}」，删除 ${n} 封`, { id: toastId });
+          } catch (err) {
+            toast.error(errorMessage(err), { id: toastId });
+          } finally {
+            emptying.current.delete(key);
+          }
+          loadMailboxes(acc);
+          if (isCurrent) reload();
+          return;
+        }
       }
-      reload();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
-  }, [accountId, mailboxId, reload]);
+    },
+    [accountId, mailboxId, importInto, loadMailboxes, reload, adjustUnread],
+  );
+
+  /** 列表右键的回复、转发要用完整邮件(正文、附件): 先读缓存, 没有正文时再拉。 */
+  const withDetail = useCallback(
+    async (id: string, fn: (email: EmailDetail) => void) => {
+      try {
+        let email = await api.getEmail(accountId, id);
+        if (!email.bodyFetched) email = await api.fetchBody(accountId, id);
+        fn(email);
+      } catch (err) {
+        toast.error(errorMessage(err));
+      }
+    },
+    [accountId],
+  );
+
+  const menuActions = useMemo<EmailMenuActions>(
+    () => ({
+      reply: (email, all) => withDetail(email.id, (d) => setDraft(replyDraft(accountId, d, all))),
+      forward: (email, asAttachment) =>
+        withDetail(email.id, (d) => setDraft(asAttachment ? forwardAsAttachmentDraft(d) : forwardDraft(d))),
+      archive: archiveIds,
+      trash: trashIds,
+      move: moveIds,
+      junk: junkIds,
+      markRead: markReadIds,
+      toggleFlag,
+      togglePin,
+      setLabel: setLabelIds,
+    }),
+    [accountId, withDetail, setDraft, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, togglePin, setLabelIds],
+  );
 
   const actionsFor = useCallback(
     (email: EmailDetail): ToolbarActions => ({
       reply: () => setDraft(replyDraft(accountId, email, false)),
       replyAll: () => setDraft(replyDraft(accountId, email, true)),
       forward: () => setDraft(forwardDraft(email)),
-      forwardAsAttachment: () =>
-        setDraft({
-          to: "",
-          cc: "",
-          subject: withPrefix("Fwd:", email.subject),
-          html: "",
-          // 原邮件的 blob 就是完整的 RFC 5322 原文，直接引用，无需下载再上传。
-          attachments: [
-            { blobId: email.blobId, type: "message/rfc822", name: `${email.subject || "email"}.eml`, size: email.size },
-          ],
-        }),
-      archive: () => runAndAdvance(email.id, () => api.archiveEmails(accountId, [email.id]), "已归档"),
-      trash: () => runAndAdvance(email.id, () => api.trashEmails(accountId, [email.id])),
-      move: (target) => runAndAdvance(email.id, () => api.moveEmails(accountId, [email.id], target), "已移动"),
-      setLabel: async (label, set) => {
-        try {
-          await api.setLabel(accountId, [email.id], label, set);
-          refreshCurrent();
-        } catch (err) {
-          toast.error(errorMessage(err));
-        }
-      },
-      junk: (junk) =>
-        runAndAdvance(
-          email.id,
-          () => api.markJunk(accountId, [email.id], junk),
-          junk ? "已标记为垃圾邮件" : "已移回收件箱",
-        ),
-      markUnread: async () => {
-        try {
-          await api.markRead(accountId, [email.id], false);
-          // 标为未读后关闭阅读栏，否则停留在这封上会被再次自动标记已读。
-          setEmailId("");
-          reload();
-        } catch (err) {
-          toast.error(errorMessage(err));
-        }
+      forwardAsAttachment: () => setDraft(forwardAsAttachmentDraft(email)),
+      archive: () => archiveIds([email.id]),
+      trash: () => trashIds([email.id]),
+      move: (target) => moveIds([email.id], target),
+      setLabel: (label, set) => setLabelIds([email.id], label, set),
+      junk: (junk) => junkIds([email.id], junk),
+      markUnread: () => {
+        markReadIds([email.id], false);
+        // 标为未读后关闭阅读栏，否则停留在这封上会被再次自动标记已读。
+        setEmailId("");
       },
       toggleFlag: () => toggleFlag(email),
       print: () => printEmail(email, false),
@@ -499,7 +710,20 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       toggleFocus: () => setFocusMode((f) => !f),
       toggleBodyLight: () => setBodyAppearance(bodyAppearance === "light" ? "follow" : "light"),
     }),
-    [accountId, runAndAdvance, refreshCurrent, reload, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft],
+    [
+      accountId,
+      archiveIds,
+      trashIds,
+      moveIds,
+      setLabelIds,
+      junkIds,
+      markReadIds,
+      toggleFlag,
+      importEmails,
+      bodyAppearance,
+      setBodyAppearance,
+      setDraft,
+    ],
   );
 
   /* ---------- 键盘快捷键 ---------- */
@@ -606,6 +830,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                   setMailboxId(box);
                 }}
                 onMailboxesChanged={loadMailboxes}
+                onFolderAction={folderAction}
               />
             </ScrollArea>
           </>
@@ -663,23 +888,13 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
             {checked.size > 0 && (
               <div className="border-border bg-secondary flex shrink-0 items-center gap-0.5 overflow-hidden border-b px-2 py-1 text-sm">
                 <span className="mr-auto pl-1 text-xs whitespace-nowrap tabular-nums">已选 {checked.size} 封</span>
-                <BulkBtn label="标为已读" onClick={() => bulk((ids) => api.markRead(accountId, ids, true), undefined, false)}>
+                <BulkBtn label="标为已读" onClick={() => markReadIds([...checked], true)}>
                   <MailOpen />
                 </BulkBtn>
-                <BulkBtn label="归档" onClick={() => bulk((ids) => api.archiveEmails(accountId, ids), "已归档")}>
+                <BulkBtn label="归档" onClick={() => archiveIds([...checked])}>
                   <Archive />
                 </BulkBtn>
-                <BulkBtn
-                  label={currentKind === "trash" ? "彻底删除" : "删除"}
-                  onClick={() => {
-                    if (currentKind === "trash") {
-                      if (!window.confirm(`彻底删除选中的 ${checked.size} 封邮件？此操作无法撤销。`)) return;
-                      bulk((ids) => api.deleteEmails(accountId, ids), "已彻底删除");
-                    } else {
-                      bulk((ids) => api.trashEmails(accountId, ids), "已删除");
-                    }
-                  }}
-                >
+                <BulkBtn label={currentKind === "trash" ? "彻底删除" : "删除"} onClick={() => trashIds([...checked])}>
                   <Trash2 />
                 </BulkBtn>
                 <DropdownMenu>
@@ -689,21 +904,19 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">
-                    <DropdownMenuItem onSelect={() => bulk((ids) => api.markRead(accountId, ids, false), undefined, false)}>
+                    <DropdownMenuItem onSelect={() => markReadIds([...checked], false)}>
                       <MailIcon className="size-4" />
                       标为未读
                     </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => bulk((ids) => api.markFlagged(accountId, ids, true), undefined, false)}>
+                    <DropdownMenuItem onSelect={() => flagIds([...checked], true)}>
                       <Star className="size-4" />
                       加星标
                     </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => bulk((ids) => api.markFlagged(accountId, ids, false), undefined, false)}>
+                    <DropdownMenuItem onSelect={() => flagIds([...checked], false)}>
                       <Star className="size-4" />
                       取消星标
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() => bulk((ids) => api.markJunk(accountId, ids, currentKind !== "junk"), "已处理")}
-                    >
+                    <DropdownMenuItem onSelect={() => junkIds([...checked], currentKind !== "junk")}>
                       <ShieldAlert className="size-4" />
                       {currentKind === "junk" ? "不是垃圾邮件" : "标记为垃圾邮件"}
                     </DropdownMenuItem>
@@ -716,7 +929,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                         {mailboxes
                           .filter((m) => m.id !== mailboxId && m.kind !== "drafts" && m.kind !== "scheduled")
                           .map((m) => (
-                            <DropdownMenuItem key={m.id} onSelect={() => bulk((ids) => api.moveEmails(accountId, ids, m.id), "已移动")}>
+                            <DropdownMenuItem key={m.id} onSelect={() => moveIds([...checked], m.id)}>
                               <span className="truncate">{mailboxLabel(m)}</span>
                             </DropdownMenuItem>
                           ))}
@@ -742,7 +955,21 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 onSelect={selectEmail}
                 onLoadMore={() => loadPage(emails.length, loadToken.current)}
                 onToggleFlag={toggleFlag}
-                onDelete={deleteFromList}
+                onDelete={(email) => trashIds([email.id])}
+                rowMenu={(email, row) => (
+                  <EmailContextMenu
+                    accountId={accountId}
+                    email={email}
+                    checked={checked}
+                    mailboxes={mailboxes}
+                    mailboxId={mailboxId}
+                    currentKind={currentKind}
+                    knownLabels={labels}
+                    actions={menuActions}
+                  >
+                    {row}
+                  </EmailContextMenu>
+                )}
               />
             </div>
           </>
@@ -774,6 +1001,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 }}
                 revision={revision}
                 onOpenEmail={(id) => setEmailId(id)}
+                onMarkRead={(id) => markReadIds([id], true)}
               />
             ) : (
               <div className="text-muted-foreground flex h-full items-center justify-center text-sm">选择一封邮件</div>
@@ -862,6 +1090,17 @@ function forwardDraft(email: EmailDetail): ComposeDraft {
     attachments: (email.attachments ?? [])
       .filter((a) => !a.inline)
       .map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, size: a.size })),
+  };
+}
+
+/** 作为附件转发: 原邮件的 blob 就是完整的 RFC 5322 原文，直接引用，无需下载再上传。 */
+function forwardAsAttachmentDraft(email: EmailDetail): ComposeDraft {
+  return {
+    to: "",
+    cc: "",
+    subject: withPrefix("Fwd:", email.subject),
+    html: "",
+    attachments: [{ blobId: email.blobId, type: "message/rfc822", name: `${email.subject || "email"}.eml`, size: email.size }],
   };
 }
 

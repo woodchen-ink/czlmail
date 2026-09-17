@@ -30,6 +30,19 @@ export function Integration() {
           send("compose", { to: r.to, cc: r.cc, bcc: r.bcc, subject: r.subject, body: r.body });
         } else if (r.kind === "ics" && r.path) {
           setIcsSource(r.path);
+        } else if (r.kind === "email" || r.kind === "thread") {
+          // czlmail:// 链接。会话链接打开其中最新的一封; 本地没有缓存时提示而不是静默忽略。
+          let emailId = r.id;
+          if (r.kind === "thread") {
+            const list = (await api.threadEmails(r.accountId, r.id).catch(() => [])) ?? [];
+            emailId = list[list.length - 1]?.id ?? "";
+          }
+          if (!emailId) {
+            toast.error("本地找不到链接指向的邮件");
+            continue;
+          }
+          send("navigate", { module: "mail" });
+          send("openEmail", { accountId: r.accountId, emailId });
         }
       }
     } catch {

@@ -99,38 +99,45 @@ func (s *Syncer) Delete(ctx context.Context, accountID string, emailIDs []string
 	})
 }
 
-// applySet 执行 Email/set 并把逐条失败提升为错误。
+// applySet 执行 Email/set 并把逐条失败提升为错误, 成功后同步邮件。
+func (s *Syncer) applySet(ctx context.Context, accountID string, set *email.Set) error {
+	if _, err := s.setEmails(ctx, set); err != nil {
+		return err
+	}
+	// 服务端已接受变更并会推送 StateChange, 但推送到达有延迟。
+	// 主动同步一次邮件(不含 PIM), 让界面刷新时读到的就是结果。
+	return s.SyncMail(ctx, accountID)
+}
+
+// setEmails 执行 Email/set, 不同步。
 //
 // Email/set 的部分失败不体现在方法错误里: 整个调用返回成功, 失败的条目落在
 // notUpdated / notDestroyed 里。不检查这两个字段, 一次被服务端拒绝的删除
 // 在界面上会表现为"操作成功但邮件还在"。
-func (s *Syncer) applySet(ctx context.Context, accountID string, set *email.Set) error {
+func (s *Syncer) setEmails(ctx context.Context, set *email.Set) (*email.SetResponse, error) {
 	req := &jmap.Request{Context: ctx}
 	req.Invoke(set)
 
 	resp, err := s.do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	res, ok := resp.Responses[0].Args.(*email.SetResponse)
 	if !ok {
-		return &Error{Code: CodeUnhandled, Msg: "unexpected response to Email/set"}
+		return nil, &Error{Code: CodeUnhandled, Msg: "unexpected response to Email/set"}
 	}
 
 	if err := firstSetError(res.NotUpdated); err != nil {
-		return err
+		return res, err
 	}
 	if err := firstSetError(res.NotDestroyed); err != nil {
-		return err
+		return res, err
 	}
 	if err := firstSetError(res.NotCreated); err != nil {
-		return err
+		return res, err
 	}
-
-	// 服务端已接受变更并会推送 StateChange, 但推送到达有延迟。
-	// 主动同步一次, 让界面立刻看到结果。
-	return s.SyncAccount(ctx, accountID)
+	return res, nil
 }
 
 func firstSetError(m map[jmap.ID]*jmap.SetError) error {

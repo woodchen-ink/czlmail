@@ -37,6 +37,7 @@ func unregisterHandlers() error {
 		`Software\Classes\` + progMailto,
 		`Software\Classes\` + progICS,
 		`Software\Classes\` + progWebcal,
+		`Software\Classes\` + progLink,
 		`Software\Clients\Mail\CZL Mail`,
 	}
 	for _, k := range keys {

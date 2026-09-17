@@ -46,7 +46,7 @@ func (a *App) OpenDefaultAppsSettings() error {
 
 // OpenRequest 是一个外部打开请求。
 type OpenRequest struct {
-	// Kind: compose / ics
+	// Kind: compose / ics / email / thread
 	Kind    string `json:"kind"`
 	To      string `json:"to"`
 	CC      string `json:"cc"`
@@ -55,6 +55,9 @@ type OpenRequest struct {
 	Body    string `json:"body"`
 	// Path 是本地 .ics 文件, 或 webcal 订阅地址(已转换为 https)。
 	Path string `json:"path"`
+	// AccountID 与 ID 是 czlmail:// 链接指向的邮件或会话。
+	AccountID string `json:"accountId"`
+	ID        string `json:"id"`
 }
 
 type openQueue struct {
@@ -71,6 +74,10 @@ func (a *App) handleArgs(args []string) bool {
 		switch {
 		case strings.HasPrefix(lower, "mailto:"):
 			reqs = append(reqs, parseMailto(arg))
+		case strings.HasPrefix(lower, linkScheme+"://"):
+			if req, ok := parseMailLink(arg); ok {
+				reqs = append(reqs, req)
+			}
 		case strings.HasPrefix(lower, "webcal://"), strings.HasPrefix(lower, "webcals://"):
 			reqs = append(reqs, OpenRequest{Kind: "ics", Path: "https://" + arg[strings.Index(arg, "://")+3:]})
 		case strings.HasSuffix(lower, ".ics"):
@@ -99,6 +106,29 @@ func (a *App) TakeOpenRequests() []OpenRequest {
 	out := a.opens.pending
 	a.opens.pending = nil
 	return out
+}
+
+// linkScheme 是「复制邮件链接」生成的协议: czlmail://email/<账号>/<邮件id>、czlmail://thread/<账号>/<会话id>。
+// 链接只含服务器内部 id, 不含主题、地址等内容, 贴到别处不会泄露邮件信息。
+const linkScheme = "czlmail"
+
+// parseMailLink 解析 czlmail:// 链接。
+func parseMailLink(raw string) (OpenRequest, bool) {
+	rest := raw[len(linkScheme+"://"):]
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	if len(parts) != 3 {
+		return OpenRequest{}, false
+	}
+	kind := strings.ToLower(parts[0])
+	if kind != "email" && kind != "thread" {
+		return OpenRequest{}, false
+	}
+	acc, err1 := url.PathUnescape(parts[1])
+	id, err2 := url.PathUnescape(parts[2])
+	if err1 != nil || err2 != nil || acc == "" || id == "" {
+		return OpenRequest{}, false
+	}
+	return OpenRequest{Kind: kind, AccountID: acc, ID: id}, true
 }
 
 // parseMailto 解析 RFC 6068 mailto 链接。

@@ -61,6 +61,33 @@ func (a *App) MoveEmails(accountID string, emailIDs []string, targetMailboxID st
 	return s.Move(a.ctx, accountID, emailIDs, targetMailboxID)
 }
 
+// SetPinned 置顶或取消置顶。置顶即 $pinned 关键字, 与 Bulwark 共用。
+func (a *App) SetPinned(accountID string, emailIDs []string, pinned bool) error {
+	s, err := a.currentSyncer()
+	if err != nil {
+		return err
+	}
+	return s.SetKeyword(a.ctx, accountID, emailIDs, "$pinned", pinned)
+}
+
+// MarkMailboxRead 把整个文件夹标为已读(含本地未缓存的邮件), 返回处理的封数。
+func (a *App) MarkMailboxRead(accountID, mailboxID string) (int, error) {
+	s, err := a.currentSyncer()
+	if err != nil {
+		return 0, err
+	}
+	return s.MarkMailboxRead(a.ctx, accountID, mailboxID)
+}
+
+// EmptyMailbox 彻底删除文件夹里的全部邮件, 不可撤销; 界面负责确认。返回删除的封数。
+func (a *App) EmptyMailbox(accountID, mailboxID string) (int, error) {
+	s, err := a.currentSyncer()
+	if err != nil {
+		return 0, err
+	}
+	return s.EmptyMailbox(a.ctx, accountID, mailboxID)
+}
+
 // TrashEmails 把邮件移入回收站。
 //
 // 与 DeleteEmails 分开是刻意的: 界面上的"删除"永远走这里, 只有在回收站里

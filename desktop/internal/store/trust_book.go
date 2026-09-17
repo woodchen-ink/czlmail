@@ -114,14 +114,15 @@ func (s *Store) RecentEmailsWith(ctx context.Context, address string, limit int)
 		var r EmailWithAccount
 		var fromJSON string
 		var receivedAt int64
-		var hasAttachment, unread, flagged, draft int
+		var hasAttachment, unread, flagged, draft, pinned int
 		if err := rows.Scan(&r.AccountID, &r.ID, &r.ThreadID, &r.Subject, &fromJSON, &receivedAt,
-			&r.Preview, &hasAttachment, &r.Size, &unread, &flagged, &draft); err != nil {
+			&r.Preview, &hasAttachment, &r.Size, &unread, &flagged, &draft, &pinned); err != nil {
 			return nil, wrap(CodeQuery, "scan recent email", err)
 		}
 		_ = json.Unmarshal([]byte(fromJSON), &r.From)
 		r.ReceivedAt = time.Unix(receivedAt, 0)
 		r.HasAttachment, r.IsUnread, r.IsFlagged, r.IsDraft = hasAttachment != 0, unread != 0, flagged != 0, draft != 0
+		r.IsPinned = pinned != 0
 		out = append(out, r)
 	}
 	return out, wrap(CodeQuery, "iterate recent emails", rows.Err())

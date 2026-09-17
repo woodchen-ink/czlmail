@@ -6,7 +6,7 @@ import { ChevronDown, Plus, UserRound } from "lucide-react";
 
 import { FolderDialog, type FolderAction } from "@/components/folder-dialog";
 
-import { MailboxTree } from "@/components/mailbox-tree";
+import { MailboxTree, type FolderMenuAction } from "@/components/mailbox-tree";
 import { cn } from "@/lib/utils";
 import { Events, api, errorMessage, onEvent, type Account, type Mailbox, type PullStatus } from "@/lib/api";
 
@@ -18,6 +18,8 @@ interface Props {
   onSelect: (accountId: string, mailboxId: string) => void;
   /** 文件夹结构变化后刷新该账号的文件夹列表。 */
   onMailboxesChanged: (accountId: string) => void;
+  /** 右键菜单里涉及邮件列表的操作(标记已读、导入、清空、刷新), 由外壳处理。 */
+  onFolderAction: (accountId: string, action: "markRead" | "import" | "empty" | "refresh", mailbox: Mailbox) => void;
 }
 
 const COLLAPSE_KEY = "czlmail.sidebar.collapsed";
@@ -28,12 +30,32 @@ const COLLAPSE_KEY = "czlmail.sidebar.collapsed";
  * 不做账号切换器：共享邮箱是日常要处理的收件箱，藏在下拉菜单后面意味着
  * 用户看不到那边有没有未读，只能挨个切过去看。
  */
-export function MailSidebar({ accounts, mailboxesByAccount, accountId, mailboxId, onSelect, onMailboxesChanged }: Props) {
+export function MailSidebar({
+  accounts,
+  mailboxesByAccount,
+  accountId,
+  mailboxId,
+  onSelect,
+  onMailboxesChanged,
+  onFolderAction,
+}: Props) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [folderAction, setFolderAction] = useState<FolderAction | null>(null);
 
-  const manage = (accId: string) => (kind: "create" | "rename" | "move" | "delete", mailbox: Mailbox) =>
-    setFolderAction(kind === "create" ? { kind, accountId: accId, parent: mailbox } : { kind, accountId: accId, mailbox });
+  const act = (accId: string) => (action: FolderMenuAction, mailbox: Mailbox, label: string) => {
+    switch (action) {
+      case "create":
+        return setFolderAction({ kind: "create", accountId: accId, parent: mailbox });
+      case "rename":
+      case "move":
+      case "delete":
+        return setFolderAction({ kind: action, accountId: accId, mailbox });
+      case "pull":
+        return pull(accId, mailbox.id, label);
+      default:
+        return onFolderAction(accId, action, mailbox);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -97,8 +119,7 @@ export function MailSidebar({ accounts, mailboxesByAccount, accountId, mailboxId
               mailboxes={mailboxesByAccount[acc.id] ?? []}
               selectedId={acc.id === accountId ? mailboxId : ""}
               onSelect={(id) => onSelect(acc.id, id)}
-              onPull={(id, label) => pull(acc.id, id, label)}
-              onManage={manage(acc.id)}
+              onAction={act(acc.id)}
             />
           ))}
         </Section>
@@ -128,8 +149,7 @@ export function MailSidebar({ accounts, mailboxesByAccount, accountId, mailboxId
                     mailboxes={mailboxesByAccount[acc.id] ?? []}
                     selectedId={acc.id === accountId ? mailboxId : ""}
                     onSelect={(id) => onSelect(acc.id, id)}
-                    onPull={(id, label) => pull(acc.id, id, label)}
-                    onManage={manage(acc.id)}
+                    onAction={act(acc.id)}
                     indent={1}
                   />
                 )}

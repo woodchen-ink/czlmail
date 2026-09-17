@@ -49,6 +49,8 @@ interface Props {
   revision: number;
   /** 打开同一会话里的另一封邮件。 */
   onOpenEmail?: (id: string) => void;
+  /** 自动标记已读。由外壳乐观更新列表后在后台提交, 不阻塞正文显示。 */
+  onMarkRead: (id: string) => void;
 }
 
 export function EmailView({
@@ -64,6 +66,7 @@ export function EmailView({
   onLoaded,
   revision,
   onOpenEmail,
+  onMarkRead,
 }: Props) {
   const [email, setEmail] = useState<EmailDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -229,12 +232,11 @@ export function EmailView({
             (await api.getSettings().catch(() => null))?.markRead ??
             "immediate";
           if (mode === "immediate") {
-            await api.markRead(accountId, [emailId], true);
+            onMarkRead(emailId);
           } else if (mode === "delay") {
             // 停留 3 秒才算读过; 快速翻过的邮件保持未读。
             markTimer = setTimeout(() => {
-              if (!cancelled)
-                api.markRead(accountId, [emailId], true).catch(() => {});
+              if (!cancelled) onMarkRead(emailId);
             }, 3000);
           }
         }

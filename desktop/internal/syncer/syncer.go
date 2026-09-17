@@ -135,6 +135,24 @@ func (s *Syncer) SyncAccount(ctx context.Context, accountID string) error {
 	return err
 }
 
+// SyncMail 只把一个账号的邮箱与邮件拉到最新, 不碰日历/通讯录/文件。
+//
+// 写操作之后用它而不是 SyncAccount: 后者顺带同步 PIM, 每次删除、移动都要多等几个来回。
+func (s *Syncer) SyncMail(ctx context.Context, accountID string) error {
+	err := func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if err := s.syncMailboxes(ctx, accountID); err != nil {
+			return err
+		}
+		return s.syncEmails(ctx, accountID)
+	}()
+	if err == nil {
+		s.notifyChanged(accountID)
+	}
+	return err
+}
+
 // notifyPIM 通知 PIM 变化, typeName 为空表示全部类型。
 func (s *Syncer) notifyPIM(accountID, typeName string) {
 	if s.OnPIMChanged != nil {

@@ -9,31 +9,46 @@ import {
   Folder,
   FolderInput,
   FolderPlus,
+  FolderX,
   Inbox,
+  MailOpen,
   Pencil,
+  RefreshCw,
   Send,
   ShieldAlert,
   Trash2,
+  Upload,
 } from "lucide-react";
 
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import type { Mailbox } from "@/lib/api";
 
+/** 文件夹右键菜单的操作。 */
+export type FolderMenuAction =
+  | "markRead"
+  | "create"
+  | "rename"
+  | "move"
+  | "import"
+  | "pull"
+  | "empty"
+  | "delete"
+  | "refresh";
+
 interface Props {
   mailboxes: Mailbox[];
   selectedId: string;
   onSelect: (id: string) => void;
-  /** 右键「从服务器拉取全部邮件」。label 是界面上显示的文件夹名。 */
-  onPull?: (id: string, label: string) => void;
-  /** 右键文件夹管理。未提供时不显示这些菜单项。 */
-  onManage?: (action: "create" | "rename" | "move" | "delete", mailbox: Mailbox) => void;
+  /** 右键菜单操作。label 是界面上显示的文件夹名。未提供时没有右键菜单。 */
+  onAction?: (action: FolderMenuAction, mailbox: Mailbox, label: string) => void;
   /** 整棵树的额外缩进，供共享账号的文件夹挂在账号名下方。 */
   indent?: number;
 }
@@ -59,6 +74,11 @@ export function mailboxLabel(m: Pick<Mailbox, "kind" | "name">): string {
   return KIND_META[m.kind]?.label ?? m.name;
 }
 
+/** 文件夹类别对应的图标, 自建文件夹为普通文件夹图标。 */
+export function mailboxIcon(kind: string): typeof Inbox {
+  return KIND_META[kind]?.icon ?? Folder;
+}
+
 const KIND_ORDER = ["inbox", "drafts", "scheduled", "sent", "archive", "junk", "trash"];
 
 interface Node extends Mailbox {
@@ -66,7 +86,12 @@ interface Node extends Mailbox {
   depth: number;
 }
 
-export function MailboxTree({ mailboxes, selectedId, onSelect, onPull, onManage, indent = 0 }: Props) {
+/** 按侧栏的顺序与层级拍平文件夹, 供「移动到」之类的列表使用。 */
+export function mailboxTreeOrder(mailboxes: Mailbox[]): (Mailbox & { depth: number })[] {
+  return buildTree(mailboxes);
+}
+
+export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent = 0 }: Props) {
   const nodes = useMemo(() => buildTree(mailboxes), [mailboxes]);
 
   return (
@@ -77,8 +102,7 @@ export function MailboxTree({ mailboxes, selectedId, onSelect, onPull, onManage,
           node={node}
           selected={node.id === selectedId}
           onSelect={onSelect}
-          onPull={onPull}
-          onManage={onManage}
+          onAction={onAction}
           indent={indent}
         />
       ))}
@@ -90,15 +114,13 @@ function MailboxRow({
   node,
   selected,
   onSelect,
-  onPull,
-  onManage,
+  onAction,
   indent,
 }: {
   node: Node;
   selected: boolean;
   onSelect: (id: string) => void;
-  onPull?: (id: string, label: string) => void;
-  onManage?: Props["onManage"];
+  onAction?: Props["onAction"];
   indent: number;
 }) {
   const meta = KIND_META[node.kind];
@@ -129,46 +151,64 @@ function MailboxRow({
     </button>
   );
 
-  if (!onPull && !onManage) return row;
+  if (!onAction) return row;
   // 有 role 的系统文件夹不能改名、移动、删除。
   const custom = !node.role;
+  const rights = node.myRights ?? {};
+  const act = (action: FolderMenuAction) => () => onAction(action, node, label);
 
+  // 条目与顺序同 Bulwark, 另加本程序的「移动到」「从服务器拉取全部邮件」。
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
-      <ContextMenuContent className="w-52">
-        {onPull && (
-          <ContextMenuItem onSelect={() => onPull(node.id, label)}>
-            <CloudDownload />
-            从服务器拉取全部邮件
-          </ContextMenuItem>
-        )}
-        {onManage && (
-          <>
-            {onPull && <ContextMenuSeparator />}
-            <ContextMenuItem onSelect={() => onManage("create", node)}>
-              <FolderPlus />
-              新建子文件夹
-            </ContextMenuItem>
-            {custom && (
-              <>
-                <ContextMenuItem onSelect={() => onManage("rename", node)}>
-                  <Pencil />
-                  重命名
-                </ContextMenuItem>
-                <ContextMenuItem onSelect={() => onManage("move", node)}>
-                  <FolderInput />
-                  移动到…
-                </ContextMenuItem>
-                <ContextMenuSeparator />
-                <ContextMenuItem variant="destructive" onSelect={() => onManage("delete", node)}>
-                  <Trash2 />
-                  删除文件夹
-                </ContextMenuItem>
-              </>
-            )}
-          </>
-        )}
+      <ContextMenuContent className="w-56">
+        <ContextMenuLabel className="truncate" title={node.name}>
+          {label}
+        </ContextMenuLabel>
+        <ContextMenuItem onSelect={act("markRead")} disabled={node.unreadEmails === 0 || rights.maySetSeen === false}>
+          <MailOpen />
+          将文件夹标记为已读
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={act("create")} disabled={rights.mayCreateChild === false}>
+          <FolderPlus />
+          新建子文件夹…
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={act("rename")} disabled={!custom || rights.mayRename === false}>
+          <Pencil />
+          重命名…
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={act("move")} disabled={!custom || rights.mayRename === false}>
+          <FolderInput />
+          移动到…
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={act("import")} disabled={rights.mayAddItems === false}>
+          <Upload />
+          导入 .eml 或 .zip…
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={act("pull")}>
+          <CloudDownload />
+          从服务器拉取全部邮件
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          variant="destructive"
+          onSelect={act("empty")}
+          disabled={node.totalEmails === 0 || rights.mayRemoveItems === false}
+        >
+          <FolderX />
+          清空文件夹
+        </ContextMenuItem>
+        <ContextMenuItem variant="destructive" onSelect={act("delete")} disabled={!custom || rights.mayDelete === false}>
+          <Trash2 />
+          删除文件夹
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={act("refresh")}>
+          <RefreshCw />
+          刷新
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   );

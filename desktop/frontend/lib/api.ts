@@ -141,6 +141,9 @@ export const api = {
   moveEmails: guard(App.MoveEmails),
   trashEmails: guard(App.TrashEmails),
   deleteEmails: guard(App.DeleteEmails),
+  setPinned: guard(App.SetPinned),
+  markMailboxRead: guard(App.MarkMailboxRead),
+  emptyMailbox: guard(App.EmptyMailbox),
 
   listIdentities: guard(App.ListIdentities),
   sendEmail: guard(App.SendEmail),

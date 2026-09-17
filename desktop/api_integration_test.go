@@ -12,3 +12,19 @@ func TestParseMailto(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+func TestParseMailLink(t *testing.T) {
+	r, ok := parseMailLink("czlmail://email/c/Mabc123")
+	if !ok || r.Kind != "email" || r.AccountID != "c" || r.ID != "Mabc123" {
+		t.Fatalf("%+v %v", r, ok)
+	}
+	r, ok = parseMailLink("czlmail://thread/a%2Fb/T1/")
+	if !ok || r.Kind != "thread" || r.AccountID != "a/b" || r.ID != "T1" {
+		t.Fatalf("%+v %v", r, ok)
+	}
+	for _, bad := range []string{"czlmail://email/c", "czlmail://file/c/x", "czlmail://email//x", "czlmail://email/c/x/y"} {
+		if _, ok := parseMailLink(bad); ok {
+			t.Fatalf("accepted %q", bad)
+		}
+	}
+}

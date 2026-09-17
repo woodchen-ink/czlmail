@@ -21,6 +21,8 @@ type EmailSummary struct {
 	IsUnread      bool      `json:"isUnread"`
 	IsFlagged     bool      `json:"isFlagged"`
 	IsDraft       bool      `json:"isDraft"`
+	// IsPinned 是 $pinned 关键字(与 Bulwark 相同), 置顶的邮件在列表里排在最前。
+	IsPinned bool `json:"isPinned"`
 	// ThreadCount 是同一会话的邮件总数(跨文件夹); 只有列表查询会填, 其它查询为 0。
 	ThreadCount int `json:"threadCount"`
 }
@@ -68,12 +70,33 @@ const keywordFlags = `
 	    EXISTS (SELECT 1 FROM email_keywords k
 	            WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$flagged') AS is_flagged,
 	    EXISTS (SELECT 1 FROM email_keywords k
-	            WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$draft')   AS is_draft`
+	            WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$draft')   AS is_draft,
+	    EXISTS (SELECT 1 FROM email_keywords k
+	            WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$pinned')  AS is_pinned`
 
-// EmailsByMailbox 按收件时间倒序分页取某邮箱的邮件。
+// EmailsByMailbox 分页取某邮箱的邮件: 置顶的在最前, 其余按收件时间倒序。
+//
+// 不在一条 SQL 里 ORDER BY is_pinned: 那样要对整个邮箱逐封算关键字再排序, 用不上
+// idx_emails_received。置顶的邮件很少, 单独查出来拼在前面, offset 仍按合并后的顺序计。
 func (s *Store) EmailsByMailbox(
 	ctx context.Context, accountID, mailboxID string, limit, offset int,
 ) ([]EmailSummary, error) {
+	pinned, err := s.pinnedInMailbox(ctx, accountID, mailboxID)
+	if err != nil {
+		return nil, err
+	}
+	var out []EmailSummary
+	if offset < len(pinned) {
+		out = pinned[offset:min(len(pinned), offset+limit)]
+		limit -= len(out)
+		offset = 0
+	} else {
+		offset -= len(pinned)
+	}
+	if limit <= 0 {
+		return out, nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
 		       e.preview, e.has_attachment, e.size,`+keywordFlags+threadCountColumn+`
@@ -81,6 +104,8 @@ func (s *Store) EmailsByMailbox(
 		JOIN email_mailboxes m
 		  ON m.account_id = e.account_id AND m.email_id = e.id
 		WHERE e.account_id = ? AND m.mailbox_id = ?
+		  AND NOT EXISTS (SELECT 1 FROM email_keywords p
+		                  WHERE p.account_id = e.account_id AND p.email_id = e.id AND p.keyword = '$pinned')
 		ORDER BY e.received_at DESC
 		LIMIT ? OFFSET ?`,
 		accountID, mailboxID, limit, offset)
@@ -89,6 +114,30 @@ func (s *Store) EmailsByMailbox(
 	}
 	defer rows.Close()
 
+	rest, err := scanSummaries(rows)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, rest...), nil
+}
+
+// pinnedInMailbox 列出邮箱里置顶的邮件, 按收件时间倒序。
+func (s *Store) pinnedInMailbox(ctx context.Context, accountID, mailboxID string) ([]EmailSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
+		       e.preview, e.has_attachment, e.size,`+keywordFlags+threadCountColumn+`
+		FROM email_keywords p
+		JOIN email_mailboxes m
+		  ON m.account_id = p.account_id AND m.email_id = p.email_id
+		JOIN emails e
+		  ON e.account_id = p.account_id AND e.id = p.email_id
+		WHERE p.account_id = ? AND p.keyword = '$pinned' AND m.mailbox_id = ?
+		ORDER BY e.received_at DESC`,
+		accountID, mailboxID)
+	if err != nil {
+		return nil, wrap(CodeQuery, "query pinned emails", err)
+	}
+	defer rows.Close()
 	return scanSummaries(rows)
 }
 
@@ -99,17 +148,17 @@ const threadCountColumn = `,
 func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 	var out []EmailSummary
 	cols, _ := rows.Columns()
-	withThread := len(cols) > 11
+	withThread := len(cols) > 12
 	for rows.Next() {
 		var e EmailSummary
 		var fromJSON string
 		var receivedAt int64
-		var hasAttachment, unread, flagged, draft int
+		var hasAttachment, unread, flagged, draft, pinned int
 
 		dest := []any{
 			&e.ID, &e.ThreadID, &e.Subject, &fromJSON, &receivedAt,
 			&e.Preview, &hasAttachment, &e.Size,
-			&unread, &flagged, &draft,
+			&unread, &flagged, &draft, &pinned,
 		}
 		if withThread {
 			dest = append(dest, &e.ThreadCount)
@@ -126,6 +175,7 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 		e.IsUnread = unread != 0
 		e.IsFlagged = flagged != 0
 		e.IsDraft = draft != 0
+		e.IsPinned = pinned != 0
 
 		out = append(out, e)
 	}
@@ -155,7 +205,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	var d EmailDetail
 	var fromJSON, toJSON, ccJSON, bccJSON, replyToJSON string
 	var receivedAt int64
-	var hasAttachment, unread, flagged, draft int
+	var hasAttachment, unread, flagged, draft, pinned int
 	var bodyText, bodyHTML sql.NullString
 	var bodyFetchedAt sql.NullInt64
 	var attachmentsJSON string
@@ -175,7 +225,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	).Scan(
 		&d.ID, &d.ThreadID, &d.Subject, &fromJSON, &receivedAt,
 		&d.Preview, &hasAttachment, &d.Size,
-		&unread, &flagged, &draft,
+		&unread, &flagged, &draft, &pinned,
 		&toJSON, &ccJSON, &bccJSON, &replyToJSON,
 		&d.BlobID, &d.MessageID, &d.InReplyTo, &attachmentsJSON,
 		&bodyText, &bodyHTML, &bodyFetchedAt, &unsubscribe, &d.MDNSent,
@@ -204,6 +254,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	d.IsUnread = unread != 0
 	d.IsFlagged = flagged != 0
 	d.IsDraft = draft != 0
+	d.IsPinned = pinned != 0
 	d.BodyText = bodyText.String
 	d.BodyHTML = bodyHTML.String
 	d.BodyFetched = bodyFetchedAt.Valid
