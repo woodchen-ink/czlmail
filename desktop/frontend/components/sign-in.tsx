@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ExternalLink, Loader2, LogIn, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { api, errorMessage } from "@/lib/api";
+import { api, errorMessage, type SignInHint } from "@/lib/api";
 
 interface Props {
   onSignedIn: () => void;
@@ -26,6 +26,44 @@ export function SignIn({ onSignedIn }: Props) {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // 域名下 /.well-known/czlmail.json 声明的单点登录方式; 有它时直接给出「使用 XX 登录」。
+  const [hint, setHint] = useState<SignInHint | null>(null);
+  const [hintBusy, setHintBusy] = useState(false);
+
+  useEffect(() => {
+    const host = server.trim();
+    setHint(null);
+    if (!host.includes(".")) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const h = await api.discoverSignIn(host);
+        if (!cancelled) setHint(h ?? null);
+      } catch {
+        // 没有自动配置时照常手动登录。
+      }
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [server]);
+
+  async function signInWithHint() {
+    if (!hint || busy) return;
+    setHintBusy(true);
+    setBusy(true);
+    setError("");
+    try {
+      await api.signIn(server.trim(), hint.issuer, hint.clientId);
+      onSignedIn();
+    } catch (err) {
+      setError(signInError(errorMessage(err)));
+    } finally {
+      setBusy(false);
+      setHintBusy(false);
+    }
+  }
 
   const canSubmit =
     mode === "password"
@@ -88,6 +126,29 @@ export function SignIn({ onSignedIn }: Props) {
               disabled={busy}
             />
           </Field>
+
+          {hint && (
+            <div className="flex flex-col gap-2">
+              {hintBusy ? (
+                <div className="flex flex-col gap-2">
+                  <div className="border-border bg-secondary flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm">
+                    <Loader2 className="size-4 shrink-0 animate-spin" />
+                    <span className="flex-1">请在浏览器中完成 {hint.name} 登录</span>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={cancel}>
+                    <X className="size-4" />
+                    取消
+                  </Button>
+                </div>
+              ) : (
+                <Button type="button" onClick={signInWithHint} disabled={busy}>
+                  <ExternalLink className="size-4" />
+                  使用 {hint.name} 登录
+                </Button>
+              )}
+              <p className="text-muted-foreground text-center text-xs">或者使用应用专用密码登录</p>
+            </div>
+          )}
 
           {mode === "password" && (
             <>
