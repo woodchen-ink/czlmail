@@ -21,6 +21,10 @@ var assets embed.FS
 
 func main() {
 	// `czlmail mcp` 作为 MCP stdio 桥运行, 不启动窗口。见 mcp_bridge.go。
+	// `czlmail purge` 删除本机全部数据, 供「删除所有数据」与卸载程序调用。见 purge.go。
+	if len(os.Args) > 1 && os.Args[1] == purgeArg {
+		os.Exit(runPurge(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "mcp" {
 		os.Exit(runMCPBridge())
 	}

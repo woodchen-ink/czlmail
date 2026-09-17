@@ -96,6 +96,46 @@ claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp 
 
 登录时填写服务器地址、邮箱，以及在 Stalwart 里生成的**应用专用密码**。
 
+## 单点登录（SSO）
+
+Stalwart 可以把用户认证交给外部身份提供商（OIDC 目录，例如 Authentik、Keycloak、自建的 OIDC 服务）。
+这种部署下 Stalwart 自带的授权页只认本地密码，不会跳转到身份提供商，所以客户端需要**直接向身份提供商授权**，
+再用拿到的令牌访问邮件服务器 —— 与 Bulwark 的做法相同。
+
+**管理员需要做两件事：**
+
+1. **在身份提供商上创建公开客户端**：无客户端密钥（token endpoint auth method 为 `none`）、启用 PKCE，
+   回调地址填写：
+
+   ```
+   http://127.0.0.1:47821/callback
+   http://127.0.0.1:47822/callback
+   http://127.0.0.1:47823/callback
+   http://127.0.0.1:47824/callback
+   ```
+
+   权限范围需要 `openid email profile`；Stalwart 通过 `email` 声明找到对应账号。
+
+2. **发布登录自动配置**：在邮件服务器域名或其上级域名的网站上放置 `/.well-known/czlmail.json`
+   （例如服务器是 `mail.example.com`，放在 `https://mail.example.com/` 或 `https://example.com/` 下均可，支持 HTTPS 跳转）：
+
+   ```json
+   {
+     "version": 1,
+     "oauth": {
+       "name": "Example SSO",
+       "issuer": "https://sso.example.com",
+       "clientId": "公开客户端 ID"
+     }
+   }
+   ```
+
+完成后，用户在登录页填写服务器地址，客户端会自动读取这个文件并显示 **「使用 Example SSO 登录」**，
+点击后在浏览器中用单点登录账号登录即可，无需填写任何其它信息。
+没有发布配置文件时，也可以在「浏览器授权登录 → 通过单点登录」里手动填写身份提供商地址和客户端 ID。
+
+配置文件只从 HTTPS 读取，由域名证书保证来源；客户端 ID 不是秘密，可以公开。
+
 ## 从源码构建
 
 需要 Go 1.26+、Node 22+、pnpm 与 [Wails v2 CLI](https://wails.io/docs/gettingstarted/installation)（v2.12）。
@@ -110,6 +150,12 @@ go test ./...  # 单元测试
 Windows 上可以用 `build.bat v0.1.0` 一次生成程序与 NSIS 安装包。
 
 集成测试连接真实服务器，凭据只从环境变量读取（`CZLMAIL_TEST_SESSION`、`CZLMAIL_TEST_USER`、`CZLMAIL_TEST_PASS`），未提供时自动跳过。
+
+## 卸载与删除数据
+
+- **设置 → 账户 → 删除所有数据**：删除本机的邮件缓存、设置、日志、已下载的附件，以及系统钥匙串里的登录凭据与 AI 密钥，
+  取消开机自启与默认应用登记，然后退出。服务器上的邮件、日历、联系人不受影响。
+- **卸载时**可以勾选「同时删除所有数据」，效果相同；默认不勾选，重新安装后无需重新登录与同步。
 
 ## 安全
 

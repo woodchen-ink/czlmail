@@ -190,6 +190,7 @@ export const api = {
   searchDirectory: guard(App.SearchDirectory),
   attachPaths: guard(App.AttachPaths),
   discoverSignIn: guard(App.DiscoverSignIn),
+  deleteAllData: guard(App.DeleteAllData),
   recentEmailsWith: guard(App.RecentEmailsWith),
   upcomingEventsWith: guard(App.UpcomingEventsWith),
   importContactsFile: guard(App.ImportContactsFile),

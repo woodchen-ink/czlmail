@@ -105,6 +105,47 @@ Download the latest release from [Releases](https://github.com/woodchen-ink/czlm
 
 Sign in with your server address, email and an **app password** generated in Stalwart.
 
+## Single sign-on (SSO)
+
+Stalwart can delegate authentication to an external identity provider (an OIDC directory such as Authentik,
+Keycloak or your own OIDC service). In that setup Stalwart's own authorization page only accepts local
+passwords and never redirects to the identity provider, so the client **authorizes directly with the identity
+provider** and uses that token against the mail server — the same approach Bulwark takes.
+
+**An administrator needs to do two things:**
+
+1. **Create a public client on the identity provider**: no client secret (token endpoint auth method `none`),
+   PKCE enabled, with these redirect URIs:
+
+   ```
+   http://127.0.0.1:47821/callback
+   http://127.0.0.1:47822/callback
+   http://127.0.0.1:47823/callback
+   http://127.0.0.1:47824/callback
+   ```
+
+   Request the `openid email profile` scopes; Stalwart maps the `email` claim to the account.
+
+2. **Publish the sign-in auto-configuration** at `/.well-known/czlmail.json` on the mail server's host or a parent
+   domain (for `mail.example.com`, either `https://mail.example.com/` or `https://example.com/`; HTTPS redirects are followed):
+
+   ```json
+   {
+     "version": 1,
+     "oauth": {
+       "name": "Example SSO",
+       "issuer": "https://sso.example.com",
+       "clientId": "<public client id>"
+     }
+   }
+   ```
+
+Users then just enter the server address; the client reads this file and shows **"Sign in with Example SSO"**.
+Without the file, the identity provider address and client ID can be entered manually under
+"browser sign-in → single sign-on".
+
+The file is only fetched over HTTPS, so its origin is guaranteed by the domain's certificate. The client ID is not a secret.
+
 ## Build from source
 
 Requires Go 1.26+, Node 22+, pnpm and the [Wails v2 CLI](https://wails.io/docs/gettingstarted/installation) (v2.12).
@@ -120,6 +161,14 @@ On Windows, `build.bat v0.1.0` builds the executable and the NSIS installer.
 
 Integration tests run against a live server and are skipped unless credentials come from the environment
 (`CZLMAIL_TEST_SESSION`, `CZLMAIL_TEST_USER`, `CZLMAIL_TEST_PASS`).
+
+## Uninstall and delete data
+
+- **Settings → Account → Delete all data** removes the local mail cache, settings, logs, downloaded attachments,
+  and the credentials and AI key in the OS keychain, removes autostart and default-app registrations, then quits.
+  Mail, calendars and contacts on the server are not affected.
+- **When uninstalling**, tick "also delete all data" for the same effect. It is unticked by default, so a reinstall
+  keeps you signed in with your cache intact.
 
 ## Security
 

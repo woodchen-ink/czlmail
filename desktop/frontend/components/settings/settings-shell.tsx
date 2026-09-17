@@ -518,6 +518,9 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
   const [status, setStatus] = useState<SessionStatus | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [confirm, setConfirm] = useState(false);
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purgeText, setPurgeText] = useState("");
+  const [purging, setPurging] = useState(false);
 
   useEffect(() => {
     if (!active) return;
@@ -551,6 +554,66 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
           </Card>
         </>
       )}
+
+      <SectionTitle title="删除本机数据" small />
+      <Card className="border-destructive/40">
+        <Row
+          title="删除所有数据并退出"
+          desc="删除本机的邮件缓存、设置、日志、已下载的附件，以及系统钥匙串里的登录凭据与 AI 密钥，并取消开机自启和默认应用登记。服务器上的邮件、日历、联系人不受影响。"
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={() => {
+              setPurgeText("");
+              setPurgeOpen(true);
+            }}
+          >
+            <Trash2 className="size-4" />
+            删除所有数据
+          </Button>
+        </Row>
+      </Card>
+
+      <Dialog open={purgeOpen} onOpenChange={(o) => !purging && setPurgeOpen(o)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除本机所有数据</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 text-sm">
+            <p className="text-muted-foreground leading-relaxed">
+              CZL Mail 会退出，并删除本机保存的全部内容：邮件缓存、设置、日志、已下载的附件与文件、登录凭据和 AI 密钥。
+              下次打开需要重新登录并重新同步。服务器上的数据不会被删除。
+            </p>
+            <p>
+              请输入 <span className="font-medium">删除</span> 确认：
+            </p>
+            <Input autoFocus value={purgeText} onChange={(e) => setPurgeText(e.target.value)} disabled={purging} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPurgeOpen(false)} disabled={purging}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={purgeText.trim() !== "删除" || purging}
+              onClick={async () => {
+                setPurging(true);
+                try {
+                  await api.deleteAllData();
+                } catch (err) {
+                  toast.error(errorMessage(err));
+                  setPurging(false);
+                }
+              }}
+            >
+              {purging && <Loader2 className="size-4 animate-spin" />}
+              删除并退出
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
         <AlertDialogContent>

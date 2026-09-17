@@ -65,6 +65,9 @@ ManifestDPIAware true
 !insertmacro MUI_PAGE_INSTFILES # Installing page.
 !insertmacro MUI_PAGE_FINISH # Finished installation page.
 
+# Uninstall options: an unchecked "also delete all data" component.
+!define MUI_COMPONENTSPAGE_NODESC
+!insertmacro MUI_UNPAGE_COMPONENTS
 !insertmacro MUI_UNPAGE_INSTFILES # Uinstalling page
 
 !insertmacro MUI_LANGUAGE "English" # Set the Language of the installer
@@ -115,7 +118,15 @@ Section
     !insertmacro wails.writeUninstaller
 SectionEnd
 
-Section "uninstall"
+# Optional, unchecked by default. Runs before the main section so the exe still exists:
+# `czlmail.exe purge` deletes the cache, settings, logs, downloaded attachments, keychain
+# credentials, autostart and protocol registrations. Server-side data is untouched.
+Section /o "un.同时删除所有数据（邮件缓存、设置、登录凭据）" SecPurge
+    !insertmacro czl.stopRunning
+    ExecWait '"$INSTDIR\${PRODUCT_EXECUTABLE}" purge'
+SectionEnd
+
+Section "-un.main"
     !insertmacro wails.setShellContext
 
     !insertmacro czl.stopRunning
