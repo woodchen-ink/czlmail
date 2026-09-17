@@ -288,6 +288,7 @@ func (a *App) connect(cfg Config, httpClient *http.Client) error {
 	}
 
 	go a.runReminders(syncCtx)
+	go a.runReconcile(syncCtx, s, st)
 	go func() {
 		if err := s.Run(syncCtx); err != nil {
 			a.log.Error("sync loop exited", "err", err)
@@ -362,4 +363,38 @@ func (a *App) persistAccounts(ctx context.Context, client *jmap.Client, st *stor
 // 明确要求重新登录, 好过拿一个拼错的地址反复重试。
 func (c Config) cachedMetadata() *auth.Metadata {
 	return &auth.Metadata{Issuer: c.Issuer}
+}
+
+// reconcileInterval 两次邮件对账的最小间隔。增量同步已经处理删除, 对账只是兜底, 一天一次足够。
+const reconcileInterval = 24 * time.Hour
+
+// runReconcile 启动一分钟后按账号对账, 清掉本地残留的、服务器上早已删除的邮件。
+func (a *App) runReconcile(ctx context.Context, s *syncer.Syncer, st *store.Store) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(time.Minute):
+	}
+	accounts, err := st.Accounts(ctx)
+	if err != nil {
+		return
+	}
+	for _, acc := range accounts {
+		key := "reconciledAt:" + acc.ID
+		if v, _ := st.StringSetting(ctx, key); v != "" {
+			if t, err := time.Parse(time.RFC3339, v); err == nil && time.Since(t) < reconcileInterval {
+				continue
+			}
+		}
+		n, err := s.ReconcileEmails(ctx, acc.ID)
+		if err != nil {
+			a.log.Warn("reconcile emails", "account", acc.ID, "err", err)
+			continue
+		}
+		_ = st.SetStringSetting(ctx, key, time.Now().Format(time.RFC3339))
+		if n > 0 {
+			a.emit(EventMailChanged, acc.ID)
+			a.refreshTrayUnreadSoon()
+		}
+	}
 }

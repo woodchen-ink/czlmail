@@ -145,7 +145,14 @@ func (s *Syncer) syncEmails(ctx context.Context, accountID string) error {
 		if err != nil {
 			if methodErrorType(err) == errCannotCalculateChanges {
 				s.log.Warn("email state expired, re-bootstrapping", "account", accountID)
-				return s.rebootstrap(ctx, accountID, store.TypeEmail, s.bootstrapEmails)
+				if err := s.rebootstrap(ctx, accountID, store.TypeEmail, s.bootstrapEmails); err != nil {
+					return err
+				}
+				// 离线期间在别处删除的邮件不会出现在任何增量里, 对账清掉。
+				if _, err := s.ReconcileEmails(ctx, accountID); err != nil {
+					s.log.Warn("reconcile emails", "account", accountID, "err", err)
+				}
+				return nil
 			}
 			return err
 		}

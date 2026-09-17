@@ -110,3 +110,21 @@ func (s *Store) BodyCached(ctx context.Context, accountID string, ids []string) 
 	}
 	return out, wrap(CodeQuery, "iterate body cached", rows.Err())
 }
+
+// LocalEmailIDs 列出某账号本地缓存的全部邮件 id。
+func (s *Store) LocalEmailIDs(ctx context.Context, accountID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM emails WHERE account_id = ?`, accountID)
+	if err != nil {
+		return nil, wrap(CodeQuery, "list local email ids", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, wrap(CodeQuery, "scan local email id", err)
+		}
+		out = append(out, id)
+	}
+	return out, wrap(CodeQuery, "iterate local email ids", rows.Err())
+}
