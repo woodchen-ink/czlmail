@@ -401,3 +401,21 @@ func apiErrorMessage[T string | []byte](raw T) string {
 	}
 	return truncate(string(raw), 300)
 }
+
+// GetTranslation 读取某封邮件的译文缓存。
+func (a *App) GetTranslation(accountID, emailID, language string) (string, error) {
+	st, err := a.currentStore()
+	if err != nil {
+		return "", err
+	}
+	return st.Translation(a.ctx, accountID, emailID, language)
+}
+
+// SaveTranslation 缓存译文, 下次打开同一封邮件时不必再请求模型。
+func (a *App) SaveTranslation(accountID, emailID, language, content string) error {
+	st, err := a.currentStore()
+	if err != nil {
+		return err
+	}
+	return st.SaveTranslation(a.ctx, accountID, emailID, language, content)
+}

@@ -80,6 +80,15 @@ export function EmailView({
     total: number;
   }>(null);
   const translateAbort = useRef<AbortController | null>(null);
+  const [hasCachedTranslation, setHasCachedTranslation] = useState(false);
+
+  useEffect(() => {
+    if (!ai?.enabled) return;
+    api
+      .getTranslation(accountId, emailId, ai.translateLang || "简体中文")
+      .then((c) => setHasCachedTranslation(!!c))
+      .catch(() => {});
+  }, [accountId, emailId, ai]);
   const [own, setOwn] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -110,8 +119,24 @@ export function EmailView({
       toast.info("没有需要翻译的文字");
       return;
     }
-    const batches = batchSegments(seg.texts);
+    const lang = ai?.translateLang || "简体中文";
     const result: (string | undefined)[] = new Array(seg.texts.length);
+
+    // 译过的邮件直接用缓存。片段数对不上(正文重新取回后结构变了)时重新翻译。
+    try {
+      const cached = await api.getTranslation(accountId, emailId, lang);
+      const arr = cached ? (JSON.parse(cached) as string[]) : null;
+      if (Array.isArray(arr) && arr.length === seg.texts.length) {
+        arr.forEach((t, i) => (result[i] = t));
+        const out = seg.render(result);
+        setTranslation({ html: seg.isHtml ? out : "", text: seg.isHtml ? "" : out, running: false, done: 1, total: 1 });
+        return;
+      }
+    } catch {
+      // 缓存损坏时忽略, 重新翻译。
+    }
+
+    const batches = batchSegments(seg.texts);
     let done = 0;
     let failed = 0;
     const show = (running: boolean) => {
@@ -161,7 +186,11 @@ export function EmailView({
       setTranslation(null);
       return;
     }
-    if (failed > 0) toast.warning("部分段落没有翻译成功，已保留原文");
+    if (failed > 0) {
+      toast.warning("部分段落没有翻译成功，已保留原文");
+      return;
+    }
+    api.saveTranslation(accountId, emailId, lang, JSON.stringify(result)).catch(() => {});
   }
 
   useEffect(() => {
@@ -341,7 +370,7 @@ ${email.bodyText || htmlToText(email.bodyHtml)}`,
                     onClick={translate}
                   >
                     <Languages className="size-4" />
-                    翻译为{ai.translateLang || "简体中文"}
+                    {hasCachedTranslation ? "显示译文" : `翻译为${ai.translateLang || "简体中文"}`}
                   </Button>
                 ) : (
                   <>

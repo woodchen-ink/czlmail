@@ -25,6 +25,10 @@ func (a *App) initNotifier() {
 		// actionID 形如 "accountID/emailID", 交给前端去定位并展开那封邮件。
 		// 窗口可能正缩在托盘里。
 		a.showWindow()
+		if actionID == "update:" {
+			a.emit(EventOpenUpdate, "")
+			return
+		}
 		if ref, ok := strings.CutPrefix(actionID, "event:"); ok {
 			a.emit(EventOpenEvent, ref)
 			return

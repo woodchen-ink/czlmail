@@ -11,6 +11,8 @@ export interface AppMessages {
   navigate: { module: Module };
   compose: { to: string; cc?: string; bcc?: string; subject?: string; body?: string };
   openEmail: { accountId: string; emailId: string };
+  /** 打开设置里的某一页。 */
+  openSettings: { section: string };
 }
 
 const PREFIX = "czl:";

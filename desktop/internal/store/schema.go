@@ -1,7 +1,7 @@
 package store
 
 // schemaVersion 与 SQLite 的 user_version pragma 对齐, 等于 migrations 的长度。
-const schemaVersion = 11
+const schemaVersion = 12
 
 // migrations 按索引顺序执行, 索引 i 把 schema 从版本 i 升到 i+1。
 // 已发布的迁移不可修改, 只能追加新的一条。
@@ -18,6 +18,7 @@ var migrations = []string{
 	migration009,
 	migration010,
 	migration011,
+	migration012,
 }
 
 // migration001 建立全部四类数据(邮件/日历/通讯录/文件)的基础表。

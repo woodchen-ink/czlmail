@@ -13,18 +13,21 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
+	"github.com/woodchen-ink/czlmail/desktop/notify"
 	"github.com/woodchen-ink/czlmail/desktop/update"
 )
 
-// 在线更新。启动后与之后每 12 小时静默检查一次, 有新版本时通知界面; 安装由用户确认。
+// 在线更新。启动 30 秒后与之后每 2 小时静默检查一次, 有新版本时通知界面并弹一次系统通知; 安装由用户确认。
 
 const (
 	// EventUpdateAvailable 发现新版本, 负载为 UpdateInfo。
 	EventUpdateAvailable = "update:available"
 	// EventUpdateProgress 下载进度, 负载为 {done, total}。
 	EventUpdateProgress = "update:progress"
+	// EventOpenUpdate 用户点了"新版本"系统通知, 界面切到关于与更新。
+	EventOpenUpdate = "update:open"
 
-	updateInterval = 12 * time.Hour
+	updateInterval = 2 * time.Hour
 )
 
 // UpdateInfo 是检查结果。
@@ -37,6 +40,19 @@ type UpdateInfo struct {
 }
 
 var updateMu sync.Mutex
+
+// pendingUpdate 是最近一次检查发现的新版本。界面启动较晚或错过事件时由 GetPendingUpdate 取回。
+var pendingUpdate struct {
+	sync.Mutex
+	info *UpdateInfo
+}
+
+// GetPendingUpdate 返回已发现但尚未安装的新版本, 没有时返回 nil。
+func (a *App) GetPendingUpdate() *UpdateInfo {
+	pendingUpdate.Lock()
+	defer pendingUpdate.Unlock()
+	return pendingUpdate.info
+}
 
 // CheckForUpdate 立即检查更新。
 func (a *App) CheckForUpdate() (UpdateInfo, error) {
@@ -103,7 +119,7 @@ func (a *App) runUpdateChecks(ctx context.Context) {
 	if _, ok := parseVersion(version); !ok {
 		return
 	}
-	timer := time.NewTimer(time.Minute)
+	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 	for {
 		select {
@@ -112,7 +128,11 @@ func (a *App) runUpdateChecks(ctx context.Context) {
 		case <-timer.C:
 		}
 		if info, err := a.CheckForUpdate(); err == nil && info.Available {
+			pendingUpdate.Lock()
+			pendingUpdate.info = &info
+			pendingUpdate.Unlock()
 			a.emit(EventUpdateAvailable, info)
+			a.notifyUpdateOnce(info)
 		}
 		timer.Reset(updateInterval)
 	}
@@ -120,4 +140,30 @@ func (a *App) runUpdateChecks(ctx context.Context) {
 
 func parseVersion(v string) (string, bool) {
 	return v, update.Newer("v999.0.0", v)
+}
+
+// notifyUpdateOnce 每个新版本只弹一次系统通知: 窗口缩在托盘里时界面上的提示看不到。
+func (a *App) notifyUpdateOnce(info UpdateInfo) {
+	if info.Release == nil {
+		return
+	}
+	st, err := a.currentStore()
+	if err != nil {
+		return
+	}
+	if last, _ := st.StringSetting(a.ctx, "updateNotifiedVersion"); last == info.Release.Version {
+		return
+	}
+	a.mu.RLock()
+	n, ctx := a.notifier, a.ctx
+	a.mu.RUnlock()
+	if n == nil {
+		return
+	}
+	_ = n.Notify(ctx, notify.Notification{
+		Title:    "CZL Mail " + info.Release.Version + " 已发布",
+		Body:     "打开「设置 → 关于与更新」一键更新",
+		ActionID: "update:",
+	})
+	_ = st.SetStringSetting(a.ctx, "updateNotifiedVersion", info.Release.Version)
 }

@@ -39,3 +39,15 @@ ALTER TABLE emails ADD COLUMN list_unsubscribe TEXT;
 const migration011 = `
 UPDATE emails SET list_unsubscribe = NULL;
 `
+
+// migration012 缓存 AI 译文: 同一封邮件译成同一种语言只需请求一次模型。
+const migration012 = `
+CREATE TABLE translations (
+    account_id TEXT    NOT NULL,
+    email_id   TEXT    NOT NULL,
+    language   TEXT    NOT NULL,
+    content    TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (account_id, email_id, language)
+);
+`

@@ -74,6 +74,7 @@ import { FoldersSection, IdentitiesSection, ScheduledSection, VacationSection } 
 import { AddressBooksSection, CalendarsSection } from "@/components/settings/pim-sections";
 import { Card, Divider, Row, SectionTitle, useSettings } from "@/components/settings/ui";
 import { store } from "@/wailsjs/go/models";
+import { listen } from "@/lib/app-bus";
 
 type Section =
   | "account"
@@ -137,6 +138,20 @@ export const FORUM_URL = "https://sunai.net/t/topic/1485";
 
 export function SettingsShell({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
   const [section, setSection] = useState<Section>("account");
+  const [hasUpdate, setHasUpdate] = useState(false);
+
+  useEffect(() => {
+    const off = listen("openSettings", ({ section: s }) => setSection(s as Section));
+    const offUpd = onEvent(Events.updateAvailable, () => setHasUpdate(true));
+    api
+      .getPendingUpdate()
+      .then((info) => setHasUpdate(!!info?.available))
+      .catch(() => {});
+    return () => {
+      off();
+      offUpd();
+    };
+  }, []);
   const on = (id: Section) => active && section === id;
 
   return (
@@ -159,6 +174,9 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
               >
                 <s.icon className="text-muted-foreground size-4" />
                 {s.label}
+                {s.id === "about" && hasUpdate && (
+                  <span className="bg-destructive text-primary-foreground ml-auto rounded-sm px-1.5 text-[10px] leading-4">新版本</span>
+                )}
               </button>
             ))}
           </div>
