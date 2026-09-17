@@ -176,7 +176,14 @@ func (a *App) restoreOAuthSession(cfg Config) error {
 
 	// 重新发现一次端点: 服务器升级后地址可能变化。失败时不中断 ——
 	// 用缓存的端点通常仍能刷新成功, 没必要因为一次发现失败就要求重新登录。
-	meta, err := auth.DiscoverForResource(a.ctx, cfg.ServerHost)
+	// 按登录时的授权服务器重新发现: 用外部 IdP 登录的会话必须回到 IdP 续期,
+	// 不能按邮件服务器公布的授权服务器(可能是邮件服务器自己)去找。
+	var meta *auth.Metadata
+	if cfg.Issuer != "" {
+		meta, err = auth.Discover(a.ctx, cfg.Issuer)
+	} else {
+		meta, err = auth.DiscoverForResource(a.ctx, cfg.ServerHost)
+	}
 	if err != nil {
 		a.log.Warn("rediscover authorization server, using cached endpoints", "err", err)
 		meta = cfg.cachedMetadata()

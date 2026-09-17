@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 )
@@ -53,8 +54,13 @@ func (a *App) ProbeServer(host string) (*ProbeResult, error) {
 
 // SignIn 走 OAuth 授权码流程登录。
 //
+// idp 与 clientID 为空时按邮件服务器公布的授权服务器走(需要支持动态注册)。
+// 邮件服务器把认证交给外部身份提供商(如 Stalwart 的 OIDC 目录)时, 它自己的授权页只认本地密码,
+// 不会跳转到外部 IdP; 这时要直接向 IdP 授权, 由邮件服务器校验 IdP 签发的令牌 —— 与 Bulwark 相同。
+// IdP 通常不开放动态注册, 客户端 ID 需要管理员在 IdP 上创建公开客户端后提供。
+//
 // 本方法会打开系统浏览器并阻塞到用户完成授权、取消或超时。
-func (a *App) SignIn(mailHost string) error {
+func (a *App) SignIn(mailHost, idp, clientID string) error {
 	if mailHost == "" {
 		return fmt.Errorf("2050 mail server address is required")
 	}
@@ -69,9 +75,18 @@ func (a *App) SignIn(mailHost string) error {
 	defer cancel()
 	defer a.endSignIn(gen)
 
-	meta, err := auth.DiscoverForResource(ctx, mailHost)
+	idp, clientID = strings.TrimSpace(idp), strings.TrimSpace(clientID)
+	if (idp == "") != (clientID == "") {
+		return fmt.Errorf("2052 identity provider address and client ID must be provided together")
+	}
+	var meta *auth.Metadata
+	if idp != "" {
+		meta, err = auth.Discover(ctx, idp)
+	} else {
+		meta, err = auth.DiscoverForResource(ctx, mailHost)
+	}
 	if err != nil {
-		a.log.Warn("oauth discover failed", "host", mailHost, "err", err)
+		a.log.Warn("oauth discover failed", "host", mailHost, "idp", idp, "err", err)
 		return err
 	}
 	a.log.Info("oauth discovered", "issuer", meta.Issuer, "registration", meta.RegistrationEndpoint != "")
@@ -89,7 +104,10 @@ func (a *App) SignIn(mailHost string) error {
 
 	// 复用已注册的客户端: 只有服务器变了或回环端口变了时才重新注册,
 	// 否则每次登录都会在服务器上堆一个新的客户端条目。
-	if cfg.ClientID == "" || cfg.RedirectURI != redirectURI || cfg.Issuer != meta.Issuer {
+	if clientID != "" {
+		cfg.ClientID = clientID
+		cfg.RedirectURI = redirectURI
+	} else if cfg.ClientID == "" || cfg.RedirectURI != redirectURI || cfg.Issuer != meta.Issuer {
 		info, err := auth.Register(ctx, meta, redirectURI)
 		if err != nil {
 			a.log.Warn("oauth register failed", "err", err)

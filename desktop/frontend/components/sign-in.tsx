@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ExternalLink, Loader2, LogIn, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { api, errorMessage } from "@/lib/api";
 
@@ -18,6 +19,10 @@ export function SignIn({ onSignedIn }: Props) {
   const [server, setServer] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // 外部身份提供商不是秘密, 记在本机方便下次登录。
+  const [idp, setIdp] = useState(() => readPref("idp"));
+  const [clientId, setClientId] = useState(() => readPref("clientId"));
+  const [sso, setSso] = useState(() => readPref("idp") !== "");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -25,7 +30,7 @@ export function SignIn({ onSignedIn }: Props) {
   const canSubmit =
     mode === "password"
       ? server.trim() !== "" && email.trim() !== "" && password !== ""
-      : server.trim() !== "";
+      : server.trim() !== "" && (!sso || (idp.trim() !== "" && clientId.trim() !== ""));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,7 +42,10 @@ export function SignIn({ onSignedIn }: Props) {
       if (mode === "password") {
         await api.signInWithPassword(server.trim(), email.trim(), password);
       } else {
-        await api.signIn(server.trim());
+        const useSso = sso && idp.trim() !== "";
+        writePref("idp", useSso ? idp.trim() : "");
+        writePref("clientId", useSso ? clientId.trim() : "");
+        await api.signIn(server.trim(), useSso ? idp.trim() : "", useSso ? clientId.trim() : "");
       }
       onSignedIn();
     } catch (err) {
@@ -110,6 +118,33 @@ export function SignIn({ onSignedIn }: Props) {
                 />
               </Field>
             </>
+          )}
+
+          {mode === "oauth" && (
+            <div className="flex flex-col gap-3">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={sso} onCheckedChange={(v) => setSso(v === true)} disabled={busy} />
+                通过单点登录（外部身份提供商）
+              </label>
+              {sso && (
+                <>
+                  <Field
+                    label="身份提供商地址"
+                    htmlFor="idp"
+                    hint="邮件服务器把登录交给外部身份提供商（如 Stalwart 配置了 OIDC 目录）时填写，例如 connect.example.net。"
+                  >
+                    <Input id="idp" value={idp} onChange={(e) => setIdp(e.target.value)} placeholder="connect.example.net" disabled={busy} />
+                  </Field>
+                  <Field
+                    label="客户端 ID"
+                    htmlFor="client-id"
+                    hint="由管理员在身份提供商上创建的公开客户端（无密钥、PKCE），回调地址需包含 http://127.0.0.1:47821/callback。"
+                  >
+                    <Input id="client-id" value={clientId} onChange={(e) => setClientId(e.target.value)} disabled={busy} />
+                  </Field>
+                </>
+              )}
+            </div>
           )}
 
           {busy && mode === "oauth" ? (
@@ -189,6 +224,7 @@ function signInError(msg: string): string {
     "2062": "连不上邮件服务器，请检查网络与服务器地址。",
     "2063": "邮件服务器没有正常响应，请稍后重试。",
     "2064": "邮件服务器不接受这次浏览器授权得到的令牌（服务器可能把认证交给了外部身份提供商）。请改用应用专用密码登录。",
+    "2052": "单点登录需要同时填写身份提供商地址和客户端 ID。",
     "3001": "这个服务器没有提供浏览器授权登录，请改用应用专用密码。",
     "3021": "浏览器授权超时或已取消。",
     "3022": "换取令牌失败，请重试；多次失败请改用应用专用密码登录。",
@@ -196,4 +232,23 @@ function signInError(msg: string): string {
     "3024": "授权状态校验失败，请重新登录。",
   };
   return map[code] ? `${map[code]}（${code}）` : msg;
+}
+
+const PREF_PREFIX = "czlmail.signin.";
+
+function readPref(key: string): string {
+  try {
+    return localStorage.getItem(PREF_PREFIX + key) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writePref(key: string, value: string) {
+  try {
+    if (value) localStorage.setItem(PREF_PREFIX + key, value);
+    else localStorage.removeItem(PREF_PREFIX + key);
+  } catch {
+    // 忽略
+  }
 }
