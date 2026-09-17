@@ -197,6 +197,20 @@ func SetEmailContent(ctx context.Context, tx *sql.Tx, accountID, emailID, text, 
 	return wrap(CodeQuery, "write email body", err)
 }
 
+// SetEmailUnsubscribe 写入退订信息。u 为空值时存空串, 表示已检查过、没有退订头。
+func SetEmailUnsubscribe(ctx context.Context, tx *sql.Tx, accountID, emailID string, u Unsubscribe) error {
+	raw := ""
+	if u != (Unsubscribe{}) {
+		b, err := json.Marshal(u)
+		if err != nil {
+			return wrap(CodeEncode, "encode unsubscribe", err)
+		}
+		raw = string(b)
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE emails SET list_unsubscribe = ? WHERE account_id = ? AND id = ?`, raw, accountID, emailID)
+	return wrap(CodeQuery, "write unsubscribe", err)
+}
+
 // encodeAddressLists 按 from/to/cc/bcc/replyTo 的固定顺序序列化地址列表。
 func encodeAddressLists(e *Email) ([5]string, error) {
 	var out [5]string

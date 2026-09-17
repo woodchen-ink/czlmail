@@ -42,6 +42,15 @@ type EmailDetail struct {
 	BodyText    string   `json:"bodyText"`
 	BodyHTML    string   `json:"bodyHtml"`
 	BodyFetched bool     `json:"bodyFetched"`
+	// Unsubscribe 是 List-Unsubscribe 解析结果; nil 表示还没检查过。
+	Unsubscribe *Unsubscribe `json:"unsubscribe"`
+}
+
+// Unsubscribe 是邮件的退订方式(RFC 2369 / RFC 8058)。三个字段都为空表示邮件没有退订头。
+type Unsubscribe struct {
+	HTTP     string `json:"http"`
+	Mailto   string `json:"mailto"`
+	OneClick bool   `json:"oneClick"`
 }
 
 // 已读与星标是"某个 keyword 是否存在", 用 EXISTS 子查询而不是 JOIN 聚合:
@@ -117,13 +126,14 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	var bodyText, bodyHTML sql.NullString
 	var bodyFetchedAt sql.NullInt64
 	var attachmentsJSON string
+	var unsubscribe sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
 		       e.preview, e.has_attachment, e.size,`+keywordFlags+`,
 		       e.to_json, e.cc_json, e.bcc_json, e.reply_to_json,
 		       e.blob_id, e.message_id, e.in_reply_to, e.attachments_json,
-		       e.body_text, e.body_html, e.body_fetched_at
+		       e.body_text, e.body_html, e.body_fetched_at, e.list_unsubscribe
 		FROM emails e
 		WHERE e.account_id = ? AND e.id = ?`,
 		accountID, emailID,
@@ -133,7 +143,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 		&unread, &flagged, &draft,
 		&toJSON, &ccJSON, &bccJSON, &replyToJSON,
 		&d.BlobID, &d.MessageID, &d.InReplyTo, &attachmentsJSON,
-		&bodyText, &bodyHTML, &bodyFetchedAt,
+		&bodyText, &bodyHTML, &bodyFetchedAt, &unsubscribe,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -162,6 +172,12 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	d.BodyText = bodyText.String
 	d.BodyHTML = bodyHTML.String
 	d.BodyFetched = bodyFetchedAt.Valid
+	if unsubscribe.Valid {
+		d.Unsubscribe = &Unsubscribe{}
+		if unsubscribe.String != "" {
+			_ = json.Unmarshal([]byte(unsubscribe.String), d.Unsubscribe)
+		}
+	}
 	if err := json.Unmarshal([]byte(attachmentsJSON), &d.Attachments); err != nil {
 		return nil, wrap(CodeDecode, "decode attachments", err)
 	}

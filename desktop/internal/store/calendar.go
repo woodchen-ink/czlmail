@@ -180,6 +180,17 @@ func (s *Store) Event(ctx context.Context, accountID, id string) (string, error)
 	return raw, wrap(CodeQuery, "read event", err)
 }
 
+// EventIDByUID 按 iCalendar UID 找本地事件, 找不到返回空串。
+func (s *Store) EventIDByUID(ctx context.Context, accountID, uid string) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id FROM calendar_events WHERE account_id = ? AND uid = ? LIMIT 1`, accountID, uid).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return id, wrap(CodeQuery, "find event by uid", err)
+}
+
 func (s *Store) rawObjects(ctx context.Context, query string, args ...any) ([]RawObject, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

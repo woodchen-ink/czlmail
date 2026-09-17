@@ -43,6 +43,8 @@ export type IntegrationStatus = main.IntegrationStatus;
 export type OpenRequest = main.OpenRequest;
 export type ScheduledItem = main.ScheduledItem;
 export type UpdateInfo = main.UpdateInfo;
+export type Invite = main.Invite;
+export type Unsubscribe = store.Unsubscribe;
 /** 整夹拉取进度，随 Events.pullProgress 推送。只经事件传递，Wails 不会为它生成模型。 */
 export interface PullStatus {
   accountId: string;
@@ -253,6 +255,10 @@ export const api = {
   updateSignatureHTML: guard(App.UpdateSignatureHTML),
   uploadFolder: guard(App.UploadFolder),
   uploadPaths: guard(App.UploadPaths),
+  loadListHeaders: guard(App.LoadListHeaders),
+  unsubscribe: guard(App.Unsubscribe),
+  getInvite: guard(App.GetInvite),
+  addInviteToCalendar: guard(App.AddInviteToCalendar),
 };
 
 /** 订阅后端事件，返回取消订阅函数。 */

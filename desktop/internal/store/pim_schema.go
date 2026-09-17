@@ -28,3 +28,9 @@ ALTER TABLE contacts ADD COLUMN keywords_json TEXT    NOT NULL DEFAULT '[]';
 ALTER TABLE contacts ADD COLUMN has_photo     INTEGER NOT NULL DEFAULT 0;
 DELETE FROM sync_state WHERE data_type = 'ContactCard';
 `
+
+// migration010 存邮件的退订信息(List-Unsubscribe)。NULL 表示还没检查过, 空串表示没有。
+// 已缓存正文的旧邮件在打开时按需补查, 不重新拉取正文。
+const migration010 = `
+ALTER TABLE emails ADD COLUMN list_unsubscribe TEXT;
+`

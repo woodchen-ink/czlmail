@@ -5,6 +5,7 @@ import { Paperclip, Star, Trash2 } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SenderAvatar } from "@/components/sender-avatar";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { displayAddressList, listDate } from "@/lib/format";
@@ -19,6 +20,9 @@ interface Props {
   onLoadMore: () => void;
   onToggleFlag: (email: EmailSummary) => void;
   onDelete?: (email: EmailSummary) => void;
+  /** 多选。checked 非空时点击行切换勾选而不是打开。 */
+  checked?: Set<string>;
+  onCheck?: (id: string, range: boolean) => void;
 }
 
 export function EmailList({
@@ -30,6 +34,8 @@ export function EmailList({
   onLoadMore,
   onToggleFlag,
   onDelete,
+  checked,
+  onCheck,
 }: Props) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -77,7 +83,13 @@ export function EmailList({
               role="button"
               tabIndex={0}
               aria-current={email.id === selectedId ? "true" : undefined}
-              onClick={() => onSelect(email.id)}
+              onClick={(e) => {
+                if (onCheck && (e.ctrlKey || e.metaKey || e.shiftKey || (checked?.size ?? 0) > 0)) {
+                  onCheck(email.id, e.shiftKey);
+                  return;
+                }
+                onSelect(email.id);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
@@ -88,7 +100,7 @@ export function EmailList({
               className={cn(
                 "group border-border flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
                 "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-                email.id === selectedId && "bg-muted",
+                (email.id === selectedId || checked?.has(email.id)) && "bg-muted",
               )}
             >
               {/* 未读用头像旁的色点而不是整行加粗：整行加粗在长列表里显得噪杂，
@@ -97,8 +109,22 @@ export function EmailList({
                 <SenderAvatar
                   email={email.from?.[0]?.email ?? ""}
                   name={email.from?.[0]?.name}
-                  className="size-9"
+                  className={cn("size-9", onCheck && ((checked?.size ?? 0) > 0 ? "invisible" : "group-hover:invisible"))}
                 />
+                {onCheck && (
+                  <span
+                    className={cn(
+                      "absolute inset-0 flex items-center justify-center",
+                      (checked?.size ?? 0) > 0 ? "visible" : "invisible group-hover:visible",
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCheck(email.id, e.shiftKey);
+                    }}
+                  >
+                    <Checkbox checked={checked?.has(email.id) ?? false} aria-label="选择邮件" />
+                  </span>
+                )}
                 {email.isUnread && (
                   <span
                     className="bg-accent ring-background absolute -top-0.5 -left-0.5 size-2.5 rounded-full ring-2"

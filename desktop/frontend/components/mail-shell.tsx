@@ -1,11 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, PenSquare, RefreshCw, Search, X } from "lucide-react";
+import {
+  Archive,
+  FolderInput,
+  Loader2,
+  MailOpen,
+  Mail as MailIcon,
+  PenSquare,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ComposePane, type ComposeDraft } from "@/components/compose/compose-pane";
 import { EmailList } from "@/components/email-list";
@@ -47,6 +67,9 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
   const [emails, setEmails] = useState<EmailSummary[]>([]);
   const [emailId, setEmailId] = useState("");
+  // 多选的邮件; 切换文件夹或搜索时清空。
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const lastChecked = useRef("");
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [revision, setRevision] = useState(0);
@@ -176,6 +199,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     pendingEmail.current = "";
     setHasMore(true);
     setQuery("");
+    setChecked(new Set());
     loadPage(0, loadToken.current);
   }, [mailboxId, accountId, loadPage]);
 
@@ -318,6 +342,49 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       runAndAdvance(email.id, () => api.trashEmails(accountId, [email.id]), "已删除");
     },
     [accountId, currentKind, runAndAdvance],
+  );
+
+  const checkEmail = useCallback(
+    (id: string, range: boolean) => {
+      setChecked((prev) => {
+        const next = new Set(prev);
+        if (range && lastChecked.current) {
+          const a = emails.findIndex((e) => e.id === lastChecked.current);
+          const b = emails.findIndex((e) => e.id === id);
+          if (a >= 0 && b >= 0) {
+            for (let i = Math.min(a, b); i <= Math.max(a, b); i++) next.add(emails[i].id);
+            return next;
+          }
+        }
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      lastChecked.current = id;
+    },
+    [emails],
+  );
+
+  /** 对勾选的邮件执行批量操作。 */
+  const bulk = useCallback(
+    async (op: (ids: string[]) => Promise<unknown>, done?: string, leavesList = true) => {
+      const ids = [...checked];
+      if (ids.length === 0) return;
+      try {
+        await op(ids);
+        if (done) toast.success(done);
+        if (leavesList) {
+          if (ids.includes(emailId)) setEmailId("");
+          setChecked(new Set());
+        }
+        refreshCurrent();
+      } catch (err) {
+        toast.error(errorMessage(err));
+      }
+    },
+    // refreshCurrent 定义在下方, 由闭包在调用时读取。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [checked, emailId],
   );
 
   const refreshCurrent = useCallback(() => {
@@ -582,8 +649,72 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
               </Button>
             </div>
 
+            {checked.size > 0 && (
+              <div className="border-border bg-secondary flex shrink-0 items-center gap-0.5 border-b px-2 py-1 text-sm">
+                <Checkbox
+                  className="mx-1.5"
+                  checked={checked.size === emails.length ? true : "indeterminate"}
+                  onCheckedChange={(v) => setChecked(v === true ? new Set(emails.map((e) => e.id)) : new Set())}
+                  aria-label="全选"
+                />
+                <span className="mr-auto text-xs tabular-nums">已选 {checked.size}</span>
+                <BulkBtn label="标为已读" onClick={() => bulk((ids) => api.markRead(accountId, ids, true), undefined, false)}>
+                  <MailOpen />
+                </BulkBtn>
+                <BulkBtn label="标为未读" onClick={() => bulk((ids) => api.markRead(accountId, ids, false), undefined, false)}>
+                  <MailIcon />
+                </BulkBtn>
+                <BulkBtn label="加星标" onClick={() => bulk((ids) => api.markFlagged(accountId, ids, true), undefined, false)}>
+                  <Star />
+                </BulkBtn>
+                <BulkBtn label="归档" onClick={() => bulk((ids) => api.archiveEmails(accountId, ids), "已归档")}>
+                  <Archive />
+                </BulkBtn>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="size-7 [&_svg]:size-4" title="移动到" aria-label="移动到">
+                      <FolderInput />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="max-h-80 w-52 overflow-y-auto">
+                    {mailboxes
+                      .filter((m) => m.id !== mailboxId && m.kind !== "drafts" && m.kind !== "scheduled")
+                      .map((m) => (
+                        <DropdownMenuItem key={m.id} onSelect={() => bulk((ids) => api.moveEmails(accountId, ids, m.id), "已移动")}>
+                          <span className="truncate">{mailboxLabel(m)}</span>
+                        </DropdownMenuItem>
+                      ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <BulkBtn
+                  label={currentKind === "junk" ? "不是垃圾邮件" : "标记为垃圾邮件"}
+                  onClick={() => bulk((ids) => api.markJunk(accountId, ids, currentKind !== "junk"), "已处理")}
+                >
+                  <ShieldAlert />
+                </BulkBtn>
+                <BulkBtn
+                  label={currentKind === "trash" ? "彻底删除" : "删除"}
+                  onClick={() => {
+                    if (currentKind === "trash") {
+                      if (!window.confirm(`彻底删除选中的 ${checked.size} 封邮件？此操作无法撤销。`)) return;
+                      bulk((ids) => api.deleteEmails(accountId, ids), "已彻底删除");
+                    } else {
+                      bulk((ids) => api.trashEmails(accountId, ids), "已删除");
+                    }
+                  }}
+                >
+                  <Trash2 />
+                </BulkBtn>
+                <BulkBtn label="取消选择" onClick={() => setChecked(new Set())}>
+                  <X />
+                </BulkBtn>
+              </div>
+            )}
+
             <div className="min-h-0 flex-1">
               <EmailList
+                checked={checked}
+                onCheck={checkEmail}
                 emails={emails}
                 selectedId={emailId}
                 loading={loading}
@@ -633,6 +764,14 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       <SourceDialog target={sourceTarget} onClose={() => setSourceTarget(null)} />
       <ShortcutsDialog open={showShortcuts} onClose={() => setShowShortcuts(false)} />
     </div>
+  );
+}
+
+function BulkBtn({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Button variant="ghost" size="icon" className="size-7 [&_svg]:size-4" title={label} aria-label={label} onClick={onClick}>
+      {children}
+    </Button>
   );
 }
 

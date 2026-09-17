@@ -46,7 +46,7 @@ func (s *Syncer) FetchBodies(ctx context.Context, accountID string, emailIDs []s
 		req.Invoke(&email.Get{
 			Account:             jmap.ID(accountID),
 			IDs:                 ids,
-			Properties:          []string{"id", "bodyStructure", "textBody", "htmlBody", "bodyValues", "attachments"},
+			Properties:          []string{"id", "bodyStructure", "textBody", "htmlBody", "bodyValues", "attachments", "headers"},
 			FetchTextBodyValues: true,
 			FetchHTMLBodyValues: true,
 			MaxBodyValueBytes:   maxBodyBytes,
@@ -70,6 +70,9 @@ func (s *Syncer) FetchBodies(ctx context.Context, accountID string, emailIDs []s
 				if err := store.SetEmailContent(ctx, tx, accountID, string(msg.ID),
 					joinBodyValues(msg, msg.TextBody), joinBodyValues(msg, msg.HTMLBody),
 					structure, toStoreAttachments(msg.Attachments)); err != nil {
+					return err
+				}
+				if err := store.SetEmailUnsubscribe(ctx, tx, accountID, string(msg.ID), ParseUnsubscribe(msg.Headers)); err != nil {
 					return err
 				}
 			}
@@ -131,4 +134,57 @@ func joinBodyValues(msg *email.Email, parts []*email.BodyPart) string {
 		out = append(out, val.Value...)
 	}
 	return string(out)
+}
+
+// FetchListHeaders 只取邮件头来补齐退订信息, 用于正文在加这项功能之前就已缓存的邮件。
+func (s *Syncer) FetchListHeaders(ctx context.Context, accountID, emailID string) (store.Unsubscribe, error) {
+	req := &jmap.Request{Context: ctx}
+	req.Invoke(&email.Get{Account: jmap.ID(accountID), IDs: []jmap.ID{jmap.ID(emailID)}, Properties: []string{"id", "headers"}})
+	resp, err := s.do(req)
+	if err != nil {
+		return store.Unsubscribe{}, err
+	}
+	got, ok := resp.Responses[0].Args.(*email.GetResponse)
+	if !ok || len(got.List) == 0 {
+		return store.Unsubscribe{}, &Error{Code: CodeUnhandled, Msg: "email not found on server"}
+	}
+	u := ParseUnsubscribe(got.List[0].Headers)
+	err = s.store.WithTx(ctx, func(tx *sql.Tx) error {
+		return store.SetEmailUnsubscribe(ctx, tx, accountID, emailID, u)
+	})
+	return u, err
+}
+
+// ParseUnsubscribe 从原始邮件头解析 List-Unsubscribe 与 List-Unsubscribe-Post。
+// 只接受 https(或 http) 与 mailto 两种地址; 一键退订(RFC 8058)要求 https。
+func ParseUnsubscribe(headers []*email.Header) store.Unsubscribe {
+	var u store.Unsubscribe
+	var post bool
+	for _, h := range headers {
+		if h == nil {
+			continue
+		}
+		switch strings.ToLower(h.Name) {
+		case "list-unsubscribe":
+			for _, part := range strings.Split(unfold(h.Value), ",") {
+				v := strings.TrimSpace(part)
+				v = strings.TrimSuffix(strings.TrimPrefix(v, "<"), ">")
+				lower := strings.ToLower(v)
+				switch {
+				case u.HTTP == "" && (strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://")):
+					u.HTTP = v
+				case u.Mailto == "" && strings.HasPrefix(lower, "mailto:"):
+					u.Mailto = v
+				}
+			}
+		case "list-unsubscribe-post":
+			post = strings.Contains(strings.ToLower(unfold(h.Value)), "list-unsubscribe=one-click")
+		}
+	}
+	u.OneClick = post && strings.HasPrefix(strings.ToLower(u.HTTP), "https://")
+	return u
+}
+
+func unfold(v string) string {
+	return strings.Join(strings.Fields(v), " ")
 }

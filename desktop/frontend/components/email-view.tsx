@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { AttachmentList } from "@/components/attachment-list";
+import { EmailBanners } from "@/components/email-banners";
 import { EmailBody } from "@/components/email-body";
 import { EmailToolbar, type ToolbarActions } from "@/components/email-toolbar";
 import { SenderAvatar } from "@/components/sender-avatar";
@@ -304,6 +305,7 @@ export function EmailView({
             </div>
           ) : (
             <>
+              <EmailBanners accountId={accountId} email={email} />
               {/* 附件放在正文上方：长邮件里附件沉在底部，用户常常读完才发现有附件。 */}
               <AttachmentList
                 accountId={accountId}
