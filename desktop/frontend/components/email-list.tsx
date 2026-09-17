@@ -1,7 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
-import { Paperclip, Star, Trash2 } from "lucide-react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Check,
+  ChevronDown,
+  MessagesSquare,
+  Paperclip,
+  Star,
+  Trash2,
+} from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SenderAvatar } from "@/components/sender-avatar";
@@ -9,9 +23,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { displayAddressList, listDate } from "@/lib/format";
-import type { EmailSummary } from "@/lib/api";
+import { api, type EmailSummary } from "@/lib/api";
 
 interface Props {
+  /** 会话展开时按这个账号读取会话里的全部邮件。 */
+  accountId: string;
   emails: EmailSummary[];
   selectedId: string;
   loading: boolean;
@@ -26,6 +42,7 @@ interface Props {
 }
 
 export function EmailList({
+  accountId,
   emails,
   selectedId,
   loading,
@@ -38,6 +55,66 @@ export function EmailList({
   onCheck,
 }: Props) {
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [threads, setThreads] = useState<Record<string, EmailSummary[]>>({});
+
+  // 同一会话在列表里只占一行(最新那封), 其余收进展开区。
+  const rows = useMemo(() => {
+    const byThread = new Map<string, { head: EmailSummary; unread: boolean }>();
+    const out: { head: EmailSummary; unread: boolean }[] = [];
+    for (const e of emails) {
+      const key = e.threadId || e.id;
+      const existing = byThread.get(key);
+      if (existing) {
+        existing.unread ||= e.isUnread;
+        // 搜索结果按相关度排序, 会话行始终代表其中最新的一封。
+        if (new Date(e.receivedAt).getTime() > new Date(existing.head.receivedAt).getTime()) existing.head = e;
+        continue;
+      }
+      const row = { head: e, unread: e.isUnread };
+      byThread.set(key, row);
+      out.push(row);
+    }
+    return out;
+  }, [emails]);
+
+  // 列表刷新(新邮件到达、标记已读)后, 已展开的会话重新读取。
+  useEffect(() => {
+    if (expanded.size === 0) return;
+    let cancelled = false;
+    Promise.all(
+      [...expanded].map(
+        async (tid) =>
+          [
+            tid,
+            (await api.threadEmails(accountId, tid).catch(() => [])) ?? [],
+          ] as const,
+      ),
+    ).then((entries) => {
+      if (!cancelled) setThreads(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // expanded 变化由 toggleThread 自己读取, 这里只跟随列表刷新。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emails, accountId]);
+
+  async function toggleThread(threadId: string) {
+    const next = new Set(expanded);
+    if (next.has(threadId)) {
+      next.delete(threadId);
+      setExpanded(next);
+      return;
+    }
+    next.add(threadId);
+    setExpanded(next);
+    if (!threads[threadId]) {
+      const list =
+        (await api.threadEmails(accountId, threadId).catch(() => [])) ?? [];
+      setThreads((prev) => ({ ...prev, [threadId]: list }));
+    }
+  }
 
   // 触底加载。用 IntersectionObserver 而不是监听 scroll 事件：
   // scroll 在快速滚动时每帧都触发，而这里只需要知道「哨兵进入视口」这一个事实。
@@ -60,10 +137,10 @@ export function EmailList({
       if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
       e.preventDefault();
       const next = e.key === "ArrowDown" ? index + 1 : index - 1;
-      const target = emails[next];
+      const target = rows[next]?.head;
       if (target) onSelect(target.id);
     },
-    [emails, onSelect],
+    [rows, onSelect],
   );
 
   if (!loading && emails.length === 0) {
@@ -75,132 +152,261 @@ export function EmailList({
   }
 
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea className="h-full overflow-x-hidden">
       <ul className="flex flex-col">
-        {emails.map((email, index) => (
-          <li key={email.id}>
-            <div
-              role="button"
-              tabIndex={0}
-              aria-current={email.id === selectedId ? "true" : undefined}
-              onClick={(e) => {
-                if (onCheck && (e.ctrlKey || e.metaKey || e.shiftKey || (checked?.size ?? 0) > 0)) {
-                  onCheck(email.id, e.shiftKey);
-                  return;
-                }
-                onSelect(email.id);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
+        {rows.map(({ head: email, unread }, index) => {
+          const tid = email.threadId;
+          const count = email.threadCount ?? 0;
+          const isOpen = !!tid && expanded.has(tid);
+          const members = isOpen ? [...(threads[tid] ?? [])].reverse() : [];
+          const childSelected = members.some(
+            (m) => m.id === selectedId && m.id !== email.id,
+          );
+          return (
+            <li key={email.id}>
+              <div
+                role="button"
+                tabIndex={0}
+                aria-current={email.id === selectedId ? "true" : undefined}
+                onClick={(e) => {
+                  if (
+                    onCheck &&
+                    (e.ctrlKey ||
+                      e.metaKey ||
+                      e.shiftKey ||
+                      (checked?.size ?? 0) > 0)
+                  ) {
+                    onCheck(email.id, e.shiftKey);
+                    return;
+                  }
                   onSelect(email.id);
-                }
-                handleKey(e, index);
-              }}
-              className={cn(
-                "group border-border flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
-                "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-                (email.id === selectedId || checked?.has(email.id)) && "bg-muted",
-              )}
-            >
-              {/* 未读用头像旁的色点而不是整行加粗：整行加粗在长列表里显得噪杂，
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelect(email.id);
+                  }
+                  handleKey(e, index);
+                }}
+                className={cn(
+                  "group border-border flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
+                  "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+                  (email.id === selectedId || checked?.has(email.id)) &&
+                    "bg-muted",
+                  childSelected && "bg-secondary",
+                )}
+              >
+                {/* 未读用头像旁的色点而不是整行加粗：整行加粗在长列表里显得噪杂，
                   色点在扫视时反而更容易定位。 */}
-              <div className="relative mt-0.5 shrink-0">
-                <SenderAvatar
-                  email={email.from?.[0]?.email ?? ""}
-                  name={email.from?.[0]?.name}
-                  className={cn("size-9", onCheck && ((checked?.size ?? 0) > 0 ? "invisible" : "group-hover:invisible"))}
-                />
-                {onCheck && (
+                {onCheck && (checked?.size ?? 0) > 0 && (
                   <span
-                    className={cn(
-                      "absolute inset-0 flex items-center justify-center",
-                      (checked?.size ?? 0) > 0 ? "visible" : "invisible group-hover:visible",
-                    )}
+                    className="mt-2.5 -ml-1 shrink-0"
                     onClick={(e) => {
                       e.stopPropagation();
                       onCheck(email.id, e.shiftKey);
                     }}
                   >
-                    <Checkbox checked={checked?.has(email.id) ?? false} aria-label="选择邮件" />
+                    <Checkbox
+                      checked={checked?.has(email.id) ?? false}
+                      aria-label="选择邮件"
+                      tabIndex={-1}
+                    />
                   </span>
                 )}
-                {email.isUnread && (
-                  <span
-                    className="bg-accent ring-background absolute -top-0.5 -left-0.5 size-2.5 rounded-full ring-2"
-                    aria-label="未读"
-                  />
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-sm",
-                      email.isUnread && "font-medium",
-                    )}
+                <div className="relative mt-0.5 shrink-0">
+                  {/* 头像就是选择按钮(同 Bulwark): 鼠标移到头像上才变成对勾, 移到行的其它位置头像照常显示;
+                      选中的邮件头像保持对勾, 进入多选后左侧再出现一列勾选框。 */}
+                  <button
+                    type="button"
+                    title={onCheck ? "选择" : undefined}
+                    aria-label="选择邮件"
+                    aria-pressed={checked?.has(email.id) ?? false}
+                    disabled={!onCheck}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCheck?.(email.id, e.shiftKey);
+                    }}
+                    className="group/avatar relative block size-9 rounded-full"
                   >
-                    {displayAddressList(email.from) || "(无发件人)"}
-                  </span>
-                  <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                    {listDate(email.receivedAt)}
-                  </span>
+                    <SenderAvatar
+                      email={email.from?.[0]?.email ?? ""}
+                      name={email.from?.[0]?.name}
+                      className="size-9"
+                    />
+                    {onCheck && (
+                      <span
+                        className={cn(
+                          "bg-accent text-accent-foreground absolute inset-0 flex items-center justify-center rounded-full transition-opacity",
+                          checked?.has(email.id)
+                            ? "opacity-100"
+                            : "opacity-0 group-hover/avatar:opacity-100",
+                        )}
+                      >
+                        <Check className="size-5" strokeWidth={2.5} />
+                      </span>
+                    )}
+                  </button>
+                  {unread && (
+                    <span
+                      className="bg-accent ring-background absolute -top-0.5 -left-0.5 size-2.5 rounded-full ring-2"
+                      aria-label="未读"
+                    />
+                  )}
                 </div>
 
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-sm",
-                      email.isUnread ? "text-foreground" : "text-muted-foreground",
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 truncate text-sm",
+                        unread && "font-medium",
+                      )}
+                    >
+                      {displayAddressList(email.from) || "(无发件人)"}
+                    </span>
+                    {count > 1 && (
+                      <button
+                        type="button"
+                        aria-label={
+                          isOpen ? "收起会话" : `展开会话，共 ${count} 封`
+                        }
+                        aria-expanded={isOpen}
+                        title={
+                          isOpen ? "收起会话" : `展开会话（共 ${count} 封）`
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleThread(tid);
+                        }}
+                        className={cn(
+                          "flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-xs tabular-nums transition-colors",
+                          isOpen
+                            ? "border-accent bg-card text-foreground"
+                            : "border-border text-muted-foreground hover:border-accent hover:text-foreground",
+                        )}
+                      >
+                        <MessagesSquare className="size-3.5" />
+                        {count}
+                        <ChevronDown
+                          className={cn(
+                            "size-3.5 transition-transform",
+                            isOpen && "rotate-180",
+                          )}
+                        />
+                      </button>
                     )}
-                  >
-                    {email.subject || "(无主题)"}
-                  </span>
-                  {email.hasAttachment && (
-                    <Paperclip className="text-muted-foreground size-3.5 shrink-0" />
-                  )}
-                  {onDelete && (
+                    <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                      {listDate(email.receivedAt)}
+                    </span>
+                  </div>
+
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 truncate text-sm",
+                        unread ? "text-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      {email.subject || "(无主题)"}
+                    </span>
+                    {email.hasAttachment && (
+                      <Paperclip className="text-muted-foreground size-3.5 shrink-0" />
+                    )}
+                    {onDelete && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(email);
+                        }}
+                        aria-label="删除"
+                        title="删除"
+                        className="hover:bg-muted text-muted-foreground hover:text-destructive shrink-0 rounded-sm p-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDelete(email);
+                        onToggleFlag(email);
                       }}
-                      aria-label="删除"
-                      title="删除"
-                      className="hover:bg-muted text-muted-foreground hover:text-destructive shrink-0 rounded-sm p-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      aria-label={email.isFlagged ? "取消星标" : "加星标"}
+                      className="hover:bg-muted shrink-0 rounded-sm p-0.5"
                     >
-                      <Trash2 className="size-3.5" />
+                      <Star
+                        className={cn(
+                          "size-3.5",
+                          email.isFlagged
+                            ? "fill-chart-4 text-chart-4"
+                            : "text-muted-foreground opacity-0 group-hover:opacity-100",
+                        )}
+                      />
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleFlag(email);
-                    }}
-                    aria-label={email.isFlagged ? "取消星标" : "加星标"}
-                    className="hover:bg-muted shrink-0 rounded-sm p-0.5"
-                  >
-                    <Star
-                      className={cn(
-                        "size-3.5",
-                        email.isFlagged
-                          ? "fill-chart-4 text-chart-4"
-                          : "text-muted-foreground opacity-0 group-hover:opacity-100",
-                      )}
-                    />
-                  </button>
-                </div>
+                  </div>
 
-                <p className="text-muted-foreground mt-0.5 truncate text-xs">
-                  {email.preview}
-                </p>
+                  <p className="text-muted-foreground mt-0.5 truncate text-xs">
+                    {email.preview}
+                  </p>
+                </div>
               </div>
-            </div>
-          </li>
-        ))}
+              {isOpen && (
+                <ul className="border-border bg-secondary/40 border-b py-1">
+                  {members.length === 0 && (
+                    <li className="text-muted-foreground px-12 py-2 text-xs">
+                      载入中…
+                    </li>
+                  )}
+                  {members.map((m) => (
+                    <Fragment key={m.id}>
+                      <li>
+                        <button
+                          type="button"
+                          onClick={() => onSelect(m.id)}
+                          aria-current={
+                            m.id === selectedId ? "true" : undefined
+                          }
+                          className={cn(
+                            "flex w-full items-center gap-2 py-1.5 pr-3 pl-12 text-left text-sm",
+                            m.id === selectedId
+                              ? "bg-muted"
+                              : "hover:bg-secondary",
+                          )}
+                        >
+                          <SenderAvatar
+                            email={m.from?.[0]?.email ?? ""}
+                            name={m.from?.[0]?.name}
+                            className="size-5 text-[9px]"
+                          />
+                          <span
+                            className={cn(
+                              "w-24 shrink-0 truncate",
+                              m.isUnread && "font-medium",
+                            )}
+                          >
+                            {m.from?.[0]?.name ||
+                              m.from?.[0]?.email ||
+                              "(无发件人)"}
+                          </span>
+                          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                            {m.preview}
+                          </span>
+                          {m.hasAttachment && (
+                            <Paperclip className="text-muted-foreground size-3 shrink-0" />
+                          )}
+                          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                            {listDate(m.receivedAt)}
+                          </span>
+                        </button>
+                      </li>
+                    </Fragment>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
       </ul>
 
       {loading && (

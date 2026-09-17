@@ -6,6 +6,7 @@ import {
   FolderInput,
   Loader2,
   MailOpen,
+  MoreHorizontal,
   Mail as MailIcon,
   PenSquare,
   RefreshCw,
@@ -24,6 +25,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -609,6 +613,13 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         list={
           <>
             <div className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
+              <Checkbox
+                aria-label="全选"
+                title="全选"
+                disabled={emails.length === 0}
+                checked={checked.size === 0 ? false : checked.size === emails.length ? true : "indeterminate"}
+                onCheckedChange={(v) => setChecked(v === true ? new Set(emails.map((e) => e.id)) : new Set())}
+              />
               <div className="relative min-w-0 flex-1">
                 <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
                 <Input
@@ -650,47 +661,13 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
             </div>
 
             {checked.size > 0 && (
-              <div className="border-border bg-secondary flex shrink-0 items-center gap-0.5 border-b px-2 py-1 text-sm">
-                <Checkbox
-                  className="mx-1.5"
-                  checked={checked.size === emails.length ? true : "indeterminate"}
-                  onCheckedChange={(v) => setChecked(v === true ? new Set(emails.map((e) => e.id)) : new Set())}
-                  aria-label="全选"
-                />
-                <span className="mr-auto text-xs tabular-nums">已选 {checked.size}</span>
+              <div className="border-border bg-secondary flex shrink-0 items-center gap-0.5 overflow-hidden border-b px-2 py-1 text-sm">
+                <span className="mr-auto pl-1 text-xs whitespace-nowrap tabular-nums">已选 {checked.size} 封</span>
                 <BulkBtn label="标为已读" onClick={() => bulk((ids) => api.markRead(accountId, ids, true), undefined, false)}>
                   <MailOpen />
                 </BulkBtn>
-                <BulkBtn label="标为未读" onClick={() => bulk((ids) => api.markRead(accountId, ids, false), undefined, false)}>
-                  <MailIcon />
-                </BulkBtn>
-                <BulkBtn label="加星标" onClick={() => bulk((ids) => api.markFlagged(accountId, ids, true), undefined, false)}>
-                  <Star />
-                </BulkBtn>
                 <BulkBtn label="归档" onClick={() => bulk((ids) => api.archiveEmails(accountId, ids), "已归档")}>
                   <Archive />
-                </BulkBtn>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="size-7 [&_svg]:size-4" title="移动到" aria-label="移动到">
-                      <FolderInput />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="max-h-80 w-52 overflow-y-auto">
-                    {mailboxes
-                      .filter((m) => m.id !== mailboxId && m.kind !== "drafts" && m.kind !== "scheduled")
-                      .map((m) => (
-                        <DropdownMenuItem key={m.id} onSelect={() => bulk((ids) => api.moveEmails(accountId, ids, m.id), "已移动")}>
-                          <span className="truncate">{mailboxLabel(m)}</span>
-                        </DropdownMenuItem>
-                      ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <BulkBtn
-                  label={currentKind === "junk" ? "不是垃圾邮件" : "标记为垃圾邮件"}
-                  onClick={() => bulk((ids) => api.markJunk(accountId, ids, currentKind !== "junk"), "已处理")}
-                >
-                  <ShieldAlert />
                 </BulkBtn>
                 <BulkBtn
                   label={currentKind === "trash" ? "彻底删除" : "删除"}
@@ -705,6 +682,48 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 >
                   <Trash2 />
                 </BulkBtn>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="size-7 [&_svg]:size-4" title="更多" aria-label="更多批量操作">
+                      <MoreHorizontal />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuItem onSelect={() => bulk((ids) => api.markRead(accountId, ids, false), undefined, false)}>
+                      <MailIcon className="size-4" />
+                      标为未读
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => bulk((ids) => api.markFlagged(accountId, ids, true), undefined, false)}>
+                      <Star className="size-4" />
+                      加星标
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => bulk((ids) => api.markFlagged(accountId, ids, false), undefined, false)}>
+                      <Star className="size-4" />
+                      取消星标
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => bulk((ids) => api.markJunk(accountId, ids, currentKind !== "junk"), "已处理")}
+                    >
+                      <ShieldAlert className="size-4" />
+                      {currentKind === "junk" ? "不是垃圾邮件" : "标记为垃圾邮件"}
+                    </DropdownMenuItem>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <FolderInput className="size-4" />
+                        移动到
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
+                        {mailboxes
+                          .filter((m) => m.id !== mailboxId && m.kind !== "drafts" && m.kind !== "scheduled")
+                          .map((m) => (
+                            <DropdownMenuItem key={m.id} onSelect={() => bulk((ids) => api.moveEmails(accountId, ids, m.id), "已移动")}>
+                              <span className="truncate">{mailboxLabel(m)}</span>
+                            </DropdownMenuItem>
+                          ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <BulkBtn label="取消选择" onClick={() => setChecked(new Set())}>
                   <X />
                 </BulkBtn>
@@ -713,6 +732,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
             <div className="min-h-0 flex-1">
               <EmailList
+                accountId={accountId}
                 checked={checked}
                 onCheck={checkEmail}
                 emails={emails}

@@ -8,7 +8,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { AttachmentList } from "@/components/attachment-list";
 import { EmailBanners } from "@/components/email-banners";
-import { ThreadList } from "@/components/thread-list";
 import { EmailBody } from "@/components/email-body";
 import { EmailToolbar, type ToolbarActions } from "@/components/email-toolbar";
 import { SenderAvatar } from "@/components/sender-avatar";
@@ -28,7 +27,9 @@ import {
   batchSegments,
   extractSegments,
   parseTranslations,
+  isAlreadyInLanguage,
 } from "@/lib/translate-html";
+import { htmlToText } from "@/lib/html";
 import { displayAddress, displayAddressList, fullDate } from "@/lib/format";
 
 interface Props {
@@ -79,28 +80,16 @@ export function EmailView({
     total: number;
   }>(null);
   const translateAbort = useRef<AbortController | null>(null);
-  const [thread, setThread] = useState<EmailSummary[]>([]);
   const [own, setOwn] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     api
       .listIdentities(accountId)
-      .then((ids) => setOwn(new Set((ids ?? []).map((i) => i.email.toLowerCase()))))
+      .then((ids) =>
+        setOwn(new Set((ids ?? []).map((i) => i.email.toLowerCase()))),
+      )
       .catch(() => {});
   }, [accountId]);
-
-  const threadId = email?.threadId ?? "";
-  useEffect(() => {
-    if (!threadId) return;
-    let cancelled = false;
-    api
-      .threadEmails(accountId, threadId)
-      .then((list) => !cancelled && setThread(list ?? []))
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [accountId, threadId, revision]);
 
   useEffect(() => {
     api
@@ -331,57 +320,57 @@ export function EmailView({
             </span>
           </div>
 
-          {thread.length > 1 && (
-            <ThreadList
-              thread={thread}
-              currentId={email.id}
-              own={own}
-              onOpen={(id) => onOpenEmail?.(id)}
-            />
-          )}
-
           <Separator />
 
-          {ai?.enabled && ai.hasKey && ai.model && email.bodyFetched && (
-            <div className="-my-1 flex items-center gap-2 text-sm">
-              {translation === null ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground h-7 px-2"
-                  onClick={translate}
-                >
-                  <Languages className="size-4" />
-                  翻译为{ai.translateLang || "简体中文"}
-                </Button>
-              ) : (
-                <>
-                  <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                    {translation.running ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Languages className="size-3.5" />
-                    )}
-                    {translation.running
-                      ? `正在翻译… ${translation.done}/${translation.total}`
-                      : `已由 AI 翻译为${ai.translateLang || "简体中文"}`}
-                  </span>
+          {ai?.enabled &&
+            ai.hasKey &&
+            ai.model &&
+            email.bodyFetched &&
+            (translation !== null ||
+              !isAlreadyInLanguage(
+                `${email.subject}
+${email.bodyText || htmlToText(email.bodyHtml)}`,
+                ai.translateLang || "简体中文",
+              )) && (
+              <div className="-my-1 flex items-center gap-2 text-sm">
+                {translation === null ? (
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2"
-                    onClick={() => {
-                      translateAbort.current?.abort();
-                      setTranslation(null);
-                    }}
+                    className="text-muted-foreground h-7 px-2"
+                    onClick={translate}
                   >
-                    <Undo2 className="size-4" />
-                    {translation.running ? "停止" : "显示原文"}
+                    <Languages className="size-4" />
+                    翻译为{ai.translateLang || "简体中文"}
                   </Button>
-                </>
-              )}
-            </div>
-          )}
+                ) : (
+                  <>
+                    <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                      {translation.running ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Languages className="size-3.5" />
+                      )}
+                      {translation.running
+                        ? `正在翻译… ${translation.done}/${translation.total}`
+                        : `已由 AI 翻译为${ai.translateLang || "简体中文"}`}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => {
+                        translateAbort.current?.abort();
+                        setTranslation(null);
+                      }}
+                    >
+                      <Undo2 className="size-4" />
+                      {translation.running ? "停止" : "显示原文"}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
 
           {loading && !email.bodyFetched ? (
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -390,7 +379,11 @@ export function EmailView({
             </div>
           ) : (
             <>
-              <EmailBanners accountId={accountId} email={email} ownAddresses={own} />
+              <EmailBanners
+                accountId={accountId}
+                email={email}
+                ownAddresses={own}
+              />
               {/* 附件放在正文上方：长邮件里附件沉在底部，用户常常读完才发现有附件。 */}
               <AttachmentList
                 accountId={accountId}

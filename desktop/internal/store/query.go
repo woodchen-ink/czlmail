@@ -21,6 +21,8 @@ type EmailSummary struct {
 	IsUnread      bool      `json:"isUnread"`
 	IsFlagged     bool      `json:"isFlagged"`
 	IsDraft       bool      `json:"isDraft"`
+	// ThreadCount 是同一会话的邮件总数(跨文件夹); 只有列表查询会填, 其它查询为 0。
+	ThreadCount int `json:"threadCount"`
 }
 
 // EmailDetail 是阅读视图。Body 可能为空, 表示正文尚未拉取。
@@ -74,7 +76,7 @@ func (s *Store) EmailsByMailbox(
 ) ([]EmailSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
-		       e.preview, e.has_attachment, e.size,`+keywordFlags+`
+		       e.preview, e.has_attachment, e.size,`+keywordFlags+threadCountColumn+`
 		FROM emails e
 		JOIN email_mailboxes m
 		  ON m.account_id = e.account_id AND m.email_id = e.id
@@ -90,19 +92,29 @@ func (s *Store) EmailsByMailbox(
 	return scanSummaries(rows)
 }
 
+// threadCountColumn 附加在列表查询末尾, scanSummaries 按列数识别。
+const threadCountColumn = `,
+	(SELECT COUNT(*) FROM emails t WHERE t.account_id = e.account_id AND t.thread_id = e.thread_id AND e.thread_id != '')`
+
 func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 	var out []EmailSummary
+	cols, _ := rows.Columns()
+	withThread := len(cols) > 11
 	for rows.Next() {
 		var e EmailSummary
 		var fromJSON string
 		var receivedAt int64
 		var hasAttachment, unread, flagged, draft int
 
-		if err := rows.Scan(
+		dest := []any{
 			&e.ID, &e.ThreadID, &e.Subject, &fromJSON, &receivedAt,
 			&e.Preview, &hasAttachment, &e.Size,
 			&unread, &flagged, &draft,
-		); err != nil {
+		}
+		if withThread {
+			dest = append(dest, &e.ThreadCount)
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, wrap(CodeQuery, "scan email summary", err)
 		}
 

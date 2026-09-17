@@ -116,3 +116,34 @@ export function parseTranslations(output: string): string[] | null {
     return null;
   }
 }
+
+/**
+ * 粗略判断文字是否已经是目标语言, 用来决定要不要显示「翻译」按钮。
+ * 只对能按文字系统区分的语言下结论(中日韩俄、英文); 同为拉丁字母的德法西等无法可靠区分, 一律返回 false。
+ */
+export function isAlreadyInLanguage(text: string, language: string): boolean {
+  const sample = text.slice(0, 4000);
+  const letters = sample.match(/\p{L}/gu)?.length ?? 0;
+  if (letters < 20) return false;
+  const count = (re: RegExp) => sample.match(re)?.length ?? 0;
+  const han = count(/\p{Script=Han}/gu);
+  const kana = count(/[\p{Script=Hiragana}\p{Script=Katakana}]/gu);
+  const hangul = count(/\p{Script=Hangul}/gu);
+  const cyrillic = count(/\p{Script=Cyrillic}/gu);
+  const latin = count(/\p{Script=Latin}/gu);
+  const lang = language.toLowerCase();
+
+  if (/中文|chinese|zh/.test(lang)) {
+    // 英文夹杂的中文邮件(链接、品牌名)很常见, 汉字过四成就算中文; 有假名的是日文。
+    // 按"字"与"词"比较: 一个英文单词占好几个字母, 直接比字母数会低估中文的比重。
+    const latinWords = count(/[A-Za-z]{2,}/g);
+    return han / (han + latinWords * 1.5) > 0.5 && kana / letters < 0.05;
+  }
+  if (/日本|japanese|ja/.test(lang)) return kana / letters > 0.1;
+  if (/한국|korean|ko/.test(lang)) return hangul / letters > 0.4;
+  if (/русск|russian|ru/.test(lang)) return cyrillic / letters > 0.5;
+  if (/english|英文|英语|en/.test(lang)) {
+    return latin / letters > 0.9 && /\b(the|and|to|of|you|your|is|for)\b/i.test(sample);
+  }
+  return false;
+}

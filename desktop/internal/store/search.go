@@ -25,7 +25,7 @@ func (s *Store) SearchEmails(ctx context.Context, accountID, query string, limit
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
-		       e.preview, e.has_attachment, e.size,`+keywordFlags+`
+		       e.preview, e.has_attachment, e.size,`+keywordFlags+threadCountColumn+`
 		FROM emails_fts f
 		JOIN emails e ON e.rowid = f.rowid
 		WHERE emails_fts MATCH ? AND e.account_id = ?
@@ -46,7 +46,7 @@ func (s *Store) searchByPrefix(ctx context.Context, accountID, query string, lim
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
-		       e.preview, e.has_attachment, e.size,`+keywordFlags+`
+		       e.preview, e.has_attachment, e.size,`+keywordFlags+threadCountColumn+`
 		FROM emails e
 		WHERE e.account_id = ?
 		  AND (e.subject LIKE ? ESCAPE '\' OR e.from_json LIKE ? ESCAPE '\')
