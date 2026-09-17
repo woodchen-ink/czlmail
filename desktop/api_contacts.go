@@ -40,13 +40,36 @@ func (a *App) ListContacts(accountID, bookID, query string) ([]store.ContactSumm
 	return st.Contacts(a.ctx, accountID, bookID, query, maxContacts)
 }
 
-// SearchRecipients 为写信的收件人输入框提供补全。
+// SearchRecipients 为写信的收件人输入框提供补全: 先通讯录, 再最近往来的地址, 按地址去重。
 func (a *App) SearchRecipients(query string) ([]store.Recipient, error) {
 	st, err := a.currentStore()
 	if err != nil {
 		return nil, err
 	}
-	return st.SearchRecipients(a.ctx, query, 8)
+	contacts, err := st.SearchRecipients(a.ctx, query, 8)
+	if err != nil {
+		return nil, err
+	}
+	recent, err := st.SearchCorrespondents(a.ctx, query, 12)
+	if err != nil {
+		return contacts, nil
+	}
+	seen := map[string]bool{}
+	out := make([]store.Recipient, 0, len(contacts)+len(recent))
+	for _, list := range [][]store.Recipient{contacts, recent} {
+		for _, r := range list {
+			key := strings.ToLower(r.Email)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, r)
+			if len(out) >= 12 {
+				return out, nil
+			}
+		}
+	}
+	return out, nil
 }
 
 // ContactField 是邮箱/电话条目。Context 取 work / private / 空; Feature 只用于电话(mobile/voice/fax/...)。

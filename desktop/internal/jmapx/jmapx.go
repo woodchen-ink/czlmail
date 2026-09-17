@@ -21,6 +21,7 @@ const (
 	FileNodeURI  jmap.URI = "urn:ietf:params:jmap:filenode"
 
 	SieveURI          jmap.URI = "urn:ietf:params:jmap:sieve"
+	PrincipalsURI     jmap.URI = "urn:ietf:params:jmap:principals"
 	CalendarsParseURI jmap.URI = "urn:ietf:params:jmap:calendars:parse"
 	ContactsParseURI  jmap.URI = "urn:ietf:params:jmap:contacts:parse"
 )
@@ -45,6 +46,8 @@ func URIFor(typeName string) jmap.URI {
 		return "urn:ietf:params:jmap:mail"
 	case "SieveScript":
 		return SieveURI
+	case "Principal":
+		return PrincipalsURI
 	default:
 		return FileNodeURI
 	}
@@ -59,6 +62,7 @@ func init() {
 	}
 	jmap.RegisterMethod(CalendarEvent+"/parse", func() jmap.MethodResponse { return &ParseResponse{} })
 	jmap.RegisterMethod("SieveScript/get", func() jmap.MethodResponse { return &GetResponse{} })
+	jmap.RegisterMethod("Principal/get", func() jmap.MethodResponse { return &GetResponse{} })
 	jmap.RegisterMethod("SieveScript/set", func() jmap.MethodResponse { return &SetResponse{} })
 	jmap.RegisterMethod("SieveScript/validate", func() jmap.MethodResponse { return &ValidateResponse{} })
 	jmap.RegisterMethod(ContactCard+"/parse", func() jmap.MethodResponse { return &ParseResponse{} })

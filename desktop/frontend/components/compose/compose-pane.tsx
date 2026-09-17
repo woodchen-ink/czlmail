@@ -452,22 +452,16 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
             </div>
           }
         >
-          <Borderless>
-            <RecipientInput value={to} onChange={(v) => (setTo(v), markDirty())} placeholder="收件人" label="收件人" />
-          </Borderless>
+          <RecipientInput value={to} onChange={(v) => (setTo(v), markDirty())} placeholder="收件人" label="收件人" bare />
         </Field>
         {showCc && (
           <Field label="抄送">
-            <Borderless>
-              <RecipientInput value={cc} onChange={(v) => (setCc(v), markDirty())} placeholder="抄送" label="抄送" />
-            </Borderless>
+            <RecipientInput value={cc} onChange={(v) => (setCc(v), markDirty())} placeholder="抄送" label="抄送" bare />
           </Field>
         )}
         {showBcc && (
           <Field label="密送">
-            <Borderless>
-              <RecipientInput value={bcc} onChange={(v) => (setBcc(v), markDirty())} placeholder="密送" label="密送" />
-            </Borderless>
+            <RecipientInput value={bcc} onChange={(v) => (setBcc(v), markDirty())} placeholder="密送" label="密送" bare />
           </Field>
         )}
         <Field label="主题">
@@ -733,10 +727,6 @@ function Field({ label, extra, children }: { label: string; extra?: React.ReactN
   );
 }
 
-/** 让收件人输入框融入字段行: 去掉边框与底色。 */
-function Borderless({ children }: { children: React.ReactNode }) {
-  return <div className="min-w-0 flex-1 [&_input]:h-9 [&_input]:border-0 [&_input]:bg-transparent [&_input]:px-0 [&_input]:shadow-none [&_input]:ring-0">{children}</div>;
-}
 
 function IconBtn({
   label,

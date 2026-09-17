@@ -240,6 +240,54 @@ func (s *Store) Contact(ctx context.Context, accountID, id string) (string, erro
 }
 
 // SearchRecipients 在全部账号的联系人里按姓名或地址前缀/子串检索邮箱, 供收件人补全。
+// SearchCorrespondents 在最近的往来邮件里找地址(发件人、收件人、抄送), 按出现次数排序。
+// 通讯录只收了少数人, 平时写信的对象大多只存在于往来记录里。
+func (s *Store) SearchCorrespondents(ctx context.Context, query string, limit int) ([]Recipient, error) {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return nil, nil
+	}
+	like := "%" + escapeLike(q) + "%"
+	rows, err := s.db.QueryContext(ctx, `
+		WITH recent AS (
+			SELECT from_json, to_json, cc_json FROM emails ORDER BY received_at DESC LIMIT 5000
+		), addrs AS (
+			SELECT json_extract(a.value, '$.name') AS name, LOWER(json_extract(a.value, '$.email')) AS email
+			FROM recent r, json_each(r.from_json) a
+			UNION ALL
+			SELECT json_extract(a.value, '$.name'), LOWER(json_extract(a.value, '$.email'))
+			FROM recent r, json_each(r.to_json) a
+			UNION ALL
+			SELECT json_extract(a.value, '$.name'), LOWER(json_extract(a.value, '$.email'))
+			FROM recent r, json_each(r.cc_json) a
+		)
+		SELECT MAX(COALESCE(name, '')), email, COUNT(*) AS n
+		FROM addrs
+		WHERE email LIKE ? ESCAPE '' OR LOWER(COALESCE(name, '')) LIKE ? ESCAPE ''
+		GROUP BY email
+		ORDER BY CASE WHEN email LIKE ? ESCAPE '' THEN 0 ELSE 1 END, n DESC
+		LIMIT ?`, like, like, escapeLike(q)+"%", limit)
+	if err != nil {
+		return nil, wrap(CodeQuery, "search correspondents", err)
+	}
+	defer rows.Close()
+	var out []Recipient
+	for rows.Next() {
+		var r Recipient
+		var n int
+		var email sql.NullString
+		if err := rows.Scan(&r.Name, &email, &n); err != nil {
+			return nil, wrap(CodeQuery, "scan correspondent", err)
+		}
+		if !email.Valid || !strings.Contains(email.String, "@") {
+			continue
+		}
+		r.Email = email.String
+		out = append(out, r)
+	}
+	return out, wrap(CodeQuery, "iterate correspondents", rows.Err())
+}
+
 func (s *Store) SearchRecipients(ctx context.Context, query string, limit int) ([]Recipient, error) {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
