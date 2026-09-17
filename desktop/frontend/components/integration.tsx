@@ -197,7 +197,9 @@ function OnboardDialog({
             <Power className="text-muted-foreground mt-0.5 size-5 shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="font-medium">开机自动启动</p>
-              <p className="text-muted-foreground text-xs">在后台启动并驻留托盘，新邮件与日程提醒能及时通知。</p>
+              <p className="text-muted-foreground text-xs">
+                在后台启动并驻留{status.platform === "darwin" ? "菜单栏" : "托盘"}，新邮件与日程提醒能及时通知。
+              </p>
             </div>
             <Switch
               checked={status.autostart}
@@ -216,7 +218,8 @@ function OnboardDialog({
             <div className="min-w-0 flex-1">
               <p className="font-medium">设为默认邮件与日历应用</p>
               <p className="text-muted-foreground text-xs">
-                点击网页上的邮箱链接、双击 .ics 文件时用 CZL Mail 打开。Windows 需要在系统设置里确认。
+                点击网页上的邮箱链接、双击 .ics 文件时用 CZL Mail 打开。
+                {status.platform === "darwin" ? "" : "Windows 需要在系统设置里确认。"}
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
                 当前：邮件 {status.defaultMail ? "已是默认" : "未设置"} · 日历 {status.defaultCalendar ? "已是默认" : "未设置"}
@@ -228,12 +231,14 @@ function OnboardDialog({
               onClick={async () => {
                 try {
                   await api.openDefaultAppsSettings();
+                  // macOS 上是直接设置, 刷新状态显示结果; Windows 要等用户在系统设置里确认。
+                  if (status.platform === "darwin") onChange(await api.getIntegrationStatus());
                 } catch (err) {
                   toast.error(errorMessage(err));
                 }
               }}
             >
-              去设置
+              {status.platform === "darwin" ? "设为默认" : "去设置"}
             </Button>
           </div>
         </div>

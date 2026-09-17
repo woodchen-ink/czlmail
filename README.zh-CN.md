@@ -21,7 +21,7 @@
 - **原生启动，秒开。** Go + WebView2 原生程序，不依赖浏览器，也不用在服务器上部署网页应用。
 - **邮件缓存，打开即看。** 所有邮件缓存在本地 SQLite，通过一条 JMAP 推送（EventSource）连接实时保持同步；
   阅读、搜索、切换文件夹读的是本地磁盘，而不是等网络。
-- **系统级通知。** 新邮件和日程提醒走操作系统通知中心；关掉窗口驻留托盘、开机自启后都能及时收到。
+- **系统级通知。** 新邮件和日程提醒走操作系统通知中心；关掉窗口驻留托盘（macOS 为菜单栏）、开机自启后都能及时收到。
 - **让 Agent 使用你的邮箱。** 内置本地 MCP 服务，Claude、Codex 等 Agent 可以读取、搜索、发送邮件，查看日程、查找联系人 ——
   需要你在软件里开启，并使用本地令牌。
 - **AI 就在手边。** 接入任意兼容 OpenAI Responses API 的模型：一键原地翻译邮件、润色或翻译草稿、
@@ -43,7 +43,7 @@
 
 **服务端设置** —— 发件身份与 HTML 签名、假期自动回复、Sieve 过滤规则（规则编辑器与 Bulwark 互通，另有原始 Sieve 编辑器）
 
-**桌面集成** —— 托盘、开机自启、设为默认的 `mailto:` / `.ics` / `webcal:` 应用、基于 GitHub Releases 的自动更新（SHA-256 校验）
+**桌面集成** —— 托盘 / 菜单栏、开机自启、设为默认的 `mailto:` / `.ics` / `webcal:` 应用、基于 GitHub Releases 的自动更新（SHA-256 校验）
 
 ## 截图
 
@@ -92,7 +92,24 @@ claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp 
 从 [Releases](https://github.com/woodchen-ink/czlmail/releases) 下载最新版本：
 
 - Windows：`czlmail-amd64-installer.exe`（按用户安装，无需管理员权限）
-- macOS：`czlmail-darwin-universal.zip`（未签名，首次打开请右键 → 打开）
+- macOS：`czlmail-darwin-universal.dmg`（Intel 与 Apple 芯片通用，macOS 10.15+）
+
+### macOS 首次打开
+
+程序没有 Apple 开发者签名，系统会拦下第一次打开。打开 DMG，把 **CZL Mail** 拖进「应用程序」，然后任选一种：
+
+- 在「应用程序」里**右键 CZL Mail → 打开**，在弹窗里再点「打开」（macOS 14 及更早）；
+- macOS 15 起右键打开不再生效：先双击一次，再到**系统设置 → 隐私与安全性**，在底部点「仍要打开」；
+- 或者在终端执行下面这条命令去掉下载隔离标记，之后正常双击即可：
+
+  ```bash
+  xattr -cr "/Applications/CZL Mail.app"
+  ```
+
+提示"已损坏，无法打开"也是同一原因，用上面的命令处理。请先拖进「应用程序」再打开：
+直接在 DMG 或下载文件夹里运行时，系统会把程序放到临时的随机路径，开机自启无法记住它的位置。
+
+关闭窗口后程序驻留在菜单栏（图标旁显示未读数），点 Dock 图标或菜单栏「打开 CZL Mail」恢复窗口，⌘Q 退出。
 
 登录时填写服务器地址、邮箱，以及在 Stalwart 里生成的**应用专用密码**。
 

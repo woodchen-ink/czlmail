@@ -103,8 +103,8 @@ func (a *App) InstallUpdate() error {
 	}
 
 	if runtime.GOOS != "windows" {
-		// macOS 的包是 .app 压缩包, 无法原地静默替换, 交给用户在访达里完成。
-		return revealPath(path)
+		// macOS 未签名, 无法静默替换 .app: 打开 DMG, 由用户把新版本拖进「应用程序」覆盖。
+		return openPath(path)
 	}
 
 	if err := exec.Command(path, "/S").Start(); err != nil {

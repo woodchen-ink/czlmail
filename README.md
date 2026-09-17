@@ -23,7 +23,7 @@ app** is the whole setup:
 - **Opens mail instantly.** Everything is cached in a local SQLite database and kept current over a single
   JMAP push (EventSource) connection. Reading, searching and switching folders hit the disk, not the network.
 - **System-level notifications.** New mail and calendar reminders arrive through the OS notification center,
-  and keep arriving with the window closed (tray) or at login (autostart).
+  and keep arriving with the window closed (tray / menu bar) or at login (autostart).
 - **Agents can use your mailbox.** A local MCP server lets Claude, Codex and other agents read, search and
   send mail, check your calendar and look up contacts — with your consent and a local token.
 - **AI where you need it.** Plug in any OpenAI-compatible Responses API: translate a message in place,
@@ -49,7 +49,7 @@ anniversaries, categories) · groups · address books · vCard import
 **Server-side settings** — identities and HTML signatures, vacation auto-reply, Sieve filters
 (rule builder compatible with Bulwark's rules, plus a raw Sieve editor)
 
-**Desktop integration** — tray, autostart, default `mailto:` / `.ics` / `webcal:` handler, signed
+**Desktop integration** — tray / menu bar, autostart, default `mailto:` / `.ics` / `webcal:` handler, signed
 auto-update from GitHub Releases (SHA-256 verified)
 
 ## Screenshots
@@ -101,7 +101,28 @@ and enabled.
 Download the latest release from [Releases](https://github.com/woodchen-ink/czlmail/releases):
 
 - Windows: `czlmail-amd64-installer.exe` (per-user install, no admin rights needed)
-- macOS: `czlmail-darwin-universal.zip` (unsigned; right-click → Open the first time)
+- macOS: `czlmail-darwin-universal.dmg` (Intel and Apple silicon, macOS 10.15+)
+
+### Opening on macOS for the first time
+
+The app is not signed with an Apple Developer ID, so macOS blocks the first launch. Open the DMG, drag
+**CZL Mail** into Applications, then do one of the following:
+
+- In Applications, **right-click CZL Mail → Open**, then click Open in the dialog (macOS 14 and earlier);
+- On macOS 15 and later right-click → Open no longer works: launch it once, then go to
+  **System Settings → Privacy & Security** and click **Open Anyway** at the bottom;
+- Or remove the download quarantine flag in Terminal, after which it opens normally:
+
+  ```bash
+  xattr -cr "/Applications/CZL Mail.app"
+  ```
+
+"is damaged and can't be opened" has the same cause and the same fix. Move the app to Applications before
+opening it: when run straight from the DMG or Downloads, macOS runs it from a random temporary path and
+autostart cannot remember where it is.
+
+Closing the window keeps the app in the menu bar (with the unread count next to the icon); click the Dock icon
+or **Open CZL Mail** in the menu bar to bring the window back, and ⌘Q to quit.
 
 Sign in with your server address, email and an **app password** generated in Stalwart.
 

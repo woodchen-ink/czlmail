@@ -47,7 +47,7 @@ func main() {
 		// 从资源管理器拖入文件: 由前端按 --wails-drop-target 判断落点(网盘、写信附件)。
 		DragAndDrop: &options.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: true},
 
-		// 关闭窗口时缩到托盘继续收信; 真正退出走托盘菜单。
+		// 关闭窗口时缩到托盘(macOS 为菜单栏)继续收信; 真正退出走托盘菜单(macOS 另有 ⌘Q)。
 		HideWindowOnClose: hideOnClose,
 		// 开机自启时直接留在托盘。
 		StartHidden: hideOnClose && slices.Contains(os.Args[1:], backgroundFlag),
@@ -76,6 +76,10 @@ func main() {
 		},
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),
+			// macOS 不经命令行传 mailto 链接与 .ics 文件, 而是发 Apple 事件给已运行(或刚启动)的实例。
+			// 协议与文件类型在 build/darwin/Info.plist 声明。
+			OnUrlOpen:  func(url string) { app.handleArgs([]string{url}) },
+			OnFileOpen: func(path string) { app.handleArgs([]string{path}) },
 		},
 	})
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -18,15 +19,17 @@ const EventOpenRequest = "app:open-request"
 
 // IntegrationStatus 是设置页与首次引导用的状态。
 type IntegrationStatus struct {
-	Supported       bool `json:"supported"`
-	Autostart       bool `json:"autostart"`
-	DefaultMail     bool `json:"defaultMail"`
-	DefaultCalendar bool `json:"defaultCalendar"`
+	// Platform 是 runtime.GOOS, 界面按平台给出不同的说明(Windows 要去系统设置确认, macOS 直接设置)。
+	Platform        string `json:"platform"`
+	Supported       bool   `json:"supported"`
+	Autostart       bool   `json:"autostart"`
+	DefaultMail     bool   `json:"defaultMail"`
+	DefaultCalendar bool   `json:"defaultCalendar"`
 }
 
 func (a *App) GetIntegrationStatus() IntegrationStatus {
 	return IntegrationStatus{
-		Supported: integrationSupported, Autostart: autostartEnabled(),
+		Platform: runtime.GOOS, Supported: integrationSupported, Autostart: autostartEnabled(),
 		DefaultMail: isDefaultMail(), DefaultCalendar: isDefaultCalendar(),
 	}
 }
@@ -36,7 +39,7 @@ func (a *App) SetAutostart(on bool) (IntegrationStatus, error) {
 	return a.GetIntegrationStatus(), err
 }
 
-// OpenDefaultAppsSettings 打开系统的默认应用设置页。
+// OpenDefaultAppsSettings 打开系统的默认应用设置页; macOS 上直接设为默认。
 func (a *App) OpenDefaultAppsSettings() error {
 	if err := registerHandlers(); err != nil {
 		return err

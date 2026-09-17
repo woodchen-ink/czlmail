@@ -111,6 +111,8 @@ export function IntegrationSection({ active }: { active: boolean }) {
         .catch(() => setStatus(null));
   }, [active]);
 
+  const mac = status?.platform === "darwin";
+
   if (status && !status.supported) {
     return (
       <>
@@ -126,7 +128,10 @@ export function IntegrationSection({ active }: { active: boolean }) {
     <>
       <SectionTitle title="默认应用与启动" />
       <Card>
-        <Row title="开机自动启动" desc="登录系统后在后台启动并驻留托盘，新邮件和日程提醒能及时送达">
+        <Row
+          title="开机自动启动"
+          desc={`登录系统后在后台启动并驻留${mac ? "菜单栏" : "托盘"}，新邮件和日程提醒能及时送达`}
+        >
           <Switch
             checked={!!status?.autostart}
             disabled={!status}
@@ -157,7 +162,9 @@ export function IntegrationSection({ active }: { active: boolean }) {
         <Divider />
         <div className="flex items-center gap-3">
           <p className="text-muted-foreground flex-1 text-xs leading-relaxed">
-            Windows 不允许程序自行修改默认应用。点击右侧按钮打开系统设置，在「CZL Mail」页面把 MAILTO、.ics、WEBCAL 设为 CZL Mail。
+            {mac
+              ? "把 CZL Mail 设为邮箱链接、.ics 文件与 webcal 订阅的默认打开程序。以后想改回，在「邮件」或「日历」自己的设置里选。"
+              : "Windows 不允许程序自行修改默认应用。点击右侧按钮打开系统设置，在「CZL Mail」页面把 MAILTO、.ics、WEBCAL 设为 CZL Mail。"}
           </p>
           <Button
             variant="outline"
@@ -165,13 +172,14 @@ export function IntegrationSection({ active }: { active: boolean }) {
             onClick={async () => {
               try {
                 await api.openDefaultAppsSettings();
+                if (mac) setStatus(await api.getIntegrationStatus());
               } catch (err) {
                 toast.error(errorMessage(err));
               }
             }}
           >
-            <ExternalLink className="size-4" />
-            打开系统设置
+            {!mac && <ExternalLink className="size-4" />}
+            {mac ? "设为默认" : "打开系统设置"}
           </Button>
         </div>
       </Card>

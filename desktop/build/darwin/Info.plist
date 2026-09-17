@@ -1,0 +1,89 @@
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>CFBundlePackageType</key>
+        <string>APPL</string>
+        <key>CFBundleName</key>
+        <string>{{.Info.ProductName}}</string>
+        <key>CFBundleDisplayName</key>
+        <string>{{.Info.ProductName}}</string>
+        <key>CFBundleExecutable</key>
+        <string>{{.OutputFilename}}</string>
+        <key>CFBundleIdentifier</key>
+        <string>net.czl.mail</string>
+        <key>CFBundleVersion</key>
+        <string>{{.Info.ProductVersion}}</string>
+        <key>CFBundleGetInfoString</key>
+        <string>{{.Info.Comments}}</string>
+        <key>CFBundleShortVersionString</key>
+        <string>{{.Info.ProductVersion}}</string>
+        <key>CFBundleIconFile</key>
+        <string>iconfile</string>
+        <key>LSMinimumSystemVersion</key>
+        <string>10.15.0</string>
+        <key>LSApplicationCategoryType</key>
+        <string>public.app-category.productivity</string>
+        <key>NSHighResolutionCapable</key>
+        <string>true</string>
+        <key>NSHumanReadableCopyright</key>
+        <string>{{.Info.Copyright}}</string>
+
+        <!-- 默认邮件应用: 系统「邮件 → 设置 → 默认电子邮件阅读程序」只列出声明了 mailto 的应用。
+             czlmail:// 是「复制邮件链接」, webcal 是日历订阅。 -->
+        <key>CFBundleURLTypes</key>
+        <array>
+            <dict>
+                <key>CFBundleURLName</key>
+                <string>Email Address URL</string>
+                <key>CFBundleURLSchemes</key>
+                <array>
+                    <string>mailto</string>
+                </array>
+                <key>CFBundleTypeRole</key>
+                <string>Editor</string>
+            </dict>
+            <dict>
+                <key>CFBundleURLName</key>
+                <string>Calendar Subscription URL</string>
+                <key>CFBundleURLSchemes</key>
+                <array>
+                    <string>webcal</string>
+                    <string>webcals</string>
+                </array>
+                <key>CFBundleTypeRole</key>
+                <string>Viewer</string>
+            </dict>
+            <dict>
+                <key>CFBundleURLName</key>
+                <string>CZL Mail Link</string>
+                <key>CFBundleURLSchemes</key>
+                <array>
+                    <string>czlmail</string>
+                </array>
+                <key>CFBundleTypeRole</key>
+                <string>Viewer</string>
+            </dict>
+        </array>
+
+        <!-- .ics 进「打开方式」列表; Alternate 表示不抢系统日历的默认, 由用户在设置里指定。 -->
+        <key>CFBundleDocumentTypes</key>
+        <array>
+            <dict>
+                <key>CFBundleTypeName</key>
+                <string>iCalendar</string>
+                <key>CFBundleTypeRole</key>
+                <string>Viewer</string>
+                <key>LSHandlerRank</key>
+                <string>Alternate</string>
+                <key>LSItemContentTypes</key>
+                <array>
+                    <string>com.apple.ical.ics</string>
+                </array>
+                <key>CFBundleTypeExtensions</key>
+                <array>
+                    <string>ics</string>
+                </array>
+            </dict>
+        </array>
+    </dict>
+</plist>

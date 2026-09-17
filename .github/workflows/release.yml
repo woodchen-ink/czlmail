@@ -1,4 +1,4 @@
-# 打 v* tag 时构建 Windows 安装包与 macOS 应用, 生成 SHA256SUMS 并发布 GitHub Release。
+# 打 v* tag 时构建 Windows 安装包与 macOS 应用(DMG), 生成 SHA256SUMS 并发布 GitHub Release。
 # 桌面端的在线更新读取这里发布的 Release, 并用 SHA256SUMS 校验下载的安装包。
 name: release
 
@@ -83,12 +83,26 @@ jobs:
           PRODUCT_VERSION="${VERSION#v}"; PRODUCT_VERSION="${PRODUCT_VERSION%%-*}"
           sed -i '' -E "s/\"productVersion\": *\"[^\"]*\"/\"productVersion\": \"${PRODUCT_VERSION}\"/" wails.json
           "$(go env GOPATH)/bin/wails" build -platform darwin/universal -ldflags "-X main.version=${VERSION}"
-          cd build/bin && app=$(ls -d *.app | head -n1) && ditto -c -k --keepParent "$app" czlmail-darwin-universal.zip
+
+      # 没有 Apple 开发者证书: 整个包做 ad-hoc 签名(Apple Silicon 不运行无签名代码, lipo 合并与写入 Info.plist
+      # 会让链接器给的签名失效), 再打 DMG(拖进「应用程序」)。zip 保留给 0.0.x 旧版的在线更新。
+      - name: Package
+        working-directory: desktop/build/bin
+        run: |
+          app=$(ls -d *.app | head -n1)
+          plutil -lint "$app/Contents/Info.plist"
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict "$app"
+          ditto -c -k --keepParent "$app" czlmail-darwin-universal.zip
+          mkdir dmg && ditto "$app" "dmg/$app" && ln -s /Applications dmg/Applications
+          hdiutil create -volname "CZL Mail" -srcfolder dmg -ov -format UDZO czlmail-darwin-universal.dmg
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: desktop/build/bin/czlmail-darwin-universal.zip
+          path: |
+            desktop/build/bin/czlmail-darwin-universal.dmg
+            desktop/build/bin/czlmail-darwin-universal.zip
           if-no-files-found: error
 
   publish:

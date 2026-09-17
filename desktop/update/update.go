@@ -108,7 +108,7 @@ func assetName() string {
 	case "windows":
 		return "czlmail-" + runtime.GOARCH + "-installer.exe"
 	case "darwin":
-		return "czlmail-darwin-universal.zip"
+		return "czlmail-darwin-universal.dmg"
 	}
 	return ""
 }
