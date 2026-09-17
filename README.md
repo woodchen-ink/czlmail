@@ -77,7 +77,7 @@ Two transports are available:
 
 ```bash
 # stdio (the app bridges to the running instance)
-claude mcp add --scope user czlmail -- "C:\Users\<you>\AppData\Local\Programs\CZL Mail\czlmail.exe" mcp
+claude mcp add --scope user czlmail -- "C:\Users\<you>\AppData\Local\CZL\CZL Mail\czlmail.exe" mcp
 
 # Streamable HTTP on 127.0.0.1 with a bearer token
 claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp --header "Authorization: Bearer <token>"

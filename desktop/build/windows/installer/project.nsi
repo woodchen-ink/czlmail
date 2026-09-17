@@ -28,7 +28,7 @@ Unicode true
 ## !define PRODUCT_EXECUTABLE  "Application.exe"      # Default "${INFO_PROJECTNAME}.exe"
 ## !define UNINST_KEY_NAME     "UninstKeyInRegistry"  # Default "${INFO_COMPANYNAME}${INFO_PRODUCTNAME}"
 ####
-# Per-user install under %LOCALAPPDATA%\Programs: the install dir stays writable,
+# Per-user install under %LOCALAPPDATA%\CZL: the install dir stays writable,
 # so attachments live in <install>\attachments and self-update needs no UAC.
 !define REQUEST_EXECUTION_LEVEL "user"
 ## !define REQUEST_EXECUTION_LEVEL "admin"            # Default "admin"  see also https://nsis.sourceforge.io/Docs/Chapter4.html
@@ -78,7 +78,7 @@ ManifestDPIAware true
 
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the installer's file.
-InstallDir "$LOCALAPPDATA\Programs\${INFO_PRODUCTNAME}"
+InstallDir "$LOCALAPPDATA\CZL\${INFO_PRODUCTNAME}"
 ShowInstDetails show # This will always show the installation details.
 
 # Silent installs are started by the in-app updater, which has already quit; reopen the app.
@@ -98,6 +98,26 @@ FunctionEnd
     Sleep 500
 !macroend
 
+# Versions before the move installed to %LOCALAPPDATA%\Programs\CZL Mail. Carry the opened
+# attachments / drive files over, repoint autostart at the new exe, then remove the old copy.
+!macro czl.migrateOldInstall
+    StrCpy $0 "$LOCALAPPDATA\Programs\${INFO_PRODUCTNAME}"
+    ${If} $0 != $INSTDIR
+    ${AndIf} ${FileExists} "$0\${PRODUCT_EXECUTABLE}"
+        ${IfNot} ${FileExists} "$INSTDIR\attachments\*.*"
+            Rename "$0\attachments" "$INSTDIR\attachments"
+        ${EndIf}
+        ${IfNot} ${FileExists} "$INSTDIR\files\*.*"
+            Rename "$0\files" "$INSTDIR\files"
+        ${EndIf}
+        ReadRegStr $1 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${INFO_PRODUCTNAME}"
+        ${If} $1 != ""
+            WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${INFO_PRODUCTNAME}" '"$INSTDIR\${PRODUCT_EXECUTABLE}" --background'
+        ${EndIf}
+        RMDir /r "$0"
+    ${EndIf}
+!macroend
+
 Section
     !insertmacro wails.setShellContext
 
@@ -108,6 +128,8 @@ Section
     SetOutPath $INSTDIR
 
     !insertmacro wails.files
+
+    !insertmacro czl.migrateOldInstall
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"

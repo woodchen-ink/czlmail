@@ -70,7 +70,7 @@
 
 ```bash
 # stdio（由程序转接到正在运行的实例）
-claude mcp add --scope user czlmail -- "C:\Users\<你>\AppData\Local\Programs\CZL Mail\czlmail.exe" mcp
+claude mcp add --scope user czlmail -- "C:\Users\<你>\AppData\Local\CZL\CZL Mail\czlmail.exe" mcp
 
 # Streamable HTTP，监听 127.0.0.1，需要 Bearer 令牌
 claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp --header "Authorization: Bearer <令牌>"
