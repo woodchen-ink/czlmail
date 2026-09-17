@@ -166,11 +166,18 @@ export function EmailBody({
 function bridgeScript(nonce: string): string {
   return `<script nonce="${nonce}">
 (function () {
+  var lastH = 0, lastView = 0;
   function report() {
     var h = Math.max(
       document.documentElement.scrollHeight,
       document.body ? document.body.scrollHeight : 0
     );
+    var view = window.innerHeight;
+    // 版式高度跟随视口(height:100%、100vh)的邮件: iframe 变高后内容也等量变高,
+    // 再上报就会无限增长。视口变了而"内容 - 视口"的差值没变, 说明是被视口撑开的, 不上报。
+    if (lastView && view !== lastView && h - view === lastH - lastView) return;
+    lastH = h;
+    lastView = view;
     parent.postMessage({ type: "height", height: h }, "*");
   }
   document.addEventListener("click", function (e) {
