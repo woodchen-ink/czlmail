@@ -22,6 +22,11 @@ import {
   type Mailbox,
 } from "@/lib/api";
 import { main } from "@/wailsjs/go/models";
+import {
+  batchSegments,
+  extractSegments,
+  parseTranslations,
+} from "@/lib/translate-html";
 import { displayAddress, displayAddressList, fullDate } from "@/lib/format";
 
 interface Props {
@@ -60,9 +65,13 @@ export function EmailView({
   const [senderTrusted, setSenderTrusted] = useState(false);
   const [ai, setAI] = useState<AIConfig | null>(null);
   // 译文替换正文显示; null 表示显示原文。
+  // html/text 是替换了文字之后的正文, 排版与样式保持原样。
   const [translation, setTranslation] = useState<null | {
+    html: string;
     text: string;
     running: boolean;
+    done: number;
+    total: number;
   }>(null);
   const translateAbort = useRef<AbortController | null>(null);
 
@@ -75,28 +84,68 @@ export function EmailView({
   }, []);
 
   async function translate() {
+    if (!email) return;
     translateAbort.current?.abort();
     const ctl = new AbortController();
     translateAbort.current = ctl;
-    setTranslation({ text: "", running: true });
-    try {
-      const text = await runAI(
-        main.AIRequest.createFrom({
-          kind: "translate_email",
-          accountId,
-          emailId,
-          text: "",
-          language: "",
-        }),
-        (full) => setTranslation({ text: full, running: true }),
-        ctl.signal,
-      );
-      setTranslation({ text, running: false });
-    } catch (err) {
-      if ((err as Error).name === "AbortError") return;
-      toast.error(errorMessage(err));
-      setTranslation(null);
+
+    const seg = extractSegments(email.bodyHtml || "", email.bodyText || "");
+    if (seg.texts.length === 0) {
+      toast.info("没有需要翻译的文字");
+      return;
     }
+    const batches = batchSegments(seg.texts);
+    const result: (string | undefined)[] = new Array(seg.texts.length);
+    let done = 0;
+    let failed = 0;
+    const show = (running: boolean) => {
+      const out = seg.render(result);
+      setTranslation({
+        html: seg.isHtml ? out : "",
+        text: seg.isHtml ? "" : out,
+        running,
+        done,
+        total: batches.length,
+      });
+    };
+    show(true);
+
+    // 三批并行: 长邮件逐批显示译文, 不必等整封翻完。
+    let next = 0;
+    const worker = async () => {
+      while (next < batches.length && !ctl.signal.aborted) {
+        const batch = batches[next++];
+        try {
+          const output = await runAI(
+            main.AIRequest.createFrom({
+              kind: "translate_segments",
+              accountId,
+              emailId,
+              text: JSON.stringify(batch.map((k) => seg.texts[k])),
+              language: "",
+            }),
+            () => {},
+            ctl.signal,
+          );
+          const arr = parseTranslations(output);
+          if (!arr) failed++;
+          else batch.forEach((k, n) => (result[k] = arr[n] ?? undefined));
+        } catch (err) {
+          if ((err as Error).name === "AbortError") return;
+          failed++;
+          if (failed === 1) toast.error(errorMessage(err));
+        }
+        done++;
+        if (!ctl.signal.aborted) show(done < batches.length);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    if (ctl.signal.aborted) return;
+    if (failed === batches.length) {
+      setTranslation(null);
+      return;
+    }
+    if (failed > 0) toast.warning("部分段落没有翻译成功，已保留原文");
   }
 
   useEffect(() => {
@@ -278,7 +327,7 @@ export function EmailView({
                       <Languages className="size-3.5" />
                     )}
                     {translation.running
-                      ? "正在翻译…"
+                      ? `正在翻译… ${translation.done}/${translation.total}`
                       : `已由 AI 翻译为${ai.translateLang || "简体中文"}`}
                   </span>
                   <Button
@@ -312,14 +361,10 @@ export function EmailView({
                 emailId={email.id}
                 attachments={email.attachments ?? []}
               />
-              {translation !== null ? (
-                <div className="text-sm leading-relaxed whitespace-pre-wrap select-text">
-                  {translation.text || "…"}
-                </div>
-              ) : (
+              {
                 <EmailBody
-                  html={email.bodyHtml}
-                  text={email.bodyText}
+                  html={translation ? translation.html : email.bodyHtml}
+                  text={translation?.text || email.bodyText}
                   senderEmail={sender?.email ?? ""}
                   senderTrusted={senderTrusted}
                   mode={bodyMode}
@@ -333,7 +378,7 @@ export function EmailView({
                     }
                   }}
                 />
-              )}
+              }
             </>
           )}
         </div>

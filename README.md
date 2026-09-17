@@ -11,6 +11,8 @@ mail, calendar, contacts and files, with a built-in <b>MCP server</b> and <b>AI 
 
 ---
 
+<p align="center"><img src="screenshots/mail.png" alt="Mail" width="860"></p>
+
 ## Why this exists
 
 [Bulwark](https://github.com/bulwarkmail/webmail) is an excellent JMAP webmail for Stalwart, and it shaped
@@ -32,7 +34,8 @@ app** is the whole setup:
 **Mail** — multiple accounts and shared mailboxes · rich-text compose with HTML signatures, templates,
 read receipts, "send separately" and scheduled send · drafts auto-save · folder create / rename / move /
 delete · full-text search (CJK-aware) · remote content blocked by default with a trusted-senders list
-shared with Bulwark · attachments open locally with one click · pull an entire folder from the server
+shared with Bulwark · batch actions · one-click unsubscribe (RFC 8058) · calendar invitations answered right in the message ·
+attachments open locally with one click · pull an entire folder from the server
 
 **Calendar** — month / week / day / agenda views with multi-day events drawn as connected bars ·
 side-panel editor with meeting links, attendees and invitations, RSVP, multiple reminders and recurrence ·
@@ -48,6 +51,20 @@ anniversaries, categories) · groups · address books · vCard import
 
 **Desktop integration** — tray, autostart, default `mailto:` / `.ics` / `webcal:` handler, signed
 auto-update from GitHub Releases (SHA-256 verified)
+
+## Screenshots
+
+| Compose with HTML signature | Calendar with multi-day events |
+|---|---|
+| <img src="screenshots/compose.png" alt="Compose"> | <img src="screenshots/calendar.png" alt="Calendar"> |
+
+| Contacts | Files |
+|---|---|
+| <img src="screenshots/contacts.png" alt="Contacts"> | <img src="screenshots/files.png" alt="Files"> |
+
+| MCP for AI agents | Settings |
+|---|---|
+| <img src="screenshots/mcp.png" alt="MCP"> | <img src="screenshots/settings.png" alt="Settings"> |
 
 ## MCP: let agents use your mailbox
 
@@ -75,7 +92,7 @@ Message content is always handed to the model as data, not instructions.
 implements the OpenAI **Responses API** (`/v1/responses`) works. AI buttons only appear after AI is configured
 and enabled.
 
-- **Translate** a message into your default language, in place, with one click back to the original
+- **Translate** a message into your default language in place — only the text changes, the original layout and styles stay — with one click back to the original
 - **Polish** or **translate** what you've written in the compose window
 - **Reply with intent** — type "accept, but ask to ship before Wednesday" and get a draft reply
 

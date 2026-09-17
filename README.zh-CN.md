@@ -11,6 +11,8 @@
 
 ---
 
+<p align="center"><img src="screenshots/mail.png" alt="邮件" width="860"></p>
+
 ## 为什么要写这个项目
 
 [Bulwark](https://github.com/bulwarkmail/webmail) 是 Stalwart 上很好的 JMAP 网页邮箱，本项目的很多设计都参考了它。
@@ -29,6 +31,7 @@
 
 **邮件** —— 多账号与共享邮箱 · 富文本写信（HTML 签名、模板、已读回执、分开发送、定时发送）· 草稿自动保存 ·
 文件夹新建 / 重命名 / 移动 / 删除 · 全文搜索（支持中文）· 默认拦截远程内容，信任发件人名单与 Bulwark 共用 ·
+批量操作 · 一键退订（RFC 8058）· 在邮件里直接回复日历邀请 ·
 附件一键本地打开 · 右键从服务器拉取整个文件夹
 
 **日历** —— 月 / 周 / 天 / 议程视图，跨天日程连成横条显示 · 右侧编辑面板（会议链接、参加者与邀请、回复邀请、
@@ -41,6 +44,20 @@
 **服务端设置** —— 发件身份与 HTML 签名、假期自动回复、Sieve 过滤规则（规则编辑器与 Bulwark 互通，另有原始 Sieve 编辑器）
 
 **桌面集成** —— 托盘、开机自启、设为默认的 `mailto:` / `.ics` / `webcal:` 应用、基于 GitHub Releases 的自动更新（SHA-256 校验）
+
+## 截图
+
+| 写信（HTML 签名） | 日历（跨天日程连成横条） |
+|---|---|
+| <img src="screenshots/compose.png" alt="写信"> | <img src="screenshots/calendar.png" alt="日历"> |
+
+| 通讯录 | 网盘 |
+|---|---|
+| <img src="screenshots/contacts.png" alt="通讯录"> | <img src="screenshots/files.png" alt="网盘"> |
+
+| MCP：接入 AI Agent | 设置 |
+|---|---|
+| <img src="screenshots/mcp.png" alt="MCP"> | <img src="screenshots/settings.png" alt="设置"> |
 
 ## MCP：让 Agent 使用你的邮箱
 
@@ -66,7 +83,7 @@ claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp 
 在 **设置 → AI 助手** 填写接口地址、API Key（保存在系统钥匙串）和模型名称。任何实现了 OpenAI **Responses API**
 （`/v1/responses`）的服务都可以使用。只有配置并启用后，界面上才会出现 AI 按钮。
 
-- **翻译邮件**：一键把邮件翻译成默认语言，在正文位置原地显示，可随时切回原文
+- **翻译邮件**：一键把邮件翻译成默认语言，只替换文字，排版与样式保持原样，可随时切回原文
 - **润色 / 翻译草稿**：写信时对正文一键优化或翻译
 - **按意图回复**：输入「同意报价，但希望周三前发货」，AI 起草完整回复
 

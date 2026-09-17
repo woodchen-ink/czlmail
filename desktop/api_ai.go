@@ -194,6 +194,20 @@ func (a *App) aiPrompt(req AIRequest, lang string) (string, string, error) {
 				"Keep paragraphs, lists, numbers, names, links and email addresses unchanged.",
 			"<data>\nSubject: " + d.Subject + "\n\n" + truncate(body, aiMaxInput) + "\n</data>", nil
 
+	case "translate_segments":
+		// Text 是按文档顺序排列的文字片段 JSON 数组, 界面用译文原地替换 HTML 里的文字节点。
+		var segs []string
+		if err := json.Unmarshal([]byte(req.Text), &segs); err != nil || len(segs) == 0 {
+			return "", "", fmt.Errorf("2208 invalid translation segments")
+		}
+		return aiSafety + "The data is a JSON array of text fragments taken in order from one email. " +
+				"Translate every fragment into " + lang + ". Reply with ONLY a JSON array of strings with exactly " +
+				fmt.Sprint(len(segs)) + " elements, where element i is the translation of fragment i. " +
+				"Fragments may be partial sentences split by formatting; translate them so they read naturally in sequence. " +
+				"Keep names, numbers, URLs, email addresses and code unchanged. If a fragment is already in " + lang +
+				" or should not be translated, return it unchanged. No commentary, no code fences.",
+			"<data>\n" + truncate(req.Text, aiMaxInput) + "\n</data>", nil
+
 	case "polish":
 		return aiSafety + "Rewrite the draft email to be clear, polite and well organized, in the same language as the draft " +
 				"unless the draft asks otherwise. Keep all facts, numbers, names and links. " +
