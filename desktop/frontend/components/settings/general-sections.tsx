@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Card, Divider, NativeSelect, Row, SectionTitle, useSettings } from "@/components/settings/ui";
-import { api, errorMessage, type IntegrationStatus } from "@/lib/api";
+import { api, errorMessage, type Account, type IntegrationStatus } from "@/lib/api";
 import { useAppearance, type ThemePreference } from "@/lib/theme";
 
 export function AppearanceSection({ active }: { active: boolean }) {
@@ -47,18 +47,55 @@ export function AppearanceSection({ active }: { active: boolean }) {
 
 export function NotificationsSection({ active }: { active: boolean }) {
   const { settings, save } = useSettings(active);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+
+  useEffect(() => {
+    if (active)
+      api
+        .listAccounts()
+        .then((list) => setAccounts(list ?? []))
+        .catch(() => setAccounts([]));
+  }, [active]);
+
+  const muted = new Set(settings?.mutedMailAccounts ?? []);
+  const mailOn = !!settings?.notifyMail;
+
   return (
     <>
       <SectionTitle title="通知" desc="使用系统通知中心。关闭主窗口后程序驻留托盘，仍会收到通知。" />
       <Card>
-        <Row title="新邮件通知" desc="收件箱收到新邮件时弹出系统通知，点击直接打开这封邮件">
-          <Switch checked={!!settings?.notifyMail} disabled={!settings} onCheckedChange={(on) => save({ notifyMail: on })} />
+        <Row title="新邮件通知" desc="只通知收件箱里的来信；自己发出的邮件（任一发件身份）不通知。点击通知直接打开这封邮件">
+          <Switch checked={mailOn} disabled={!settings} onCheckedChange={(on) => save({ notifyMail: on })} />
         </Row>
         <Divider />
         <Row title="日程提醒" desc="按日程上设置的提醒时间通知；在服务器上设置的提醒与其它设备一致">
           <Switch checked={!!settings?.notifyEvents} disabled={!settings} onCheckedChange={(on) => save({ notifyEvents: on })} />
         </Row>
       </Card>
+
+      {accounts.length > 1 && (
+        <>
+          <SectionTitle title="按邮箱设置" desc="共享邮箱来信多时可以单独关闭，邮件照常同步，只是不弹通知。" small />
+          <Card className="gap-0 p-0">
+            {accounts.map((a, i) => (
+              <div key={a.id} className={i > 0 ? "border-border border-t px-4 py-2.5" : "px-4 py-2.5"}>
+                <Row title={a.name} desc={a.isPersonal ? "个人邮箱" : "共享邮箱"}>
+                  <Switch
+                    checked={mailOn && !muted.has(a.id)}
+                    disabled={!settings || !mailOn}
+                    onCheckedChange={(on) => {
+                      const next = new Set(muted);
+                      if (on) next.delete(a.id);
+                      else next.add(a.id);
+                      save({ mutedMailAccounts: [...next] });
+                    }}
+                  />
+                </Row>
+              </div>
+            ))}
+          </Card>
+        </>
+      )}
     </>
   );
 }

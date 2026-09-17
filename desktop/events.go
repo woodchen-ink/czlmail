@@ -1,6 +1,12 @@
 package main
 
 import (
+	"encoding/json"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
@@ -42,11 +48,21 @@ func (a *App) emit(name string, data ...any) {
 //
 // 只处理个人账号与共享账号中真正新增的邮件; 标记已读之类的更新不会走到这里。
 func (a *App) onNewMail(accountID string, emails []store.Email) {
+	// 只通知收件箱: 已发送、草稿、被过滤规则移走的邮件都不是"来信"。
+	inbox := ""
+	if st, err := a.currentStore(); err == nil {
+		inbox, _ = mailboxByRole(st, a.ctx, accountID, "inbox")
+	}
+	if inbox == "" {
+		return
+	}
+	own := a.ownAddresses()
+
 	summaries := make([]newMailNotice, 0, len(emails))
 	for i := range emails {
 		e := &emails[i]
-		// 自己发出去的信会同时落进"已发送", 不该弹通知。
-		if hasKeyword(e.Keywords, "$draft") || isFromSelf(e, a.username()) {
+		// 自己发出去的信(任一发件身份, 含别名)不通知, 包括发给自己的。
+		if !slices.Contains(e.MailboxIDs, inbox) || hasKeyword(e.Keywords, "$draft") || isFromSelf(e, own) {
 			continue
 		}
 		summaries = append(summaries, newMailNotice{
@@ -63,7 +79,7 @@ func (a *App) onNewMail(accountID string, emails []store.Email) {
 	}
 
 	a.emit(EventNewMail, summaries)
-	if a.settingOn("notifyMail", true) {
+	if a.settingOn("notifyMail", true) && !a.mailMuted(accountID) {
 		a.notifyNewMail(summaries)
 	}
 }
@@ -91,16 +107,62 @@ func hasKeyword(keywords []string, want string) bool {
 	return false
 }
 
-func isFromSelf(e *store.Email, username string) bool {
-	if username == "" {
-		return false
-	}
+func isFromSelf(e *store.Email, own map[string]bool) bool {
 	for _, a := range e.From {
-		if a.Email == username {
+		if own[strings.ToLower(a.Email)] {
 			return true
 		}
 	}
 	return false
+}
+
+// ownCache 缓存自己的全部发件地址(登录名 + 各账号的发件身份), 避免每批新邮件都请求一次服务器。
+var ownCache struct {
+	sync.Mutex
+	at    time.Time
+	addrs map[string]bool
+}
+
+func (a *App) ownAddresses() map[string]bool {
+	ownCache.Lock()
+	defer ownCache.Unlock()
+	if ownCache.addrs != nil && time.Since(ownCache.at) < 10*time.Minute {
+		return ownCache.addrs
+	}
+	out := map[string]bool{}
+	if u := strings.ToLower(a.username()); u != "" {
+		out[u] = true
+	}
+	if st, err := a.currentStore(); err == nil {
+		if accounts, err := st.Accounts(a.ctx); err == nil {
+			for _, acc := range accounts {
+				ids, err := a.ListIdentities(acc.ID)
+				if err != nil {
+					continue
+				}
+				for _, id := range ids {
+					out[strings.ToLower(id.Email)] = true
+				}
+			}
+		}
+	}
+	ownCache.addrs, ownCache.at = out, time.Now()
+	return out
+}
+
+// mailMuted 报告某账号(通常是共享邮箱)是否关闭了新邮件通知。
+func (a *App) mailMuted(accountID string) bool {
+	st, err := a.currentStore()
+	if err != nil {
+		return false
+	}
+	raw, err := st.StringSetting(a.ctx, "mutedMailAccounts")
+	if err != nil || raw == "" {
+		return false
+	}
+	var muted []string
+	_ = json.Unmarshal([]byte(raw), &muted)
+	return slices.Contains(muted, accountID)
 }
 
 // formatSender 优先显示姓名, 没有姓名时退回地址。

@@ -179,6 +179,8 @@ type AppSettings struct {
 	WarnMissingAttachment bool `json:"warnMissingAttachment"`
 	// DefaultIdentities 是 账号 id → 默认发件身份 id。
 	DefaultIdentities map[string]string `json:"defaultIdentities"`
+	// MutedMailAccounts 是关闭了新邮件通知的账号(多为共享邮箱)。
+	MutedMailAccounts []string `json:"mutedMailAccounts"`
 }
 
 var boolSettings = []struct {
@@ -217,6 +219,10 @@ func (a *App) GetSettings() (AppSettings, error) {
 	if v, err := st.StringSetting(a.ctx, "defaultIdentities"); err == nil {
 		_ = json.Unmarshal([]byte(v), &s.DefaultIdentities)
 	}
+	s.MutedMailAccounts = []string{}
+	if v, err := st.StringSetting(a.ctx, "mutedMailAccounts"); err == nil && v != "" {
+		_ = json.Unmarshal([]byte(v), &s.MutedMailAccounts)
+	}
 	return s, nil
 }
 
@@ -244,7 +250,14 @@ func (a *App) SaveSettings(s AppSettings) error {
 		return err
 	}
 	ids, _ := json.Marshal(s.DefaultIdentities)
-	return st.SetStringSetting(a.ctx, "defaultIdentities", string(ids))
+	if err := st.SetStringSetting(a.ctx, "defaultIdentities", string(ids)); err != nil {
+		return err
+	}
+	if s.MutedMailAccounts == nil {
+		s.MutedMailAccounts = []string{}
+	}
+	muted, _ := json.Marshal(s.MutedMailAccounts)
+	return st.SetStringSetting(a.ctx, "mutedMailAccounts", string(muted))
 }
 
 // settingOn 读一个布尔设置, 读失败时按默认值处理。
