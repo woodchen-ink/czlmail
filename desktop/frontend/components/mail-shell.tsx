@@ -210,6 +210,46 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     [accountId, mailboxId, overlay],
   );
 
+  // 列表的最新值, 供乐观更新与静默刷新在回调里读取, 不必把 emails 列进依赖。
+  const emailsRef = useRef(emails);
+  useEffect(() => {
+    emailsRef.current = emails;
+  }, [emails]);
+
+  // 静默刷新已加载的整段列表(同步推送、操作完成后)。
+  // 不能只重载第一页: 翻过几页后列表会缩回 50 封, 滚动位置跳动、触底又加载回来, 看起来连闪几下;
+  // 也不显示加载骨架, 数据到了一次性替换。
+  const refreshLoaded = useCallback(
+    async (token: number) => {
+      if (!accountId || !mailboxId) return;
+      if (emptying.current.has(`${accountId}/${mailboxId}`)) {
+        setEmails([]);
+        setHasMore(false);
+        return;
+      }
+      const want = Math.max(PAGE_SIZE, emailsRef.current.length);
+      const out: EmailSummary[] = [];
+      try {
+        // 后端单次最多 200 封。
+        for (let off = 0; off < want; off += 200) {
+          const n = Math.min(200, want - off);
+          const page = (await api.listEmails(accountId, mailboxId, n, off)) ?? [];
+          if (token !== loadToken.current) return;
+          out.push(...page);
+          if (page.length < n) break;
+        }
+        setEmails(overlay(out));
+        setHasMore(out.length >= want);
+      } catch (err) {
+        if (token === loadToken.current) toast.error(errorMessage(err));
+      } finally {
+        // 首屏加载途中被刷新顶替时, 由这里收起加载态。
+        if (token === loadToken.current) setLoading(false);
+      }
+    },
+    [accountId, mailboxId, overlay],
+  );
+
   // 从通知或其它模块打开某封邮件时, 切换账号会触发下面的列表重置;
   // 先记下要打开的邮件, 重置时选中它而不是清空。
   const pendingEmail = useRef("");
@@ -242,8 +282,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
   const reload = useCallback(() => {
     loadToken.current += 1;
-    loadPage(0, loadToken.current);
-  }, [loadPage]);
+    refreshLoaded(loadToken.current);
+  }, [refreshLoaded]);
 
   // 预取当前邮件后面几封的正文, 按 j/↓ 翻下一封时不用等网络。
   useEffect(() => {
@@ -330,12 +370,6 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   }, [query, accountId, reload, overlay]);
 
   /* ---------- 操作 ---------- */
-
-  // 列表的最新值, 供乐观更新在回调里计算下一封与未读数, 不必把 emails 列进每个操作的依赖。
-  const emailsRef = useRef(emails);
-  useEffect(() => {
-    emailsRef.current = emails;
-  }, [emails]);
 
   const refreshCurrent = useCallback(() => {
     setRevision((r) => r + 1);

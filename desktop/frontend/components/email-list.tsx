@@ -59,6 +59,7 @@ export function EmailList({
   rowMenu,
 }: Props) {
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const wrapRow = rowMenu ?? ((_: EmailSummary, row: React.ReactElement) => row);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [threads, setThreads] = useState<Record<string, EmailSummary[]>>({});
@@ -123,6 +124,8 @@ export function EmailList({
 
   // 触底加载。用 IntersectionObserver 而不是监听 scroll 事件：
   // scroll 在快速滚动时每帧都触发，而这里只需要知道「哨兵进入视口」这一个事实。
+  // root 必须是列表自己的滚动容器: 以窗口为 root 时哨兵先被容器裁掉, rootMargin 不起作用,
+  // 要真正滚到底才触发。距底部约一屏半就预加载下一页, 正常滚动碰不到加载态。
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || !hasMore || loading) return;
@@ -131,7 +134,7 @@ export function EmailList({
       (entries) => {
         if (entries[0]?.isIntersecting) onLoadMore();
       },
-      { rootMargin: "200px" },
+      { root: scrollRef.current, rootMargin: "0px 0px 1200px 0px" },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -157,7 +160,7 @@ export function EmailList({
   }
 
   return (
-    <ScrollArea className="h-full overflow-x-hidden">
+    <ScrollArea ref={scrollRef} className="h-full overflow-x-hidden">
       <ul className="flex flex-col">
         {rows.map(({ head: email, unread }, index) => {
           const tid = email.threadId;
