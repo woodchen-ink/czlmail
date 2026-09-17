@@ -811,6 +811,13 @@ function withPrefix(prefix: "Re:" | "Fwd:", subject: string): string {
   return `${prefix} ${subject}`;
 }
 
+/** 原邮件里被正文 cid: 引用的内嵌图片, 回复、转发时随信带上。 */
+function inlinePartsOf(email: EmailDetail) {
+  return (email.attachments ?? [])
+    .filter((a) => a.cid && a.inline)
+    .map((a) => ({ blobId: a.blobId, type: a.type, name: a.name || a.cid, cid: a.cid }));
+}
+
 /** 原邮件正文转成可以引用的 HTML。 */
 function originalHtml(email: EmailDetail): string {
   return email.bodyHtml || textToHtml(email.bodyText || "");
@@ -830,6 +837,7 @@ function replyDraft(accountId: string, email: EmailDetail, all: boolean): Compos
     inReplyTo: email.messageId,
     references: refs,
     replyTo: { accountId, emailId: email.id },
+    inlineParts: inlinePartsOf(email),
   };
 }
 
@@ -849,6 +857,7 @@ function forwardDraft(email: EmailDetail): ComposeDraft {
     subject: withPrefix("Fwd:", email.subject),
     html: "",
     quoteHtml: `<div class="czl-quote"><p>${header}</p>${originalHtml(email)}</div>`,
+    inlineParts: inlinePartsOf(email),
     // 普通转发带上原邮件的附件，引用服务器上已有的 blob，无需重新上传。
     attachments: (email.attachments ?? [])
       .filter((a) => !a.inline)
@@ -871,5 +880,6 @@ function draftFromEmail(email: EmailDetail): ComposeDraft {
       .filter((a) => !a.inline)
       .map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, size: a.size })),
     draftId: email.id,
+    inlineParts: inlinePartsOf(email),
   };
 }

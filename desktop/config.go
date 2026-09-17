@@ -57,12 +57,21 @@ func (c Config) Configured() bool {
 	return c.Issuer != "" && c.ClientID != ""
 }
 
+// dataDirName 是 %APPDATA% 下的目录名。设置了 CZLMAIL_INSTANCE 的开发实例用独立目录,
+// 缓存库、配置、日志、MCP 连接信息都与正式版分开, 测试不会影响日常使用的数据。
+func dataDirName() string {
+	if v := os.Getenv("CZLMAIL_INSTANCE"); v != "" {
+		return "czlmail-" + v
+	}
+	return "czlmail"
+}
+
 func dataDir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("2010 locate user config dir: %w", err)
 	}
-	dir := filepath.Join(base, "czlmail")
+	dir := filepath.Join(base, dataDirName())
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("2011 create data dir: %w", err)
 	}

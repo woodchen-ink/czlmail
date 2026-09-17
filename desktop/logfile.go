@@ -15,7 +15,7 @@ const maxLogBytes = 5 << 20
 func newLogger() *slog.Logger {
 	var out io.Writer = os.Stderr
 	if dir, err := os.UserConfigDir(); err == nil {
-		path := filepath.Join(dir, "czlmail", "czlmail.log")
+		path := filepath.Join(dir, dataDirName(), "czlmail.log")
 		if info, err := os.Stat(path); err == nil && info.Size() > maxLogBytes {
 			_ = os.Rename(path, path+".old")
 		}

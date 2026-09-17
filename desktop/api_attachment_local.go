@@ -37,7 +37,7 @@ func localDataDir(name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("2081 locate %s dir: %w", name, err)
 	}
-	dir := filepath.Join(base, "czlmail", name)
+	dir := filepath.Join(base, dataDirName(), name)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("2081 create %s dir: %w", name, err)
 	}

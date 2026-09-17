@@ -266,6 +266,7 @@ func (a *App) connect(cfg Config, httpClient *http.Client) error {
 	s.OnNewMail = a.onNewMail
 	s.OnChanged = func(accountID string) {
 		a.emit(EventMailChanged, accountID)
+		a.refreshTrayUnreadSoon()
 		a.prefetchRecent(accountID)
 	}
 	s.OnPIMChanged = func(accountID, typeName string) {

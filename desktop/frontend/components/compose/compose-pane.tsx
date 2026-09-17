@@ -45,6 +45,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import {
   api,
+  blobUrl,
   errorMessage,
   runAI,
   type AIConfig,
@@ -56,6 +57,7 @@ import {
 } from "@/lib/api";
 import { fileSize } from "@/lib/format";
 import { htmlToText, isHtmlEmpty, sanitizeInline, textToHtml } from "@/lib/html";
+import { onFileDrop } from "@/lib/file-drop";
 import { main, store } from "@/wailsjs/go/models";
 
 export interface ComposeDraft {
@@ -70,10 +72,19 @@ export interface ComposeDraft {
   inReplyTo?: string;
   references?: string[];
   attachments?: UploadedAttachment[];
+  /** 原邮件的内嵌图片(正文 cid: 引用), 回复与转发时随引用一起发出, 不在附件栏显示。 */
+  inlineParts?: InlinePart[];
   /** 编辑已有草稿时的草稿 id。 */
   draftId?: string;
   /** 回复的原邮件, 供 AI 起草回复使用。 */
   replyTo?: { accountId: string; emailId: string };
+}
+
+export interface InlinePart {
+  blobId: string;
+  type: string;
+  name: string;
+  cid: string;
 }
 
 interface Props {
@@ -120,6 +131,42 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
   const [intent, setIntent] = useState("");
 
   const editorRef = useRef<Editor | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  // 预览引用时把 cid: 换成本地地址; 发出去的邮件里保留 cid:, 由随信的内嵌部件解析。
+  const quotePreview = useMemo(() => {
+    if (!draft.quoteHtml) return "";
+    let html = sanitizeInline(draft.quoteHtml);
+    for (const p of draft.inlineParts ?? []) {
+      html = html.split(`cid:${p.cid}`).join(blobUrl(accountId, p));
+    }
+    return html;
+  }, [draft.quoteHtml, draft.inlineParts, accountId]);
+
+  // 从资源管理器把文件拖进写信面板即作为附件上传。写信面板不可见(切到别的模块)时不接管。
+  useEffect(() => {
+    const offDrop = onFileDrop((paths) => {
+      if (!rootRef.current || rootRef.current.offsetParent === null) return false;
+      setDragging(false);
+      setUploading(true);
+      api
+        .attachPaths(accountId, paths)
+        .then((list) => {
+          if (list?.length) {
+            setAttachments((prev) => [...prev, ...list]);
+            markDirty();
+            toast.success(`已添加 ${list.length} 个附件`);
+          }
+        })
+        .catch((err) => toast.error(errorMessage(err)))
+        .finally(() => setUploading(false));
+      return true;
+    });
+    return offDrop;
+    // markDirty 是稳定的 useCallback。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
   const draftId = useRef(draft.draftId ?? "");
   const dirty = useRef(false);
   const saving = useRef<Promise<void> | null>(null);
@@ -184,7 +231,10 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       textBody: htmlToText(fullHtml),
       inReplyTo: draft.inReplyTo ?? "",
       references: draft.references ?? [],
-      attachments: attachments.map((a) => ({ blobId: a.blobId, type: a.type, name: a.name })),
+      attachments: [
+        ...attachments.map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, cid: "" })),
+        ...(draft.inlineParts ?? []).map((p) => ({ blobId: p.blobId, type: p.type, name: p.name, cid: p.cid })),
+      ],
       draftId: draftId.current,
       requestReadReceipt: receipt,
       sendAt: "",
@@ -409,7 +459,20 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
   const fromLabel = (i: Identity) => (i.name ? `${i.name} <${i.email}>` : i.email);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      ref={rootRef}
+      className="relative flex h-full min-h-0 flex-col"
+      onDragEnter={(e) => e.dataTransfer.types.includes("Files") && setDragging(true)}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+      }}
+      onDrop={() => setDragging(false)}
+    >
+      {dragging && (
+        <div className="border-accent bg-card/90 text-accent pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-md border-2 border-dashed text-sm font-medium">
+          松开即可添加为附件
+        </div>
+      )}
       <header className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <Button variant="ghost" size="icon" className="size-8" aria-label="关闭" onClick={close}>
           <X className="size-4" />
@@ -532,7 +595,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
           {draft.quoteHtml && (
             <details className="text-muted-foreground px-4 pb-4 text-sm">
               <summary className="cursor-pointer select-none">显示引用的原邮件</summary>
-              <div className="czl-signature mt-2" dangerouslySetInnerHTML={{ __html: sanitizeInline(draft.quoteHtml) }} />
+              <div className="czl-signature mt-2" dangerouslySetInnerHTML={{ __html: quotePreview }} />
             </details>
           )}
         </div>

@@ -257,7 +257,11 @@ func (a *App) SaveSettings(s AppSettings) error {
 		s.MutedMailAccounts = []string{}
 	}
 	muted, _ := json.Marshal(s.MutedMailAccounts)
-	return st.SetStringSetting(a.ctx, "mutedMailAccounts", string(muted))
+	if err := st.SetStringSetting(a.ctx, "mutedMailAccounts", string(muted)); err != nil {
+		return err
+	}
+	a.refreshTrayUnreadSoon()
+	return nil
 }
 
 // settingOn 读一个布尔设置, 读失败时按默认值处理。

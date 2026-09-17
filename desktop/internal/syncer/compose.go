@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
@@ -56,6 +57,8 @@ type Attachment struct {
 	BlobID string
 	Type   string
 	Name   string
+	// CID 非空时作为内嵌部件(正文里 cid: 引用的图片), 回复与转发时保留原邮件的内嵌图片。
+	CID string
 }
 
 // Identities 列出该账号可用的发件身份。
@@ -309,12 +312,17 @@ func buildEmail(d Draft, draftMailboxID string) *email.Email {
 		if a.BlobID == "" {
 			continue
 		}
-		msg.Attachments = append(msg.Attachments, &email.BodyPart{
+		part := &email.BodyPart{
 			BlobID:      jmap.ID(a.BlobID),
 			Type:        a.Type,
 			Name:        a.Name,
 			Disposition: "attachment",
-		})
+		}
+		if a.CID != "" {
+			part.CID = strings.Trim(a.CID, "<>") // JMAP 的 cid 不带尖括号
+			part.Disposition = "inline"
+		}
+		msg.Attachments = append(msg.Attachments, part)
 	}
 
 	return msg

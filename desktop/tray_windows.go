@@ -5,6 +5,7 @@ package main
 import (
 	_ "embed"
 	"runtime"
+	"strconv"
 
 	"github.com/energye/systray"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -31,6 +32,8 @@ func (a *App) startTray() {
 func (a *App) onTrayReady() {
 	systray.SetIcon(trayIcon)
 	systray.SetTooltip("CZL Mail")
+	// 托盘就绪后按当前缓存显示一次未读数。
+	a.refreshTrayUnreadSoon()
 	systray.SetOnClick(func(systray.IMenu) { a.showWindow() })
 	systray.SetOnRClick(func(menu systray.IMenu) { _ = menu.ShowMenu() })
 
@@ -41,6 +44,16 @@ func (a *App) onTrayReady() {
 			wruntime.Quit(a.ctx)
 		}
 	})
+}
+
+// setTrayUnread 更新托盘图标角标与提示文字。
+func (a *App) setTrayUnread(n int) {
+	systray.SetIcon(badgeIcon(n))
+	if n > 0 {
+		systray.SetTooltip("CZL Mail — " + strconv.Itoa(n) + " 封未读")
+	} else {
+		systray.SetTooltip("CZL Mail")
+	}
 }
 
 func (a *App) stopTray() {

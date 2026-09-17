@@ -187,6 +187,7 @@ export const api = {
   deleteContacts: guard(App.DeleteContacts),
   searchRecipients: guard(App.SearchRecipients),
   searchDirectory: guard(App.SearchDirectory),
+  attachPaths: guard(App.AttachPaths),
   recentEmailsWith: guard(App.RecentEmailsWith),
   upcomingEventsWith: guard(App.UpcomingEventsWith),
   importContactsFile: guard(App.ImportContactsFile),

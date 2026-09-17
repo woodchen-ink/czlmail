@@ -148,14 +148,18 @@ type UploadedAttachment struct {
 // 超过服务器上传上限的文件在本地就拒绝, 不去撞服务器 —— 上传几十 MB
 // 之后才被告知超限, 等待时间全浪费了。
 func (a *App) AddAttachments(accountID string) ([]UploadedAttachment, error) {
-	s, err := a.currentSyncer()
-	if err != nil {
-		return nil, err
-	}
-
 	paths, err := wruntime.OpenMultipleFilesDialog(a.ctx, wruntime.OpenDialogOptions{Title: "添加附件"})
 	if err != nil {
 		return nil, fmt.Errorf("2073 open file dialog: %w", err)
+	}
+	return a.AttachPaths(accountID, paths)
+}
+
+// AttachPaths 上传本地文件作为附件, 供从资源管理器拖进写信窗口时使用。目录会被跳过。
+func (a *App) AttachPaths(accountID string, paths []string) ([]UploadedAttachment, error) {
+	s, err := a.currentSyncer()
+	if err != nil {
+		return nil, err
 	}
 
 	limit := s.MaxUploadBytes()
@@ -164,6 +168,9 @@ func (a *App) AddAttachments(accountID string) ([]UploadedAttachment, error) {
 		info, err := os.Stat(path)
 		if err != nil {
 			return out, fmt.Errorf("2074 read %s: %w", filepath.Base(path), err)
+		}
+		if info.IsDir() {
+			continue
 		}
 		if limit > 0 && info.Size() > limit {
 			return out, fmt.Errorf("2075 %s is %s, exceeds server limit of %s",

@@ -156,6 +156,8 @@ type AttachmentRef struct {
 	BlobID string `json:"blobId"`
 	Type   string `json:"type"`
 	Name   string `json:"name"`
+	// CID 非空表示正文内嵌图片(回复、转发时沿用原邮件的内嵌图片)。
+	CID string `json:"cid"`
 }
 
 // SendEmail 发送一封邮件。
@@ -290,7 +292,7 @@ func (a *App) draftFrom(req ComposeRequest) (syncer.Draft, error) {
 func toSyncerAttachments(in []AttachmentRef) []syncer.Attachment {
 	out := make([]syncer.Attachment, 0, len(in))
 	for _, a := range in {
-		out = append(out, syncer.Attachment{BlobID: a.BlobID, Type: a.Type, Name: a.Name})
+		out = append(out, syncer.Attachment{BlobID: a.BlobID, Type: a.Type, Name: a.Name, CID: a.CID})
 	}
 	return out
 }
