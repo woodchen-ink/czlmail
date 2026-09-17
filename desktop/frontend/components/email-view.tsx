@@ -76,6 +76,7 @@ export function EmailView({
   // 译文替换正文显示; null 表示显示原文。
   // html/text 是替换了文字之后的正文, 排版与样式保持原样。
   const [translation, setTranslation] = useState<null | {
+    subject: string;
     html: string;
     text: string;
     running: boolean;
@@ -84,6 +85,8 @@ export function EmailView({
   }>(null);
   const translateAbort = useRef<AbortController | null>(null);
   const [hasCachedTranslation, setHasCachedTranslation] = useState(false);
+  // 译过的邮件打开时自动显示译文, 每次挂载只触发一次(点了「显示原文」后不再自动切回)。
+  const autoTranslated = useRef(false);
 
   useEffect(() => {
     if (!ai?.enabled) return;
@@ -92,6 +95,16 @@ export function EmailView({
       .then((c) => setHasCachedTranslation(!!c))
       .catch(() => {});
   }, [accountId, emailId, ai]);
+
+  useEffect(() => {
+    if (!hasCachedTranslation || !email?.bodyFetched || !ai?.hasKey || !ai.model) return;
+    if (autoTranslated.current) return;
+    autoTranslated.current = true;
+    translate();
+    // translate 每次渲染都是新函数, 这里只关心缓存与正文就绪的时机。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasCachedTranslation, email?.bodyFetched, ai]);
+
   const [own, setOwn] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -118,33 +131,43 @@ export function EmailView({
     translateAbort.current = ctl;
 
     const seg = extractSegments(email.bodyHtml || "", email.bodyText || "");
-    if (seg.texts.length === 0) {
+    // 主题排在正文片段之前一起翻译; 没有文字的主题不送模型。
+    const subject = (email.subject || "").trim();
+    const hasSubject = /\p{L}/u.test(subject);
+    const offset = hasSubject ? 1 : 0;
+    const texts = hasSubject ? [subject, ...seg.texts] : seg.texts;
+    if (texts.length === 0) {
       toast.info("没有需要翻译的文字");
       return;
     }
     const lang = ai?.translateLang || "简体中文";
-    const result: (string | undefined)[] = new Array(seg.texts.length);
+    const result: (string | undefined)[] = new Array(texts.length);
 
-    // 译过的邮件直接用缓存。片段数对不上(正文重新取回后结构变了)时重新翻译。
+    // 译过的邮件直接用缓存。片段数对不上(正文重新取回后结构变了)时正文重新翻译。
+    // 缓存格式 {subject, segments}; 旧版只存正文片段数组, 此时只补译主题。
     try {
       const cached = await api.getTranslation(accountId, emailId, lang);
-      const arr = cached ? (JSON.parse(cached) as string[]) : null;
-      if (Array.isArray(arr) && arr.length === seg.texts.length) {
-        arr.forEach((t, i) => (result[i] = t));
-        const out = seg.render(result);
-        setTranslation({ html: seg.isHtml ? out : "", text: seg.isHtml ? "" : out, running: false, done: 1, total: 1 });
-        return;
+      const parsed = cached ? JSON.parse(cached) : null;
+      const segments = Array.isArray(parsed) ? parsed : parsed?.segments;
+      if (Array.isArray(segments) && segments.length === seg.texts.length) {
+        segments.forEach((t: string, i: number) => (result[offset + i] = t));
+      }
+      if (hasSubject && typeof parsed?.subject === "string" && parsed.subject) {
+        result[0] = parsed.subject;
       }
     } catch {
       // 缓存损坏时忽略, 重新翻译。
     }
+    if (ctl.signal.aborted) return;
 
-    const batches = batchSegments(seg.texts);
+    const pending = texts.map((_, i) => i).filter((i) => result[i] === undefined);
+    const batches = batchSegments(pending.map((i) => texts[i])).map((b) => b.map((k) => pending[k]));
     let done = 0;
     let failed = 0;
     const show = (running: boolean) => {
-      const out = seg.render(result);
+      const out = seg.render(result.slice(offset));
       setTranslation({
+        subject: (hasSubject && result[0]) || email.subject,
         html: seg.isHtml ? out : "",
         text: seg.isHtml ? "" : out,
         running,
@@ -152,6 +175,10 @@ export function EmailView({
         total: batches.length,
       });
     };
+    if (batches.length === 0) {
+      show(false);
+      return;
+    }
     show(true);
 
     // 三批并行: 长邮件逐批显示译文, 不必等整封翻完。
@@ -165,7 +192,7 @@ export function EmailView({
               kind: "translate_segments",
               accountId,
               emailId,
-              text: JSON.stringify(batch.map((k) => seg.texts[k])),
+              text: JSON.stringify(batch.map((k) => texts[k])),
               language: "",
             }),
             () => {},
@@ -185,7 +212,7 @@ export function EmailView({
     };
     await Promise.all([worker(), worker(), worker()]);
     if (ctl.signal.aborted) return;
-    if (failed === batches.length) {
+    if (failed === batches.length && pending.length === texts.length) {
       setTranslation(null);
       return;
     }
@@ -193,7 +220,15 @@ export function EmailView({
       toast.warning("部分段落没有翻译成功，已保留原文");
       return;
     }
-    api.saveTranslation(accountId, emailId, lang, JSON.stringify(result)).catch(() => {});
+    api
+      .saveTranslation(
+        accountId,
+        emailId,
+        lang,
+        JSON.stringify({ subject: hasSubject ? result[0] : undefined, segments: result.slice(offset) }),
+      )
+      .catch(() => {});
+    setHasCachedTranslation(true);
   }
 
   useEffect(() => {
@@ -302,7 +337,7 @@ export function EmailView({
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto flex max-w-4xl flex-col gap-4 p-5">
           <h1 className="text-lg leading-snug font-semibold">
-            {email.subject || "(无主题)"}
+            {translation?.subject || email.subject || "(无主题)"}
           </h1>
 
           {email.labels && email.labels.length > 0 && (
