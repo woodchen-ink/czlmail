@@ -46,6 +46,7 @@ export type UpdateInfo = main.UpdateInfo;
 export type Invite = main.Invite;
 export type SignInHint = main.SignInHint;
 export type Unsubscribe = store.Unsubscribe;
+export type EmailLocation = store.EmailLocation;
 /** 整夹拉取进度，随 Events.pullProgress 推送。只经事件传递，Wails 不会为它生成模型。 */
 export interface PullStatus {
   accountId: string;
@@ -133,6 +134,7 @@ export const api = {
   getEmail: guard(App.GetEmail),
   fetchBody: guard(App.FetchBody),
   searchEmails: guard(App.SearchEmails),
+  locateEmail: guard(App.LocateEmail),
   syncNow: guard(App.SyncNow),
   pullMailbox: guard(App.PullMailbox),
 

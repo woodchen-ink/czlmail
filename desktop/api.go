@@ -164,6 +164,16 @@ func (a *App) SearchEmails(accountID, query string, limit int) ([]store.EmailSum
 	return st.SearchEmails(a.ctx, accountID, query, limit)
 }
 
+// LocateEmail 告诉界面某封邮件在哪个文件夹的列表里、排第几。
+// preferMailboxID 是界面当前打开的文件夹, 邮件在其中时就不切走。
+func (a *App) LocateEmail(accountID, emailID, preferMailboxID string) (store.EmailLocation, error) {
+	st, err := a.currentStore()
+	if err != nil {
+		return store.EmailLocation{}, err
+	}
+	return st.LocateEmail(a.ctx, accountID, emailID, preferMailboxID)
+}
+
 // SyncNow 立即同步一个账号, 供界面上的手动刷新使用。
 func (a *App) SyncNow(accountID string) error {
 	s, err := a.currentSyncer()

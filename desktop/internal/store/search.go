@@ -9,10 +9,13 @@ import (
 // 短于三个字符时 FTS5 直接返回空集, 此处改走前缀匹配, 免得用户以为搜索坏了。
 const minSearchLength = 3
 
-// SearchEmails 在本地缓存里做全文检索, 按相关度排序。
+// SearchEmails 在本地缓存里做全文检索, 结果按收件时间倒序。
 //
 // 命中范围是主题、摘要与已缓存的正文。未拉取过正文的邮件只能靠主题与摘要命中 ——
 // 这是按需拉正文的必然代价, 界面上不必解释, 但要知道搜不到不等于没有。
+//
+// 不按 bm25 相关度排: 邮件检索里相关度几乎没有意义(同一个单号在通知邮件里出现几次
+// 纯属偶然), 而时间有 —— 用户搜一个单号是想看最新那封。超出 limit 时留最新的一批。
 func (s *Store) SearchEmails(ctx context.Context, accountID, query string, limit int) ([]EmailSummary, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -29,7 +32,7 @@ func (s *Store) SearchEmails(ctx context.Context, accountID, query string, limit
 		FROM emails_fts f
 		JOIN emails e ON e.rowid = f.rowid
 		WHERE emails_fts MATCH ? AND e.account_id = ?
-		ORDER BY bm25(emails_fts), e.received_at DESC
+		ORDER BY e.received_at DESC
 		LIMIT ?`,
 		ftsQuote(query), accountID, limit)
 	if err != nil {

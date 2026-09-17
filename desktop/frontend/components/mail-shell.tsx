@@ -59,6 +59,14 @@ import { listen } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 
 const PAGE_SIZE = 50;
+// 定位一封邮件时最多加载多少封。再深就不值得了: 每 200 封一次查询,
+// 列表也长到滚动条没有意义, 这时只打开邮件、不强求列表停在它上面。
+const LOCATE_LIMIT = 2000;
+
+/** 为了让第 index 封出现在列表里, 需要加载的封数(按整页取, 免得刚好停在页边)。 */
+function locateDepth(index: number): number {
+  return Math.min(LOCATE_LIMIT, (Math.floor(index / PAGE_SIZE) + 1) * PAGE_SIZE);
+}
 
 export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   const { bodyMode, bodyAppearance, setBodyAppearance } = useAppearance();
@@ -216,18 +224,18 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     emailsRef.current = emails;
   }, [emails]);
 
-  // 静默刷新已加载的整段列表(同步推送、操作完成后)。
-  // 不能只重载第一页: 翻过几页后列表会缩回 50 封, 滚动位置跳动、触底又加载回来, 看起来连闪几下;
+  // 一次加载列表开头的 want 封并整段替换。
+  // 静默刷新(同步推送、操作完成后)与定位到某封邮件都走这里: 前者不能只重载第一页,
+  // 翻过几页后列表会缩回 50 封, 滚动位置跳动、触底又加载回来, 看起来连闪几下;
   // 也不显示加载骨架, 数据到了一次性替换。
-  const refreshLoaded = useCallback(
-    async (token: number) => {
+  const loadPrefix = useCallback(
+    async (token: number, want: number) => {
       if (!accountId || !mailboxId) return;
       if (emptying.current.has(`${accountId}/${mailboxId}`)) {
         setEmails([]);
         setHasMore(false);
         return;
       }
-      const want = Math.max(PAGE_SIZE, emailsRef.current.length);
       const out: EmailSummary[] = [];
       try {
         // 后端单次最多 200 封。
@@ -250,35 +258,79 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     [accountId, mailboxId, overlay],
   );
 
-  // 从通知或其它模块打开某封邮件时, 切换账号会触发下面的列表重置;
-  // 先记下要打开的邮件, 重置时选中它而不是清空。
-  const pendingEmail = useRef("");
+  // 定位到某封邮件后列表至少要加载这么深(切换文件夹时归零)。
+  // 定位与"退出搜索/切文件夹后的重新加载"可能在同一轮里都发生, 没有这个下限,
+  // 后者会把刚加载到第 N 页的列表缩回第一页, 要打开的邮件又不见了。
+  const minDepth = useRef(0);
 
+  const refreshLoaded = useCallback(
+    (token: number) => loadPrefix(token, Math.max(PAGE_SIZE, emailsRef.current.length, minDepth.current)),
+    [loadPrefix],
+  );
+
+  // 从通知、链接或其它模块打开某封邮件时, 切换账号/文件夹会触发下面的列表重置;
+  // 先记下要打开的邮件与它在列表里的位置, 重置时选中它并加载到那一页。
+  const pendingEmail = useRef<{ id: string; index: number } | null>(null);
+
+  /**
+   * 打开某封邮件, 并让列表停在能看见它的位置。
+   *
+   * 只设置选中 id 不够: 邮件可能在别的账号/文件夹, 或在当前文件夹里靠后、还没翻到那一页,
+   * 列表就会停在原处, 看起来"打开了但找不到"。先问后端它在哪、排第几, 再切过去并把
+   * 前面的页一并加载出来, 行渲染出来后 EmailList 自己滚过去。
+   */
   const openEmailIn = useCallback(
-    (acc: string, id: string) => {
-      if (acc === accountId) {
+    async (acc: string, id: string) => {
+      const loc = await api
+        .locateEmail(acc, id, acc === accountId ? mailboxId : "")
+        .catch(() => null);
+      const index = loc?.index ?? 0;
+
+      if (acc === accountId && (!loc || loc.mailboxId === mailboxId)) {
+        // 搜索结果不是文件夹列表, 要先退出搜索; 由下面的搜索 effect 接着加载并选中。
+        if (searching) {
+          pendingEmail.current = { id, index };
+          setQuery("");
+          return;
+        }
+        if (!emailsRef.current.some((e) => e.id === id) && index >= emailsRef.current.length) {
+          loadToken.current += 1;
+          minDepth.current = locateDepth(index);
+          loadPrefix(loadToken.current, minDepth.current);
+        }
         setEmailId(id);
         return;
       }
-      pendingEmail.current = id;
-      const inbox = (mailboxesByAccount[acc] ?? []).find((m) => m.kind === "inbox");
+
+      pendingEmail.current = { id, index };
+      const boxes = mailboxesByAccount[acc] ?? [];
+      const target =
+        (loc && boxes.find((m) => m.id === loc.mailboxId)) ?? boxes.find((m) => m.kind === "inbox");
       setAccountId(acc);
-      if (inbox) setMailboxId(inbox.id);
+      if (target) setMailboxId(target.id);
     },
-    [accountId, mailboxesByAccount],
+    [accountId, mailboxId, mailboxesByAccount, searching, loadPrefix],
   );
 
   useEffect(() => {
     if (!mailboxId) return;
     loadToken.current += 1;
+    const pending = pendingEmail.current;
+    pendingEmail.current = null;
     setEmails([]);
-    setEmailId(pendingEmail.current);
-    pendingEmail.current = "";
+    setEmailId(pending?.id ?? "");
     setHasMore(true);
     setQuery("");
     setChecked(new Set());
-    loadPage(0, loadToken.current);
-  }, [mailboxId, accountId, loadPage]);
+    minDepth.current = pending ? locateDepth(pending.index) : 0;
+    // 要打开的邮件不在第一页时一次加载到它所在的那一页。
+    if (pending && pending.index >= PAGE_SIZE) {
+      setLoading(true);
+      loadPrefix(loadToken.current, minDepth.current);
+    } else {
+      loadPage(0, loadToken.current);
+    }
+  }, [mailboxId, accountId, loadPage, loadPrefix]);
 
   const reload = useCallback(() => {
     loadToken.current += 1;
@@ -341,7 +393,18 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     if (!q) {
       if (searching) {
         setSearching(false);
-        reload();
+        // 退出搜索是为了打开某封邮件时, 直接加载到它所在的那一页。
+        const pending = pendingEmail.current;
+        pendingEmail.current = null;
+        if (pending) {
+          loadToken.current += 1;
+          setEmailId(pending.id);
+          setLoading(true);
+          minDepth.current = locateDepth(pending.index);
+          loadPrefix(loadToken.current, minDepth.current);
+        } else {
+          reload();
+        }
       }
       return;
     }
@@ -367,7 +430,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     return () => clearTimeout(timer);
     // searching 由本 effect 自己设置，列进依赖会造成循环。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, accountId, reload, overlay]);
+  }, [query, accountId, reload, loadPrefix, overlay]);
 
   /* ---------- 操作 ---------- */
 

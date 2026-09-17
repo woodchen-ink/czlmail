@@ -73,7 +73,7 @@ export function EmailList({
       const existing = byThread.get(key);
       if (existing) {
         existing.unread ||= e.isUnread;
-        // 搜索结果按相关度排序, 会话行始终代表其中最新的一封。
+        // 会话行始终代表其中最新的一封。
         if (new Date(e.receivedAt).getTime() > new Date(existing.head.receivedAt).getTime()) existing.head = e;
         continue;
       }
@@ -121,6 +121,25 @@ export function EmailList({
       setThreads((prev) => ({ ...prev, [threadId]: list }));
     }
   }
+
+  // 从通讯录、通知或链接打开的邮件可能在屏幕外, 选中变化后把那一行滚进视野。
+  // block: "nearest" 在行已经可见时什么都不做, 所以点击行本身不会引起跳动;
+  // 记下滚过的 id, 列表刷新(新邮件、标记已读)时不把用户滚回去。
+  const scrolledTo = useRef("");
+  useEffect(() => {
+    if (!selectedId || scrolledTo.current === selectedId) return;
+    const root = scrollRef.current;
+    if (!root) return;
+    const find = (id: string) => root.querySelector(`[data-email-id="${CSS.escape(id)}"]`);
+    // 选中的是会话里较早的一封时, 列表上只有代表整个会话的那一行, 滚到它。
+    const target = emails.find((e) => e.id === selectedId);
+    const key = target ? target.threadId || target.id : "";
+    const head = key ? rows.find(({ head: h }) => (h.threadId || h.id) === key)?.head.id : "";
+    const row = find(selectedId) ?? (head ? find(head) : null);
+    if (!row) return; // 还没加载到那一页, 等列表到了再滚。
+    scrolledTo.current = selectedId;
+    row.scrollIntoView({ block: "nearest" });
+  }, [selectedId, emails, rows, threads]);
 
   // 触底加载。用 IntersectionObserver 而不是监听 scroll 事件：
   // scroll 在快速滚动时每帧都触发，而这里只需要知道「哨兵进入视口」这一个事实。
@@ -177,6 +196,7 @@ export function EmailList({
                 <div
                   role="button"
                   tabIndex={0}
+                  data-email-id={email.id}
                   aria-current={email.id === selectedId ? "true" : undefined}
                   onClick={(e) => {
                     if (
@@ -377,6 +397,7 @@ export function EmailList({
                       <li>
                         <button
                           type="button"
+                          data-email-id={m.id}
                           onClick={() => onSelect(m.id)}
                           aria-current={
                             m.id === selectedId ? "true" : undefined
