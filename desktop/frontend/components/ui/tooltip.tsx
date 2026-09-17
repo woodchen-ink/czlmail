@@ -24,9 +24,22 @@ function Tooltip({
 }
 
 function TooltipTrigger({
+  onFocus,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      onFocus={(e) => {
+        onFocus?.(e)
+        // Radix 获得焦点就打开提示。点击后焦点留在按钮上，窗口重新激活时会再触发 focus，
+        // 鼠标不在按钮上也弹出提示；只有键盘导航（:focus-visible）才打开。
+        // preventDefault 会让 Radix 跳过自己的 onFocus 处理。
+        if (!e.currentTarget.matches(":focus-visible")) e.preventDefault()
+      }}
+      {...props}
+    />
+  )
 }
 
 function TooltipContent({
