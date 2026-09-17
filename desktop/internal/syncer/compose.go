@@ -39,8 +39,10 @@ type Draft struct {
 	// 不需要下载再上传一遍。
 	Attachments []Attachment
 
-	// FromEmail 是发件地址, 用于回执请求头与延迟发送的信封。
+	// FromEmail / FromName 来自所选发件身份, 写进邮件的 From 头。
+	// 服务器不会按提交时的 identityId 补 From, 漏了它对方看到的就是"无发件人"。
 	FromEmail string
+	FromName  string
 	// RequestReadReceipt 请求已读回执(Disposition-Notification-To)。
 	RequestReadReceipt bool
 	// SendAt 非零时定时发送(SMTP FUTURERELEASE 的 HOLDFOR), 不能晚于服务器允许的最大延迟。
@@ -81,6 +83,9 @@ func (s *Syncer) Identities(ctx context.Context, accountID string) ([]*identity.
 func (s *Syncer) Send(ctx context.Context, d Draft, draftMailboxID, sentMailboxID string) error {
 	if d.IdentityID == "" {
 		return fmt.Errorf("1120 no sending identity selected")
+	}
+	if d.FromEmail == "" {
+		return fmt.Errorf("1126 sending identity not found")
 	}
 	if len(d.To) == 0 && len(d.CC) == 0 && len(d.BCC) == 0 {
 		return fmt.Errorf("1121 no recipients")
@@ -274,6 +279,7 @@ func buildEmail(d Draft, draftMailboxID string) *email.Email {
 		MailboxIDs: map[jmap.ID]bool{jmap.ID(draftMailboxID): true},
 		Keywords:   map[string]bool{"$draft": true, "$seen": true},
 		Subject:    d.Subject,
+		From:       toJMAPAddresses(fromAddress(d)),
 		To:         toJMAPAddresses(d.To),
 		CC:         toJMAPAddresses(d.CC),
 		BCC:        toJMAPAddresses(d.BCC),
@@ -312,6 +318,13 @@ func buildEmail(d Draft, draftMailboxID string) *email.Email {
 	}
 
 	return msg
+}
+
+func fromAddress(d Draft) []store.Address {
+	if d.FromEmail == "" {
+		return nil
+	}
+	return []store.Address{{Name: d.FromName, Email: d.FromEmail}}
 }
 
 func toJMAPAddresses(in []store.Address) []*mail.Address {

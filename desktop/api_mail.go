@@ -273,6 +273,7 @@ func (a *App) draftFrom(req ComposeRequest) (syncer.Draft, error) {
 		for _, id := range ids {
 			if id.ID == req.IdentityID {
 				d.FromEmail = id.Email
+				d.FromName = id.Name
 			}
 		}
 	}

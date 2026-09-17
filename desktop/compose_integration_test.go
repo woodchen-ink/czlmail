@@ -57,6 +57,9 @@ func TestIntegrationDraftAndScheduled(t *testing.T) {
 	if _, err := st.Email(ctx, acc, d1); err == nil {
 		t.Error("old draft should be gone")
 	}
+	if got, err := st.Email(ctx, acc, d2); err != nil || len(got.From) != 1 || !strings.EqualFold(got.From[0].Email, ids[0].Email) {
+		t.Errorf("draft From header missing: %+v %v", got, err)
+	}
 	if err := a.DiscardDraft(acc, d2); err != nil {
 		t.Fatalf("discard: %v", err)
 	}
