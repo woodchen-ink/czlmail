@@ -20,7 +20,7 @@ import (
 
 // AI 助手: 调用用户自己配置的 OpenAI 兼容接口(POST {base}/v1/responses)。
 //
-// 功能: 翻译邮件、润色或翻译正在写的正文、按意图起草回复。
+// 功能: 翻译邮件、总结邮件、润色或翻译正在写的正文、按意图起草回复。
 // 结果以流式事件推给界面(ai:stream), 界面边收边显示。
 //
 // 邮件内容一律作为待处理的数据放进 input, 系统指令里明确要求忽略其中的指令 ——
@@ -144,7 +144,7 @@ func (a *App) TestAI() (string, error) {
 
 // AIRequest 描述一次 AI 任务。
 type AIRequest struct {
-	// Kind: translate_email / polish / translate_text / reply
+	// Kind: translate_email / translate_segments / summarize / polish / translate_text / reply
 	Kind string `json:"kind"`
 	// AccountID / EmailID 指向被翻译或被回复的邮件。
 	AccountID string `json:"accountId"`
@@ -234,6 +234,27 @@ func (a *App) aiPrompt(req AIRequest, lang string) (string, string, error) {
 				"Keep names, numbers, URLs, email addresses and code unchanged. If a fragment is already in " + lang +
 				" or should not be translated, return it unchanged. No commentary, no code fences.",
 			"<data>\n" + truncate(req.Text, aiMaxInput) + "\n</data>", nil
+
+	case "summarize":
+		d, err := a.GetEmail(req.AccountID, req.EmailID)
+		if err != nil {
+			return "", "", err
+		}
+		if !d.BodyFetched {
+			if d, err = a.FetchBody(req.AccountID, req.EmailID); err != nil {
+				return "", "", err
+			}
+		}
+		body := d.BodyText
+		if strings.TrimSpace(body) == "" {
+			body = htmltext.Convert(d.BodyHTML)
+		}
+		return aiSafety + "Summarize this email for its recipient, in " + lang + ". " +
+				"Start with one sentence saying what it is about, then at most five short lines beginning with \"- \": " +
+				"what happened, what the reader is expected to do, and any dates, amounts, deadlines or links that matter. " +
+				"Leave out greetings, signatures, legal boilerplate and marketing filler. Say less when the email says little. " +
+				"Plain text only: no markdown headings, no bold, no commentary about the email or about this task.",
+			"<data>\nFrom: " + formatSender(d.From) + "\nSubject: " + d.Subject + "\n\n" + truncate(body, aiMaxInput) + "\n</data>", nil
 
 	case "polish":
 		return aiSafety + "Rewrite the draft email to be clear, polite and well organized, in the same language as the draft " +

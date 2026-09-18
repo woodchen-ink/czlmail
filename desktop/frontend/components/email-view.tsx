@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Languages, Loader2, Undo2 } from "lucide-react";
+import { Languages, Loader2, Sparkles, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -78,13 +78,19 @@ export function EmailView({
   // html/text 是替换了文字之后的正文, 排版与样式保持原样。
   const [translation, setTranslation] = useState<null | {
     subject: string;
+    /** 带 data-czl-tr 标记的正文；译文经 postMessage 打进 iframe，这个字符串整轮翻译里都不变。 */
     html: string;
     text: string;
+    /** 已翻译的片段，全量。 */
+    translated: [number, string][];
     running: boolean;
     done: number;
     total: number;
   }>(null);
   const translateAbort = useRef<AbortController | null>(null);
+  // AI 总结: 流式追加, 不落库 —— 关掉再点就是重新生成。
+  const [summary, setSummary] = useState<null | { text: string; running: boolean }>(null);
+  const summaryAbort = useRef<AbortController | null>(null);
   const [hasCachedTranslation, setHasCachedTranslation] = useState(false);
   // 译过的邮件打开时自动显示译文, 每次挂载只触发一次(点了「显示原文」后不再自动切回)。
   const autoTranslated = useRef(false);
@@ -122,7 +128,10 @@ export function EmailView({
       .getAIConfig()
       .then(setAI)
       .catch(() => setAI(null));
-    return () => translateAbort.current?.abort();
+    return () => {
+      translateAbort.current?.abort();
+      summaryAbort.current?.abort();
+    };
   }, []);
 
   async function translate() {
@@ -167,13 +176,21 @@ export function EmailView({
     const live: (string | undefined)[] = new Array(texts.length);
     let completed = 0;
     let failed = 0;
+
+    // HTML 正文只在开头渲染一次(每段文字包上 data-czl-tr 标记), 之后的译文经 postMessage
+    // 打进 iframe 原地替换 —— 重新生成 srcDoc 会让整个文档连同图片一起重载, 流式翻译时就是一直在闪。
+    // 纯文本正文没有可以挂标记的元素, 只能整篇重渲染, 所以它不参与流式更新。
+    const marked = seg.isHtml ? seg.renderMarked(result.slice(offset)) : "";
     const show = (running: boolean) => {
       const merged = texts.map((_, i) => result[i] ?? live[i]);
-      const out = seg.render(merged.slice(offset));
+      const body = merged.slice(offset);
+      const translated: [number, string][] = [];
+      body.forEach((t, i) => t !== undefined && translated.push([i, t]));
       setTranslation({
         subject: (hasSubject && merged[0]) || email.subject,
-        html: seg.isHtml ? out : "",
-        text: seg.isHtml ? "" : out,
+        html: marked,
+        text: marked ? "" : seg.render(body),
+        translated,
         running,
         done: pending.filter((i) => merged[i] !== undefined).length,
         total: pending.length,
@@ -219,6 +236,7 @@ export function EmailView({
                 language: "",
               }),
               (full) => {
+                if (!seg.isHtml) return; // 纯文本只能整篇重渲染, 流式期间不动它
                 const partial = parsePartialTranslations(full, batch.length);
                 if (partial.length === 0) return;
                 batch.forEach((k, n) => (live[k] = partial[n]));
@@ -266,6 +284,25 @@ export function EmailView({
     setHasCachedTranslation(true);
   }
 
+  async function summarize() {
+    summaryAbort.current?.abort();
+    const ctl = new AbortController();
+    summaryAbort.current = ctl;
+    setSummary({ text: "", running: true });
+    try {
+      const text = await runAI(
+        main.AIRequest.createFrom({ kind: "summarize", accountId, emailId, text: "", language: "" }),
+        (full) => setSummary({ text: full, running: true }),
+        ctl.signal,
+      );
+      if (!ctl.signal.aborted) setSummary({ text: text.trim(), running: false });
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return;
+      setSummary(null);
+      toast.error(errorMessage(err));
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     let markTimer: ReturnType<typeof setTimeout> | undefined;
@@ -273,6 +310,8 @@ export function EmailView({
     async function load() {
       setLoading(true);
       setError("");
+      summaryAbort.current?.abort();
+      setSummary(null);
       try {
         const detail = await api.getEmail(accountId, emailId);
         if (cancelled) return;
@@ -423,18 +462,15 @@ export function EmailView({
 
           <Separator />
 
-          {ai?.enabled &&
-            ai.hasKey &&
-            ai.model &&
-            email.bodyFetched &&
-            (translation !== null ||
-              !isAlreadyInLanguage(
-                `${email.subject}
+          {ai?.enabled && ai.hasKey && ai.model && email.bodyFetched && (
+            <div className="-my-1 flex flex-wrap items-center gap-2 text-sm">
+              {(translation !== null ||
+                !isAlreadyInLanguage(
+                  `${email.subject}
 ${email.bodyText || htmlToText(email.bodyHtml)}`,
-                ai.translateLang || "简体中文",
-              )) && (
-              <div className="-my-1 flex items-center gap-2 text-sm">
-                {translation === null ? (
+                  ai.translateLang || "简体中文",
+                )) &&
+                (translation === null ? (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -469,9 +505,52 @@ ${email.bodyText || htmlToText(email.bodyHtml)}`,
                       {translation.running ? "停止" : "显示原文"}
                     </Button>
                   </>
-                )}
+                ))}
+
+              {summary === null ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground h-7 px-2"
+                  onClick={summarize}
+                >
+                  <Sparkles className="size-4" />
+                  AI 总结
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => {
+                    summaryAbort.current?.abort();
+                    setSummary(null);
+                  }}
+                >
+                  {summary.running ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Undo2 className="size-4" />
+                  )}
+                  {summary.running ? "停止总结" : "收起总结"}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {summary && (
+            <div className="border-border bg-card rounded-md border px-3 py-2.5">
+              <div className="text-muted-foreground mb-1.5 flex items-center gap-1.5 text-xs">
+                <Sparkles className="size-3.5" />
+                AI 总结
               </div>
-            )}
+              {summary.text ? (
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{summary.text}</p>
+              ) : (
+                <p className="text-muted-foreground text-sm">正在生成…</p>
+              )}
+            </div>
+          )}
 
           {loading && !email.bodyFetched ? (
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -495,6 +574,7 @@ ${email.bodyText || htmlToText(email.bodyHtml)}`,
                 <EmailBody
                   html={translation ? translation.html : email.bodyHtml}
                   text={translation?.text || email.bodyText}
+                  translated={translation?.translated}
                   senderEmail={sender?.email ?? ""}
                   senderTrusted={senderTrusted}
                   mode={bodyMode}
