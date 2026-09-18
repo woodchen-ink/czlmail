@@ -42,9 +42,9 @@ type AIConfig struct {
 	Model         string `json:"model"`
 	TranslateLang string `json:"translateLang"`
 	HasKey        bool   `json:"hasKey"`
-	// 思考(reasoning.effort)档位, 翻译与写作分开: auto(见 aiEffortChain) / none / minimal /
-	// low / medium / high, off 表示不带这个参数、听模型自己的。
-	// 翻译只是照原意换个语言, 思考纯属浪费; 润色与起草回复要斟酌措辞, 默认让模型自己决定。
+	// 思考(reasoning.effort)档位, 翻译与写作分开: auto 表示不带这个参数、模型自己决定,
+	// none 是不思考(关不掉时自动改为不带), 其余 low / medium / high / xhigh / max 照发。
+	// 翻译只是照原意换个语言, 思考纯属浪费, 默认 none; 润色与起草回复要斟酌措辞, 默认 auto。
 	ReasoningTranslate string `json:"reasoningTranslate"`
 	ReasoningWrite     string `json:"reasoningWrite"`
 }
@@ -60,7 +60,7 @@ type AIChunk struct {
 var aiCancels sync.Map // id → context.CancelFunc
 
 func (a *App) GetAIConfig() AIConfig {
-	cfg := AIConfig{TranslateLang: "简体中文", ReasoningTranslate: "auto", ReasoningWrite: "off"}
+	cfg := AIConfig{TranslateLang: "简体中文", ReasoningTranslate: "none", ReasoningWrite: "auto"}
 	st, err := a.currentStore()
 	if err != nil {
 		return cfg
@@ -76,10 +76,10 @@ func (a *App) GetAIConfig() AIConfig {
 		cfg.TranslateLang = v
 	}
 	if v, err := st.StringSetting(a.ctx, "aiReasoningTranslate"); err == nil && v != "" {
-		cfg.ReasoningTranslate = v
+		cfg.ReasoningTranslate = normalizeEffort(v)
 	}
 	if v, err := st.StringSetting(a.ctx, "aiReasoningWrite"); err == nil && v != "" {
-		cfg.ReasoningWrite = v
+		cfg.ReasoningWrite = normalizeEffort(v)
 	}
 	if k, err := keyring.Get(keyringService, aiKeyringKey); err == nil && k != "" {
 		cfg.HasKey = true
@@ -100,11 +100,13 @@ func (a *App) SaveAIConfig(cfg AIConfig, apiKey string) (AIConfig, error) {
 	if err := st.SetBoolSettingNow(a.ctx, "aiEnabled", cfg.Enabled); err != nil {
 		return cfg, err
 	}
-	if cfg.ReasoningTranslate = strings.TrimSpace(cfg.ReasoningTranslate); cfg.ReasoningTranslate == "" {
-		cfg.ReasoningTranslate = "auto"
+	cfg.ReasoningTranslate = normalizeEffort(cfg.ReasoningTranslate)
+	if cfg.ReasoningTranslate == "" {
+		cfg.ReasoningTranslate = "none"
 	}
-	if cfg.ReasoningWrite = strings.TrimSpace(cfg.ReasoningWrite); cfg.ReasoningWrite == "" {
-		cfg.ReasoningWrite = "off"
+	cfg.ReasoningWrite = normalizeEffort(cfg.ReasoningWrite)
+	if cfg.ReasoningWrite == "" {
+		cfg.ReasoningWrite = "auto"
 	}
 	for k, v := range map[string]string{
 		"aiBaseUrl":            cfg.BaseURL,
@@ -315,21 +317,29 @@ func (c AIConfig) reasoningFor(kind string) string {
 	}
 }
 
+// normalizeEffort 收敛历史写法: 0.1.18 短暂用过 off 表示"不带这个参数", 现在叫 auto。
+func normalizeEffort(v string) string {
+	if v = strings.TrimSpace(v); v == "off" {
+		return "auto"
+	}
+	return v
+}
+
 // aiEffortChain 给出这次要依次尝试的 reasoning.effort 档位, 空字符串表示不带这个参数。
 //
-// 翻译、润色、起草回复都不需要推理, 思考只会拖慢首字并多花钱, 所以默认先请模型别思考。
-// 但能不能关得看模型: 同一个模型名在中转后面还可能落到不同上游, 各家实现参差不齐 ——
-// 实测 glm-5.3-flash 的一条上游直接回「该模型始终思考，不支持关闭思考」,
-// 另一条收下 effort=none 却把整段思维链当正文吐出来。所以 auto 只试"关"和"不带",
-// 中间档(low/minimal)是"少思考"不是"不思考", 想要的人在设置里直接点名。
+// auto 就是不带参数: 思考与否由模型(或中转的路由)自己决定。
+// none 是"别思考", 但能不能关得看模型 —— 同一个模型名在中转后面还可能落到不同上游,
+// 各家实现参差不齐: 实测 glm-5.3-flash 的一条上游直接回「该模型始终思考，不支持关闭思考；
+// 请使用 low、high 或 max」, 另一条收下 none 却把整段思维链当正文吐出来。
+// 所以选 none 时关不掉(报错, 或者思考完正文是空的)就退回不带参数, 不至于整个功能不可用。
+// 点名中间档的照发不换 —— 否则用户看不出自己选的档位到底生没生效。
 func aiEffortChain(setting string) []string {
-	switch setting {
+	switch normalizeEffort(setting) {
 	case "", "auto":
-		return []string{"none", ""}
-	case "off":
 		return []string{""}
+	case "none":
+		return []string{"none", ""}
 	default:
-		// 用户点了名就照办: 失败直接报错, 不擅自换档 —— 否则他看不出自己选的档位到底生没生效。
 		return []string{setting}
 	}
 }

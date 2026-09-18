@@ -57,7 +57,7 @@ func TestCallResponses(t *testing.T) {
 
 	ctx := context.Background()
 	var out strings.Builder
-	if err := callResponses(ctx, stream.URL, "m", "k", "auto", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "Hello" {
+	if err := callResponses(ctx, stream.URL, "m", "k", "none", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "Hello" {
 		t.Fatalf("stream: %q %v", out.String(), err)
 	}
 	if gotAuth != "Bearer k" || gotPath != "/v1/responses" {
@@ -65,11 +65,11 @@ func TestCallResponses(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := callResponses(ctx, plain.URL, "m", "k", "auto", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "整段" {
+	if err := callResponses(ctx, plain.URL, "m", "k", "none", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "整段" {
 		t.Fatalf("plain: %q %v", out.String(), err)
 	}
 
-	err := callResponses(ctx, failing.URL, "m", "k", "auto", "i", "x", func(string) {})
+	err := callResponses(ctx, failing.URL, "m", "k", "none", "i", "x", func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "bad key") {
 		t.Errorf("error not surfaced: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestCallResponsesThinkingFallback(t *testing.T) {
 	defer srv.Close()
 
 	var out strings.Builder
-	if err := callResponses(context.Background(), srv.URL, "m", "k", "auto", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "好" {
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "none", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "好" {
 		t.Fatalf("%q %v", out.String(), err)
 	}
 	if want := []string{"none", ""}; !slices.Equal(efforts, want) {
@@ -107,7 +107,7 @@ func TestCallResponsesThinkingFallback(t *testing.T) {
 	// 记住能用的那一档, 后面的调用直接不带参数。
 	efforts = nil
 	out.Reset()
-	if err := callResponses(context.Background(), srv.URL, "m", "k", "auto", "i", "x", func(d string) { out.WriteString(d) }); err != nil {
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "none", "i", "x", func(d string) { out.WriteString(d) }); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(efforts, []string{""}) {
@@ -126,7 +126,7 @@ func TestCallResponsesThinkingOff(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := callResponses(context.Background(), srv.URL, "m", "k", "auto", "i", "x", func(string) {}); err != nil {
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "none", "i", "x", func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if len(bodies) != 1 || !strings.Contains(bodies[0], `"reasoning":{"effort":"none"}`) {
@@ -150,11 +150,12 @@ func TestReasoningForAndChain(t *testing.T) {
 		}
 	}
 	for setting, want := range map[string][]string{
-		"auto": {"none", ""},
-		"":     {"none", ""},
-		"off":  {""},
+		"auto": {""},
+		"":     {""},
+		"off":  {""}, // 0.1.18 的老写法
 		"low":  {"low"},
-		"none": {"none"},
+		"none": {"none", ""},
+		"max":  {"max"},
 	} {
 		if got := aiEffortChain(setting); !slices.Equal(got, want) {
 			t.Errorf("%q → %v, want %v", setting, got, want)
@@ -185,20 +186,20 @@ func TestCallResponsesEmptyOutputFallsBack(t *testing.T) {
 	defer srv.Close()
 
 	var out strings.Builder
-	if err := callResponses(context.Background(), srv.URL, "m", "k", "auto", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "答案" {
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "none", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "答案" {
 		t.Fatalf("%q %v", out.String(), err)
 	}
 	if want := []string{"none", ""}; !slices.Equal(efforts, want) {
 		t.Fatalf("efforts %v, want %v", efforts, want)
 	}
 
-	// 点名 none 时不退回, 空正文直接报错 —— 用户才看得出自己选的档位没生效。
+	// 点名中间档时不退回, 空正文直接报错 —— 用户才看得出自己选的档位没生效。
 	efforts = nil
-	err := callResponses(context.Background(), srv.URL, "m", "k", "none", "i", "x", func(string) {})
+	err := callResponses(context.Background(), srv.URL, "m", "k", "low", "i", "x", func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "2209") {
 		t.Fatalf("err %v", err)
 	}
-	if !slices.Equal(efforts, []string{"none"}) {
+	if !slices.Equal(efforts, []string{"low"}) {
 		t.Fatalf("efforts %v, want one request", efforts)
 	}
 }
