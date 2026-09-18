@@ -21,8 +21,17 @@ export interface Segments {
   texts: string[];
   /** 用译文重建正文。translations[i] 缺失时保留原文。 */
   render: (translations: (string | undefined)[]) => string;
+  /**
+   * 同 render, 但把每段文字包进 `<span data-czl-tr="i">`: 之后的译文由
+   * email-body 经 postMessage 送进 iframe 原地替换, 不必重建 srcDoc(那会整页重载、闪一下)。
+   * 会就地改掉内部的 DOM, **只能调一次**, 且调过之后不要再用 render。
+   */
+  renderMarked: (translations: (string | undefined)[]) => string;
   isHtml: boolean;
 }
+
+/** 文字节点在正文里的标记属性, 与 email-body 的桥接脚本约定一致。 */
+export const TR_ATTR = "data-czl-tr";
 
 export function extractSegments(html: string, text: string): Segments {
   if (!html.trim()) {
@@ -36,17 +45,15 @@ export function extractSegments(html: string, text: string): Segments {
         texts.push(p.trim());
       }
     });
-    return {
-      texts,
-      isHtml: false,
-      render: (tr) => {
-        const out = [...parts];
-        idx.forEach((pi, k) => {
-          if (tr[k] !== undefined) out[pi] = tr[k]!;
-        });
-        return out.join("");
-      },
+    const render = (tr: (string | undefined)[]) => {
+      const out = [...parts];
+      idx.forEach((pi, k) => {
+        if (tr[k] !== undefined) out[pi] = tr[k]!;
+      });
+      return out.join("");
     };
+    // 纯文本正文是一整块 <pre>, 没有可以挂标记的元素, 只能整篇重渲染。
+    return { texts, isHtml: false, render, renderMarked: render };
   }
 
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -65,21 +72,26 @@ export function extractSegments(html: string, text: string): Segments {
   const texts = originals.map((s) => s.trim());
   const doctype = /^\s*<!doctype[^>]*>/i.exec(html)?.[0] ?? "";
 
+  // 保留原片段首尾的空白, 否则相邻行内元素之间的空格会丢。
+  const lead = (i: number) => /^\s*/.exec(originals[i])?.[0] ?? "";
+  const trail = (i: number) => /\s*$/.exec(originals[i])?.[0] ?? "";
+
   return {
     texts,
     isHtml: true,
     render: (tr) => {
       nodes.forEach((n, i) => {
-        const orig = originals[i];
         const t = tr[i];
-        if (t === undefined) {
-          n.nodeValue = orig;
-          return;
-        }
-        // 保留原片段首尾的空白, 否则相邻行内元素之间的空格会丢。
-        const lead = /^\s*/.exec(orig)?.[0] ?? "";
-        const trail = /\s*$/.exec(orig)?.[0] ?? "";
-        n.nodeValue = lead + t + trail;
+        n.nodeValue = t === undefined ? originals[i] : lead(i) + t + trail(i);
+      });
+      return doctype + doc.documentElement.outerHTML;
+    },
+    renderMarked: (tr) => {
+      nodes.forEach((n, i) => {
+        const span = doc.createElement("span");
+        span.setAttribute(TR_ATTR, String(i));
+        span.textContent = tr[i] ?? texts[i];
+        n.replaceWith(doc.createTextNode(lead(i)), span, doc.createTextNode(trail(i)));
       });
       return doctype + doc.documentElement.outerHTML;
     },

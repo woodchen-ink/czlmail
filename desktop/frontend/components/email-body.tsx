@@ -25,6 +25,13 @@ interface Props {
   mode: "light" | "dark";
   /** cid → 本地预览 URL，用于显示邮件内嵌图片。 */
   inlineImages?: Record<string, string>;
+  /**
+   * 已翻译的文字片段 `[片段序号, 译文]`，全量（幂等，丢一次不影响下一次）。
+   *
+   * 走 postMessage 送进 iframe 原地替换 `[data-czl-tr]`，而不是重新生成 srcDoc：
+   * srcDoc 一变整个文档就重载，图片要重新请求一遍，流式翻译时就是一直在闪。
+   */
+  translated?: [number, string][];
 }
 
 /**
@@ -46,6 +53,7 @@ export function EmailBody({
   onTrustSender,
   mode: requestedMode,
   inlineImages,
+  translated,
 }: Props) {
   // 自带配色的邮件在暗色主题下仍用亮色纸面，见 hasOwnColors。
   const mode = requestedMode === "dark" && html && hasOwnColors(html) ? "light" : requestedMode;
@@ -78,6 +86,32 @@ export function EmailBody({
     };
   }, [html, text, allowImages, nonce, mode, inlineImages]);
 
+  // 桥接脚本就绪之前发的补丁会丢在半路，先攒着，等 iframe 报到再发。
+  // 换了文档(新 srcDoc)要重新握手，这里用 ref 记状态：置成 state 会在 effect 里
+  // 触发一轮额外渲染，而这件事本来就只是和 iframe 这个外部系统对齐。
+  const readyRef = useRef(false);
+  const pendingRef = useRef<[number, string][] | null>(null);
+
+  const sendTranslated = (items: [number, string][]) => {
+    frameRef.current?.contentWindow?.postMessage({ type: "czl-translate", items }, "*");
+  };
+
+  // 换了文档(新 srcDoc)就要重新握手。下面那个 effect 依赖里带上 doc，
+  // 于是新文档挂载后会把当前译文重新排进队列，等 iframe 报到再发。
+  useEffect(() => {
+    readyRef.current = false;
+    pendingRef.current = null;
+  }, [doc]);
+
+  useEffect(() => {
+    if (!translated?.length) return;
+    if (!readyRef.current) {
+      pendingRef.current = translated;
+      return;
+    }
+    sendTranslated(translated);
+  }, [translated, doc]);
+
   // 沙箱内的桥接脚本通过 postMessage 上报链接点击与内容高度。
   // 消息一律当作不可信输入校验：源必须是本 iframe，类型与字段必须完全匹配。
   useEffect(() => {
@@ -89,6 +123,13 @@ export function EmailBody({
 
       const msg = data as { type?: unknown; url?: unknown; height?: unknown };
 
+      if (msg.type === "ready") {
+        readyRef.current = true;
+        const queued = pendingRef.current;
+        pendingRef.current = null;
+        if (queued?.length) sendTranslated(queued);
+        return;
+      }
       if (msg.type === "link" && typeof msg.url === "string") {
         openExternal(msg.url);
         return;
@@ -152,6 +193,7 @@ export function EmailBody({
         <iframe
           ref={frameRef}
           title="邮件正文"
+          key={nonce}
           srcDoc={doc}
           sandbox="allow-scripts"
           className="block w-full border-0 bg-transparent"
@@ -162,7 +204,7 @@ export function EmailBody({
   );
 }
 
-/** 沙箱内的桥接脚本。只做两件事：上报高度、拦截链接点击。 */
+/** 沙箱内的桥接脚本：上报高度、拦截链接点击、把父窗口送来的译文写进对应的片段。 */
 function bridgeScript(nonce: string): string {
   return `<script nonce="${nonce}">
 (function () {
@@ -186,7 +228,27 @@ function bridgeScript(nonce: string): string {
     e.preventDefault();
     parent.postMessage({ type: "link", url: a.getAttribute("data-external-href") }, "*");
   });
+  // 父窗口送来的译文: 按 data-czl-tr 找到片段, 只写 textContent(不解析 HTML)。
+  var marks = null;
+  window.addEventListener("message", function (e) {
+    if (e.source !== parent) return;
+    var d = e.data;
+    if (!d || d.type !== "czl-translate" || !d.items || !d.items.length) return;
+    if (!marks) {
+      marks = {};
+      var all = document.querySelectorAll("[data-czl-tr]");
+      for (var i = 0; i < all.length; i++) marks[all[i].getAttribute("data-czl-tr")] = all[i];
+    }
+    for (var k = 0; k < d.items.length; k++) {
+      var it = d.items[k];
+      if (!it || typeof it[1] !== "string") continue;
+      var el = marks[String(it[0])];
+      if (el && el.textContent !== it[1]) el.textContent = it[1];
+    }
+    report();
+  });
   window.addEventListener("load", report);
+  parent.postMessage({ type: "ready" }, "*");
   // 图片加载完成会改变高度，需要再报一次。
   new ResizeObserver(report).observe(document.documentElement);
   report();

@@ -80,7 +80,7 @@ export function sanitizeEmailHtml(
     // 邮件排版重度依赖 table 与内联样式，保留它们，
     // 隔离交给沙箱 iframe，而不是靠剥掉样式。
     // 自己加的标记属性要显式放行：ALLOW_DATA_ATTR 为 false 时它们会在同一轮里被剥掉。
-    ADD_ATTR: ["target", "rel", "data-external-href", "data-inline-image", "data-blocked-src", "data-email-body"],
+    ADD_ATTR: ["target", "rel", "data-external-href", "data-inline-image", "data-blocked-src", "data-email-body", "data-czl-tr"],
     WHOLE_DOCUMENT: false,
     // 开头的 <style> 不加这个会被解析进 <head>，随后和 head 一起被丢掉。
     FORCE_BODY: true,
