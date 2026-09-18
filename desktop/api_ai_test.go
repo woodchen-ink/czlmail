@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -69,5 +72,64 @@ func TestCallResponses(t *testing.T) {
 	err := callResponses(ctx, failing.URL, "m", "k", "i", "x", func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "bad key") {
 		t.Errorf("error not surfaced: %v", err)
+	}
+}
+
+// 关闭思考: 默认带 reasoning.effort=none; 上游嫌参数不对时逐级退回, 最后不带该参数。
+func TestCallResponsesThinkingFallback(t *testing.T) {
+	var efforts []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var got struct {
+			Reasoning struct {
+				Effort string `json:"effort"`
+			} `json:"reasoning"`
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		efforts = append(efforts, got.Reasoning.Effort)
+		if got.Reasoning.Effort != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"message":"Unsupported parameter: reasoning.effort"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"output_text":"好"}`)
+	}))
+	defer srv.Close()
+
+	var out strings.Builder
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "好" {
+		t.Fatalf("%q %v", out.String(), err)
+	}
+	if want := []string{"none", "minimal", ""}; !slices.Equal(efforts, want) {
+		t.Fatalf("efforts %v, want %v", efforts, want)
+	}
+
+	// 记住能用的那一档, 后面的调用直接不带参数。
+	efforts = nil
+	out.Reset()
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "i", "x", func(d string) { out.WriteString(d) }); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(efforts, []string{""}) {
+		t.Fatalf("efforts %v, want one request without the parameter", efforts)
+	}
+}
+
+// 支持关闭思考的服务端只收到一次请求, 参数是 none。
+func TestCallResponsesThinkingOff(t *testing.T) {
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"output_text":"ok"}`)
+	}))
+	defer srv.Close()
+
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "i", "x", func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 1 || !strings.Contains(bodies[0], `"reasoning":{"effort":"none"}`) {
+		t.Fatalf("bodies %v", bodies)
 	}
 }

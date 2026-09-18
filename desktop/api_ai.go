@@ -282,13 +282,43 @@ func (a *App) aiStream(ctx context.Context, instructions, input string, onDelta 
 	return callResponses(ctx, cfg.BaseURL, cfg.Model, key, instructions, input, onDelta)
 }
 
+// aiEfforts 是关闭思考的尝试顺序: 先请模型完全不思考, 不认 "none" 的退到最低档,
+// 都不认(如非推理模型、老网关)时最后一次不带 reasoning 参数。
+// 翻译/润色/起草回复都不需要推理, 思考只会拖慢首字并多花钱。
+var aiEfforts = []string{"none", "minimal", ""}
+
+// aiEffortPick 记住每个 服务器+模型 实际可用的那一档, 避免每次都从头试。
+var aiEffortPick sync.Map // baseURL|model → int
+
 func callResponses(ctx context.Context, baseURL, model, key, instructions, input string, onDelta func(string)) error {
-	body, _ := json.Marshal(map[string]any{
+	memo := baseURL + "|" + model
+	start, _ := aiEffortPick.Load(memo)
+	i, _ := start.(int)
+	for ; ; i++ {
+		err, retry := postResponses(ctx, baseURL, model, key, aiEfforts[i], instructions, input, onDelta)
+		if err == nil {
+			aiEffortPick.Store(memo, i)
+			return nil
+		}
+		if !retry || i+1 >= len(aiEfforts) {
+			return err
+		}
+	}
+}
+
+// postResponses 发一次请求。retry 为真表示服务端嫌参数不对(HTTP 400/422),
+// 调用方可以换一档思考参数重试 —— 此时还没有向界面吐过任何内容。
+func postResponses(ctx context.Context, baseURL, model, key, effort, instructions, input string, onDelta func(string)) (error, bool) {
+	payload := map[string]any{
 		"model": model, "instructions": instructions, "input": input, "stream": true,
-	})
+	}
+	if effort != "" {
+		payload["reasoning"] = map[string]any{"effort": effort}
+	}
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, aiEndpoint(baseURL), bytes.NewReader(body))
 	if err != nil {
-		return err
+		return err, false
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
@@ -296,25 +326,26 @@ func callResponses(ctx context.Context, baseURL, model, key, instructions, input
 
 	resp, err := aiHTTP.Do(req)
 	if err != nil {
-		return fmt.Errorf("2204 AI request failed: %w", err)
+		return fmt.Errorf("2204 AI request failed: %w", err), false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 2000))
-		return fmt.Errorf("2205 AI API returned HTTP %d: %s", resp.StatusCode, apiErrorMessage(msg))
+		badParam := effort != "" && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity)
+		return fmt.Errorf("2205 AI API returned HTTP %d: %s", resp.StatusCode, apiErrorMessage(msg)), badParam
 	}
 
 	if !strings.Contains(resp.Header.Get("Content-Type"), "event-stream") {
 		data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 		if err != nil {
-			return err
+			return err, false
 		}
 		text, err := responseText(data)
 		if err != nil {
-			return err
+			return err, false
 		}
 		onDelta(text)
-		return nil
+		return nil, false
 	}
 
 	sc := bufio.NewScanner(resp.Body)
@@ -346,15 +377,15 @@ func callResponses(ctx context.Context, baseURL, model, key, instructions, input
 			if msg == "" {
 				msg = apiErrorMessage(payload)
 			}
-			return fmt.Errorf("2206 AI error: %s", msg)
+			return fmt.Errorf("2206 AI error: %s", msg), false
 		case "response.completed", "response.done":
-			return nil
+			return nil, false
 		}
 	}
 	if err := sc.Err(); err != nil && ctx.Err() == nil {
-		return fmt.Errorf("2204 AI stream interrupted: %w", err)
+		return fmt.Errorf("2204 AI stream interrupted: %w", err), false
 	}
-	return ctx.Err()
+	return ctx.Err(), false
 }
 
 // responseText 从非流式 Responses API 结果里取出文本。
