@@ -104,17 +104,60 @@ export function batchSegments(texts: string[], maxChars = 3000, maxItems = 60): 
   return batches;
 }
 
-/** 从模型输出里取出 JSON 字符串数组; 模型偶尔会包一层代码块或多说一句话。 */
-export function parseTranslations(output: string): string[] | null {
+/**
+ * 从模型输出里取出 JSON 字符串数组; 模型偶尔会包一层代码块或多说一句话。
+ * expected 是这一批送去的片段数: 数量对不上就当这批失败 —— 宁可保留原文,
+ * 也不能把错位的译文写进正文。
+ */
+export function parseTranslations(output: string, expected?: number): string[] | null {
   const start = output.indexOf("[");
   const end = output.lastIndexOf("]");
   if (start < 0 || end <= start) return null;
   try {
     const arr = JSON.parse(output.slice(start, end + 1));
-    return Array.isArray(arr) ? arr.map((v) => (typeof v === "string" ? v : String(v ?? ""))) : null;
+    if (!Array.isArray(arr)) return null;
+    if (expected !== undefined && arr.length !== expected) return null;
+    return arr.map((v) => (typeof v === "string" ? v : String(v ?? "")));
   } catch {
     return null;
   }
+}
+
+/**
+ * 边收边解析: 从还没写完的 JSON 数组里取出已经闭合的那些字符串, 用来一段一段地更新正文。
+ * 最后一个元素多半还在生成中, 不算数。解析不下去就返回已经拿到的部分。
+ */
+export function parsePartialTranslations(output: string, max: number): string[] {
+  const start = output.indexOf("[");
+  if (start < 0) return [];
+  const out: string[] = [];
+  let i = start + 1;
+  while (i < output.length && out.length < max) {
+    while (i < output.length && output[i] !== '"' && output[i] !== "]") i++;
+    if (i >= output.length || output[i] === "]") break;
+    const from = i++;
+    let closed = false;
+    for (; i < output.length; i++) {
+      if (output[i] === "\\") {
+        i++;
+        continue;
+      }
+      if (output[i] === '"') {
+        i++;
+        closed = true;
+        break;
+      }
+    }
+    if (!closed) break;
+    try {
+      const v: unknown = JSON.parse(output.slice(from, i));
+      if (typeof v !== "string") break;
+      out.push(v);
+    } catch {
+      break;
+    }
+  }
+  return out;
 }
 
 /**

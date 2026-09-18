@@ -26,6 +26,7 @@ import { main } from "@/wailsjs/go/models";
 import {
   batchSegments,
   extractSegments,
+  parsePartialTranslations,
   parseTranslations,
   isAlreadyInLanguage,
 } from "@/lib/translate-html";
@@ -162,17 +163,20 @@ export function EmailView({
 
     const pending = texts.map((_, i) => i).filter((i) => result[i] === undefined);
     const batches = batchSegments(pending.map((i) => texts[i])).map((b) => b.map((k) => pending[k]));
-    let done = 0;
+    // live 是还在生成、没定稿的片段: 这一批最后没通过校验时只丢掉它, 不污染 result。
+    const live: (string | undefined)[] = new Array(texts.length);
+    let completed = 0;
     let failed = 0;
     const show = (running: boolean) => {
-      const out = seg.render(result.slice(offset));
+      const merged = texts.map((_, i) => result[i] ?? live[i]);
+      const out = seg.render(merged.slice(offset));
       setTranslation({
-        subject: (hasSubject && result[0]) || email.subject,
+        subject: (hasSubject && merged[0]) || email.subject,
         html: seg.isHtml ? out : "",
         text: seg.isHtml ? "" : out,
         running,
-        done,
-        total: batches.length,
+        done: pending.filter((i) => merged[i] !== undefined).length,
+        total: pending.length,
       });
     };
     if (batches.length === 0) {
@@ -181,39 +185,70 @@ export function EmailView({
     }
     show(true);
 
-    // 三批并行: 长邮件逐批显示译文, 不必等整封翻完。
+    // 流式片段一个接一个地来, 而正文每次都是整篇重新渲染的 —— 不限流会闪。
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let lastShow = Date.now();
+    const showSoon = () => {
+      if (timer || ctl.signal.aborted) return;
+      timer = setTimeout(
+        () => {
+          timer = undefined;
+          lastShow = Date.now();
+          if (!ctl.signal.aborted) show(true);
+        },
+        Math.max(0, 700 - (Date.now() - lastShow)),
+      );
+    };
+
+    // 三批并行, 每批边收边写: 长邮件的译文逐段浮现, 不必等整封翻完。
     let next = 0;
     const worker = async () => {
       while (next < batches.length && !ctl.signal.aborted) {
         const batch = batches[next++];
         try {
-          const output = await runAI(
-            main.AIRequest.createFrom({
-              kind: "translate_segments",
-              accountId,
-              emailId,
-              text: JSON.stringify(batch.map((k) => texts[k])),
-              language: "",
-            }),
-            () => {},
-            ctl.signal,
-          );
-          const arr = parseTranslations(output);
-          if (!arr) failed++;
-          else batch.forEach((k, n) => (result[k] = arr[n] ?? undefined));
+          let arr: string[] | null = null;
+          // 模型没按格式回时再要一次: 中转会把同一个模型名分给不同上游, 换一次请求多半就正常了
+          // (实测有的上游把整段思维链当正文吐出来)。两次都不行才保留原文。
+          for (let attempt = 0; attempt < 2 && !ctl.signal.aborted; attempt++) {
+            const output = await runAI(
+              main.AIRequest.createFrom({
+                kind: "translate_segments",
+                accountId,
+                emailId,
+                text: JSON.stringify(batch.map((k) => texts[k])),
+                language: "",
+              }),
+              (full) => {
+                const partial = parsePartialTranslations(full, batch.length);
+                if (partial.length === 0) return;
+                batch.forEach((k, n) => (live[k] = partial[n]));
+                showSoon();
+              },
+              ctl.signal,
+            );
+            arr = parseTranslations(output, batch.length);
+            if (arr) break;
+            console.warn("[translate] 返回的不是长度匹配的 JSON 数组:", output.slice(0, 500));
+            batch.forEach((k) => (live[k] = undefined));
+          }
+          if (arr) batch.forEach((k, n) => (result[k] = arr[n]));
+          else if (!ctl.signal.aborted) failed++;
         } catch (err) {
           if ((err as Error).name === "AbortError") return;
           failed++;
           if (failed === 1) toast.error(errorMessage(err));
         }
-        done++;
-        if (!ctl.signal.aborted) show(done < batches.length);
+        batch.forEach((k) => (live[k] = undefined));
+        completed++;
+        if (!ctl.signal.aborted) show(completed < batches.length);
       }
     };
     await Promise.all([worker(), worker(), worker()]);
+    clearTimeout(timer);
     if (ctl.signal.aborted) return;
     if (failed === batches.length && pending.length === texts.length) {
       setTranslation(null);
+      toast.error("AI 没有按要求返回译文，翻译失败");
       return;
     }
     if (failed > 0) {
