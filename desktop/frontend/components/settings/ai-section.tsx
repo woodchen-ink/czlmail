@@ -9,10 +9,50 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, errorMessage, type AIConfig } from "@/lib/api";
 import { main } from "@/wailsjs/go/models";
 
 const LANGS = ["简体中文", "繁體中文", "English", "日本語", "한국어", "Deutsch", "Français", "Español", "Русский"];
+
+/**
+ * 思考档位(reasoning.effort)。能不能关掉看模型: 有的模型始终思考, 请求关闭会直接报错,
+ * 也有中转收下参数却把思维链当正文吐出来 —— 所以「自动」会在关不掉时退回不带这个参数。
+ */
+const EFFORTS = [
+  { value: "auto", label: "自动（先试关闭，关不掉就随模型）" },
+  { value: "none", label: "关闭" },
+  { value: "minimal", label: "最少" },
+  { value: "low", label: "低" },
+  { value: "medium", label: "中" },
+  { value: "high", label: "高" },
+  { value: "off", label: "跟随模型（不设置）" },
+];
+
+function EffortSelect({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <Select value={value || "auto"} onValueChange={onChange}>
+      <SelectTrigger id={id} className="w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {EFFORTS.map((e) => (
+          <SelectItem key={e.value} value={e.value}>
+            {e.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 /**
  * AI 接入: 兼容 OpenAI Responses API(/v1/responses)的服务。
@@ -131,6 +171,29 @@ export function AISection({ active }: { active: boolean }) {
             ))}
           </datalist>
           <p className="text-muted-foreground text-xs">阅读邮件时「翻译」按钮使用的目标语言。</p>
+        </div>
+        <Divider />
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ai-effort-translate">翻译时的思考</Label>
+          <EffortSelect
+            id="ai-effort-translate"
+            value={cfg.reasoningTranslate}
+            onChange={(v) => update("reasoningTranslate", v)}
+          />
+          <p className="text-muted-foreground text-xs">
+            翻译只是照原意换个语言，思考纯属浪费时间和钱。
+          </p>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ai-effort-write">润色、起草回复时的思考</Label>
+          <EffortSelect
+            id="ai-effort-write"
+            value={cfg.reasoningWrite}
+            onChange={(v) => update("reasoningWrite", v)}
+          />
+          <p className="text-muted-foreground text-xs">
+            写信要斟酌措辞，默认交给模型自己决定。
+          </p>
         </div>
         <div className="flex items-center justify-end gap-2">
           {testResult && (

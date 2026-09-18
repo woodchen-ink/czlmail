@@ -57,7 +57,7 @@ func TestCallResponses(t *testing.T) {
 
 	ctx := context.Background()
 	var out strings.Builder
-	if err := callResponses(ctx, stream.URL, "m", "k", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "Hello" {
+	if err := callResponses(ctx, stream.URL, "m", "k", "auto", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "Hello" {
 		t.Fatalf("stream: %q %v", out.String(), err)
 	}
 	if gotAuth != "Bearer k" || gotPath != "/v1/responses" {
@@ -65,11 +65,11 @@ func TestCallResponses(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := callResponses(ctx, plain.URL, "m", "k", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "整段" {
+	if err := callResponses(ctx, plain.URL, "m", "k", "auto", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "整段" {
 		t.Fatalf("plain: %q %v", out.String(), err)
 	}
 
-	err := callResponses(ctx, failing.URL, "m", "k", "i", "x", func(string) {})
+	err := callResponses(ctx, failing.URL, "m", "k", "auto", "i", "x", func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "bad key") {
 		t.Errorf("error not surfaced: %v", err)
 	}
@@ -97,17 +97,17 @@ func TestCallResponsesThinkingFallback(t *testing.T) {
 	defer srv.Close()
 
 	var out strings.Builder
-	if err := callResponses(context.Background(), srv.URL, "m", "k", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "好" {
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "auto", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "好" {
 		t.Fatalf("%q %v", out.String(), err)
 	}
-	if want := []string{"none", "minimal", ""}; !slices.Equal(efforts, want) {
+	if want := []string{"none", ""}; !slices.Equal(efforts, want) {
 		t.Fatalf("efforts %v, want %v", efforts, want)
 	}
 
 	// 记住能用的那一档, 后面的调用直接不带参数。
 	efforts = nil
 	out.Reset()
-	if err := callResponses(context.Background(), srv.URL, "m", "k", "i", "x", func(d string) { out.WriteString(d) }); err != nil {
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "auto", "i", "x", func(d string) { out.WriteString(d) }); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(efforts, []string{""}) {
@@ -126,10 +126,79 @@ func TestCallResponsesThinkingOff(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := callResponses(context.Background(), srv.URL, "m", "k", "i", "x", func(string) {}); err != nil {
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "auto", "i", "x", func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if len(bodies) != 1 || !strings.Contains(bodies[0], `"reasoning":{"effort":"none"}`) {
 		t.Fatalf("bodies %v", bodies)
+	}
+}
+
+// 翻译与写作用各自的档位; auto 才自动退回, 点了名的档位照发不换。
+func TestReasoningForAndChain(t *testing.T) {
+	c := AIConfig{ReasoningTranslate: "none", ReasoningWrite: "high"}
+	for kind, want := range map[string]string{
+		"translate_email":    "none",
+		"translate_segments": "none",
+		"translate_text":     "none",
+		"polish":             "high",
+		"reply":              "high",
+		"test":               "high",
+	} {
+		if got := c.reasoningFor(kind); got != want {
+			t.Errorf("%s → %q, want %q", kind, got, want)
+		}
+	}
+	for setting, want := range map[string][]string{
+		"auto": {"none", ""},
+		"":     {"none", ""},
+		"off":  {""},
+		"low":  {"low"},
+		"none": {"none"},
+	} {
+		if got := aiEffortChain(setting); !slices.Equal(got, want) {
+			t.Errorf("%q → %v, want %v", setting, got, want)
+		}
+	}
+}
+
+// 上游收下了 effort=none 却把输出全花在思考上、正文一个字没有: 当作这一档不可用, 不带参数重来。
+func TestCallResponsesEmptyOutputFallsBack(t *testing.T) {
+	var efforts []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var got struct {
+			Reasoning struct {
+				Effort string `json:"effort"`
+			} `json:"reasoning"`
+		}
+		json.NewDecoder(r.Body).Decode(&got)
+		efforts = append(efforts, got.Reasoning.Effort)
+		w.Header().Set("Content-Type", "text/event-stream")
+		if got.Reasoning.Effort != "" {
+			fmt.Fprint(w, "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"想了半天\"}\n\n")
+			fmt.Fprint(w, "data: {\"type\":\"response.completed\"}\n\n")
+			return
+		}
+		fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"答案\"}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"response.completed\"}\n\n")
+	}))
+	defer srv.Close()
+
+	var out strings.Builder
+	if err := callResponses(context.Background(), srv.URL, "m", "k", "auto", "i", "x", func(d string) { out.WriteString(d) }); err != nil || out.String() != "答案" {
+		t.Fatalf("%q %v", out.String(), err)
+	}
+	if want := []string{"none", ""}; !slices.Equal(efforts, want) {
+		t.Fatalf("efforts %v, want %v", efforts, want)
+	}
+
+	// 点名 none 时不退回, 空正文直接报错 —— 用户才看得出自己选的档位没生效。
+	efforts = nil
+	err := callResponses(context.Background(), srv.URL, "m", "k", "none", "i", "x", func(string) {})
+	if err == nil || !strings.Contains(err.Error(), "2209") {
+		t.Fatalf("err %v", err)
+	}
+	if !slices.Equal(efforts, []string{"none"}) {
+		t.Fatalf("efforts %v, want one request", efforts)
 	}
 }

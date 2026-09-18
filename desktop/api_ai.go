@@ -42,6 +42,11 @@ type AIConfig struct {
 	Model         string `json:"model"`
 	TranslateLang string `json:"translateLang"`
 	HasKey        bool   `json:"hasKey"`
+	// 思考(reasoning.effort)档位, 翻译与写作分开: auto(见 aiEffortChain) / none / minimal /
+	// low / medium / high, off 表示不带这个参数、听模型自己的。
+	// 翻译只是照原意换个语言, 思考纯属浪费; 润色与起草回复要斟酌措辞, 默认让模型自己决定。
+	ReasoningTranslate string `json:"reasoningTranslate"`
+	ReasoningWrite     string `json:"reasoningWrite"`
 }
 
 // AIChunk 是流式输出的一段。Done 为真时 Error 非空表示失败。
@@ -55,7 +60,7 @@ type AIChunk struct {
 var aiCancels sync.Map // id → context.CancelFunc
 
 func (a *App) GetAIConfig() AIConfig {
-	cfg := AIConfig{TranslateLang: "简体中文"}
+	cfg := AIConfig{TranslateLang: "简体中文", ReasoningTranslate: "auto", ReasoningWrite: "off"}
 	st, err := a.currentStore()
 	if err != nil {
 		return cfg
@@ -69,6 +74,12 @@ func (a *App) GetAIConfig() AIConfig {
 	}
 	if v, err := st.StringSetting(a.ctx, "aiTranslateLang"); err == nil && v != "" {
 		cfg.TranslateLang = v
+	}
+	if v, err := st.StringSetting(a.ctx, "aiReasoningTranslate"); err == nil && v != "" {
+		cfg.ReasoningTranslate = v
+	}
+	if v, err := st.StringSetting(a.ctx, "aiReasoningWrite"); err == nil && v != "" {
+		cfg.ReasoningWrite = v
 	}
 	if k, err := keyring.Get(keyringService, aiKeyringKey); err == nil && k != "" {
 		cfg.HasKey = true
@@ -89,7 +100,19 @@ func (a *App) SaveAIConfig(cfg AIConfig, apiKey string) (AIConfig, error) {
 	if err := st.SetBoolSettingNow(a.ctx, "aiEnabled", cfg.Enabled); err != nil {
 		return cfg, err
 	}
-	for k, v := range map[string]string{"aiBaseUrl": cfg.BaseURL, "aiModel": strings.TrimSpace(cfg.Model), "aiTranslateLang": strings.TrimSpace(cfg.TranslateLang)} {
+	if cfg.ReasoningTranslate = strings.TrimSpace(cfg.ReasoningTranslate); cfg.ReasoningTranslate == "" {
+		cfg.ReasoningTranslate = "auto"
+	}
+	if cfg.ReasoningWrite = strings.TrimSpace(cfg.ReasoningWrite); cfg.ReasoningWrite == "" {
+		cfg.ReasoningWrite = "off"
+	}
+	for k, v := range map[string]string{
+		"aiBaseUrl":            cfg.BaseURL,
+		"aiModel":              strings.TrimSpace(cfg.Model),
+		"aiTranslateLang":      strings.TrimSpace(cfg.TranslateLang),
+		"aiReasoningTranslate": cfg.ReasoningTranslate,
+		"aiReasoningWrite":     cfg.ReasoningWrite,
+	} {
 		if err := st.SetStringSetting(a.ctx, k, v); err != nil {
 			return cfg, err
 		}
@@ -113,7 +136,7 @@ func (a *App) TestAI() (string, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
 	defer cancel()
 	var out strings.Builder
-	err := a.aiStream(ctx, "You are a connectivity check. Reply with exactly: OK", "ping", func(d string) { out.WriteString(d) })
+	err := a.aiStream(ctx, "test", "You are a connectivity check. Reply with exactly: OK", "ping", func(d string) { out.WriteString(d) })
 	return strings.TrimSpace(out.String()), err
 }
 
@@ -153,7 +176,7 @@ func (a *App) StartAI(req AIRequest) (string, error) {
 			cancel()
 			aiCancels.Delete(id)
 		}()
-		err := a.aiStream(ctx, instructions, input, func(d string) {
+		err := a.aiStream(ctx, req.Kind, instructions, input, func(d string) {
 			a.emit(EventAIStream, AIChunk{ID: id, Delta: d})
 		})
 		done := AIChunk{ID: id, Done: true}
@@ -273,34 +296,62 @@ func aiEndpoint(base string) string {
 var aiHTTP = &http.Client{Timeout: 0} // 由 ctx 控制超时, 流式响应不能设总超时
 
 // aiStream 调用 Responses API。优先流式; 服务端不支持流式时按普通 JSON 解析一次性回调。
-func (a *App) aiStream(ctx context.Context, instructions, input string, onDelta func(string)) error {
+func (a *App) aiStream(ctx context.Context, kind, instructions, input string, onDelta func(string)) error {
 	cfg := a.GetAIConfig()
 	key, err := keyring.Get(keyringService, aiKeyringKey)
 	if err != nil || key == "" {
 		return fmt.Errorf("2202 AI API key is not set")
 	}
-	return callResponses(ctx, cfg.BaseURL, cfg.Model, key, instructions, input, onDelta)
+	return callResponses(ctx, cfg.BaseURL, cfg.Model, key, cfg.reasoningFor(kind), instructions, input, onDelta)
 }
 
-// aiEfforts 是关闭思考的尝试顺序: 先请模型完全不思考, 不认 "none" 的退到最低档,
-// 都不认(如非推理模型、老网关)时最后一次不带 reasoning 参数。
-// 翻译/润色/起草回复都不需要推理, 思考只会拖慢首字并多花钱。
-var aiEfforts = []string{"none", "minimal", ""}
+// reasoningFor 按任务挑档位: 翻译一类走 ReasoningTranslate, 其余(润色、起草回复、连通性检查)走 ReasoningWrite。
+func (c AIConfig) reasoningFor(kind string) string {
+	switch kind {
+	case "translate_email", "translate_segments", "translate_text":
+		return c.ReasoningTranslate
+	default:
+		return c.ReasoningWrite
+	}
+}
 
-// aiEffortPick 记住每个 服务器+模型 实际可用的那一档, 避免每次都从头试。
-var aiEffortPick sync.Map // baseURL|model → int
+// aiEffortChain 给出这次要依次尝试的 reasoning.effort 档位, 空字符串表示不带这个参数。
+//
+// 翻译、润色、起草回复都不需要推理, 思考只会拖慢首字并多花钱, 所以默认先请模型别思考。
+// 但能不能关得看模型: 同一个模型名在中转后面还可能落到不同上游, 各家实现参差不齐 ——
+// 实测 glm-5.3-flash 的一条上游直接回「该模型始终思考，不支持关闭思考」,
+// 另一条收下 effort=none 却把整段思维链当正文吐出来。所以 auto 只试"关"和"不带",
+// 中间档(low/minimal)是"少思考"不是"不思考", 想要的人在设置里直接点名。
+func aiEffortChain(setting string) []string {
+	switch setting {
+	case "", "auto":
+		return []string{"none", ""}
+	case "off":
+		return []string{""}
+	default:
+		// 用户点了名就照办: 失败直接报错, 不擅自换档 —— 否则他看不出自己选的档位到底生没生效。
+		return []string{setting}
+	}
+}
 
-func callResponses(ctx context.Context, baseURL, model, key, instructions, input string, onDelta func(string)) error {
-	memo := baseURL + "|" + model
+// aiEffortPick 记住每个 服务器+模型+设置 实际走通的那一档, 避免每次都从头试。
+var aiEffortPick sync.Map // baseURL|model|setting → int
+
+func callResponses(ctx context.Context, baseURL, model, key, reasoning, instructions, input string, onDelta func(string)) error {
+	chain := aiEffortChain(reasoning)
+	memo := baseURL + "|" + model + "|" + reasoning
 	start, _ := aiEffortPick.Load(memo)
 	i, _ := start.(int)
+	if i < 0 || i >= len(chain) {
+		i = 0
+	}
 	for ; ; i++ {
-		err, retry := postResponses(ctx, baseURL, model, key, aiEfforts[i], instructions, input, onDelta)
+		err, retry := postResponses(ctx, baseURL, model, key, chain[i], instructions, input, onDelta)
 		if err == nil {
 			aiEffortPick.Store(memo, i)
 			return nil
 		}
-		if !retry || i+1 >= len(aiEfforts) {
+		if !retry || i+1 >= len(chain) {
 			return err
 		}
 	}
@@ -344,12 +395,16 @@ func postResponses(ctx context.Context, baseURL, model, key, effort, instruction
 		if err != nil {
 			return err, false
 		}
+		if strings.TrimSpace(text) == "" {
+			return errNoOutput, effort != ""
+		}
 		onDelta(text)
 		return nil, false
 	}
 
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 64<<10), 4<<20)
+	wrote := false
 	for sc.Scan() {
 		line := sc.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -371,7 +426,10 @@ func postResponses(ctx context.Context, baseURL, model, key, effort, instruction
 		}
 		switch ev.Type {
 		case "response.output_text.delta":
-			onDelta(ev.Delta)
+			if ev.Delta != "" {
+				wrote = true
+				onDelta(ev.Delta)
+			}
 		case "response.failed", "error":
 			msg := ev.Message
 			if msg == "" {
@@ -379,14 +437,27 @@ func postResponses(ctx context.Context, baseURL, model, key, effort, instruction
 			}
 			return fmt.Errorf("2206 AI error: %s", msg), false
 		case "response.completed", "response.done":
+			if !wrote {
+				// 全部输出都进了思考通道, 正文是空的。换一档 reasoning 再来一次。
+				return errNoOutput, effort != ""
+			}
 			return nil, false
 		}
 	}
 	if err := sc.Err(); err != nil && ctx.Err() == nil {
 		return fmt.Errorf("2204 AI stream interrupted: %w", err), false
 	}
-	return ctx.Err(), false
+	if err := ctx.Err(); err != nil {
+		return err, false
+	}
+	if !wrote {
+		return errNoOutput, effort != ""
+	}
+	return nil, false
 }
+
+// errNoOutput: 请求成功但模型一个字都没写进正文。
+var errNoOutput = errors.New("2209 AI returned no text (the model may have spent the reply on its reasoning)")
 
 // responseText 从非流式 Responses API 结果里取出文本。
 func responseText(data []byte) (string, error) {
