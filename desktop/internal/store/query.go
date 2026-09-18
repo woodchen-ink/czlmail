@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"regexp"
 	"time"
 )
 
@@ -257,6 +258,11 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	d.IsPinned = pinned != 0
 	d.BodyText = bodyText.String
 	d.BodyHTML = bodyHTML.String
+	// 旧缓存里纯文本邮件的 body_html 是同一份纯文本(见 syncer.joinBodyValues 的说明),
+	// 当 HTML 渲染会丢掉全部换行。正文不重新拉取, 读的时候顺手丢掉这份假 HTML。
+	if d.BodyHTML == d.BodyText && !looksLikeHTML(d.BodyHTML) {
+		d.BodyHTML = ""
+	}
 	d.BodyFetched = bodyFetchedAt.Valid
 	if unsubscribe.Valid {
 		d.Unsubscribe = &Unsubscribe{}
@@ -372,4 +378,12 @@ func UpsertAccounts(ctx context.Context, tx *sql.Tx, accounts []Account, capsByA
 		}
 	}
 	return nil
+}
+
+// htmlTag 匹配一个成形的标签。写得严是为了不把纯文本误判成 HTML:
+// "<zn@czl.net>"、"<https://…>" 与 "a < b" 都不算标签。
+var htmlTag = regexp.MustCompile(`(?s)<(?:/[a-zA-Z]|!--|[a-zA-Z][a-zA-Z0-9]*(?:\s[^<>]*)?/?>)`)
+
+func looksLikeHTML(s string) bool {
+	return htmlTag.MatchString(s)
 }

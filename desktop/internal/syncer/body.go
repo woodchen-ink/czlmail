@@ -9,6 +9,7 @@ import (
 	"git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/mail/email"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/htmltext"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -67,9 +68,9 @@ func (s *Syncer) FetchBodies(ctx context.Context, accountID string, emailIDs []s
 						structure = string(b)
 					}
 				}
+				text, htmlBody := bodies(msg)
 				if err := store.SetEmailContent(ctx, tx, accountID, string(msg.ID),
-					joinBodyValues(msg, msg.TextBody), joinBodyValues(msg, msg.HTMLBody),
-					structure, toStoreAttachments(msg.Attachments)); err != nil {
+					text, htmlBody, structure, toStoreAttachments(msg.Attachments)); err != nil {
 					return err
 				}
 				if err := store.SetEmailUnsubscribe(ctx, tx, accountID, string(msg.ID), ParseUnsubscribe(msg.Headers)); err != nil {
@@ -83,6 +84,20 @@ func (s *Syncer) FetchBodies(ctx context.Context, accountID string, emailIDs []s
 		written += len(got.List)
 	}
 	return written, nil
+}
+
+// bodies 取出要落库的纯文本与 HTML 正文。
+//
+// 两列都按部件类型取: JMAP 在缺少某一种时会拿另一种顶替(见 joinBodyValues)。
+// 邮件只有 HTML 时, body_text 由 HTML 转换得到 —— 这一列是 FTS 索引的内容,
+// 直接存 HTML 源码等于把标签和内联样式一起搜进去; 喂给模型的正文也取这一列。
+func bodies(msg *email.Email) (text, htmlBody string) {
+	text = joinBodyValues(msg, msg.TextBody, "text/plain")
+	htmlBody = joinBodyValues(msg, msg.HTMLBody, "text/html")
+	if text == "" && htmlBody != "" {
+		text = htmltext.Convert(htmlBody)
+	}
+	return text, htmlBody
 }
 
 // toStoreAttachments 把 JMAP 的 attachments 属性转成存储形态。
@@ -110,11 +125,15 @@ func toStoreAttachments(parts []*email.BodyPart) []store.Attachment {
 	return out
 }
 
-// joinBodyValues 按 parts 给出的顺序拼接正文片段。
+// joinBodyValues 按 parts 给出的顺序拼接正文片段, onlyType 非空时只收该类型的部件。
 //
 // JMAP 把正文拆成若干 part, bodyValues 以 partId 为键单独返回。一封邮件的
 // textBody 可能由多段组成(例如正文加签名), 只取第一段会丢内容。
-func joinBodyValues(msg *email.Email, parts []*email.BodyPart) string {
+//
+// htmlBody 必须按类型过滤: RFC 8621 规定邮件没有 text/html 部件时, 服务器在
+// htmlBody 里返回 text/plain 部件。照单全收会把纯文本邮件当 HTML 渲染 ——
+// 换行被 HTML 折叠成一整段, 正是 GitHub 这类纯文本通知邮件"丢格式"的原因。
+func joinBodyValues(msg *email.Email, parts []*email.BodyPart, onlyType string) string {
 	if len(parts) == 0 || msg.BodyValues == nil {
 		return ""
 	}
@@ -122,6 +141,9 @@ func joinBodyValues(msg *email.Email, parts []*email.BodyPart) string {
 	var out []byte
 	for _, part := range parts {
 		if part == nil || part.PartID == "" {
+			continue
+		}
+		if onlyType != "" && !strings.EqualFold(part.Type, onlyType) {
 			continue
 		}
 		val, ok := msg.BodyValues[part.PartID]

@@ -260,10 +260,6 @@ function htmlDocument(
 /** 纯文本正文：保留换行与空格，但仍然走同一套沙箱。 */
 function plainTextDocument(text: string, nonce: string, mode: "light" | "dark"): string {
   const c = palette(mode);
-  const escaped = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 
   return `<!doctype html><html><head>
 <meta charset="utf-8">
@@ -276,8 +272,38 @@ function plainTextDocument(text: string, nonce: string, mode: "light" | "dark"):
     white-space: pre-wrap; word-break: break-word;
     color: ${c.text};
   }
+  a { color: ${c.link}; }
 </style>
-</head><body><pre>${escaped}</pre>${bridgeScript(nonce)}</body></html>`;
+</head><body><pre>${linkifyText(text)}</pre>${bridgeScript(nonce)}</body></html>`;
+}
+
+/** 纯文本里的网址转成链接。href 只留给桥接脚本用的 data 属性，点击一律交给系统浏览器。 */
+function linkifyText(text: string): string {
+  const escape = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  // 结尾的标点通常是句子的而不是地址的，回退掉；成对的右括号留给下面单独判断。
+  const url = /\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi;
+
+  let out = "";
+  let last = 0;
+  for (const m of text.matchAll(url)) {
+    const at = m.index ?? 0;
+    let raw = m[0];
+    const trailing = raw.match(/[.,;:!?'"]+$/);
+    if (trailing) raw = raw.slice(0, -trailing[0].length);
+    while (raw.endsWith(")") && (raw.match(/\(/g)?.length ?? 0) < (raw.match(/\)/g)?.length ?? 0)) {
+      raw = raw.slice(0, -1);
+    }
+    if (!raw) continue;
+
+    const href = raw.startsWith("www.") ? `https://${raw}` : raw;
+    out += escape(text.slice(last, at));
+    out += `<a href="#" data-external-href="${escape(href)}">${escape(raw)}</a>`;
+    last = at + raw.length;
+  }
+  out += escape(text.slice(last));
+  return out;
 }
 
 function cryptoNonce(): string {

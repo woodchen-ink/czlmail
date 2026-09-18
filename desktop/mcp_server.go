@@ -12,13 +12,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/htmltext"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -336,7 +336,7 @@ func (a *App) newMCPServer() *mcp.Server {
 		}
 		body := d.BodyText
 		if strings.TrimSpace(body) == "" {
-			body = htmlToText(d.BodyHTML)
+			body = htmltext.Convert(d.BodyHTML)
 		}
 		if len(body) > 60000 {
 			body = body[:60000] + "\n…(已截断)"
@@ -525,20 +525,4 @@ func clamp(v, def, max int) int {
 		return max
 	}
 	return v
-}
-
-var (
-	reScript = regexp.MustCompile(`(?is)<(script|style|head)[^>]*>.*?</(script|style|head)>`)
-	reBreak  = regexp.MustCompile(`(?i)<(br|/p|/div|/tr|/h[1-6]|/li)[^>]*>`)
-	reTag    = regexp.MustCompile(`<[^>]+>`)
-	reBlank  = regexp.MustCompile(`\n{3,}`)
-)
-
-// htmlToText 粗略把 HTML 正文转成文本, 只给模型阅读用, 不追求排版。
-func htmlToText(html string) string {
-	s := reScript.ReplaceAllString(html, "")
-	s = reBreak.ReplaceAllString(s, "\n")
-	s = reTag.ReplaceAllString(s, "")
-	s = strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`, "&#39;", "'").Replace(s)
-	return strings.TrimSpace(reBlank.ReplaceAllString(s, "\n\n"))
 }

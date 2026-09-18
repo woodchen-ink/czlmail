@@ -289,6 +289,7 @@ func (a *App) connect(cfg Config, httpClient *http.Client) error {
 
 	go a.runReminders(syncCtx)
 	go a.runReconcile(syncCtx, s, st)
+	go a.runBodyTextBackfill(syncCtx, st)
 	go func() {
 		if err := s.Run(syncCtx); err != nil {
 			a.log.Error("sync loop exited", "err", err)
@@ -363,6 +364,24 @@ func (a *App) persistAccounts(ctx context.Context, client *jmap.Client, st *stor
 // 明确要求重新登录, 好过拿一个拼错的地址反复重试。
 func (c Config) cachedMetadata() *auth.Metadata {
 	return &auth.Metadata{Issuer: c.Issuer}
+}
+
+// runBodyTextBackfill 把旧缓存里存成 HTML 源码的 body_text 重写成纯文本。整库只跑一次。
+// 延后执行: 它会重建对应的 FTS 行, 不该和刚连上时的首轮同步抢写锁。
+func (a *App) runBodyTextBackfill(ctx context.Context, st *store.Store) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(30 * time.Second):
+	}
+	n, err := st.BackfillBodyText(ctx)
+	if err != nil {
+		a.log.Warn("backfill body text", "err", err)
+		return
+	}
+	if n > 0 {
+		a.log.Info("rewrote html body text", "emails", n)
+	}
 }
 
 // reconcileInterval 两次邮件对账的最小间隔。增量同步已经处理删除, 对账只是兜底, 一天一次足够。

@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/zalando/go-keyring"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/htmltext"
 )
 
 // AI 助手: 调用用户自己配置的 OpenAI 兼容接口(POST {base}/v1/responses)。
@@ -187,7 +189,7 @@ func (a *App) aiPrompt(req AIRequest, lang string) (string, string, error) {
 		}
 		body := d.BodyText
 		if strings.TrimSpace(body) == "" {
-			body = htmlToText(d.BodyHTML)
+			body = htmltext.Convert(d.BodyHTML)
 		}
 		return aiSafety + "Translate the email into " + lang + ". Output only the translation as plain text: " +
 				"first line is the translated subject prefixed with \"主题: \" style label in the target language, then a blank line, then the body. " +
@@ -231,7 +233,7 @@ func (a *App) aiPrompt(req AIRequest, lang string) (string, string, error) {
 		}
 		body := d.BodyText
 		if strings.TrimSpace(body) == "" {
-			body = htmlToText(d.BodyHTML)
+			body = htmltext.Convert(d.BodyHTML)
 		}
 		me := a.username()
 		intent := strings.TrimSpace(req.Text)
