@@ -67,8 +67,7 @@ func (a *App) showWindow() {
 	}
 	wruntime.WindowShow(a.ctx)
 	wruntime.WindowUnminimise(a.ctx)
-	// 置顶再取消是 Windows 上把窗口真正拉到前台的惯用做法,
-	// 单纯 Show 在焦点在别的程序时只会闪任务栏。
-	wruntime.WindowSetAlwaysOnTop(a.ctx, true)
-	wruntime.WindowSetAlwaysOnTop(a.ctx, false)
+	// 抢前台交给 raiseToForeground(见 window_windows.go)。
+	// 不能用"置顶再取消"那一套: 取消没落地时窗口会永远压在别的程序上面。
+	raiseToForeground()
 }
