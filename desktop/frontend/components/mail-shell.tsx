@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
+  ArrowUpToLine,
   FolderInput,
   Loader2,
   MailOpen,
@@ -89,6 +90,14 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  // 本地结果已出、正在等服务端全文检索补齐。
+  const [searchingServer, setSearchingServer] = useState(false);
+  // 邮件列表滚离顶部后, 刷新按钮换成「回到顶部」。
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const setListScrollEl = useCallback((el: HTMLDivElement | null) => {
+    listScrollRef.current = el;
+  }, []);
+  const [scrolledAway, setScrolledAway] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [draft, setDraftState] = useState<ComposeDraft | null>(null);
   // 每次打开写信面板都换一个 key, 让面板重新挂载而不是沿用上一封的状态。
@@ -409,7 +418,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       return;
     }
 
-    // 防抖：搜索打的是本地库，但每次按键重查仍会让长列表反复重排。
+    // 防抖：本地搜索很快，但每次按键重查仍会让长列表反复重排；服务端检索更不能每键一发。
+    // 先出本地结果，再用服务端全文检索补上缓存之外的邮件（归档里的旧邮件多半不在本地）。
     const timer = setTimeout(async () => {
       loadToken.current += 1;
       const token = loadToken.current;
@@ -425,7 +435,17 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       } finally {
         if (token === loadToken.current) setLoading(false);
       }
-    }, 250);
+      if (token !== loadToken.current) return;
+      setSearchingServer(true);
+      try {
+        const merged = await api.searchEmailsOnServer(accountId, q, 100);
+        if (token === loadToken.current) setEmails(overlay(merged ?? []));
+      } catch {
+        // 服务端检索只是补充，失败时保留本地结果。
+      } finally {
+        if (token === loadToken.current) setSearchingServer(false);
+      }
+    }, 300);
 
     return () => clearTimeout(timer);
     // searching 由本 effect 自己设置，列进依赖会造成循环。
@@ -890,7 +910,6 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [emails, emailId, focusMode, currentKind, actionsFor, setDraft]);
 
-  const selectedMailbox = useMemo(() => mailboxes.find((m) => m.id === mailboxId), [mailboxes, mailboxId]);
 
   return (
     <div className="h-full">
@@ -954,10 +973,16 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                       e.currentTarget.blur();
                     }
                   }}
-                  placeholder={`搜索${selectedMailbox ? mailboxLabel(selectedMailbox) : "邮件"}（/）`}
+                  placeholder="搜索全部文件夹（/）"
                   className="h-8 pr-8 pl-8"
                   aria-label="搜索邮件"
                 />
+                {searching && searchingServer && (
+                  <Loader2
+                    className="text-muted-foreground absolute top-1/2 right-7 size-3.5 -translate-y-1/2 animate-spin"
+                    aria-label="正在搜索服务器"
+                  />
+                )}
                 {query && (
                   <button
                     type="button"
@@ -970,16 +995,30 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 )}
               </div>
 
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 shrink-0"
-                onClick={sync}
-                disabled={syncing}
-                aria-label="立即同步"
-              >
-                {syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-              </Button>
+              {scrolledAway ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 shrink-0"
+                  onClick={() => listScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  aria-label="回到顶部"
+                  title="回到顶部"
+                >
+                  <ArrowUpToLine className="size-4" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 shrink-0"
+                  onClick={sync}
+                  disabled={syncing}
+                  aria-label="立即同步"
+                  title="立即同步"
+                >
+                  {syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                </Button>
+              )}
             </div>
 
             {checked.size > 0 && (
@@ -1043,6 +1082,9 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
             <div className="min-h-0 flex-1">
               <EmailList
                 accountId={accountId}
+                onScrollContainer={setListScrollEl}
+                onScrolledAway={setScrolledAway}
+                mailboxes={searching ? mailboxes : undefined}
                 checked={checked}
                 onCheck={checkEmail}
                 emails={emails}

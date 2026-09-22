@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
@@ -161,7 +163,62 @@ func (a *App) SearchEmails(accountID, query string, limit int) ([]store.EmailSum
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	return st.SearchEmails(a.ctx, accountID, query, limit)
+	list, err := st.SearchEmails(a.ctx, accountID, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	return list, st.FillMailboxIDs(a.ctx, accountID, list)
+}
+
+// SearchEmailsOnServer 在本地搜索之外再让服务端全文检索整个账号, 合并两边结果。
+//
+// 界面先用 SearchEmails 立即出本地结果, 再调这个补上不在缓存里的邮件(如归档里的旧邮件)。
+// 服务端不可达或超时只记日志, 退回本地结果。
+func (a *App) SearchEmailsOnServer(accountID, query string, limit int) ([]store.EmailSummary, error) {
+	st, err := a.currentStore()
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	var remote []string
+	if s, err := a.currentSyncer(); err == nil {
+		ctx, cancel := context.WithTimeout(a.ctx, fillPageTimeout)
+		remote, err = s.SearchServer(ctx, accountID, query, limit)
+		cancel()
+		if err != nil {
+			a.log.Warn("server search", "account", accountID, "err", err)
+		}
+	}
+	local, err := st.SearchEmails(a.ctx, accountID, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(local))
+	for _, e := range local {
+		seen[e.ID] = true
+	}
+	var extra []string
+	for _, id := range remote {
+		if !seen[id] {
+			extra = append(extra, id)
+		}
+	}
+	more, err := st.EmailsByIDs(a.ctx, accountID, extra)
+	if err != nil {
+		return nil, err
+	}
+	list := append(local, more...)
+	slices.SortStableFunc(list, func(x, y store.EmailSummary) int { return y.ReceivedAt.Compare(x.ReceivedAt) })
+	if len(list) > limit {
+		list = list[:limit]
+	}
+	return list, st.FillMailboxIDs(a.ctx, accountID, list)
 }
 
 // LocateEmail 告诉界面某封邮件在哪个文件夹的列表里、排第几。

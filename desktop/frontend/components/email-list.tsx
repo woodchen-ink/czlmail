@@ -19,12 +19,13 @@ import {
 } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { mailboxLabel } from "@/components/mailbox-tree";
 import { SenderAvatar } from "@/components/sender-avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { displayAddressList, listDate } from "@/lib/format";
-import { api, type EmailSummary } from "@/lib/api";
+import { api, type EmailSummary, type Mailbox } from "@/lib/api";
 
 interface Props {
   /** 会话展开时按这个账号读取会话里的全部邮件。 */
@@ -42,6 +43,12 @@ interface Props {
   onCheck?: (id: string, range: boolean) => void;
   /** 给行套上右键菜单。 */
   rowMenu?: (email: EmailSummary, row: React.ReactElement) => React.ReactElement;
+  /** 滚动容器挂载/卸载时回调, 供外部回到顶部。 */
+  onScrollContainer?: (el: HTMLDivElement | null) => void;
+  /** 滚动超过一屏(或回到一屏以内)时回调。 */
+  onScrolledAway?: (away: boolean) => void;
+  /** 给出时每行标出所在文件夹(搜索结果跨文件夹)。 */
+  mailboxes?: Mailbox[];
 }
 
 export function EmailList({
@@ -57,9 +64,31 @@ export function EmailList({
   checked,
   onCheck,
   rowMenu,
+  onScrollContainer,
+  onScrolledAway,
+  mailboxes,
 }: Props) {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const setScrollEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollRef.current = el;
+      onScrollContainer?.(el);
+    },
+    [onScrollContainer],
+  );
+
+  const folderNames = useMemo(
+    () => (mailboxes ? new Map(mailboxes.map((m) => [m.id, mailboxLabel(m)])) : null),
+    [mailboxes],
+  );
+
+  // 骨架屏与空列表时没有滚动容器, 切换文件夹后容器重新挂载在顶部; 列表每次变化都重新报一次。
+  const reportScroll = useCallback(() => {
+    const el = scrollRef.current;
+    onScrolledAway?.(!!el && el.scrollTop > el.clientHeight);
+  }, [onScrolledAway]);
+  useEffect(reportScroll, [reportScroll, emails, loading]);
   const wrapRow = rowMenu ?? ((_: EmailSummary, row: React.ReactElement) => row);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [threads, setThreads] = useState<Record<string, EmailSummary[]>>({});
@@ -179,13 +208,16 @@ export function EmailList({
   }
 
   return (
-    <ScrollArea ref={scrollRef} className="h-full overflow-x-hidden">
+    <ScrollArea ref={setScrollEl} onScroll={reportScroll} className="h-full overflow-x-hidden">
       <ul className="flex flex-col">
         {rows.map(({ head: email, unread }, index) => {
           const tid = email.threadId;
           const count = email.threadCount ?? 0;
           const isOpen = !!tid && expanded.has(tid);
           const members = isOpen ? [...(threads[tid] ?? [])].reverse() : [];
+          const where = folderNames
+            ? (email.mailboxIds ?? []).map((id) => folderNames.get(id) ?? "").filter(Boolean).join("、")
+            : "";
           const childSelected = members.some(
             (m) => m.id === selectedId && m.id !== email.id,
           );
@@ -339,6 +371,11 @@ export function EmailList({
                       >
                         {email.subject || "(无主题)"}
                       </span>
+                      {where && (
+                        <span className="bg-secondary text-muted-foreground max-w-24 shrink-0 truncate rounded-sm px-1.5 text-xs">
+                          {where}
+                        </span>
+                      )}
                       {email.hasAttachment && (
                         <Paperclip className="text-muted-foreground size-3.5 shrink-0" />
                       )}

@@ -129,3 +129,30 @@ func ids(list []EmailSummary) []string {
 	}
 	return out
 }
+
+// 服务端检索命中的 id 按收件时间倒序取回, 本地没有的跳过; 搜索结果要能标出所在文件夹。
+func TestEmailsByIDsAndMailboxes(t *testing.T) {
+	ctx := context.Background()
+	s := openTemp(t)
+	msgs := []Email{
+		{ID: "a", Subject: "old", ReceivedAt: time.Unix(1700000001, 0), MailboxIDs: []string{"archive"}},
+		{ID: "b", Subject: "new", ReceivedAt: time.Unix(1700000002, 0), MailboxIDs: []string{"inbox", "work"}},
+	}
+	if err := s.WithTx(ctx, func(tx *sql.Tx) error { return UpsertEmails(ctx, tx, "c", msgs) }); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := s.EmailsByIDs(ctx, "c", []string{"a", "missing", "b"})
+	if err != nil {
+		t.Fatalf("by ids: %v", err)
+	}
+	if len(got) != 2 || got[0].ID != "b" || got[1].ID != "a" {
+		t.Fatalf("应按时间倒序返回 b, a, 实际 %v", ids(got))
+	}
+	if err := s.FillMailboxIDs(ctx, "c", got); err != nil {
+		t.Fatalf("fill mailboxes: %v", err)
+	}
+	if len(got[0].MailboxIDs) != 2 || len(got[1].MailboxIDs) != 1 || got[1].MailboxIDs[0] != "archive" {
+		t.Fatalf("文件夹不对: %v / %v", got[0].MailboxIDs, got[1].MailboxIDs)
+	}
+}

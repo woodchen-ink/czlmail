@@ -134,6 +134,7 @@ export const api = {
   getEmail: guard(App.GetEmail),
   fetchBody: guard(App.FetchBody),
   searchEmails: guard(App.SearchEmails),
+  searchEmailsOnServer: guard(App.SearchEmailsOnServer),
   locateEmail: guard(App.LocateEmail),
   syncNow: guard(App.SyncNow),
   pullMailbox: guard(App.PullMailbox),

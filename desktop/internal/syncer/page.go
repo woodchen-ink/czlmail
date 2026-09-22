@@ -85,25 +85,31 @@ func (s *Syncer) fillRange(
 		return 0, 0, 0, &Error{Code: CodeUnhandled, Msg: "unexpected response to Email/query"}
 	}
 
-	missing, err := s.store.MissingEmailIDs(ctx, accountID, idsToStrings(q.IDs))
+	fetched, err = s.cacheMissing(ctx, accountID, q.IDs)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	if len(missing) > 0 {
-		want := make([]jmap.ID, len(missing))
-		for i, id := range missing {
-			want[i] = jmap.ID(id)
-		}
-		emails, err := s.fetchEmails(ctx, accountID, want)
-		if err != nil {
-			return 0, 0, 0, err
-		}
-		if err := s.store.WithTx(ctx, func(tx *sql.Tx) error {
-			return store.UpsertEmails(ctx, tx, accountID, emails)
-		}); err != nil {
-			return 0, 0, 0, err
-		}
-		fetched = len(emails)
-	}
 	return len(q.IDs), fetched, int(q.Total), nil
+}
+
+// cacheMissing 把 ids 中本地没有的邮件元数据取回落库, 返回新取回的封数。
+func (s *Syncer) cacheMissing(ctx context.Context, accountID string, ids []jmap.ID) (int, error) {
+	missing, err := s.store.MissingEmailIDs(ctx, accountID, idsToStrings(ids))
+	if err != nil || len(missing) == 0 {
+		return 0, err
+	}
+	want := make([]jmap.ID, len(missing))
+	for i, id := range missing {
+		want[i] = jmap.ID(id)
+	}
+	emails, err := s.fetchEmails(ctx, accountID, want)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.store.WithTx(ctx, func(tx *sql.Tx) error {
+		return store.UpsertEmails(ctx, tx, accountID, emails)
+	}); err != nil {
+		return 0, err
+	}
+	return len(emails), nil
 }

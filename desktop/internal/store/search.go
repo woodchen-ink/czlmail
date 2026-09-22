@@ -78,3 +78,59 @@ func escapeLike(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 	return r.Replace(s)
 }
+
+// EmailsByIDs 取这些 id 的列表行, 本地没有的跳过, 结果按收件时间倒序。
+func (s *Store) EmailsByIDs(ctx context.Context, accountID string, ids []string) ([]EmailSummary, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, accountID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
+		       e.preview, e.has_attachment, e.size,`+keywordFlags+threadCountColumn+`
+		FROM emails e
+		WHERE e.account_id = ? AND e.id IN (?`+strings.Repeat(",?", len(ids)-1)+`)
+		ORDER BY e.received_at DESC`,
+		args...)
+	if err != nil {
+		return nil, wrap(CodeQuery, "query emails by ids", err)
+	}
+	defer rows.Close()
+	return scanSummaries(rows)
+}
+
+// FillMailboxIDs 给搜索结果填上所在文件夹。
+func (s *Store) FillMailboxIDs(ctx context.Context, accountID string, list []EmailSummary) error {
+	if len(list) == 0 {
+		return nil
+	}
+	args := make([]any, 0, len(list)+1)
+	args = append(args, accountID)
+	index := make(map[string]int, len(list))
+	for i, e := range list {
+		args = append(args, e.ID)
+		index[e.ID] = i
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT email_id, mailbox_id FROM email_mailboxes
+		 WHERE account_id = ? AND email_id IN (?`+strings.Repeat(",?", len(list)-1)+`)`,
+		args...)
+	if err != nil {
+		return wrap(CodeQuery, "query email mailboxes", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var emailID, mailboxID string
+		if err := rows.Scan(&emailID, &mailboxID); err != nil {
+			return wrap(CodeQuery, "scan email mailbox", err)
+		}
+		if i, ok := index[emailID]; ok {
+			list[i].MailboxIDs = append(list[i].MailboxIDs, mailboxID)
+		}
+	}
+	return wrap(CodeQuery, "iterate email mailboxes", rows.Err())
+}
