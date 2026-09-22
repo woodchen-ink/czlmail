@@ -197,7 +197,9 @@ export function EmailBody({
           srcDoc={doc}
           sandbox="allow-scripts"
           className="block w-full border-0 bg-transparent"
-          style={{ height }}
+          // iframe 里的 prefers-color-scheme 取自 iframe 元素自己的 color-scheme，
+          // 不写就继承应用根上的 dark：邮件自带的暗色 @media 会在亮色纸面上生效。
+          style={{ height, colorScheme: mode }}
         />
       </div>
     </div>
@@ -327,6 +329,7 @@ function plainTextDocument(text: string, nonce: string, mode: "light" | "dark"):
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${contentSecurityPolicy(nonce, false)}">
 <style nonce="${nonce}">
+  :root { color-scheme: ${c.scheme}; }
   html, body { margin: 0; padding: 0; background: transparent; }
   pre {
     margin: 0;
