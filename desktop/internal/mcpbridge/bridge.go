@@ -1,4 +1,9 @@
-package main
+// Package mcpbridge 实现 `czlmail.exe mcp`: 给只支持 stdio 的 MCP 客户端(如 Claude Desktop)用的桥。
+//
+// 桥本身不碰邮件数据, 只把 stdio 上的工具调用转发到正在运行的桌面端的本地 HTTP 端点。
+// 这样数据只有一个读写方(桌面端), 不会出现两个进程同时同步、同时写缓存库。
+// 桌面端没在运行时先把它拉起来, 等端点就绪。
+package mcpbridge
 
 import (
 	"context"
@@ -8,20 +13,35 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 )
 
-// `czlmail.exe mcp`: 给只支持 stdio 的 MCP 客户端(如 Claude Desktop)用的桥。
-//
-// 桥本身不碰邮件数据, 只把 stdio 上的工具调用转发到正在运行的桌面端的本地 HTTP 端点。
-// 这样数据只有一个读写方(桌面端), 不会出现两个进程同时同步、同时写缓存库。
-// 桌面端没在运行时先把它拉起来, 等端点就绪。
+// FileName 是桌面端写下连接信息的文件, 位于数据目录。
+const FileName = "mcp.json"
+
+// Info 是写给桥接进程与界面的连接信息。
+type Info struct {
+	URL   string `json:"url"`
+	Token string `json:"token"`
+}
+
+// InfoPath 返回连接信息文件的位置。
+func InfoPath() (string, error) {
+	dir, err := config.Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, FileName), nil
+}
 
 const bridgeWaitTimeout = 30 * time.Second
 
-func runMCPBridge() int {
+// Run 运行 stdio 桥, 返回进程退出码。version 用于向客户端报告实现版本。
+func Run(version string) int {
 	ctx := context.Background()
 
 	info, err := waitForMCP(ctx)
@@ -33,7 +53,7 @@ func runMCPBridge() int {
 	client := mcp.NewClient(&mcp.Implementation{Name: "czlmail-bridge", Version: version}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
 		Endpoint:             info.URL,
-		HTTPClient:           &http.Client{Transport: bearer{token: info.Token}},
+		HTTPClient:           &http.Client{Transport: Bearer{Token: info.Token}},
 		DisableStandaloneSSE: true,
 	}, nil)
 	if err != nil {
@@ -66,16 +86,16 @@ func runMCPBridge() int {
 }
 
 // waitForMCP 读取桌面端写下的连接信息; 桌面端未运行时启动它并等待。
-func waitForMCP(ctx context.Context) (MCPInfo, error) {
-	path, err := mcpInfoPath()
+func waitForMCP(ctx context.Context) (Info, error) {
+	path, err := InfoPath()
 	if err != nil {
-		return MCPInfo{}, err
+		return Info{}, err
 	}
 
 	launched := false
 	deadline := time.Now().Add(bridgeWaitTimeout)
 	for {
-		if info, ok := readMCPInfo(ctx, path); ok {
+		if info, ok := ReadInfo(ctx, path); ok {
 			return info, nil
 		}
 		if !launched {
@@ -86,37 +106,38 @@ func waitForMCP(ctx context.Context) (MCPInfo, error) {
 			}
 		}
 		if time.Now().After(deadline) {
-			return MCPInfo{}, errors.New("CZL Mail is not running or MCP is disabled; enable it in CZL Mail → 设置 → AI 助手 (MCP)")
+			return Info{}, errors.New("CZL Mail is not running or MCP is disabled; enable it in CZL Mail → 设置 → AI 助手 (MCP)")
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
 }
 
-// readMCPInfo 读取连接信息并确认端点真的在监听: 桌面端异常退出时 mcp.json 可能残留。
-func readMCPInfo(ctx context.Context, path string) (MCPInfo, bool) {
+// ReadInfo 读取连接信息并确认端点真的在监听: 桌面端异常退出时 mcp.json 可能残留。
+func ReadInfo(ctx context.Context, path string) (Info, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return MCPInfo{}, false
+		return Info{}, false
 	}
-	var info MCPInfo
+	var info Info
 	if json.Unmarshal(data, &info) != nil || info.URL == "" {
-		return MCPInfo{}, false
+		return Info{}, false
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, info.URL, nil)
-	resp, err := (&http.Client{Transport: bearer{token: info.Token}}).Do(req)
+	resp, err := (&http.Client{Transport: Bearer{Token: info.Token}}).Do(req)
 	if err != nil {
-		return MCPInfo{}, false
+		return Info{}, false
 	}
 	resp.Body.Close()
 	return info, resp.StatusCode != http.StatusUnauthorized
 }
 
-type bearer struct{ token string }
+// Bearer 给每个请求加上 Authorization 头。
+type Bearer struct{ Token string }
 
-func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
+func (b Bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
-	r.Header.Set("Authorization", "Bearer "+b.token)
+	r.Header.Set("Authorization", "Bearer "+b.Token)
 	return http.DefaultTransport.RoundTrip(r)
 }

@@ -1,4 +1,5 @@
-package main
+// Package config 管理可明文落盘的连接配置、数据目录, 以及系统密钥库里的凭据。
+package config
 
 import (
 	"encoding/json"
@@ -11,9 +12,9 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// keyringService 是凭据在系统密钥库里的服务名。
+// KeyringService 是凭据在系统密钥库里的服务名。
 // Windows 落凭据管理器, macOS 落 Keychain, Linux 落 Secret Service。
-const keyringService = "czlmail"
+const KeyringService = "czlmail"
 
 // Config 是可以明文落盘的部分。
 //
@@ -57,29 +58,38 @@ func (c Config) Configured() bool {
 	return c.Issuer != "" && c.ClientID != ""
 }
 
-// dataDirName 是 %APPDATA% 下的目录名。设置了 CZLMAIL_INSTANCE 的开发实例用独立目录,
+// InstanceID 是单实例锁与 macOS LaunchAgent 的标识。开发调试时设置 CZLMAIL_INSTANCE 可以与已安装的正式版同时运行。
+func InstanceID() string {
+	if v := os.Getenv("CZLMAIL_INSTANCE"); v != "" {
+		return "net.czl.mail." + v
+	}
+	return "net.czl.mail"
+}
+
+// DirName 是 %APPDATA% 下的目录名。设置了 CZLMAIL_INSTANCE 的开发实例用独立目录,
 // 缓存库、配置、日志、MCP 连接信息都与正式版分开, 测试不会影响日常使用的数据。
-func dataDirName() string {
+func DirName() string {
 	if v := os.Getenv("CZLMAIL_INSTANCE"); v != "" {
 		return "czlmail-" + v
 	}
 	return "czlmail"
 }
 
-func dataDir() (string, error) {
+// Dir 返回数据目录, 不存在时创建。
+func Dir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("2010 locate user config dir: %w", err)
 	}
-	dir := filepath.Join(base, dataDirName())
+	dir := filepath.Join(base, DirName())
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("2011 create data dir: %w", err)
 	}
 	return dir, nil
 }
 
-func configPath() (string, error) {
-	dir, err := dataDir()
+func filePath() (string, error) {
+	dir, err := Dir()
 	if err != nil {
 		return "", err
 	}
@@ -88,19 +98,19 @@ func configPath() (string, error) {
 
 // DatabasePath 返回缓存数据库的位置。
 func DatabasePath() (string, error) {
-	dir, err := dataDir()
+	dir, err := Dir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "cache.db"), nil
 }
 
-// LoadConfig 读取配置。首次启动时文件不存在, 返回零值且 err 为 nil,
+// Load 读取配置。首次启动时文件不存在, 返回零值且 err 为 nil,
 // 由界面引导用户登录, 而不是在这里失败。
-func LoadConfig() (Config, error) {
+func Load() (Config, error) {
 	var cfg Config
 
-	path, err := configPath()
+	path, err := filePath()
 	if err != nil {
 		return cfg, err
 	}
@@ -119,9 +129,9 @@ func LoadConfig() (Config, error) {
 	return cfg, nil
 }
 
-// SaveConfig 写入配置。权限 0600: 虽不含凭据, 但暴露了邮箱地址与服务器。
-func SaveConfig(cfg Config) error {
-	path, err := configPath()
+// Save 写入配置。权限 0600: 虽不含凭据, 但暴露了邮箱地址与服务器。
+func Save(cfg Config) error {
+	path, err := filePath()
 	if err != nil {
 		return err
 	}
@@ -133,8 +143,8 @@ func SaveConfig(cfg Config) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-// tokenKey 让同一台机器上的多个服务器各自持有独立条目。
-func tokenKey(issuer string) string {
+// TokenKey 是 OAuth 令牌在密钥库里的条目名, 让同一台机器上的多个服务器各自持有独立条目。
+func TokenKey(issuer string) string {
 	return "oauth:" + issuer
 }
 
@@ -143,7 +153,7 @@ func tokenKey(issuer string) string {
 // 刻意不提供"存到配置文件"的回落路径: 有回落就一定会在密钥库不可用时被静默使用,
 // 而一个明文躺在磁盘上的长期刷新令牌, 比一次明确的登录失败危险得多。
 func LoadToken(issuer string) (*oauth2.Token, error) {
-	raw, err := keyring.Get(keyringService, tokenKey(issuer))
+	raw, err := keyring.Get(KeyringService, TokenKey(issuer))
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil, nil
 	}
@@ -164,7 +174,7 @@ func SaveToken(issuer string, tok *oauth2.Token) error {
 	if err != nil {
 		return fmt.Errorf("2017 encode credential: %w", err)
 	}
-	if err := keyring.Set(keyringService, tokenKey(issuer), string(raw)); err != nil {
+	if err := keyring.Set(KeyringService, TokenKey(issuer), string(raw)); err != nil {
 		return fmt.Errorf("2018 write credential to system keyring: %w", err)
 	}
 	return nil
@@ -172,21 +182,21 @@ func SaveToken(issuer string, tok *oauth2.Token) error {
 
 // DeleteToken 清除已保存的令牌, 用于退出登录。
 func DeleteToken(issuer string) error {
-	err := keyring.Delete(keyringService, tokenKey(issuer))
+	err := keyring.Delete(KeyringService, TokenKey(issuer))
 	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return fmt.Errorf("2019 delete credential from system keyring: %w", err)
 	}
 	return nil
 }
 
-// passwordKey 按会话地址与用户名区分条目, 同一台机器上可以并存多个邮箱。
-func passwordKey(sessionEndpoint, username string) string {
+// PasswordKey 是应用专用密码的条目名, 按会话地址与用户名区分条目, 同一台机器上可以并存多个邮箱。
+func PasswordKey(sessionEndpoint, username string) string {
 	return "password:" + sessionEndpoint + "|" + username
 }
 
 // LoadPassword 从系统密钥库取应用专用密码。不存在时返回空串且 err 为 nil。
 func LoadPassword(sessionEndpoint, username string) (string, error) {
-	v, err := keyring.Get(keyringService, passwordKey(sessionEndpoint, username))
+	v, err := keyring.Get(KeyringService, PasswordKey(sessionEndpoint, username))
 	if errors.Is(err, keyring.ErrNotFound) {
 		return "", nil
 	}
@@ -198,7 +208,7 @@ func LoadPassword(sessionEndpoint, username string) (string, error) {
 
 // SavePassword 把应用专用密码写入系统密钥库。与令牌一样没有明文回落路径。
 func SavePassword(sessionEndpoint, username, password string) error {
-	if err := keyring.Set(keyringService, passwordKey(sessionEndpoint, username), password); err != nil {
+	if err := keyring.Set(KeyringService, PasswordKey(sessionEndpoint, username), password); err != nil {
 		return fmt.Errorf("2018 write credential to system keyring: %w", err)
 	}
 	return nil
@@ -206,7 +216,7 @@ func SavePassword(sessionEndpoint, username, password string) error {
 
 // DeletePassword 清除已保存的应用专用密码。
 func DeletePassword(sessionEndpoint, username string) error {
-	err := keyring.Delete(keyringService, passwordKey(sessionEndpoint, username))
+	err := keyring.Delete(KeyringService, PasswordKey(sessionEndpoint, username))
 	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return fmt.Errorf("2019 delete credential from system keyring: %w", err)
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/energye/systray"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 )
 
 // 系统托盘。关闭窗口只是隐藏(见 main.go 的 HideWindowOnClose), 邮件客户端要常驻
@@ -69,5 +70,5 @@ func (a *App) showWindow() {
 	wruntime.WindowUnminimise(a.ctx)
 	// 抢前台交给 raiseToForeground(见 window_windows.go)。
 	// 不能用"置顶再取消"那一套: 取消没落地时窗口会永远压在别的程序上面。
-	raiseToForeground()
+	platform.RaiseToForeground()
 }

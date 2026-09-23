@@ -7,12 +7,11 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 )
 
 // 系统集成的界面接口, 以及从命令行打开的 mailto: 链接与 .ics 文件。
-
-// backgroundFlag 表示开机自启: 启动后直接留在托盘, 不弹窗口。
-const backgroundFlag = "--background"
 
 // EventOpenRequest 有新的外部打开请求(mailto 或 ics), 界面收到后调用 TakeOpenRequests。
 const EventOpenRequest = "app:open-request"
@@ -29,22 +28,22 @@ type IntegrationStatus struct {
 
 func (a *App) GetIntegrationStatus() IntegrationStatus {
 	return IntegrationStatus{
-		Platform: runtime.GOOS, Supported: integrationSupported, Autostart: autostartEnabled(),
-		DefaultMail: isDefaultMail(), DefaultCalendar: isDefaultCalendar(),
+		Platform: runtime.GOOS, Supported: platform.IntegrationSupported, Autostart: platform.AutostartEnabled(),
+		DefaultMail: platform.IsDefaultMail(), DefaultCalendar: platform.IsDefaultCalendar(),
 	}
 }
 
 func (a *App) SetAutostart(on bool) (IntegrationStatus, error) {
-	err := setAutostart(on)
+	err := platform.SetAutostart(on)
 	return a.GetIntegrationStatus(), err
 }
 
 // OpenDefaultAppsSettings 打开系统的默认应用设置页; macOS 上直接设为默认。
 func (a *App) OpenDefaultAppsSettings() error {
-	if err := registerHandlers(); err != nil {
+	if err := platform.RegisterHandlers(); err != nil {
 		return err
 	}
-	return openDefaultAppsSettings()
+	return platform.OpenDefaultAppsSettings()
 }
 
 // OpenRequest 是一个外部打开请求。
@@ -77,7 +76,7 @@ func (a *App) handleArgs(args []string) bool {
 		switch {
 		case strings.HasPrefix(lower, "mailto:"):
 			reqs = append(reqs, parseMailto(arg))
-		case strings.HasPrefix(lower, linkScheme+"://"):
+		case strings.HasPrefix(lower, platform.LinkScheme+"://"):
 			if req, ok := parseMailLink(arg); ok {
 				reqs = append(reqs, req)
 			}
@@ -111,13 +110,9 @@ func (a *App) TakeOpenRequests() []OpenRequest {
 	return out
 }
 
-// linkScheme 是「复制邮件链接」生成的协议: czlmail://email/<账号>/<邮件id>、czlmail://thread/<账号>/<会话id>。
-// 链接只含服务器内部 id, 不含主题、地址等内容, 贴到别处不会泄露邮件信息。
-const linkScheme = "czlmail"
-
 // parseMailLink 解析 czlmail:// 链接。
 func parseMailLink(raw string) (OpenRequest, bool) {
-	rest := raw[len(linkScheme+"://"):]
+	rest := raw[len(platform.LinkScheme+"://"):]
 	parts := strings.Split(strings.Trim(rest, "/"), "/")
 	if len(parts) != 3 {
 		return OpenRequest{}, false

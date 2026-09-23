@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -69,10 +70,10 @@ func (a *App) SignOut() error {
 	a.mu.Unlock()
 
 	var err error
-	if cfg.AuthMethod == AuthPassword {
-		err = DeletePassword(cfg.SessionEndpoint, cfg.Username)
+	if cfg.AuthMethod == config.AuthPassword {
+		err = config.DeletePassword(cfg.SessionEndpoint, cfg.Username)
 	} else if cfg.Issuer != "" {
-		err = DeleteToken(cfg.Issuer)
+		err = config.DeleteToken(cfg.Issuer)
 	}
 	if err != nil {
 		return err
@@ -81,9 +82,9 @@ func (a *App) SignOut() error {
 	// 配置一并清掉, 否则下次启动 Configured() 仍为真, 界面会进入一个
 	// 连不上服务器的邮件页, 而不是回到登录页。
 	a.mu.Lock()
-	a.cfg = Config{}
+	a.cfg = config.Config{}
 	a.mu.Unlock()
-	return SaveConfig(Config{})
+	return config.Save(config.Config{})
 }
 
 // ListAccounts 列出全部账号, 个人账号在前。

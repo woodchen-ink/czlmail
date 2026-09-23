@@ -12,6 +12,7 @@ import (
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/notify"
 	"github.com/woodchen-ink/czlmail/desktop/update"
@@ -104,7 +105,7 @@ func (a *App) InstallUpdate() error {
 
 	if runtime.GOOS != "windows" {
 		// macOS 未签名, 无法静默替换 .app: 打开 DMG, 由用户把新版本拖进「应用程序」覆盖。
-		return openPath(path)
+		return platform.OpenPath(path)
 	}
 
 	if err := exec.Command(path, "/S").Start(); err != nil {

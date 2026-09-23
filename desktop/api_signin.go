@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 )
 
 // 登录流程, 两种方式:
@@ -97,7 +98,7 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 	}
 	defer listener.Close()
 
-	cfg, err := LoadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
@@ -119,7 +120,7 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 	}
 
 	cfg.ServerHost = mailHost
-	cfg.AuthMethod = AuthOAuth
+	cfg.AuthMethod = config.AuthOAuth
 	cfg.Issuer = meta.Issuer
 	cfg.SessionEndpoint = sessionEndpoint
 	cfg.Scopes = meta.Scopes()
@@ -146,10 +147,10 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 	connected := a.cfg
 	a.mu.RUnlock()
 
-	if err := SaveConfig(connected); err != nil {
+	if err := config.Save(connected); err != nil {
 		return err
 	}
-	if err := SaveToken(connected.Issuer, tok); err != nil {
+	if err := config.SaveToken(connected.Issuer, tok); err != nil {
 		a.log.Error("oauth save token failed", "err", err)
 		return err
 	}
@@ -214,9 +215,9 @@ func (a *App) SignInWithPassword(mailHost, username, password string) error {
 		return err
 	}
 
-	cfg := Config{
+	cfg := config.Config{
 		ServerHost:      mailHost,
-		AuthMethod:      AuthPassword,
+		AuthMethod:      config.AuthPassword,
 		SessionEndpoint: sessionEndpoint,
 		Username:        username,
 	}
@@ -233,8 +234,8 @@ func (a *App) SignInWithPassword(mailHost, username, password string) error {
 	saved := a.cfg
 	a.mu.Unlock()
 
-	if err := SaveConfig(saved); err != nil {
+	if err := config.Save(saved); err != nil {
 		return err
 	}
-	return SavePassword(sessionEndpoint, username, password)
+	return config.SavePassword(sessionEndpoint, username, password)
 }

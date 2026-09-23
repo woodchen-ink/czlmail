@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
+	"github.com/woodchen-ink/czlmail/desktop/internal/mcpbridge"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
@@ -68,14 +69,14 @@ func TestIntegrationMCP(t *testing.T) {
 		t.Fatalf("request without token: status %d", resp.StatusCode)
 	}
 
-	info, ok := readMCPInfo(ctx, mustInfoPath(t))
+	info, ok := mcpbridge.ReadInfo(ctx, mustInfoPath(t))
 	if !ok || info.Token != status.Token {
 		t.Fatalf("mcp.json not readable: %+v", info)
 	}
 
 	mc := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
 	session, err := mc.Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint: status.URL, HTTPClient: &http.Client{Transport: bearer{token: status.Token}}, DisableStandaloneSSE: true,
+		Endpoint: status.URL, HTTPClient: &http.Client{Transport: mcpbridge.Bearer{Token: status.Token}}, DisableStandaloneSSE: true,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +134,7 @@ func TestIntegrationMCP(t *testing.T) {
 }
 
 func mustInfoPath(t *testing.T) string {
-	p, err := mcpInfoPath()
+	p, err := mcpbridge.InfoPath()
 	if err != nil {
 		t.Fatal(err)
 	}

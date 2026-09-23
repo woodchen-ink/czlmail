@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 )
 
 // maxLogBytes 超过后启动时把日志轮转为 .old, 只保留一份旧日志。
@@ -15,7 +17,7 @@ const maxLogBytes = 5 << 20
 func newLogger() *slog.Logger {
 	var out io.Writer = os.Stderr
 	if dir, err := os.UserConfigDir(); err == nil {
-		path := filepath.Join(dir, dataDirName(), "czlmail.log")
+		path := filepath.Join(dir, config.DirName(), "czlmail.log")
 		if info, err := os.Stat(path); err == nil && info.Size() > maxLogBytes {
 			_ = os.Rename(path, path+".old")
 		}

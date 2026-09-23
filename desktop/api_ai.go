@@ -15,6 +15,7 @@ import (
 
 	"github.com/zalando/go-keyring"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/htmltext"
 )
 
@@ -81,7 +82,7 @@ func (a *App) GetAIConfig() AIConfig {
 	if v, err := st.StringSetting(a.ctx, "aiReasoningWrite"); err == nil && v != "" {
 		cfg.ReasoningWrite = normalizeEffort(v)
 	}
-	if k, err := keyring.Get(keyringService, aiKeyringKey); err == nil && k != "" {
+	if k, err := keyring.Get(config.KeyringService, aiKeyringKey); err == nil && k != "" {
 		cfg.HasKey = true
 	}
 	return cfg
@@ -122,11 +123,11 @@ func (a *App) SaveAIConfig(cfg AIConfig, apiKey string) (AIConfig, error) {
 	switch apiKey = strings.TrimSpace(apiKey); apiKey {
 	case "":
 	case "-":
-		if err := keyring.Delete(keyringService, aiKeyringKey); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		if err := keyring.Delete(config.KeyringService, aiKeyringKey); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 			return cfg, fmt.Errorf("2201 delete api key: %w", err)
 		}
 	default:
-		if err := keyring.Set(keyringService, aiKeyringKey, apiKey); err != nil {
+		if err := keyring.Set(config.KeyringService, aiKeyringKey, apiKey); err != nil {
 			return cfg, fmt.Errorf("2201 save api key to system keychain: %w", err)
 		}
 	}
@@ -321,7 +322,7 @@ var aiHTTP = &http.Client{Timeout: 0} // 由 ctx 控制超时, 流式响应不�
 // aiStream 调用 Responses API。优先流式; 服务端不支持流式时按普通 JSON 解析一次性回调。
 func (a *App) aiStream(ctx context.Context, kind, instructions, input string, onDelta func(string)) error {
 	cfg := a.GetAIConfig()
-	key, err := keyring.Get(keyringService, aiKeyringKey)
+	key, err := keyring.Get(config.KeyringService, aiKeyringKey)
 	if err != nil || key == "" {
 		return fmt.Errorf("2202 AI API key is not set")
 	}

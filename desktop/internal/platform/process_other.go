@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package platform
 
 import (
 	"os/exec"
@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-func detachProcess(cmd *exec.Cmd) {
+func DetachProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
 
-// waitProcessExit 轮询进程是否还在(信号 0 只检查存在性)。
-func waitProcessExit(pid int, timeout time.Duration) {
+// WaitProcessExit 轮询进程是否还在(信号 0 只检查存在性)。
+func WaitProcessExit(pid int, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if syscall.Kill(pid, 0) != nil {
@@ -22,5 +22,3 @@ func waitProcessExit(pid int, timeout time.Duration) {
 		time.Sleep(200 * time.Millisecond)
 	}
 }
-
-func unregisterHandlers() error { return nil }

@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package platform
 
 import (
 	"fmt"
@@ -23,14 +23,14 @@ const (
 	progICS       = "CZLMail.ics"
 	progWebcal    = "CZLMail.webcal"
 	// progLink 直接以协议名作为类名: 自有协议不需要用户在默认应用里确认。
-	progLink = linkScheme
+	progLink = LinkScheme
 )
 
 func exePath() (string, error) {
 	return os.Executable()
 }
 
-func autostartEnabled() bool {
+func AutostartEnabled() bool {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.QUERY_VALUE)
 	if err != nil {
 		return false
@@ -45,7 +45,7 @@ func autostartEnabled() bool {
 	return exe != "" && strings.Contains(strings.ToLower(v), strings.ToLower(exe))
 }
 
-func setAutostart(on bool) error {
+func SetAutostart(on bool) error {
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, runKey, registry.SET_VALUE)
 	if err != nil {
 		return err
@@ -61,11 +61,11 @@ func setAutostart(on bool) error {
 	if err != nil {
 		return err
 	}
-	return k.SetStringValue(appRegName, fmt.Sprintf(`"%s" %s`, exe, backgroundFlag))
+	return k.SetStringValue(appRegName, fmt.Sprintf(`"%s" %s`, exe, BackgroundFlag))
 }
 
-// registerHandlers 登记协议与文件关联的能力。每次启动都执行, 程序路径变化后自动更新。
-func registerHandlers() error {
+// RegisterHandlers 登记协议与文件关联的能力。每次启动都执行, 程序路径变化后自动更新。
+func RegisterHandlers() error {
 	exe, err := exePath()
 	if err != nil {
 		return err
@@ -145,12 +145,51 @@ func defaultFor(kind, name, progID string) bool {
 	return err == nil && strings.EqualFold(v, progID)
 }
 
-func isDefaultMail() bool     { return defaultFor("url", "mailto", progMailto) }
-func isDefaultCalendar() bool { return defaultFor("file", ".ics", progICS) }
+func IsDefaultMail() bool     { return defaultFor("url", "mailto", progMailto) }
+func IsDefaultCalendar() bool { return defaultFor("file", ".ics", progICS) }
 
-// openDefaultAppsSettings 打开系统默认应用设置, 直接定位到本程序(Windows 11 支持 registeredAppUser 参数)。
-func openDefaultAppsSettings() error {
-	return openPath("ms-settings:defaultapps?registeredAppUser=" + strings.ReplaceAll(appRegName, " ", "%20"))
+// OpenDefaultAppsSettings 打开系统默认应用设置, 直接定位到本程序(Windows 11 支持 registeredAppUser 参数)。
+func OpenDefaultAppsSettings() error {
+	return OpenPath("ms-settings:defaultapps?registeredAppUser=" + strings.ReplaceAll(appRegName, " ", "%20"))
 }
 
-const integrationSupported = true
+// UnregisterHandlers 删除 RegisterHandlers 写入的协议、文件关联与应用登记。
+func UnregisterHandlers() error {
+	keys := []string{
+		`Software\Classes\` + progMailto,
+		`Software\Classes\` + progICS,
+		`Software\Classes\` + progWebcal,
+		`Software\Classes\` + progLink,
+		`Software\Clients\Mail\CZL Mail`,
+	}
+	for _, k := range keys {
+		_ = deleteKeyTree(registry.CURRENT_USER, k)
+	}
+	if k, err := registry.OpenKey(registry.CURRENT_USER, `Software\RegisteredApplications`, registry.SET_VALUE); err == nil {
+		_ = k.DeleteValue(appRegName)
+		k.Close()
+	}
+	if k, err := registry.OpenKey(registry.CURRENT_USER, `Software\Classes\.ics\OpenWithProgids`, registry.SET_VALUE); err == nil {
+		_ = k.DeleteValue(progICS)
+		k.Close()
+	}
+	return nil
+}
+
+// deleteKeyTree 递归删除注册表项(registry.DeleteKey 只能删没有子项的项)。
+func deleteKeyTree(root registry.Key, path string) error {
+	k, err := registry.OpenKey(root, path, registry.ENUMERATE_SUB_KEYS)
+	if err != nil {
+		return nil
+	}
+	names, _ := k.ReadSubKeyNames(-1)
+	k.Close()
+	for _, n := range names {
+		if err := deleteKeyTree(root, path+`\`+n); err != nil {
+			return err
+		}
+	}
+	return registry.DeleteKey(root, path)
+}
+
+const IntegrationSupported = true

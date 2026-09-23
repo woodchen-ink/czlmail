@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
+	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -39,7 +41,7 @@ func localDataDir(name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("2081 locate %s dir: %w", name, err)
 	}
-	dir := filepath.Join(base, dataDirName(), name)
+	dir := filepath.Join(base, config.DirName(), name)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("2081 create %s dir: %w", name, err)
 	}
@@ -78,9 +80,9 @@ func (a *App) OpenAttachment(accountID, emailID, blobID string) (LocalAttachment
 		return LocalAttachment{}, err
 	}
 	if dangerousExt[strings.ToLower(filepath.Ext(path))] {
-		return LocalAttachment{Path: path, Revealed: true}, revealPath(path)
+		return LocalAttachment{Path: path, Revealed: true}, platform.RevealPath(path)
 	}
-	if err := openPath(path); err != nil {
+	if err := platform.OpenPath(path); err != nil {
 		return LocalAttachment{}, fmt.Errorf("2084 open attachment: %w", err)
 	}
 	return LocalAttachment{Path: path}, nil
@@ -92,7 +94,7 @@ func (a *App) RevealAttachment(accountID, emailID, blobID string) (string, error
 	if err != nil {
 		return "", err
 	}
-	return path, revealPath(path)
+	return path, platform.RevealPath(path)
 }
 
 // DownloadAllAttachments 下载一封邮件的全部附件并打开所在文件夹。
@@ -115,7 +117,7 @@ func (a *App) DownloadAllAttachments(accountID, emailID string) (string, error) 
 	if last == "" {
 		return "", fmt.Errorf("2082 email has no attachments")
 	}
-	return dir, revealPath(last)
+	return dir, platform.RevealPath(last)
 }
 
 // localAttachment 确保附件已落地并返回路径。
@@ -206,7 +208,7 @@ func (a *App) ensureDownloaded(accountID, blobID, path string) (string, error) {
 		return "", fmt.Errorf("2071 finalize file: %w", err)
 	}
 	// 打上来自互联网的标记: Office 以受保护视图打开, SmartScreen 会检查可执行文件。
-	markFromInternet(path)
+	platform.MarkFromInternet(path)
 	return path, nil
 }
 

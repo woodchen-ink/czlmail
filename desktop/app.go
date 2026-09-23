@@ -16,6 +16,8 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
+	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 	"github.com/woodchen-ink/czlmail/desktop/notify"
@@ -36,7 +38,7 @@ type App struct {
 	store  *store.Store
 	client *jmap.Client
 	sync   *syncer.Syncer
-	cfg    Config
+	cfg    config.Config
 
 	notifier notify.Notifier
 
@@ -70,7 +72,7 @@ func (a *App) startup(ctx context.Context) {
 	defer a.markReady()
 
 	// 配置先读: 缓存库打不开时也要知道用户已经登录过, 不能把人赶回登录页。
-	cfg, err := LoadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		a.log.Error("load config", "err", err)
 	}
@@ -78,7 +80,7 @@ func (a *App) startup(ctx context.Context) {
 	a.cfg = cfg
 	a.mu.Unlock()
 
-	dbPath, err := DatabasePath()
+	dbPath, err := config.DatabasePath()
 	if err != nil {
 		a.log.Error("resolve database path", "err", err)
 		return
@@ -99,7 +101,7 @@ func (a *App) startup(ctx context.Context) {
 
 	go a.runUpdateChecks(ctx)
 	go func() {
-		if err := registerHandlers(); err != nil {
+		if err := platform.RegisterHandlers(); err != nil {
 			a.log.Warn("register handlers", "err", err)
 		}
 	}()
@@ -151,9 +153,9 @@ func (a *App) shutdown(ctx context.Context) {
 }
 
 // restoreSession 用已保存的凭据重建会话, 按登录方式分派。
-func (a *App) restoreSession(cfg Config) error {
-	if cfg.AuthMethod == AuthPassword {
-		pass, err := LoadPassword(cfg.SessionEndpoint, cfg.Username)
+func (a *App) restoreSession(cfg config.Config) error {
+	if cfg.AuthMethod == config.AuthPassword {
+		pass, err := config.LoadPassword(cfg.SessionEndpoint, cfg.Username)
 		if err != nil {
 			return err
 		}
@@ -165,8 +167,8 @@ func (a *App) restoreSession(cfg Config) error {
 	return a.restoreOAuthSession(cfg)
 }
 
-func (a *App) restoreOAuthSession(cfg Config) error {
-	tok, err := LoadToken(cfg.Issuer)
+func (a *App) restoreOAuthSession(cfg config.Config) error {
+	tok, err := config.LoadToken(cfg.Issuer)
 	if err != nil {
 		return err
 	}
@@ -186,13 +188,13 @@ func (a *App) restoreOAuthSession(cfg Config) error {
 	}
 	if err != nil {
 		a.log.Warn("rediscover authorization server, using cached endpoints", "err", err)
-		meta = cfg.cachedMetadata()
+		meta = cachedMetadata(cfg)
 	}
 	return a.connect(cfg, a.oauthClient(cfg, meta, tok))
 }
 
 // oauthClient 构造自动续期的 Bearer 客户端。
-func (a *App) oauthClient(cfg Config, meta *auth.Metadata, tok *oauth2.Token) *http.Client {
+func (a *App) oauthClient(cfg config.Config, meta *auth.Metadata, tok *oauth2.Token) *http.Client {
 	authCfg := &auth.Config{
 		Metadata:    meta,
 		ClientID:    cfg.ClientID,
@@ -202,7 +204,7 @@ func (a *App) oauthClient(cfg Config, meta *auth.Metadata, tok *oauth2.Token) *h
 	// 令牌刷新时同步落盘 —— 服务器可能启用刷新令牌轮换, 不存新值会导致
 	// 应用重启后只剩一个已作废的令牌。
 	save := func(t *oauth2.Token) error {
-		if err := SaveToken(cfg.Issuer, t); err != nil {
+		if err := config.SaveToken(cfg.Issuer, t); err != nil {
 			a.log.Error("persist refreshed token", "err", err)
 			return err
 		}
@@ -231,7 +233,7 @@ func (a *App) waitReady(timeout time.Duration) {
 	}
 }
 
-func (a *App) connect(cfg Config, httpClient *http.Client) error {
+func (a *App) connect(cfg config.Config, httpClient *http.Client) error {
 	a.waitReady(30 * time.Second)
 	if _, err := a.currentStore(); err != nil {
 		return err
@@ -306,7 +308,7 @@ func (a *App) connect(cfg Config, httpClient *http.Client) error {
 // go-jmap 对任何非 200 响应都只返回 "couldn't authenticate", 分不出是密码错、
 // 地址错, 还是服务器不可达。这三种情况用户的补救动作完全不同, 因此失败后
 // 再发一次请求拿到真实状态码。最常见的是账号走 SSO 却填了 SSO 密码。
-func (a *App) classifyAuthFailure(cfg Config, httpClient *http.Client, cause error) error {
+func (a *App) classifyAuthFailure(cfg config.Config, httpClient *http.Client, cause error) error {
 	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.SessionEndpoint, nil)
@@ -322,7 +324,7 @@ func (a *App) classifyAuthFailure(cfg Config, httpClient *http.Client, cause err
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		if cfg.AuthMethod == AuthOAuth {
+		if cfg.AuthMethod == config.AuthOAuth {
 			// 邮件服务器把认证委托给外部 IdP 时只认 IdP 的令牌, 自己签发的令牌会被拒。
 			return fmt.Errorf("2064 the mail server rejected the OAuth token (HTTP %d); sign in with an app password instead", resp.StatusCode)
 		}
@@ -362,8 +364,8 @@ func (a *App) persistAccounts(ctx context.Context, client *jmap.Client, st *stor
 // 只填 issuer: 恢复会话走的是刷新令牌, oauth2 只需要 TokenEndpoint,
 // 而端点路径因授权服务器而异, 猜不得。TokenEndpoint 为空时刷新会失败并
 // 明确要求重新登录, 好过拿一个拼错的地址反复重试。
-func (c Config) cachedMetadata() *auth.Metadata {
-	return &auth.Metadata{Issuer: c.Issuer}
+func cachedMetadata(cfg config.Config) *auth.Metadata {
+	return &auth.Metadata{Issuer: cfg.Issuer}
 }
 
 // runBodyTextBackfill 把旧缓存里存成 HTML 源码的 body_text 重写成纯文本。整库只跑一次。

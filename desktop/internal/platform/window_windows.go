@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package platform
 
 import (
 	"runtime"
@@ -80,9 +80,9 @@ func findMainWindow() uintptr {
 	return mainHWND
 }
 
-// raiseToForeground 显示窗口并把它切到前台。不改变窗口的 Z 序属性,
+// RaiseToForeground 显示窗口并把它切到前台。不改变窗口的 Z 序属性,
 // 因此不会出现"永远盖在别的程序上面"。
-func raiseToForeground() {
+func RaiseToForeground() {
 	hwnd := findMainWindow()
 	if hwnd == 0 {
 		return

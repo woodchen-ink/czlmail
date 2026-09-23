@@ -10,6 +10,7 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
+	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -140,9 +141,9 @@ func (a *App) OpenFile(accountID, id string) (LocalAttachment, error) {
 		return LocalAttachment{}, err
 	}
 	if dangerousExt[strings.ToLower(filepath.Ext(path))] {
-		return LocalAttachment{Path: path, Revealed: true}, revealPath(path)
+		return LocalAttachment{Path: path, Revealed: true}, platform.RevealPath(path)
 	}
-	if err := openPath(path); err != nil {
+	if err := platform.OpenPath(path); err != nil {
 		return LocalAttachment{}, fmt.Errorf("2084 open file: %w", err)
 	}
 	return LocalAttachment{Path: path}, nil

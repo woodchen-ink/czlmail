@@ -12,6 +12,8 @@ import (
 	"time"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
+	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 	"github.com/zalando/go-keyring"
 )
 
@@ -30,7 +32,7 @@ func (a *App) DeleteAllData() error {
 		return fmt.Errorf("2230 locate executable: %w", err)
 	}
 	cmd := exec.Command(exe, purgeArg, "--wait-pid", strconv.Itoa(os.Getpid()))
-	detachProcess(cmd)
+	platform.DetachProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("2231 start cleanup: %w", err)
 	}
@@ -46,7 +48,7 @@ func runPurge(args []string) int {
 	for i := 0; i+1 < len(args); i++ {
 		if args[i] == "--wait-pid" {
 			if pid, err := strconv.Atoi(args[i+1]); err == nil {
-				waitProcessExit(pid, 30*time.Second)
+				platform.WaitProcessExit(pid, 30*time.Second)
 			}
 		}
 	}
@@ -66,20 +68,20 @@ func purgeAll() error {
 	}
 
 	// 凭据的条目名取决于配置里的登录方式, 必须先读配置再删目录。
-	if cfg, err := LoadConfig(); err == nil {
+	if cfg, err := config.Load(); err == nil {
 		if cfg.Username != "" && cfg.SessionEndpoint != "" {
-			ignoreNotFound(&errs, keyring.Delete(keyringService, passwordKey(cfg.SessionEndpoint, cfg.Username)))
+			ignoreNotFound(&errs, keyring.Delete(config.KeyringService, config.PasswordKey(cfg.SessionEndpoint, cfg.Username)))
 		}
 		if cfg.Issuer != "" {
-			ignoreNotFound(&errs, keyring.Delete(keyringService, tokenKey(cfg.Issuer)))
+			ignoreNotFound(&errs, keyring.Delete(config.KeyringService, config.TokenKey(cfg.Issuer)))
 		}
 	}
-	ignoreNotFound(&errs, keyring.Delete(keyringService, aiKeyringKey))
+	ignoreNotFound(&errs, keyring.Delete(config.KeyringService, aiKeyringKey))
 
-	if err := setAutostart(false); err != nil && integrationSupported {
+	if err := platform.SetAutostart(false); err != nil && platform.IntegrationSupported {
 		errs = append(errs, err)
 	}
-	if err := unregisterHandlers(); err != nil {
+	if err := platform.UnregisterHandlers(); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -97,11 +99,11 @@ func ignoreNotFound(errs *[]error, err error) {
 func removeDirs() []error {
 	var errs []error
 	var dirs []string
-	if dir, err := dataDir(); err == nil {
+	if dir, err := config.Dir(); err == nil {
 		dirs = append(dirs, dir)
 	}
 	if base, err := os.UserCacheDir(); err == nil {
-		dirs = append(dirs, filepath.Join(base, dataDirName()))
+		dirs = append(dirs, filepath.Join(base, config.DirName()))
 	}
 	if exe, err := os.Executable(); err == nil {
 		install := filepath.Dir(exe)

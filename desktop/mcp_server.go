@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/htmltext"
+	"github.com/woodchen-ink/czlmail/desktop/internal/mcpbridge"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -34,27 +34,12 @@ import (
 const (
 	mcpDefaultPort = 47830
 	mcpPath        = "/mcp"
-	mcpFileName    = "mcp.json"
 )
-
-// MCPInfo 是写给桥接进程与界面的连接信息。
-type MCPInfo struct {
-	URL   string `json:"url"`
-	Token string `json:"token"`
-}
 
 type mcpState struct {
 	mu     sync.Mutex
 	server *http.Server
-	info   MCPInfo
-}
-
-func mcpInfoPath() (string, error) {
-	dir, err := dataDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, mcpFileName), nil
+	info   mcpbridge.Info
 }
 
 // startMCP 启动本地 MCP 端点。已在运行时不重复启动。
@@ -90,8 +75,8 @@ func (a *App) startMCP() error {
 		}
 	}()
 
-	info := MCPInfo{URL: fmt.Sprintf("http://%s%s", ln.Addr().String(), mcpPath), Token: token}
-	path, err := mcpInfoPath()
+	info := mcpbridge.Info{URL: fmt.Sprintf("http://%s%s", ln.Addr().String(), mcpPath), Token: token}
+	path, err := mcpbridge.InfoPath()
 	if err == nil {
 		data, _ := json.MarshalIndent(info, "", "  ")
 		err = os.WriteFile(path, data, 0o600)
@@ -116,8 +101,8 @@ func (a *App) stopMCP() {
 	defer cancel()
 	_ = a.mcp.server.Shutdown(ctx)
 	a.mcp.server = nil
-	a.mcp.info = MCPInfo{}
-	if path, err := mcpInfoPath(); err == nil {
+	a.mcp.info = mcpbridge.Info{}
+	if path, err := mcpbridge.InfoPath(); err == nil {
 		os.Remove(path)
 	}
 }

@@ -1,6 +1,6 @@
 //go:build darwin
 
-package main
+package platform
 
 /*
 #cgo CFLAGS: -x objective-c -Wno-deprecated-declarations
@@ -56,6 +56,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unsafe"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 )
 
 // macOS 系统集成: 开机自启(LaunchAgent)、默认邮件与日历应用(LaunchServices)。
@@ -63,7 +65,7 @@ import (
 // 协议与 .ics 的声明在 build/darwin/Info.plist。与 Windows 不同, macOS 允许程序
 // 直接把自己设为默认处理程序, 所以「设为默认」一步完成, 不用跳系统设置。
 
-const integrationSupported = true
+const IntegrationSupported = true
 
 var errNotBundled = errors.New("2171 CZL Mail is not running from its .app bundle")
 
@@ -84,10 +86,10 @@ func launchAgentPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, "Library", "LaunchAgents", instanceID()+".plist"), nil
+	return filepath.Join(home, "Library", "LaunchAgents", config.InstanceID()+".plist"), nil
 }
 
-func autostartEnabled() bool {
+func AutostartEnabled() bool {
 	path, err := launchAgentPath()
 	if err != nil {
 		return false
@@ -101,7 +103,7 @@ func autostartEnabled() bool {
 	return exe != "" && bytes.Contains(data, []byte(xmlEscape(exe)))
 }
 
-func setAutostart(on bool) error {
+func SetAutostart(on bool) error {
 	path, err := launchAgentPath()
 	if err != nil {
 		return err
@@ -126,11 +128,11 @@ func setAutostart(on bool) error {
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>` + xmlEscape(instanceID()) + `</string>
+	<string>` + xmlEscape(config.InstanceID()) + `</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>` + xmlEscape(exe) + `</string>
-		<string>` + backgroundFlag + `</string>
+		<string>` + BackgroundFlag + `</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
@@ -162,8 +164,8 @@ func bundleID() string {
 	return C.GoString(p)
 }
 
-// registerHandlers 让 LaunchServices 登记本程序的协议与文件类型。每次启动执行, 程序挪位置后自动更新。
-func registerHandlers() error {
+// RegisterHandlers 让 LaunchServices 登记本程序的协议与文件类型。每次启动执行, 程序挪位置后自动更新。
+func RegisterHandlers() error {
 	if bundleID() == "" {
 		return nil
 	}
@@ -187,11 +189,11 @@ func isDefault(calendar bool) bool {
 	return C.czlIsDefault(flag, cs) != 0
 }
 
-func isDefaultMail() bool     { return isDefault(false) }
-func isDefaultCalendar() bool { return isDefault(true) }
+func IsDefaultMail() bool     { return isDefault(false) }
+func IsDefaultCalendar() bool { return isDefault(true) }
 
-// openDefaultAppsSettings 在 macOS 上直接把本程序设为 mailto、webcal 与 .ics 的默认处理程序。
-func openDefaultAppsSettings() error {
+// OpenDefaultAppsSettings 在 macOS 上直接把本程序设为 mailto、webcal 与 .ics 的默认处理程序。
+func OpenDefaultAppsSettings() error {
 	id := bundleID()
 	if id == "" {
 		return errNotBundled
@@ -203,3 +205,6 @@ func openDefaultAppsSettings() error {
 	}
 	return nil
 }
+
+// UnregisterHandlers 在 macOS 上无需处理: 协议声明随 .app 包一起删除。
+func UnregisterHandlers() error { return nil }

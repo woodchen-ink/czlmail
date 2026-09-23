@@ -9,6 +9,7 @@ import (
 	"git.sr.ht/~rockorager/go-jmap"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 )
 
 // 应用专用密码登录的主路径: 只凭用户填的主机名推出会话地址并通过 Basic 认证。
@@ -41,7 +42,7 @@ func TestIntegrationPasswordSignIn(t *testing.T) {
 	if err == nil {
 		t.Fatal("错误密码不应登录成功")
 	}
-	mapped := a.classifyAuthFailure(Config{SessionEndpoint: endpoint, AuthMethod: AuthPassword}, badClient, err).Error()
+	mapped := a.classifyAuthFailure(config.Config{SessionEndpoint: endpoint, AuthMethod: config.AuthPassword}, badClient, err).Error()
 	t.Logf("raw=%q mapped=%q", err.Error(), mapped)
 	if !strings.HasPrefix(mapped, "2060") {
 		t.Errorf("错误密码应映射为 2060 凭据错误, 实际 %q", mapped)
@@ -62,7 +63,7 @@ func TestIntegrationWrongServerIsNotCredentialError(t *testing.T) {
 	if err == nil {
 		t.Fatal("example.com 不应通过 JMAP 认证")
 	}
-	mapped := a.classifyAuthFailure(Config{SessionEndpoint: endpoint, AuthMethod: AuthPassword}, client, err).Error()
+	mapped := a.classifyAuthFailure(config.Config{SessionEndpoint: endpoint, AuthMethod: config.AuthPassword}, client, err).Error()
 	t.Logf("mapped=%q", mapped)
 	if strings.HasPrefix(mapped, "2060") {
 		t.Errorf("非 JMAP 地址被误报成密码错误: %q", mapped)

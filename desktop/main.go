@@ -11,6 +11,9 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
+	"github.com/woodchen-ink/czlmail/desktop/internal/mcpbridge"
+	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 )
 
 // all: 前缀是必须的 —— Next.js 的导出产物里有以下划线开头的目录 (_next),
@@ -26,7 +29,7 @@ func main() {
 		os.Exit(runPurge(os.Args[2:]))
 	}
 	if len(os.Args) > 1 && os.Args[1] == "mcp" {
-		os.Exit(runMCPBridge())
+		os.Exit(mcpbridge.Run(version))
 	}
 
 	app := NewApp()
@@ -50,11 +53,11 @@ func main() {
 		// 关闭窗口时缩到托盘(macOS 为菜单栏)继续收信; 真正退出走托盘菜单(macOS 另有 ⌘Q)。
 		HideWindowOnClose: hideOnClose,
 		// 开机自启时直接留在托盘。
-		StartHidden: hideOnClose && slices.Contains(os.Args[1:], backgroundFlag),
+		StartHidden: hideOnClose && slices.Contains(os.Args[1:], platform.BackgroundFlag),
 		// 程序已在托盘里运行时再次启动, 唤出已有窗口而不是开第二个实例 ——
 		// 两个实例会争用同一个缓存库与推送连接。
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId: instanceID(),
+			UniqueId: config.InstanceID(),
 			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
 				// 从 mailto 链接或 .ics 文件再次启动时, 交给已运行的实例处理。
 				if !app.handleArgs(data.Args) {
@@ -85,12 +88,4 @@ func main() {
 	if err != nil {
 		log.Fatalf("1 run application: %v", err)
 	}
-}
-
-// instanceID 是单实例锁的标识。开发调试时设置 CZLMAIL_INSTANCE 可以与已安装的正式版同时运行。
-func instanceID() string {
-	if v := os.Getenv("CZLMAIL_INSTANCE"); v != "" {
-		return "net.czl.mail." + v
-	}
-	return "net.czl.mail"
 }
