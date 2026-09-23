@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Languages, Loader2, Sparkles, Undo2 } from "lucide-react";
+import { Languages, Loader2, ShieldCheck, Sparkles, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { AttachmentList } from "@/components/attachment-list";
-import { EmailBanners } from "@/components/email-banners";
+import { EmailBanners, UnsubscribeButton, useListHeaders } from "@/components/email-banners";
 import { EmailBody } from "@/components/email-body";
 import { EmailToolbar, type ToolbarActions } from "@/components/email-toolbar";
 import { SenderAvatar } from "@/components/sender-avatar";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   api,
   blobUrl,
@@ -377,6 +378,8 @@ export function EmailView({
     return map;
   }, [email?.attachments, accountId]);
 
+  const listHeaders = useListHeaders(accountId, email);
+
   if (error) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -395,6 +398,8 @@ export function EmailView({
   }
 
   const sender = email.from?.[0];
+  const aiReady = !!(ai?.enabled && ai.hasKey && ai.model);
+  const canUnsubscribe = !!(listHeaders && (listHeaders.http || listHeaders.mailto));
 
   return (
     <div className="flex h-full flex-col">
@@ -462,79 +467,101 @@ export function EmailView({
 
           <Separator />
 
-          {ai?.enabled && ai.hasKey && ai.model && email.bodyFetched && (
+          {/* AI、退订与信任状态合成一行：各占一行时，正文要往下推三四行。 */}
+          {email.bodyFetched && (aiReady || canUnsubscribe || senderTrusted) && (
             <div className="-my-1 flex flex-wrap items-center gap-2 text-sm">
-              {(translation !== null ||
-                !isAlreadyInLanguage(
-                  `${email.subject}
-${email.bodyText || htmlToText(email.bodyHtml)}`,
-                  ai.translateLang || "简体中文",
-                )) &&
-                (translation === null ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground h-7 px-2"
-                    onClick={translate}
-                  >
-                    <Languages className="size-4" />
-                    {hasCachedTranslation ? "显示译文" : `翻译为${ai.translateLang || "简体中文"}`}
-                  </Button>
-                ) : (
-                  <>
-                    <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                      {translation.running ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <Languages className="size-3.5" />
-                      )}
-                      {translation.running
-                        ? `正在翻译… ${translation.done}/${translation.total}`
-                        : `已由 AI 翻译为${ai.translateLang || "简体中文"}`}
-                    </span>
+              {aiReady && (
+                <>
+                  {(translation !== null ||
+                    !isAlreadyInLanguage(
+                      `${email.subject}
+    ${email.bodyText || htmlToText(email.bodyHtml)}`,
+                      ai.translateLang || "简体中文",
+                    )) &&
+                    (translation === null ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground h-7 px-2"
+                        onClick={translate}
+                      >
+                        <Languages className="size-4" />
+                        {hasCachedTranslation ? "显示译文" : `翻译为${ai.translateLang || "简体中文"}`}
+                      </Button>
+                    ) : (
+                      <>
+                        <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                          {translation.running ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Languages className="size-3.5" />
+                          )}
+                          {translation.running
+                            ? `正在翻译… ${translation.done}/${translation.total}`
+                            : `已由 AI 翻译为${ai.translateLang || "简体中文"}`}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2"
+                          onClick={() => {
+                            translateAbort.current?.abort();
+                            setTranslation(null);
+                          }}
+                        >
+                          <Undo2 className="size-4" />
+                          {translation.running ? "停止" : "显示原文"}
+                        </Button>
+                      </>
+                    ))}
+
+                  {summary === null ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground h-7 px-2"
+                      onClick={summarize}
+                    >
+                      <Sparkles className="size-4" />
+                      AI 总结
+                    </Button>
+                  ) : (
                     <Button
                       variant="ghost"
                       size="sm"
                       className="h-7 px-2"
                       onClick={() => {
-                        translateAbort.current?.abort();
-                        setTranslation(null);
+                        summaryAbort.current?.abort();
+                        setSummary(null);
                       }}
                     >
-                      <Undo2 className="size-4" />
-                      {translation.running ? "停止" : "显示原文"}
+                      {summary.running ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Undo2 className="size-4" />
+                      )}
+                      {summary.running ? "停止总结" : "收起总结"}
                     </Button>
-                  </>
-                ))}
-
-              {summary === null ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground h-7 px-2"
-                  onClick={summarize}
-                >
-                  <Sparkles className="size-4" />
-                  AI 总结
-                </Button>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2"
-                  onClick={() => {
-                    summaryAbort.current?.abort();
-                    setSummary(null);
-                  }}
-                >
-                  {summary.running ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Undo2 className="size-4" />
                   )}
-                  {summary.running ? "停止总结" : "收起总结"}
-                </Button>
+                </>
               )}
+
+              <div className="ml-auto flex items-center gap-1">
+                {senderTrusted && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="text-muted-foreground flex size-7 items-center justify-center"
+                        aria-label="此发件人在信任名单中，已加载远程内容"
+                      >
+                        <ShieldCheck className="size-4" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>此发件人在信任名单中，已加载远程内容</TooltipContent>
+                  </Tooltip>
+                )}
+                <UnsubscribeButton accountId={accountId} email={email} info={listHeaders} />
+              </div>
             </div>
           )}
 
@@ -562,6 +589,7 @@ ${email.bodyText || htmlToText(email.bodyHtml)}`,
               <EmailBanners
                 accountId={accountId}
                 email={email}
+                info={listHeaders}
                 ownAddresses={own}
               />
               {/* 附件放在正文上方：长邮件里附件沉在底部，用户常常读完才发现有附件。 */}

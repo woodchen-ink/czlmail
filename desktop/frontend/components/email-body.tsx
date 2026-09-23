@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ImageOff, ShieldCheck, UserCheck } from "lucide-react";
+import { ImageOff, UserCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { hasOwnColors, sanitizeEmailHtml } from "@/lib/sanitize-email";
@@ -172,13 +172,6 @@ export function EmailBody({
               </Button>
             )}
           </div>
-        </div>
-      )}
-
-      {allowImages && blockedImages === 0 && senderTrusted && (
-        <div className="text-muted-foreground flex items-center gap-2 text-xs">
-          <ShieldCheck className="size-3.5" />
-          此发件人在信任名单中，已加载远程内容
         </div>
       )}
 

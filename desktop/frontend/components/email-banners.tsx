@@ -5,6 +5,7 @@ import { CalendarDays, Check, Loader2, MailCheck, MailX, MapPin } from "lucide-r
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,23 +20,17 @@ import { api, errorMessage, type EmailDetail, type Invite, type Unsubscribe } fr
 import { send } from "@/lib/app-bus";
 import { parseLocalDateTime, shortDate, hm } from "@/lib/date";
 
-/** 邮件顶部的横幅: 日历邀请、已读回执请求与退订。 */
-export function EmailBanners({
-  accountId,
-  email,
-  ownAddresses,
-}: {
-  accountId: string;
-  email: EmailDetail;
-  /** 自己的发件地址; 自己发出的邮件不提示回执。 */
-  ownAddresses: Set<string>;
-}) {
-  const [info, setInfo] = useState<Unsubscribe | null>(email.unsubscribe ?? null);
+/**
+ * 邮件头里的退订与回执信息。
+ *
+ * 正文在这些功能加入前就已缓存的邮件没有邮件头信息, 后台补查一次。
+ */
+export function useListHeaders(accountId: string, email: EmailDetail | null) {
+  const [info, setInfo] = useState<Unsubscribe | null>(email?.unsubscribe ?? null);
 
   useEffect(() => {
-    setInfo(email.unsubscribe ?? null);
-    // 正文在这些功能加入前就已缓存的邮件没有邮件头信息, 后台补查一次。
-    if (email.bodyFetched && !email.unsubscribe) {
+    setInfo(email?.unsubscribe ?? null);
+    if (email?.bodyFetched && !email.unsubscribe) {
       let cancelled = false;
       api
         .loadListHeaders(accountId, email.id)
@@ -47,6 +42,22 @@ export function EmailBanners({
     }
   }, [accountId, email]);
 
+  return info;
+}
+
+/** 邮件顶部需要用户处理的横幅: 日历邀请与已读回执请求。退订是阅读栏操作行里的按钮。 */
+export function EmailBanners({
+  accountId,
+  email,
+  info,
+  ownAddresses,
+}: {
+  accountId: string;
+  email: EmailDetail;
+  info: Unsubscribe | null;
+  /** 自己的发件地址; 自己发出的邮件不提示回执。 */
+  ownAddresses: Set<string>;
+}) {
   const fromSelf = (email.from ?? []).some((a) => ownAddresses.has((a.email || "").toLowerCase()));
 
   return (
@@ -55,7 +66,6 @@ export function EmailBanners({
       {info?.receiptTo && !email.mdnSent && !email.isDraft && !fromSelf && (
         <ReceiptBanner accountId={accountId} email={email} to={info.receiptTo} />
       )}
-      <UnsubscribeBanner accountId={accountId} email={email} info={info} />
     </>
   );
 }
@@ -197,7 +207,8 @@ function InviteBanner({ accountId, email }: { accountId: string; email: EmailDet
   );
 }
 
-function UnsubscribeBanner({ accountId, email, info }: { accountId: string; email: EmailDetail; info: Unsubscribe | null }) {
+/** 订阅邮件的退订按钮, 放在阅读栏操作行右侧。 */
+export function UnsubscribeButton({ accountId, email, info }: { accountId: string; email: EmailDetail; info: Unsubscribe | null }) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -225,21 +236,28 @@ function UnsubscribeBanner({ accountId, email, info }: { accountId: string; emai
 
   return (
     <>
-      <div className="text-muted-foreground flex items-center gap-2 text-xs">
-        <MailX className="size-3.5 shrink-0" />
-        <span className="flex-1">这是一封订阅邮件</span>
-        {done ? (
-          <span className="flex items-center gap-1">
-            <Check className="size-3.5" />
-            已退订
-          </span>
-        ) : (
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setConfirm(true)} disabled={busy}>
-            {busy && <Loader2 className="size-3 animate-spin" />}
-            退订
-          </Button>
-        )}
-      </div>
+      {done ? (
+        <span className="text-muted-foreground flex h-7 items-center gap-1 px-2 text-xs">
+          <Check className="size-3.5" />
+          已退订
+        </span>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground h-7 px-2"
+              onClick={() => setConfirm(true)}
+              disabled={busy}
+            >
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <MailX className="size-4" />}
+              退订
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>这是一封订阅邮件</TooltipContent>
+        </Tooltip>
+      )}
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
