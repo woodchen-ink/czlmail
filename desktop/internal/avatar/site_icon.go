@@ -2,16 +2,11 @@ package avatar
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"syscall"
-	"time"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -27,57 +22,7 @@ import (
 
 const (
 	maxPageBytes = 512 << 10
-	maxRedirects = 5
 )
-
-// errBlockedAddress 表示目标解析到了内网或本机地址。
-var errBlockedAddress = errors.New("blocked non-public address")
-
-// newSiteClient 构造直连客户端。发件域名完全由发件人控制, 可以解析到 127.0.0.1
-// 或局域网设备, 因此在拨号时按实际连接的 IP 拒绝非公网地址 —— 在解析阶段检查
-// 挡不住 DNS rebinding, 重定向也会绕过只针对首个 URL 的检查。
-func newSiteClient() *http.Client {
-	dialer := &net.Dialer{
-		Timeout: 5 * time.Second,
-		Control: func(_, address string, _ syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return err
-			}
-			ip := net.ParseIP(host)
-			if ip == nil || !publicIP(ip) {
-				return errBlockedAddress
-			}
-			return nil
-		},
-	}
-	transport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           dialer.DialContext,
-		TLSHandshakeTimeout:   5 * time.Second,
-		ResponseHeaderTimeout: 6 * time.Second,
-		MaxIdleConnsPerHost:   2,
-	}
-	return &http.Client{
-		Timeout:   12 * time.Second,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= maxRedirects {
-				return http.ErrUseLastResponse
-			}
-			if req.URL.Scheme != "https" && req.URL.Scheme != "http" {
-				return fmt.Errorf("unsupported redirect scheme %q", req.URL.Scheme)
-			}
-			return nil
-		},
-	}
-}
-
-func publicIP(ip net.IP) bool {
-	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
-		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() ||
-		ip.IsInterfaceLocalMulticast())
-}
 
 // fetchSiteIcon 依次尝试 https://domain/ 与 https://www.domain/:
 // 解析首页声明的图标, 没有声明时取 /favicon.ico。

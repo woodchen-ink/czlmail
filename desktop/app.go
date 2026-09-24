@@ -31,6 +31,7 @@ type App struct {
 	opens    openQueue
 	prefetch prefetcher
 	mcp      mcpState
+	images   imageCache
 	ctx      context.Context
 	log      *slog.Logger
 

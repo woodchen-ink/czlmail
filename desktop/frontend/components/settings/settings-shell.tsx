@@ -51,6 +51,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { fileSize } from "@/lib/format";
 import {
   Events,
   api,
@@ -515,6 +516,48 @@ function TemplateDialog({ template, onClose, onSaved }: { template: Template | n
   );
 }
 
+/* ---------------- 图片缓存 ---------------- */
+
+function ImageCacheCard({ active }: { active: boolean }) {
+  const [size, setSize] = useState<number | null>(null);
+  const [clearing, setClearing] = useState(false);
+
+  useEffect(() => {
+    if (!active) return;
+    api.getImageCacheSize().then(setSize).catch(() => {});
+  }, [active]);
+
+  async function clear() {
+    setClearing(true);
+    try {
+      await api.clearImageCache();
+      toast.success("已清除图片缓存");
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setClearing(false);
+      api.getImageCacheSize().then(setSize).catch(() => {});
+    }
+  }
+
+  return (
+    <>
+      <SectionTitle title="本机缓存" small />
+      <Card>
+        <Row
+          title="图片缓存"
+          desc={`邮件里的远程图片与内嵌图片，再次打开邮件时不重新下载。上限 500 MB，超出后自动删除最久没看的。当前占用 ${size === null ? "…" : fileSize(size) || "0 B"}。`}
+        >
+          <Button variant="outline" size="sm" onClick={clear} disabled={clearing || !size}>
+            {clearing ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+            清除
+          </Button>
+        </Row>
+      </Card>
+    </>
+  );
+}
+
 /* ---------------- 账户 ---------------- */
 
 function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
@@ -557,6 +600,8 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
           </Card>
         </>
       )}
+
+      <ImageCacheCard active={active} />
 
       <SectionTitle title="删除本机数据" small />
       <Card className="border-destructive/40">

@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/safehttp"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -82,7 +83,7 @@ func New(st func() *store.Store, enabled func() bool, log *slog.Logger) *Service
 		enabled:  enabled,
 		log:      log,
 		client:   &http.Client{Timeout: 8 * time.Second},
-		site:     newSiteClient(),
+		site:     safehttp.NewClient(12 * time.Second),
 		inflight: map[string]*call{},
 	}
 }

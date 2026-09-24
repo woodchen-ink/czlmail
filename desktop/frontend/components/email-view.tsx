@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Languages, Loader2, ShieldCheck, Sparkles, Undo2 } from "lucide-react";
+import { ChevronDown, Languages, Loader2, ShieldCheck, Sparkles, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { AttachmentList } from "@/components/attachment-list";
 import { EmailBanners, UnsubscribeButton, useListHeaders } from "@/components/email-banners";
 import { EmailBody } from "@/components/email-body";
+import { EmailDetails } from "@/components/email-details";
 import { EmailToolbar, type ToolbarActions } from "@/components/email-toolbar";
 import { SenderAvatar } from "@/components/sender-avatar";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
   errorMessage,
   runAI,
   type AIConfig,
+  type Address,
   type EmailDetail,
   type EmailSummary,
   type Mailbox,
@@ -114,6 +116,12 @@ export function EmailView({
   }, [hasCachedTranslation, email?.bodyFetched, ai]);
 
   const [own, setOwn] = useState<Set<string>>(new Set());
+  // 详情面板每封邮件默认收起：记下展开的是哪一封，换邮件自然就收起了。
+  const [detailsFor, setDetailsFor] = useState("");
+  const showDetails = detailsFor === `${accountId}/${emailId}`;
+  function toggleDetails() {
+    setDetailsFor(showDetails ? "" : `${accountId}/${emailId}`);
+  }
 
   useEffect(() => {
     api
@@ -451,19 +459,30 @@ export function EmailView({
                 )}
               </div>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                收件人：{displayAddressList(email.to) || "(未列出)"}
+                收件人：{recipientList(email.to, own) || "(未列出)"}
               </p>
               {email.cc && email.cc.length > 0 && (
                 <p className="text-muted-foreground text-xs">
-                  抄送：{displayAddressList(email.cc)}
+                  抄送：{recipientList(email.cc, own)}
                 </p>
               )}
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-0.5 text-xs"
+                aria-expanded={showDetails}
+                onClick={toggleDetails}
+              >
+                <ChevronDown className={`size-3.5 transition-transform ${showDetails ? "rotate-180" : ""}`} />
+                {showDetails ? "隐藏详情" : "显示详情"}
+              </button>
             </div>
 
             <span className="text-muted-foreground shrink-0 text-xs">
               {fullDate(email.receivedAt)}
             </span>
           </div>
+
+          {showDetails && <EmailDetails accountId={accountId} email={email} ownAddresses={own} />}
 
           <Separator />
 
@@ -623,4 +642,17 @@ export function EmailView({
       </ScrollArea>
     </div>
   );
+}
+
+/**
+ * 收件人一栏：自己的地址写地址不写名字。名字多半就是自己的名字，
+ * 看不出发到了哪个邮箱(别名、共享账号)。
+ */
+function recipientList(list: Address[] | undefined, own: Set<string>): string {
+  if (!list || list.length === 0) return "";
+  if (!list.some((a) => own.has((a.email ?? "").toLowerCase()))) return displayAddressList(list);
+  return list
+    .map((a) => (own.has((a.email ?? "").toLowerCase()) ? a.email : displayAddress(a)))
+    .filter(Boolean)
+    .join("、");
 }

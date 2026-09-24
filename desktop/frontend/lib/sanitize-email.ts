@@ -59,8 +59,10 @@ export function sanitizeEmailHtml(
     }
 
     if (node.tagName === "IMG") {
-      if (!allowRemoteImages && stripRemoteImage(node)) {
-        blockedImages += 1;
+      if (!allowRemoteImages) {
+        if (stripRemoteImage(node)) blockedImages += 1;
+      } else {
+        proxyRemoteImage(node);
       }
       return;
     }
@@ -168,6 +170,18 @@ function stripRemoteImage(node: Element): boolean {
   node.removeAttribute("src");
   node.setAttribute("data-blocked-src", src);
   return true;
+}
+
+/**
+ * 允许加载的远程图片改走本地代理 /czl-remote: 由 Go 下载并存进磁盘缓存,
+ * 再次打开同一封邮件不必重新下载。代理只连公网、只返回嗅探得出的图片。
+ * 只接管 https —— http 图片 CSP 本来就不放行。背景图仍直连。
+ */
+function proxyRemoteImage(node: Element) {
+  if (node.hasAttribute("data-inline-image")) return;
+  const src = (node.getAttribute("src") ?? "").trim();
+  if (!/^https:\/\//i.test(src)) return;
+  node.setAttribute("src", `${window.location.origin}/czl-remote?url=${encodeURIComponent(src)}`);
 }
 
 function stripRemoteBackground(node: Element) {

@@ -14,6 +14,7 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 	"github.com/woodchen-ink/czlmail/desktop/internal/pim"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
+	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
 // 阅读邮件时的横幅: 退订(List-Unsubscribe)与日历邀请(text/calendar 附件)。
@@ -25,6 +26,15 @@ func (a *App) LoadListHeaders(accountID, emailID string) (store.Unsubscribe, err
 		return store.Unsubscribe{}, err
 	}
 	return s.FetchListHeaders(a.ctx, accountID, emailID)
+}
+
+// GetHeaderInfo 取阅读栏「显示详情」要的邮件头信息: 发件认证、垃圾评分、投递地址等。
+func (a *App) GetHeaderInfo(accountID, emailID string) (syncer.HeaderInfo, error) {
+	s, err := a.currentSyncer()
+	if err != nil {
+		return syncer.HeaderInfo{}, err
+	}
+	return s.FetchHeaderInfo(a.ctx, accountID, emailID)
 }
 
 // Unsubscribe 按邮件的退订头退订, 返回采用的方式: posted(一键退订) / sent(发退订邮件) / opened(打开网页)。

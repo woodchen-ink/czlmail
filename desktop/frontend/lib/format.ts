@@ -37,6 +37,23 @@ export function fullDate(value: string | Date): string {
   }).format(d);
 }
 
+/** 邮件详情里的时间：精确到秒并带时区，比对发送与接收时间用。 */
+export function detailDate(value: string | Date): string {
+  const d = toDate(value);
+  if (!d) return "";
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZoneName: "shortOffset",
+  }).format(d);
+}
+
 /**
  * Go 的 time.Time 经 JSON 过来是 RFC 3339 字符串。
  * 零值时间（0001-01-01）表示「没有这个时间」，不该显示成 1 年 1 月。

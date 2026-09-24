@@ -8,7 +8,7 @@
 
 import * as App from "@/wailsjs/go/main/App";
 import { EventsOn } from "@/wailsjs/runtime/runtime";
-import type { main, store } from "@/wailsjs/go/models";
+import type { main, store, syncer } from "@/wailsjs/go/models";
 
 export type Account = store.Account;
 export type Mailbox = store.Mailbox;
@@ -28,6 +28,8 @@ export type FileNode = store.FileNode;
 export type Recipient = store.Recipient;
 export type Template = store.Template;
 export type EmailWithAccount = store.EmailWithAccount;
+export type HeaderInfo = syncer.HeaderInfo;
+export type AuthResult = syncer.AuthResult;
 export type EventOccurrence = main.EventOccurrence;
 export type EventDetail = main.EventDetail;
 export type EventInput = main.EventInput;
@@ -268,6 +270,9 @@ export const api = {
   uploadFolder: guard(App.UploadFolder),
   uploadPaths: guard(App.UploadPaths),
   loadListHeaders: guard(App.LoadListHeaders),
+  getHeaderInfo: guard(App.GetHeaderInfo),
+  getImageCacheSize: guard(App.GetImageCacheSize),
+  clearImageCache: guard(App.ClearImageCache),
   unsubscribe: guard(App.Unsubscribe),
   getInvite: guard(App.GetInvite),
   getPendingUpdate: guard(App.GetPendingUpdate),

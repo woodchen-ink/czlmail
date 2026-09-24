@@ -57,6 +57,22 @@ func (a *App) serveBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 图片(正文里的 cid 内嵌图片、附件缩略图)走磁盘缓存, 再打开邮件不重新下载。
+	if strings.HasPrefix(contentType, "image/") && previewableTypes[contentType] {
+		data, err := a.cachedBlob(r.Context(), accountID, blobID)
+		if err != nil {
+			http.Error(w, "download failed", http.StatusBadGateway)
+			return
+		}
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Cache-Control", "private, max-age=600")
+		h.Set("Content-Type", contentType)
+		h.Set("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'")
+		w.Write(data)
+		return
+	}
+
 	s, err := a.currentSyncer()
 	if err != nil {
 		http.Error(w, "not signed in", http.StatusServiceUnavailable)
