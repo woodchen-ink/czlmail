@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { AddressChip } from "@/components/address-chip";
 import { AttachmentList } from "@/components/attachment-list";
 import { EmailBanners, UnsubscribeButton, useListHeaders } from "@/components/email-banners";
 import { EmailBody } from "@/components/email-body";
@@ -34,7 +35,7 @@ import {
   isAlreadyInLanguage,
 } from "@/lib/translate-html";
 import { htmlToText } from "@/lib/html";
-import { displayAddress, displayAddressList, fullDate } from "@/lib/format";
+import { displayAddress, fullDate } from "@/lib/format";
 
 interface Props {
   accountId: string;
@@ -458,23 +459,25 @@ export function EmailView({
                   </span>
                 )}
               </div>
-              <p className="text-muted-foreground mt-0.5 text-xs">
-                收件人：{recipientList(email.to, own) || "(未列出)"}
-              </p>
+              <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-1 text-xs">
+                <span>收件人：</span>
+                <AddressLine list={email.to} own={own} />
+                <button
+                  type="button"
+                  className="hover:text-foreground ml-1.5 flex items-center gap-0.5"
+                  aria-expanded={showDetails}
+                  onClick={toggleDetails}
+                >
+                  <ChevronDown className={`size-3.5 transition-transform ${showDetails ? "rotate-180" : ""}`} />
+                  {showDetails ? "隐藏详情" : "查看详情"}
+                </button>
+              </div>
               {email.cc && email.cc.length > 0 && (
-                <p className="text-muted-foreground text-xs">
-                  抄送：{recipientList(email.cc, own)}
-                </p>
+                <div className="text-muted-foreground flex flex-wrap items-center gap-x-1 text-xs">
+                  <span>抄送：</span>
+                  <AddressLine list={email.cc} own={own} />
+                </div>
               )}
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-0.5 text-xs"
-                aria-expanded={showDetails}
-                onClick={toggleDetails}
-              >
-                <ChevronDown className={`size-3.5 transition-transform ${showDetails ? "rotate-180" : ""}`} />
-                {showDetails ? "隐藏详情" : "显示详情"}
-              </button>
             </div>
 
             <span className="text-muted-foreground shrink-0 text-xs">
@@ -644,15 +647,13 @@ export function EmailView({
   );
 }
 
-/**
- * 收件人一栏：自己的地址写地址不写名字。名字多半就是自己的名字，
- * 看不出发到了哪个邮箱(别名、共享账号)。
- */
-function recipientList(list: Address[] | undefined, own: Set<string>): string {
-  if (!list || list.length === 0) return "";
-  if (!list.some((a) => own.has((a.email ?? "").toLowerCase()))) return displayAddressList(list);
-  return list
-    .map((a) => (own.has((a.email ?? "").toLowerCase()) ? a.email : displayAddress(a)))
-    .filter(Boolean)
-    .join("、");
+/** 收件人一栏：每个地址可点开看完整邮箱，自己的显示「我」。 */
+function AddressLine({ list, own }: { list: Address[] | undefined; own: Set<string> }) {
+  if (!list || list.length === 0) return <span>(未列出)</span>;
+  return list.map((a, i) => (
+    <span key={i}>
+      <AddressChip address={a} own={own.has((a.email ?? "").toLowerCase())} />
+      {i < list.length - 1 && "、"}
+    </span>
+  ));
 }
