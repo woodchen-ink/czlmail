@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ImageOff, UserCheck } from "lucide-react";
+import { Copy, ExternalLink, ImageOff, UserCheck } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { hasOwnColors, sanitizeEmailHtml } from "@/lib/sanitize-email";
 import { openExternal } from "@/lib/external";
 
@@ -65,6 +72,8 @@ export function EmailBody({
 
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(320);
+  // 正文里链接的右键菜单。坐标是相对应用视口的，由 iframe 上报的坐标加上 iframe 自身位置得到。
+  const [linkMenu, setLinkMenu] = useState<{ url: string; x: number; y: number } | null>(null);
 
   // 切换邮件时重置临时放行，否则上一封的决定会带到下一封陌生发件人身上。
   useEffect(() => {
@@ -121,7 +130,13 @@ export function EmailBody({
       const data = event.data as unknown;
       if (typeof data !== "object" || data === null) return;
 
-      const msg = data as { type?: unknown; url?: unknown; height?: unknown };
+      const msg = data as {
+        type?: unknown;
+        url?: unknown;
+        height?: unknown;
+        x?: unknown;
+        y?: unknown;
+      };
 
       if (msg.type === "ready") {
         readyRef.current = true;
@@ -132,6 +147,17 @@ export function EmailBody({
       }
       if (msg.type === "link" && typeof msg.url === "string") {
         openExternal(msg.url);
+        return;
+      }
+      if (
+        msg.type === "link-menu" &&
+        typeof msg.url === "string" &&
+        typeof msg.x === "number" &&
+        typeof msg.y === "number"
+      ) {
+        const rect = frameRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        setLinkMenu({ url: msg.url, x: rect.left + msg.x, y: rect.top + msg.y });
         return;
       }
       if (msg.type === "height" && typeof msg.height === "number") {
@@ -195,11 +221,51 @@ export function EmailBody({
           style={{ height, colorScheme: mode }}
         />
       </div>
+
+      <DropdownMenu open={linkMenu !== null} onOpenChange={(open) => !open && setLinkMenu(null)}>
+        {/* 菜单锚点：放在右键位置的零尺寸元素。 */}
+        <DropdownMenuTrigger asChild>
+          <span
+            aria-hidden
+            className="pointer-events-none fixed size-0"
+            style={{ left: linkMenu?.x ?? 0, top: linkMenu?.y ?? 0 }}
+          />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-w-80">
+          {linkMenu && (
+            <>
+              <DropdownMenuItem onSelect={() => openExternal(linkMenu.url)}>
+                <ExternalLink />
+                在浏览器中打开
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => copyLink(linkMenu.url)}>
+                <Copy />
+                {isMailto(linkMenu.url) ? "复制邮箱地址" : "复制链接"}
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
 
-/** 沙箱内的桥接脚本：上报高度、拦截链接点击、把父窗口送来的译文写进对应的片段。 */
+function isMailto(url: string): boolean {
+  return /^mailto:/i.test(url);
+}
+
+/** 复制链接；mailto: 只复制地址部分，那才是用户想要的东西。 */
+async function copyLink(url: string) {
+  const text = isMailto(url) ? decodeURIComponent(url.slice(7).split("?")[0]) : url;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(isMailto(url) ? "已复制邮箱地址" : "已复制链接");
+  } catch {
+    toast.error("复制失败");
+  }
+}
+
+/** 沙箱内的桥接脚本：上报高度、拦截链接点击与右键、把父窗口送来的译文写进对应的片段。 */
 function bridgeScript(nonce: string): string {
   return `<script nonce="${nonce}">
 (function () {
@@ -222,6 +288,18 @@ function bridgeScript(nonce: string): string {
     if (!a) return;
     e.preventDefault();
     parent.postMessage({ type: "link", url: a.getAttribute("data-external-href") }, "*");
+  });
+  // 链接上右键: 交给父窗口弹出应用自己的菜单(打开 / 复制链接)。
+  document.addEventListener("contextmenu", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("a[data-external-href]") : null;
+    if (!a) return;
+    e.preventDefault();
+    parent.postMessage({
+      type: "link-menu",
+      url: a.getAttribute("data-external-href"),
+      x: e.clientX,
+      y: e.clientY
+    }, "*");
   });
   // 父窗口送来的译文: 按 data-czl-tr 找到片段, 只写 textContent(不解析 HTML)。
   var marks = null;
