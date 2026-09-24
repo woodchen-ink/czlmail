@@ -103,6 +103,8 @@ Download the latest release from [Releases](https://github.com/woodchen-ink/czlm
 - Windows: `czlmail-amd64-installer.exe` (per-user install, no admin rights needed)
 - macOS: `czlmail-darwin-universal.dmg` (Intel and Apple silicon, macOS 10.15+)
 
+What changed in each version: [changelog (Chinese)](https://www.sunai.net/t/topic/1495).
+
 ### Opening on macOS for the first time
 
 The app is not signed with an Apple Developer ID, so macOS blocks the first launch. Open the DMG, drag
@@ -201,7 +203,8 @@ Integration tests run against a live server and are skipped unless credentials c
 ## Feedback
 
 Questions, bugs and ideas: open an [issue](https://github.com/woodchen-ink/czlmail/issues) or leave a
-comment in the [forum thread](https://sunai.net/t/topic/1485).
+comment in the [forum thread](https://sunai.net/t/topic/1485). Release notes for every version are
+collected in the [changelog thread](https://www.sunai.net/t/topic/1495).
 
 ## License
 

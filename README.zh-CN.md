@@ -94,6 +94,8 @@ claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp 
 - Windows：`czlmail-amd64-installer.exe`（按用户安装，无需管理员权限）
 - macOS：`czlmail-darwin-universal.dmg`（Intel 与 Apple 芯片通用，macOS 10.15+）
 
+每个版本改了什么，见论坛的[更新日志](https://www.sunai.net/t/topic/1495)。
+
 ### macOS 首次打开
 
 程序没有 Apple 开发者签名，系统会拦下第一次打开。打开 DMG，把 **CZL Mail** 拖进「应用程序」，然后任选一种：
@@ -183,7 +185,7 @@ Windows 上可以用 `build.bat v0.1.0` 一次生成程序与 NSIS 安装包。
 
 ## 反馈
 
-使用中遇到问题或有建议，欢迎提 [Issue](https://github.com/woodchen-ink/czlmail/issues)，或到[论坛反馈帖](https://sunai.net/t/topic/1485)留言。
+使用中遇到问题或有建议，欢迎提 [Issue](https://github.com/woodchen-ink/czlmail/issues)，或到[论坛反馈帖](https://sunai.net/t/topic/1485)留言。历次版本说明汇总在[更新日志帖](https://www.sunai.net/t/topic/1495)。
 
 ## 许可证
 
