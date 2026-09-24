@@ -231,7 +231,7 @@ export function EmailBody({
             style={{ left: linkMenu?.x ?? 0, top: linkMenu?.y ?? 0 }}
           />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-w-80">
+        <DropdownMenuContent align="start" className="w-auto max-w-80">
           {linkMenu && (
             <>
               <DropdownMenuItem onSelect={() => openExternal(linkMenu.url)}>
