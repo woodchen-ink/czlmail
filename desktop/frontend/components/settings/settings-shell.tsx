@@ -24,6 +24,7 @@ import {
   Plane,
   Plus,
   RefreshCw,
+  ScrollText,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -135,6 +136,8 @@ const GROUPS: { title: string; items: { id: Section; label: string; icon: typeof
 
 export const GITHUB_URL = "https://github.com/woodchen-ink/czlmail";
 export const FORUM_URL = "https://sunai.net/t/topic/1485";
+// 每次发版都会把版本说明回复到这个帖子, 见 CLAUDE.md「版本」。
+export const CHANGELOG_URL = "https://www.sunai.net/t/topic/1495";
 
 export function SettingsShell({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
   const [section, setSection] = useState<Section>("account");
@@ -724,6 +727,14 @@ function AboutSection({ active }: { active: boolean }) {
         )}
       </Card>
       <Card>
+        <Row title="更新日志" desc="每个版本新增了什么、修了什么">
+          <Button variant="outline" size="sm" onClick={() => BrowserOpenURL(CHANGELOG_URL)}>
+            <ScrollText className="size-4" />
+            查看更新日志
+            <ExternalLink className="size-3.5" />
+          </Button>
+        </Row>
+        <Divider />
         <Row title="开源项目" desc="源代码、发布记录与问题反馈（AGPL-3.0）">
           <Button variant="outline" size="sm" onClick={() => BrowserOpenURL(GITHUB_URL)}>
             <Code2 className="size-4" />
