@@ -305,6 +305,8 @@ function htmlDocument(
   img[width] { height: auto; }
   pre { white-space: pre-wrap; }
   a { color: ${c.link}; }
+  /* href 已被清洗移到 data 属性上，浏览器不再把它当链接，手形光标要自己补。 */
+  a[data-external-href] { cursor: pointer; }
   /* 被拦下的图片留一个占位，否则排版会塌陷，用户也看不出这里原本有图。 */
   img[data-blocked-src] {
     display: inline-block; min-width: 24px; min-height: 24px;
@@ -331,6 +333,7 @@ function plainTextDocument(text: string, nonce: string, mode: "light" | "dark"):
     color: ${c.text};
   }
   a { color: ${c.link}; }
+  a[data-external-href] { cursor: pointer; }
 </style>
 </head><body><pre>${linkifyText(text)}</pre>${bridgeScript(nonce)}</body></html>`;
 }
