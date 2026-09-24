@@ -13,6 +13,8 @@ const (
 	SettingMCPEnabled = "mcpEnabled"
 	// SettingMCPAllowSend 是否允许经 MCP 发信。默认关闭, 见 mcp_server.go。
 	SettingMCPAllowSend = "mcpAllowSend"
+	// SettingMCPAllowModify 是否允许经 MCP 移动/删除邮件、修改删除日程与任务、回复邀请。默认关闭。
+	SettingMCPAllowModify = "mcpAllowModify"
 	// SettingMCPToken 是 MCP 端点的访问令牌。
 	SettingMCPToken = "mcpToken"
 	// SettingFileFavorites 是收藏的文件, JSON 数组, 元素为 "账号/节点id"。

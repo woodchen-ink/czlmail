@@ -54,7 +54,7 @@ func TestIntegrationMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	status, err := a.SetMCP(true, false)
+	status, err := a.SetMCP(true, false, false)
 	if err != nil || !status.Running {
 		t.Fatalf("start: %+v %v", status, err)
 	}
@@ -115,6 +115,10 @@ func TestIntegrationMCP(t *testing.T) {
 		{"list_mailboxes", map[string]any{}},
 		{"list_emails", map[string]any{"limit": 3}},
 		{"search_emails", map[string]any{"query": "通知", "limit": 3}},
+		{"search_emails", map[string]any{"mailbox": "inbox", "after": "2026-01-01", "unread": true, "limit": 3}},
+		{"list_identities", map[string]any{}},
+		{"list_calendars", map[string]any{}},
+		{"list_tasks", map[string]any{}},
 		{"list_events", map[string]any{"from": "2026-09-01T00:00:00+08:00", "to": "2026-10-01T00:00:00+08:00"}},
 		{"search_contacts", map[string]any{"query": "qq.com"}},
 		{"list_files", map[string]any{}},
@@ -130,6 +134,57 @@ func TestIntegrationMCP(t *testing.T) {
 	r := call("send_email", map[string]any{"to": []string{user}, "subject": "x", "body": "x"})
 	if !r.IsError {
 		t.Fatal("send_email must be rejected while sending is disabled")
+	}
+	r = call("move_emails", map[string]any{"emailIds": []string{"x"}, "to": "trash"})
+	if !r.IsError {
+		t.Fatal("move_emails must be rejected while modifying is disabled")
+	}
+
+	// 回复收件箱第一封: 草稿要挂进原会话(In-Reply-To)并带上 Re: 主题, 测完删掉。
+	var listed struct {
+		Emails []struct {
+			ID      string `json:"id"`
+			Subject string `json:"subject"`
+		} `json:"emails"`
+	}
+	b, _ := json.Marshal(call("list_emails", map[string]any{"limit": 1}).StructuredContent)
+	_ = json.Unmarshal(b, &listed)
+	if len(listed.Emails) == 0 {
+		return
+	}
+	orig := listed.Emails[0]
+	r = call("get_thread", map[string]any{"emailId": orig.ID, "includeBodies": true})
+	if r.IsError {
+		t.Fatalf("get_thread: %+v", r.Content)
+	}
+	r = call("create_draft", map[string]any{"mode": "reply", "emailId": orig.ID, "body": "czlmail integration test"})
+	if r.IsError {
+		t.Fatalf("create_draft: %+v", r.Content)
+	}
+	var draft struct {
+		DraftID   string `json:"draftId"`
+		AccountID string `json:"accountId"`
+		Subject   string `json:"subject"`
+	}
+	b, _ = json.Marshal(r.StructuredContent)
+	_ = json.Unmarshal(b, &draft)
+	defer a.DiscardDraft(draft.AccountID, draft.DraftID)
+	if !strings.HasPrefix(strings.ToLower(draft.Subject), "re") {
+		t.Errorf("reply subject = %q (original %q)", draft.Subject, orig.Subject)
+	}
+	if err := a.sync.SyncMail(ctx, draft.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	d, err := a.GetEmail(draft.AccountID, draft.DraftID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, _ := a.GetEmail(draft.AccountID, orig.ID)
+	if src.MessageID != "" && d.InReplyTo != src.MessageID {
+		t.Errorf("draft In-Reply-To = %q, want %q", d.InReplyTo, src.MessageID)
+	}
+	if len(d.From) == 0 {
+		t.Error("draft has no From header")
 	}
 }
 

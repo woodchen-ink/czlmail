@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  Archive,
   Bot,
   Check,
   Copy,
@@ -33,31 +34,91 @@ import {
 import { cn } from "@/lib/utils";
 import { api, errorMessage, type MCPStatus } from "@/lib/api";
 
-const TOOLS: { name: string; desc: string; write?: boolean }[] = [
-  { name: "list_accounts", desc: "列出个人邮箱与共享邮箱" },
-  { name: "list_mailboxes", desc: "列出文件夹与未读数" },
-  { name: "list_emails", desc: "按时间列出某个文件夹的邮件" },
-  { name: "search_emails", desc: "全文搜索本地已同步的邮件" },
-  { name: "read_email", desc: "读取邮件正文与附件清单" },
-  { name: "mark_read", desc: "标记已读 / 未读", write: true },
-  { name: "send_email", desc: "发送纯文本邮件（需单独开启）", write: true },
-  { name: "list_events", desc: "查询时间段内的日程" },
-  { name: "create_event", desc: "在默认日历里新建日程", write: true },
-  { name: "search_contacts", desc: "搜索通讯录" },
-  { name: "list_files", desc: "浏览网盘文件" },
+// 与 Go 端 newMCPServer 注册的工具保持一致。level: read 只读 / write 直接可用的写入 /
+// modify 需开「允许 AI 整理邮件与日程」/ send 需开「允许 AI 发送邮件」。
+type ToolLevel = "read" | "write" | "modify" | "send";
+
+const TOOL_GROUPS: { title: string; tools: { name: string; desc: string; level: ToolLevel }[] }[] = [
+  {
+    title: "邮件",
+    tools: [
+      { name: "list_accounts", desc: "列出个人邮箱与共享邮箱", level: "read" },
+      { name: "list_mailboxes", desc: "列出文件夹、未读数与标签", level: "read" },
+      { name: "list_emails", desc: "按时间列出某个文件夹的邮件", level: "read" },
+      { name: "search_emails", desc: "在服务器上按关键词、发件人、时间、未读等条件搜索全部文件夹", level: "read" },
+      { name: "read_email", desc: "读取邮件正文与附件清单", level: "read" },
+      { name: "get_thread", desc: "读取整个会话的往来", level: "read" },
+      { name: "read_attachment", desc: "读取文本类附件的内容", level: "read" },
+      { name: "list_identities", desc: "列出可用的发件地址", level: "read" },
+    ],
+  },
+  {
+    title: "整理",
+    tools: [
+      { name: "mark_read", desc: "标记已读 / 未读", level: "write" },
+      { name: "flag_emails", desc: "加星标 / 取消星标", level: "write" },
+      { name: "set_label", desc: "添加 / 去掉标签", level: "write" },
+      { name: "move_emails", desc: "归档、移到回收站、标为垃圾邮件或移到文件夹", level: "modify" },
+    ],
+  },
+  {
+    title: "写信",
+    tools: [
+      { name: "create_draft", desc: "写新邮件、回复或转发，存进草稿箱由你检查后发送", level: "write" },
+      { name: "send_email", desc: "直接发出邮件", level: "send" },
+    ],
+  },
+  {
+    title: "日历与任务",
+    tools: [
+      { name: "list_calendars", desc: "列出日历", level: "read" },
+      { name: "list_events", desc: "查询时间段内的日程", level: "read" },
+      { name: "get_event", desc: "读取日程详情与参加者回复", level: "read" },
+      { name: "create_event", desc: "新建日程", level: "write" },
+      { name: "update_event", desc: "修改日程", level: "modify" },
+      { name: "delete_event", desc: "删除日程", level: "modify" },
+      { name: "respond_event", desc: "接受 / 拒绝会议邀请", level: "modify" },
+      { name: "list_tasks", desc: "列出任务", level: "read" },
+      { name: "create_task", desc: "新建任务", level: "write" },
+      { name: "complete_task", desc: "勾选完成", level: "write" },
+      { name: "update_task", desc: "修改任务", level: "modify" },
+      { name: "delete_task", desc: "删除任务", level: "modify" },
+    ],
+  },
+  {
+    title: "通讯录与网盘",
+    tools: [
+      { name: "search_contacts", desc: "搜索通讯录与同事目录", level: "read" },
+      { name: "get_contact", desc: "读取联系人详情", level: "read" },
+      { name: "contact_history", desc: "与某人最近的邮件往来和共同日程", level: "read" },
+      { name: "list_files", desc: "浏览或按名称搜索网盘文件", level: "read" },
+      { name: "read_file", desc: "读取网盘里文本类文件的内容", level: "read" },
+    ],
+  },
 ];
+
+const LEVEL_LABEL: Record<ToolLevel, string> = {
+  read: "只读",
+  write: "写入",
+  modify: "需开启整理",
+  send: "需开启发信",
+};
 
 const EXAMPLES = [
   "帮我总结一下今天收到的未读邮件，按重要程度排序",
   "查一下上个月 DHL 发来的清关通知，列出运单号",
   "我下周三下午有没有空？如果有，加一个 15:00 的客户会议",
-  "找到张经理的邮箱，帮我起草一封询价邮件（先给我看，不要直接发）",
+  "找到张经理的邮箱，帮我起草一封询价邮件存到草稿箱",
+  "总结一下我和李总关于报价那封邮件的全部往来",
+  "把收件箱里的营销推广邮件都归档",
+  "把这周邮件里提到要我做的事整理成任务",
 ];
 
 export function AssistantShell({ active }: { active: boolean }) {
   const [status, setStatus] = useState<MCPStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
+  const [confirmModify, setConfirmModify] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
 
   const load = useCallback(async () => {
@@ -72,10 +133,10 @@ export function AssistantShell({ active }: { active: boolean }) {
     if (active) load();
   }, [active, load]);
 
-  async function apply(enabled: boolean, allowSend: boolean) {
+  async function apply(enabled: boolean, allowSend: boolean, allowModify: boolean) {
     setBusy(true);
     try {
-      setStatus(await api.setMCP(enabled, allowSend));
+      setStatus(await api.setMCP(enabled, allowSend, allowModify));
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -131,19 +192,31 @@ export function AssistantShell({ active }: { active: boolean }) {
             <Switch
               checked={!!status?.enabled}
               disabled={!status || busy}
-              onCheckedChange={(on) => apply(on, on ? !!status?.allowSend : false)}
+              onCheckedChange={(on) => apply(on, on && !!status?.allowSend, on && !!status?.allowModify)}
+            />
+          </Row>
+          <Divider />
+          <Row
+            title="允许 AI 整理邮件与日程"
+            desc="默认关闭。开启后 AI 可以归档、移动邮件或移到回收站，修改、删除日程与任务，回复会议邀请。AI 不能彻底删除邮件，回收站里的都能找回。"
+            icon={<Archive className="text-muted-foreground size-4" />}
+          >
+            <Switch
+              checked={!!status?.allowModify}
+              disabled={!status?.enabled || busy}
+              onCheckedChange={(on) => (on ? setConfirmModify(true) : apply(true, !!status?.allowSend, false))}
             />
           </Row>
           <Divider />
           <Row
             title="允许 AI 发送邮件"
-            desc="默认关闭。开启后 AI 可以直接以你的名义发信；邮件内容里可能藏有诱导 AI 发信的指令，建议保持关闭，让 AI 只起草、由你来发。"
+            desc="默认关闭。开启后 AI 可以直接以你的名义发信；邮件内容里可能藏有诱导 AI 发信的指令，建议保持关闭，让 AI 把邮件存进草稿箱、由你来发。"
             icon={<Send className="text-muted-foreground size-4" />}
           >
             <Switch
               checked={!!status?.allowSend}
               disabled={!status?.enabled || busy}
-              onCheckedChange={(on) => (on ? setConfirmSend(true) : apply(true, false))}
+              onCheckedChange={(on) => (on ? setConfirmSend(true) : apply(true, false, !!status?.allowModify))}
             />
           </Row>
         </Card>
@@ -227,22 +300,29 @@ export function AssistantShell({ active }: { active: boolean }) {
 
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold">提供的工具</h2>
-          <Card className="gap-0 p-0">
-            {TOOLS.map((t, i) => (
-              <div key={t.name} className={cn("flex items-center gap-3 px-4 py-2.5", i > 0 && "border-border border-t")}>
-                <code className="bg-secondary w-36 shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-xs">{t.name}</code>
-                <span className="min-w-0 flex-1 text-sm">{t.desc}</span>
-                <span
-                  className={cn(
-                    "shrink-0 rounded-sm px-1.5 py-0.5 text-xs",
-                    t.write ? "bg-chart-5 text-foreground" : "text-muted-foreground",
-                  )}
-                >
-                  {t.write ? "写入" : "只读"}
-                </span>
-              </div>
-            ))}
-          </Card>
+          {TOOL_GROUPS.map((g) => (
+            <div key={g.title} className="flex flex-col gap-1.5">
+              <p className="text-muted-foreground text-xs">{g.title}</p>
+              <Card className="gap-0 p-0">
+                {g.tools.map((t, i) => (
+                  <div key={t.name} className={cn("flex items-center gap-3 px-4 py-2.5", i > 0 && "border-border border-t")}>
+                    <code className="bg-secondary w-36 shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-xs">{t.name}</code>
+                    <span className="min-w-0 flex-1 text-sm">{t.desc}</span>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-sm px-1.5 py-0.5 text-xs",
+                        t.level === "read" && "text-muted-foreground",
+                        t.level === "write" && "bg-chart-5 text-foreground",
+                        (t.level === "modify" || t.level === "send") && "border-border text-foreground border",
+                      )}
+                    >
+                      {LEVEL_LABEL[t.level]}
+                    </span>
+                  </div>
+                ))}
+              </Card>
+            </div>
+          ))}
         </section>
 
         <Card>
@@ -268,7 +348,22 @@ export function AssistantShell({ active }: { active: boolean }) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>保持关闭</AlertDialogCancel>
-            <AlertDialogAction onClick={() => apply(true, true)}>我了解风险，开启</AlertDialogAction>
+            <AlertDialogAction onClick={() => apply(true, true, !!status?.allowModify)}>我了解风险，开启</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmModify} onOpenChange={setConfirmModify}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>允许 AI 整理邮件与日程？</AlertDialogTitle>
+            <AlertDialogDescription>
+              AI 读取的邮件可能来自任何人，其中可能夹带「把邮件都删掉」之类的指令。开启后，AI 客户端在移动邮件、修改或删除日程前会征求你的同意，请看清要改动的内容再批准。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>保持关闭</AlertDialogCancel>
+            <AlertDialogAction onClick={() => apply(true, !!status?.allowSend, true)}>开启</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
