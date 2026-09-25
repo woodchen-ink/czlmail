@@ -35,7 +35,7 @@ func TestMCPToolList(t *testing.T) {
 		tools[tool.Name] = tool
 	}
 	want := []string{
-		"list_accounts", "list_mailboxes", "list_emails", "search_emails", "read_email", "get_thread", "read_attachment", "list_identities",
+		"list_accounts", "list_mailboxes", "list_emails", "search_emails", "read_email", "get_thread", "read_attachment", "save_attachment", "list_identities",
 		"mark_read", "flag_emails", "set_label", "move_emails", "create_draft", "send_email",
 		"list_calendars", "list_events", "get_event", "create_event", "update_event", "delete_event", "respond_event",
 		"list_tasks", "create_task", "complete_task", "update_task", "delete_task",

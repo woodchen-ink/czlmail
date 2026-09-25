@@ -270,3 +270,54 @@ var dangerousExt = map[string]bool{
 	".settingcontent-ms": true, ".library-ms": true, ".search-ms": true,
 	".app": true, ".command": true, ".pkg": true, ".dmg": true, ".sh": true,
 }
+
+// mcpTargetDir 校验 AI 指定的保存目录: 必须是绝对路径, 不存在时创建。
+func mcpTargetDir(dir string) (string, error) {
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("directory must be an absolute path: %q", dir)
+	}
+	dir = filepath.Clean(dir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("2081 create directory: %w", err)
+	}
+	return dir, nil
+}
+
+// copyNoOverwrite 把已落地的附件复制到 dir, 重名时加序号, 从不覆盖用户已有的文件。
+func copyNoOverwrite(src, dir, name string) (string, error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	var out *os.File
+	var path string
+	for n := 1; ; n++ {
+		path = filepath.Join(dir, name)
+		if n > 1 {
+			path = filepath.Join(dir, stem+" ("+strconv.Itoa(n)+")"+ext)
+		}
+		// O_EXCL: 检查与创建是一步, 不会在两者之间被别的文件抢占。
+		out, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err == nil {
+			break
+		}
+		if !os.IsExist(err) || n > 999 {
+			return "", fmt.Errorf("2071 create file: %w", err)
+		}
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(path)
+		return "", fmt.Errorf("2071 copy attachment: %w", err)
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(path)
+		return "", fmt.Errorf("2071 write file: %w", err)
+	}
+	platform.MarkFromInternet(path)
+	return path, nil
+}
