@@ -30,8 +30,7 @@ import { main } from "@/wailsjs/go/models";
 import {
   batchSegments,
   extractSegments,
-  parsePartialTranslations,
-  parseTranslations,
+  parseNumberedTranslations,
   isAlreadyInLanguage,
 } from "@/lib/translate-html";
 import { htmlToText } from "@/lib/html";
@@ -232,40 +231,50 @@ export function EmailView({
     const worker = async () => {
       while (next < batches.length && !ctl.signal.aborted) {
         const batch = batches[next++];
+        // 译文按编号对回片段, 回来多少用多少; 缺的编号再要一次(只送缺的那几段):
+        // 同样的内容模型每次输出不同, 中转还会把同一个模型名分给不同上游, 重来一次多半就齐了。
+        // 两次都没有的片段保留原文。
+        let todo = batch;
         try {
-          let arr: string[] | null = null;
-          // 模型没按格式回时再要一次: 中转会把同一个模型名分给不同上游, 换一次请求多半就正常了
-          // (实测有的上游把整段思维链当正文吐出来)。两次都不行才保留原文。
-          for (let attempt = 0; attempt < 2 && !ctl.signal.aborted; attempt++) {
+          for (let attempt = 0; attempt < 2 && todo.length > 0 && !ctl.signal.aborted; attempt++) {
+            const ask = todo;
             const output = await runAI(
               main.AIRequest.createFrom({
                 kind: "translate_segments",
                 accountId,
                 emailId,
-                text: JSON.stringify(batch.map((k) => texts[k])),
+                text: JSON.stringify(ask.map((k) => texts[k])),
                 language: "",
               }),
               (full) => {
                 if (!seg.isHtml) return; // 纯文本只能整篇重渲染, 流式期间不动它
-                const partial = parsePartialTranslations(full, batch.length);
-                if (partial.length === 0) return;
-                batch.forEach((k, n) => (live[k] = partial[n]));
-                showSoon();
+                const partial = parseNumberedTranslations(full, ask.length);
+                let any = false;
+                ask.forEach((k, n) => {
+                  if (partial[n] !== undefined) {
+                    live[k] = partial[n];
+                    any = true;
+                  }
+                });
+                if (any) showSoon();
               },
               ctl.signal,
             );
-            arr = parseTranslations(output, batch.length);
-            if (arr) break;
-            console.warn("[translate] 返回的不是长度匹配的 JSON 数组:", output.slice(0, 500));
-            batch.forEach((k) => (live[k] = undefined));
+            const got = parseNumberedTranslations(output, ask.length);
+            ask.forEach((k, n) => {
+              if (got[n] !== undefined) result[k] = got[n];
+            });
+            todo = ask.filter((k) => result[k] === undefined);
+            if (todo.length > 0) {
+              console.warn(`[translate] ${todo.length}/${ask.length} 段没有按编号返回:`, output.slice(0, 500));
+              todo.forEach((k) => (live[k] = undefined));
+            }
           }
-          if (arr) batch.forEach((k, n) => (result[k] = arr[n]));
-          else if (!ctl.signal.aborted) failed++;
         } catch (err) {
           if ((err as Error).name === "AbortError") return;
-          failed++;
-          if (failed === 1) toast.error(errorMessage(err));
+          if (failed === 0) toast.error(errorMessage(err));
         }
+        if (!ctl.signal.aborted) failed += todo.filter((k) => result[k] === undefined).length;
         batch.forEach((k) => (live[k] = undefined));
         completed++;
         if (!ctl.signal.aborted) show(completed < batches.length);
@@ -274,7 +283,7 @@ export function EmailView({
     await Promise.all([worker(), worker(), worker()]);
     clearTimeout(timer);
     if (ctl.signal.aborted) return;
-    if (failed === batches.length && pending.length === texts.length) {
+    if (failed === pending.length && pending.length === texts.length) {
       setTranslation(null);
       toast.error("AI 没有按要求返回译文，翻译失败");
       return;

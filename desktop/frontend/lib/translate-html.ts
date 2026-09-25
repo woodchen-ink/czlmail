@@ -117,38 +117,44 @@ export function batchSegments(texts: string[], maxChars = 3000, maxItems = 60): 
 }
 
 /**
- * 从模型输出里取出 JSON 字符串数组; 模型偶尔会包一层代码块或多说一句话。
- * expected 是这一批送去的片段数: 数量对不上就当这批失败 —— 宁可保留原文,
- * 也不能把错位的译文写进正文。
+ * 解析模型按编号返回的译文 `{"1":"…","2":"…"}`(编号从 1 起, 与后端送出的一致),
+ * 返回长度为 count 的数组, 缺失或损坏的编号为 undefined —— 调用方对这些片段保留原文或重试,
+ * 不会因为一处出错丢掉整批, 也不会把译文错位写到别的片段上。
+ *
+ * 流式时对还没写完的输出调用也行: 只取已经闭合的键值对。先整体 JSON.parse,
+ * 不成(没写完、模型包了代码块、把冒号引号写成全角)就从头逐对扫描, 遇到第一处语法错误为止。
  */
-export function parseTranslations(output: string, expected?: number): string[] | null {
-  const start = output.indexOf("[");
-  const end = output.lastIndexOf("]");
-  if (start < 0 || end <= start) return null;
-  try {
-    const arr = JSON.parse(output.slice(start, end + 1));
-    if (!Array.isArray(arr)) return null;
-    if (expected !== undefined && arr.length !== expected) return null;
-    return arr.map((v) => (typeof v === "string" ? v : String(v ?? "")));
-  } catch {
-    return null;
+export function parseNumberedTranslations(output: string, count: number): (string | undefined)[] {
+  const out: (string | undefined)[] = new Array(count);
+  const put = (key: string, v: unknown) => {
+    const n = Number(key);
+    if (typeof v === "string" && Number.isInteger(n) && n >= 1 && n <= count && out[n - 1] === undefined) {
+      out[n - 1] = v;
+    }
+  };
+  const start = output.indexOf("{");
+  if (start < 0) return out;
+  const end = output.lastIndexOf("}");
+  if (end > start) {
+    try {
+      const obj: unknown = JSON.parse(output.slice(start, end + 1));
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+        for (const [k, v] of Object.entries(obj)) put(k, v);
+        return out;
+      }
+    } catch {
+      // 落到下面逐对扫描
+    }
   }
-}
 
-/**
- * 边收边解析: 从还没写完的 JSON 数组里取出已经闭合的那些字符串, 用来一段一段地更新正文。
- * 最后一个元素多半还在生成中, 不算数。解析不下去就返回已经拿到的部分。
- */
-export function parsePartialTranslations(output: string, max: number): string[] {
-  const start = output.indexOf("[");
-  if (start < 0) return [];
-  const out: string[] = [];
   let i = start + 1;
-  while (i < output.length && out.length < max) {
-    while (i < output.length && output[i] !== '"' && output[i] !== "]") i++;
-    if (i >= output.length || output[i] === "]") break;
+  const ws = () => {
+    while (i < output.length && /\s/.test(output[i])) i++;
+  };
+  // 从 i 处读一个 JSON 字符串; 没闭合或不是字符串时返回 undefined。
+  const str = (): string | undefined => {
+    if (output[i] !== '"') return undefined;
     const from = i++;
-    let closed = false;
     for (; i < output.length; i++) {
       if (output[i] === "\\") {
         i++;
@@ -156,18 +162,29 @@ export function parsePartialTranslations(output: string, max: number): string[] 
       }
       if (output[i] === '"') {
         i++;
-        closed = true;
-        break;
+        try {
+          const v: unknown = JSON.parse(output.slice(from, i));
+          return typeof v === "string" ? v : undefined;
+        } catch {
+          return undefined;
+        }
       }
     }
-    if (!closed) break;
-    try {
-      const v: unknown = JSON.parse(output.slice(from, i));
-      if (typeof v !== "string") break;
-      out.push(v);
-    } catch {
-      break;
-    }
+    return undefined;
+  };
+  for (;;) {
+    ws();
+    const key = str();
+    if (key === undefined) break;
+    ws();
+    if (output[i++] !== ":") break;
+    ws();
+    const v = str();
+    if (v === undefined) break;
+    put(key, v);
+    ws();
+    if (output[i] === ",") i++;
+    else break;
   }
   return out;
 }

@@ -224,17 +224,22 @@ func (a *App) aiPrompt(req AIRequest, lang string) (string, string, error) {
 
 	case "translate_segments":
 		// Text 是按文档顺序排列的文字片段 JSON 数组, 界面用译文原地替换 HTML 里的文字节点。
+		// 发给模型时换成从 1 编号的对象, 要求按编号回: 数组形式下模型会为了中文语序把文字挪到相邻片段、
+		// 拆开或合并元素, 数量一错整批就对不上号(实测 glm-5.3-flashx 约三分之一);
+		// 带编号时基本不再错位, 个别编号坏了界面也只丢那几段。
 		var segs []string
 		if err := json.Unmarshal([]byte(req.Text), &segs); err != nil || len(segs) == 0 {
 			return "", "", fmt.Errorf("2208 invalid translation segments")
 		}
-		return aiSafety + "The data is a JSON array of text fragments taken in order from one email. " +
-				"Translate every fragment into " + lang + ". Reply with ONLY a JSON array of strings with exactly " +
-				fmt.Sprint(len(segs)) + " elements, where element i is the translation of fragment i. " +
-				"Fragments may be partial sentences split by formatting; translate them so they read naturally in sequence. " +
+		return aiSafety + "The data is a JSON object mapping numbered keys to text fragments, in order, from one email. " +
+				"Translate every fragment into " + lang + ". Reply with ONLY a JSON object with the same " + fmt.Sprint(len(segs)) +
+				" keys, where each value is the translation of the fragment with that key. " +
+				"The fragments are pieces of sentences split by formatting (links, bold text): translate each piece in place " +
+				"so the pieces still read naturally when joined in key order, but never merge, split, drop or add keys, " +
+				"and never move text from one key to another. " +
 				"Keep names, numbers, URLs, email addresses and code unchanged. If a fragment is already in " + lang +
 				" or should not be translated, return it unchanged. No commentary, no code fences.",
-			"<data>\n" + truncate(req.Text, aiMaxInput) + "\n</data>", nil
+			"<data>\n" + truncate(numberedSegments(segs), aiMaxInput) + "\n</data>", nil
 
 	case "summarize":
 		d, err := a.GetEmail(req.AccountID, req.EmailID)
@@ -294,6 +299,24 @@ func (a *App) aiPrompt(req AIRequest, lang string) (string, string, error) {
 				"\n\nOriginal email:\n<data>\nFrom: " + formatSender(d.From) + "\nSubject: " + d.Subject + "\n\n" + truncate(body, aiMaxInput) + "\n</data>", nil
 	}
 	return "", "", fmt.Errorf("2203 unknown AI task %q", req.Kind)
+}
+
+// numberedSegments 把片段写成 {"1":"…","2":"…"}。不用 map 编码: 那会按字符串排序成 1, 10, 11, 2 …
+func numberedSegments(segs []string) string {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false) // 让模型看到原样的 < > &, 而不是 <
+	b.WriteByte('{')
+	for i, s := range segs {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, `"%d":`, i+1)
+		_ = enc.Encode(s)
+		b.Truncate(b.Len() - 1) // Encode 末尾带换行
+	}
+	b.WriteByte('}')
+	return b.String()
 }
 
 func truncate(s string, n int) string {
