@@ -1020,7 +1020,7 @@ func (a *App) serveContactPhoto(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Type", ctype)
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "sandbox")
-	h.Set("Cache-Control", "private, max-age=60")
+	h.Set("Cache-Control", noStore)
 	_, _ = w.Write(data)
 }
 

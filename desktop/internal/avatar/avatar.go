@@ -150,7 +150,8 @@ func writeImage(w http.ResponseWriter, img *store.CachedAvatar) {
 	// 头像与应用同源; 站点图标可能是 SVG, 被直接打开时不能执行脚本。
 	h.Set("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'")
 	// 界面在同一会话内反复渲染同一头像, 让 WebView 自己缓存, 不必每次过 Go。
-	h.Set("Cache-Control", "private, max-age=3600")
+	// 见 main.noStore: WebView2 复用缓存的响应时图片可能是坏的, 头像另有库里的缓存。
+	h.Set("Cache-Control", "no-store")
 	_, _ = w.Write(img.Data)
 }
 

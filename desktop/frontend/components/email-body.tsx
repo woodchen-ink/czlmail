@@ -301,6 +301,20 @@ function bridgeScript(nonce: string): string {
       y: e.clientY
     }, "*");
   });
+  // 本地路径(/czl-remote 远程图片代理、/czl-blob 内嵌图片)加载失败时带随机参数重试一次:
+  // 绕开 WebView 里可能坏掉的缓存与首次下载的偶发失败。脚本在正文末尾执行,
+  // 之前就已失败的图片(缓存命中会立刻失败)监听不到 error, 要扫一遍补上。
+  function retryImage(img) {
+    if (!img || img.tagName !== "IMG" || img.getAttribute("data-czl-retry")) return;
+    var src = img.getAttribute("src") || "";
+    if (src.indexOf("/czl-remote?") < 0 && src.indexOf("/czl-blob?") < 0) return;
+    img.setAttribute("data-czl-retry", "1");
+    setTimeout(function () { img.src = src + "&_r=" + Date.now(); }, 300);
+  }
+  document.addEventListener("error", function (e) { retryImage(e.target); }, true);
+  Array.prototype.forEach.call(document.images, function (img) {
+    if (img.complete && img.naturalWidth === 0) retryImage(img);
+  });
   // 父窗口送来的译文: 按 data-czl-tr 找到片段, 只写 textContent(不解析 HTML)。
   var marks = null;
   window.addEventListener("message", function (e) {

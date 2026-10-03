@@ -68,10 +68,13 @@ func (a *App) serveRemoteImage(w http.ResponseWriter, r *http.Request) {
 
 	data, typ, err := fetchRemoteImage(r.Context(), client, u.String())
 	if err != nil {
+		// 只记主机: 完整地址里常带收件人标识。
+		a.log.Warn("fetch remote image", "host", u.Host, "err", err)
 		http.Error(w, "fetch failed", http.StatusBadGateway)
 		return
 	}
 	if typ == "" {
+		a.log.Warn("remote image not an image", "host", u.Host)
 		http.NotFound(w, r)
 		return
 	}
@@ -114,9 +117,14 @@ func writeCachedImage(w http.ResponseWriter, typ string, data []byte) {
 	h.Set("Content-Type", typ)
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'")
-	h.Set("Cache-Control", "private, max-age=86400")
+	h.Set("Cache-Control", noStore)
 	w.Write(data)
 }
+
+// noStore 用于 AssetServer 处理器的响应。WebView2 会缓存经 WebResourceRequested
+// 给出的响应, 再次命中时不再走到 Go, 而复用出来的图片经常是坏的(正文图片时有时无)。
+// 这些路径背后各有自己的缓存(图片磁盘缓存、头像库), 本机往返很便宜, 不让 WebView 再存一份。
+const noStore = "no-store"
 
 // cachedBlob 取内嵌图片的预览: 先查缓存, 没有再下载并存起来。blob 内容不可变, 不用过期。
 func (a *App) cachedBlob(ctx context.Context, accountID, blobID string) ([]byte, error) {

@@ -23,7 +23,9 @@ func newLogger() *slog.Logger {
 		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err == nil {
 			if f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
-				out = io.MultiWriter(os.Stderr, f)
+				// 文件在前: MultiWriter 遇到第一个错误就停。GUI 程序(开机自启、从托盘启动)
+				// 没有 stderr, 写它必然失败, 放在前面会让日志一行都写不进文件。
+				out = io.MultiWriter(f, os.Stderr)
 			}
 		}
 	}

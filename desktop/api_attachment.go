@@ -66,7 +66,7 @@ func (a *App) serveBlob(w http.ResponseWriter, r *http.Request) {
 		}
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Cache-Control", "private, max-age=600")
+		h.Set("Cache-Control", noStore)
 		h.Set("Content-Type", contentType)
 		h.Set("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'")
 		w.Write(data)
@@ -89,7 +89,7 @@ func (a *App) serveBlob(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	// 不许浏览器按内容嗅探出另一种类型, 否则一个声称是 text/plain 的 HTML 仍会被渲染。
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Cache-Control", "private, max-age=600")
+	h.Set("Cache-Control", noStore)
 
 	if !previewableTypes[contentType] {
 		h.Set("Content-Type", "application/octet-stream")
