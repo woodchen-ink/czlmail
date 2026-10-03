@@ -32,8 +32,10 @@ type App struct {
 	prefetch prefetcher
 	mcp      mcpState
 	images   imageCache
-	ctx      context.Context
-	log      *slog.Logger
+	// firstStatus 只记一次前端首次查询会话的耗时。
+	firstStatus sync.Once
+	ctx         context.Context
+	log         *slog.Logger
 
 	mu     sync.RWMutex
 	store  *store.Store
@@ -115,6 +117,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.initNotifier()
+	a.log.Info("startup done", "since_start", time.Since(processStart).Round(time.Millisecond))
 
 	if !cfg.Configured() {
 		a.log.Info("not configured yet, waiting for sign-in")
@@ -129,6 +132,13 @@ func (a *App) startup(ctx context.Context) {
 			a.emit(EventSignInRequired, err.Error())
 		}
 	}()
+}
+
+// processStart 记进程启动时刻, 启动各阶段的日志带上距此的耗时, 排查白屏用。
+var processStart = time.Now()
+
+func (a *App) domReady(ctx context.Context) {
+	a.log.Info("dom ready", "since_start", time.Since(processStart).Round(time.Millisecond))
 }
 
 func (a *App) shutdown(ctx context.Context) {

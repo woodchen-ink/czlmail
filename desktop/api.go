@@ -44,6 +44,9 @@ type SessionStatus struct {
 
 func (a *App) GetSessionStatus() SessionStatus {
 	a.waitReady(15 * time.Second)
+	a.firstStatus.Do(func() {
+		a.log.Info("frontend asked session status", "since_start", time.Since(processStart).Round(time.Millisecond))
+	})
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return SessionStatus{
