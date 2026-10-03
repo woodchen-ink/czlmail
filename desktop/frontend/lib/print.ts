@@ -11,7 +11,7 @@ import type { EmailDetail } from "@/lib/api";
  */
 export function printEmail(email: EmailDetail, allowRemoteImages: boolean) {
   const body = email.bodyHtml
-    ? sanitizeEmailHtml(email.bodyHtml, allowRemoteImages).html
+    ? sanitizeEmailHtml(email.bodyHtml, allowRemoteImages, {}, { proxyRemote: false }).html
     : `<pre style="white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(email.bodyText ?? "")}</pre>`;
 
   const header = `

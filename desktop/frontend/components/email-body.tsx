@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Copy, ExternalLink, ImageOff, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 
@@ -84,14 +84,15 @@ export function EmailBody({
   // 这样即使消毒器漏掉了一个 <script>，浏览器仍会拒绝执行它。
   const nonce = useMemo(() => cryptoNonce(), [html, allowImages, mode]);
 
-  const { doc, blockedImages } = useMemo(() => {
+  const { doc, blockedImages, images } = useMemo(() => {
     if (!html) {
-      return { doc: plainTextDocument(text, nonce, mode), blockedImages: 0 };
+      return { doc: plainTextDocument(text, nonce, mode), blockedImages: 0, images: [] };
     }
-    const result = sanitizeEmailHtml(html, allowImages, inlineImages);
+    const result = sanitizeEmailHtml(html, allowImages, inlineImages, { deferLocalImages: true });
     return {
       doc: htmlDocument(result.html, nonce, allowImages, mode),
       blockedImages: result.blockedImages,
+      images: result.images,
     };
   }, [html, text, allowImages, nonce, mode, inlineImages]);
 
@@ -100,6 +101,29 @@ export function EmailBody({
   // 触发一轮额外渲染，而这件事本来就只是和 iframe 这个外部系统对齐。
   const readyRef = useRef(false);
   const pendingRef = useRef<[number, string][] | null>(null);
+
+  // 正文里的本地图片由这里取回再交给 iframe(原因见 SanitizeOptions.deferLocalImages)。
+  // 地址列表来自清洗结果而不是 iframe 的请求，iframe 只能拿到已经放行的图片。
+  const imagesRef = useRef<string[]>([]);
+  // 列表随文档(新 srcDoc)一起变，新 iframe 挂载后才报到，effect 先于它执行。
+  useLayoutEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+  const imageRunRef = useRef(0);
+
+  const sendImages = () => {
+    const run = ++imageRunRef.current;
+    const list = imagesRef.current;
+    list.forEach((url, index) => {
+      loadImageData(url)
+        .then((src) => {
+          // 期间换了文档(切邮件、放行图片)就不再往旧 iframe 里送。
+          if (run !== imageRunRef.current || !src) return;
+          frameRef.current?.contentWindow?.postMessage({ type: "czl-image", index, src }, "*");
+        })
+        .catch(() => {});
+    });
+  };
 
   const sendTranslated = (items: [number, string][]) => {
     frameRef.current?.contentWindow?.postMessage({ type: "czl-translate", items }, "*");
@@ -140,6 +164,7 @@ export function EmailBody({
 
       if (msg.type === "ready") {
         readyRef.current = true;
+        sendImages();
         const queued = pendingRef.current;
         pendingRef.current = null;
         if (queued?.length) sendTranslated(queued);
@@ -266,6 +291,34 @@ async function copyLink(url: string) {
 }
 
 /** 沙箱内的桥接脚本：上报高度、拦截链接点击与右键、把父窗口送来的译文写进对应的片段。 */
+// 取回的图片按地址留一份，切回同一封邮件、放行图片后重渲染时不再重复读取。
+// 远程图片代理背后有磁盘缓存，这里只是省掉 data: 编码，条数封顶即可。
+const imageDataCache = new Map<string, Promise<string>>();
+const IMAGE_DATA_CACHE_MAX = 200;
+
+function loadImageData(url: string): Promise<string> {
+  const hit = imageDataCache.get(url);
+  if (hit) return hit;
+  const p = fetch(url)
+    .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(String(res.status)))))
+    .then(
+      (blob) =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        }),
+    );
+  // 失败的不留，下次打开重新取。
+  p.catch(() => imageDataCache.delete(url));
+  imageDataCache.set(url, p);
+  if (imageDataCache.size > IMAGE_DATA_CACHE_MAX) {
+    imageDataCache.delete(imageDataCache.keys().next().value as string);
+  }
+  return p;
+}
+
 function bridgeScript(nonce: string): string {
   return `<script nonce="${nonce}">
 (function () {
@@ -301,19 +354,13 @@ function bridgeScript(nonce: string): string {
       y: e.clientY
     }, "*");
   });
-  // 本地路径(/czl-remote 远程图片代理、/czl-blob 内嵌图片)加载失败时带随机参数重试一次:
-  // 绕开 WebView 里可能坏掉的缓存与首次下载的偶发失败。脚本在正文末尾执行,
-  // 之前就已失败的图片(缓存命中会立刻失败)监听不到 error, 要扫一遍补上。
-  function retryImage(img) {
-    if (!img || img.tagName !== "IMG" || img.getAttribute("data-czl-retry")) return;
-    var src = img.getAttribute("src") || "";
-    if (src.indexOf("/czl-remote?") < 0 && src.indexOf("/czl-blob?") < 0) return;
-    img.setAttribute("data-czl-retry", "1");
-    setTimeout(function () { img.src = src + "&_r=" + Date.now(); }, 300);
-  }
-  document.addEventListener("error", function (e) { retryImage(e.target); }, true);
-  Array.prototype.forEach.call(document.images, function (img) {
-    if (img.complete && img.naturalWidth === 0) retryImage(img);
+  // 父窗口代取的本地图片(见 sanitize 的 deferLocalImages): 只接受 data:image/, 按下标写回 src。
+  window.addEventListener("message", function (e) {
+    if (e.source !== parent) return;
+    var d = e.data;
+    if (!d || d.type !== "czl-image" || typeof d.src !== "string" || d.src.indexOf("data:image/") !== 0) return;
+    var imgs = document.querySelectorAll('img[data-czl-img="' + Number(d.index) + '"]');
+    for (var i = 0; i < imgs.length; i++) imgs[i].src = d.src;
   });
   // 父窗口送来的译文: 按 data-czl-tr 找到片段, 只写 textContent(不解析 HTML)。
   var marks = null;

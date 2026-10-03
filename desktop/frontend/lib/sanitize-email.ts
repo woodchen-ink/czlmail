@@ -19,6 +19,22 @@ export interface SanitizeResult {
   html: string;
   /** 被拦下的远程图片数量，供界面提示「图片已屏蔽」。 */
   blockedImages: number;
+  /**
+   * 交给父页面代取的本地图片地址，下标对应 img 的 data-czl-img。
+   * 只在 deferLocalImages 时填充。
+   */
+  images: string[];
+}
+
+export interface SanitizeOptions {
+  /**
+   * 本地路径的图片(远程图片代理、cid 内嵌图片)不写进 src，改由父页面取回后以 data: 交给 iframe。
+   * 沙箱 iframe 是不透明源，WebView2 154 起它发出的请求不再经过 WebResourceRequested，
+   * 请求本地路径一律失败(图片全裂)；父页面同源，请求照常由 Go 处理。
+   */
+  deferLocalImages?: boolean;
+  /** 远程图片走本地代理 /czl-remote。打印的 iframe 不跑脚本，保持原地址直连。 */
+  proxyRemote?: boolean;
 }
 
 /** 允许直接渲染的 URL 协议。data: 只允许图片，且在 CSP 里另有约束。 */
@@ -32,21 +48,30 @@ export function sanitizeEmailHtml(
   html: string,
   allowRemoteImages: boolean,
   inlineImages: Record<string, string> = {},
+  { deferLocalImages = false, proxyRemote = true }: SanitizeOptions = {},
 ): SanitizeResult {
   let blockedImages = 0;
+  const images: string[] = [];
+  // 换成本地预览地址的 cid 图片。不用属性做标记：邮件可以自带同名属性冒充内嵌图片绕过屏蔽。
+  const inlineNodes = new WeakSet<Element>();
 
   const purify = DOMPurify(window);
 
   // 必须在属性校验之前改写：DOMPurify 默认不认 cid: 协议，放到 afterSanitize
   // 阶段时 src 已经被当作非法 URL 删掉了。
   purify.addHook("uponSanitizeAttribute", (node, data) => {
+    // 下标由这里分配，邮件自带的同名属性不能留：否则可以让父页面替它取任意本地地址。
+    if (data.attrName === "data-czl-img" || data.attrName === "data-inline-image") {
+      data.keepAttr = false;
+      return;
+    }
     if (data.attrName !== "src" || !(node instanceof Element) || node.tagName !== "IMG") return;
     const m = /^cid:(.+)$/i.exec(data.attrValue.trim());
     if (!m) return;
     const url = inlineImages[m[1].replace(/^<|>$/g, "").toLowerCase()];
     if (url) {
       data.attrValue = url;
-      node.setAttribute("data-inline-image", "");
+      inlineNodes.add(node);
     }
   });
 
@@ -59,11 +84,15 @@ export function sanitizeEmailHtml(
     }
 
     if (node.tagName === "IMG") {
-      if (!allowRemoteImages) {
+      // cid 内嵌图片随邮件下载，不外发请求，不受屏蔽约束。
+      let ours = inlineNodes.has(node);
+      if (!ours && !allowRemoteImages) {
         if (stripRemoteImage(node)) blockedImages += 1;
-      } else {
-        proxyRemoteImage(node);
+      } else if (!ours && proxyRemote) {
+        ours = proxyRemoteImage(node);
       }
+      // 只代取这里生成的地址；邮件自己写的 /czl-* 相对地址留在 iframe 里，请求不到也无害。
+      if (ours && deferLocalImages) deferLocalImage(node, images);
       return;
     }
 
@@ -82,7 +111,7 @@ export function sanitizeEmailHtml(
     // 邮件排版重度依赖 table 与内联样式，保留它们，
     // 隔离交给沙箱 iframe，而不是靠剥掉样式。
     // 自己加的标记属性要显式放行：ALLOW_DATA_ATTR 为 false 时它们会在同一轮里被剥掉。
-    ADD_ATTR: ["target", "rel", "data-external-href", "data-inline-image", "data-blocked-src", "data-email-body", "data-czl-tr"],
+    ADD_ATTR: ["target", "rel", "data-external-href", "data-blocked-src", "data-email-body", "data-czl-tr", "data-czl-img"],
     WHOLE_DOCUMENT: false,
     // 开头的 <style> 不加这个会被解析进 <head>，随后和 head 一起被丢掉。
     FORCE_BODY: true,
@@ -91,7 +120,7 @@ export function sanitizeEmailHtml(
 
   purify.removeAllHooks();
 
-  return { html: String(clean), blockedImages };
+  return { html: String(clean), blockedImages, images };
 }
 
 /**
@@ -162,7 +191,6 @@ function rewriteLink(node: Element) {
 
 /** 返回是否真的拦下了一张远程图片。 */
 function stripRemoteImage(node: Element): boolean {
-  if (node.hasAttribute("data-inline-image")) return false;
   const src = node.getAttribute("src") ?? "";
   // 内嵌图片（data: 与邮件自带的 cid:）不外发请求，不必拦。
   if (!src || /^(data:|cid:)/i.test(src)) return false;
@@ -177,11 +205,22 @@ function stripRemoteImage(node: Element): boolean {
  * 再次打开同一封邮件不必重新下载。代理只连公网、只返回嗅探得出的图片。
  * 只接管 https —— http 图片 CSP 本来就不放行。背景图仍直连。
  */
-function proxyRemoteImage(node: Element) {
-  if (node.hasAttribute("data-inline-image")) return;
+function proxyRemoteImage(node: Element): boolean {
   const src = (node.getAttribute("src") ?? "").trim();
-  if (!/^https:\/\//i.test(src)) return;
+  if (!/^https:\/\//i.test(src)) return false;
   node.setAttribute("src", `${window.location.origin}/czl-remote?url=${encodeURIComponent(src)}`);
+  return true;
+}
+
+/** 本地路径的图片挪到 images 里，src 换成下标，由父页面取回后交给 iframe。 */
+function deferLocalImage(node: Element, images: string[]) {
+  const src = (node.getAttribute("src") ?? "").trim();
+  const origin = window.location.origin;
+  const local = src.startsWith(origin + "/czl-") ? src.slice(origin.length) : src;
+  if (!local.startsWith("/czl-")) return;
+  node.removeAttribute("src");
+  node.setAttribute("data-czl-img", String(images.length));
+  images.push(local);
 }
 
 function stripRemoteBackground(node: Element) {
