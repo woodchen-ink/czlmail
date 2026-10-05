@@ -15,7 +15,7 @@ const notifyMax = 5
 
 // initNotifier 准备系统通知。失败只记日志 —— 收不到通知远不如收不到邮件严重。
 func (a *App) initNotifier() {
-	n, err := notify.New()
+	n, err := notify.New(a.ctx)
 	if err != nil {
 		a.log.Warn("system notifications unavailable", "err", err)
 		return

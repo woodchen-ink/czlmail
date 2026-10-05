@@ -6,25 +6,95 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// macOS 实现暂时走 osascript。
+// macOS 走 Wails 自带的 UNUserNotificationCenter 封装: 通知归属本应用(显示应用图标与名字,
+// 在「系统设置 → 通知」里有独立条目), 点击能回调到这里以定位邮件。
 //
-// 已知限制: 这条路径**拿不到点击回调**, 因此在 macOS 上点通知不会跳到对应邮件。
-// 要做到那一步需要用 CGO 调 UNUserNotificationCenter, 且应用必须签名并打成
-// .app bundle, 否则系统拒绝投递。在补上原生实现之前, macOS 只有通知展示。
+// 前提是程序以 .app 包运行、Info.plist 里有 CFBundleIdentifier; 不满足时(比如直接运行
+// 包内的二进制)退回 osascript —— 那条路径的通知挂在「脚本编辑器」名下, 点击也不会回到本应用,
+// 只当兜底。
 type darwinNotifier struct {
+	ctx    context.Context
+	native bool
+	seq    atomic.Uint64
+
 	mu       sync.Mutex
 	onAction func(string)
 }
 
-func New() (Notifier, error) {
-	return &darwinNotifier{}, nil
+// actionKey 是 ActionID 在通知 userInfo 里的键。
+const actionKey = "action"
+
+// defaultAction 是 Wails 对「点击通知本体」的动作标识(由 Apple 的默认标识换算而来)。
+const defaultAction = "DEFAULT_ACTION"
+
+// New 初始化通知中心。ctx 必须是 Wails OnStartup 收到的那个。
+func New(ctx context.Context) (Notifier, error) {
+	n := &darwinNotifier{ctx: ctx}
+	if err := runtime.InitializeNotifications(ctx); err != nil {
+		// 退回 osascript, 不算失败: 有通知总比没有好。
+		return n, nil
+	}
+	n.native = true
+
+	runtime.OnNotificationResponse(ctx, func(r runtime.NotificationResult) {
+		if r.Error != nil || r.Response.ActionIdentifier != defaultAction {
+			return
+		}
+		action, _ := r.Response.UserInfo[actionKey].(string)
+		n.mu.Lock()
+		fn := n.onAction
+		n.mu.Unlock()
+		if fn != nil {
+			fn(action)
+		}
+	})
+
+	// 首次运行时系统会弹窗询问是否允许通知, 用户可能半天不点, 不能挡住启动。
+	// 已经允许或拒绝过的, 这一步立即返回, 不会再弹。
+	go func() { _, _ = runtime.RequestNotificationAuthorization(ctx) }()
+	return n, nil
 }
 
 func (n *darwinNotifier) Notify(ctx context.Context, msg Notification) error {
+	if !n.native {
+		return notifyScript(ctx, msg)
+	}
+	// 标识相同的通知会互相替换, 汇总类通知没有 ActionID, 用序号保证每条都留在通知中心。
+	id := msg.ActionID
+	if id == "" {
+		id = "czlmail-" + strconv.FormatInt(time.Now().UnixNano(), 36) + "-" + strconv.FormatUint(n.seq.Add(1), 10)
+	}
+	err := runtime.SendNotification(n.ctx, runtime.NotificationOptions{
+		ID:    id,
+		Title: msg.Title,
+		Body:  msg.Body,
+		Data:  map[string]any{actionKey: msg.ActionID},
+	})
+	if err != nil {
+		return fmt.Errorf("4010 display notification: %w", err)
+	}
+	return nil
+}
+
+func (n *darwinNotifier) OnActivated(fn func(string)) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.onAction = fn
+}
+
+func (n *darwinNotifier) Close() error { return nil }
+
+// notifyScript 是没有 bundle 时的兜底, 拿不到点击回调。
+func notifyScript(ctx context.Context, msg Notification) error {
 	script := fmt.Sprintf(
 		"display notification %s with title %s",
 		quoteAppleScript(msg.Body),
@@ -37,16 +107,6 @@ func (n *darwinNotifier) Notify(ctx context.Context, msg Notification) error {
 	}
 	return nil
 }
-
-// OnActivated 在当前实现下不会被触发, 仍然保存回调, 以便换成原生实现时
-// 调用方无需改动。
-func (n *darwinNotifier) OnActivated(fn func(string)) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	n.onAction = fn
-}
-
-func (n *darwinNotifier) Close() error { return nil }
 
 // quoteAppleScript 把字符串包成 AppleScript 字面量。
 //

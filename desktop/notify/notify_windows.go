@@ -30,7 +30,7 @@ type windowsNotifier struct {
 //
 // Windows 上不注册 AppUserModelID 的话 toast 根本不会显示 —— 不是报错,
 // 是静默地什么都不发生, 这是最容易踩进去的坑。
-func New() (Notifier, error) {
+func New(context.Context) (Notifier, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("4001 locate executable: %w", err)
