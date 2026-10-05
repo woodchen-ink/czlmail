@@ -211,3 +211,10 @@
   .czl-signature img { max-width: 100%; height: auto; display: inline-block; }
   .czl-signature a { color: var(--accent); }
 }
+
+/* macOS 标题条: 窗口用 TitleBarHiddenInset, 红绿灯直接画在网页上, 这里留出一条高 36px 的位置。
+   不用 hidden 工具类: 工具类层级更高, html.mac 下没法再改回 flex。 */
+@layer components {
+  .mac-titlebar { display: none; }
+  html.mac .mac-titlebar { display: flex; }
+}

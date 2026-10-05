@@ -17,6 +17,8 @@ export const metadata: Metadata = {
   description: "Stalwart 邮箱桌面客户端",
 };
 
+const macBootScript = `if (/Mac/.test(navigator.platform)) document.documentElement.classList.add("mac");`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
@@ -28,12 +30,23 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         {/* 同步执行，赶在首帧绘制前把 dark class 挂上，避免暗色用户启动时闪白。 */}
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+        {/* macOS 窗口隐藏了标题栏, 红绿灯浮在网页左上角; 同样赶在首帧前打上标记, 好让下面的标题条占位。 */}
+        <script dangerouslySetInnerHTML={{ __html: macBootScript }} />
       </head>
       {/* 主壳锁死视口高度并禁止整页滚动: 三栏各自内部滚动,
           否则邮件列表变长会把整个窗口撑出滚动条, 侧栏与工具条跟着跑掉。 */}
       <body className="h-full overflow-hidden">
         <TooltipProvider delayDuration={300}>
-          {children}
+          <div className="flex h-full flex-col">
+            {/* 仅 macOS 显示(见 globals.css 的 html.mac): 给红绿灯让出位置, 同时充当拖动窗口的把手。 */}
+            <div
+              className="mac-titlebar bg-sidebar border-border text-muted-foreground h-9 shrink-0 items-center justify-center border-b text-xs font-medium select-none"
+              style={{ "--wails-draggable": "drag" } as React.CSSProperties}
+            >
+              CZL Mail
+            </div>
+            <div className="min-h-0 flex-1">{children}</div>
+          </div>
           <Toaster position="bottom-right" />
         </TooltipProvider>
       </body>
