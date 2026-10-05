@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CalendarPlus, Loader2, Mail, Power } from "lucide-react";
 import { toast } from "sonner";
 
+import { OptionSelect } from "@/components/option-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
@@ -147,20 +148,16 @@ function IcsImportDialog({ source, onClose }: { source: string | null; onClose: 
           </DialogTitle>
           <DialogDescription className="break-all">{name}</DialogDescription>
         </DialogHeader>
-        <label className="flex flex-col gap-2 text-sm">
+        <div className="flex flex-col gap-2 text-sm">
           导入到
-          <select
+          <OptionSelect
             value={target}
-            onChange={(e) => setTarget(e.target.value)}
-            className="border-input h-9 rounded-sm border bg-transparent px-2"
-          >
-            {calendars.map((c) => (
-              <option key={`${c.accountId}/${c.id}`} value={`${c.accountId}/${c.id}`} className="bg-popover">
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={setTarget}
+            options={calendars.map((c) => [`${c.accountId}/${c.id}`, c.name] as const)}
+            className="w-full"
+            aria-label="导入到"
+          />
+        </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             取消

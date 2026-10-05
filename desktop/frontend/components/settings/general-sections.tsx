@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Card, Divider, NativeSelect, Row, SectionTitle, useSettings } from "@/components/settings/ui";
+import { OptionSelect } from "@/components/option-select";
+import { Card, Divider, Row, SectionTitle, useSettings } from "@/components/settings/ui";
 import { api, errorMessage, type Account, type IntegrationStatus } from "@/lib/api";
 import { useAppearance, type ThemePreference } from "@/lib/theme";
 
@@ -198,7 +199,7 @@ export function ReadingSection({ active }: { active: boolean }) {
       <SectionTitle title="阅读" />
       <Card>
         <Row title="标记为已读" desc="打开邮件后何时标记为已读">
-          <NativeSelect
+          <OptionSelect
             value={settings?.markRead ?? "immediate"}
             disabled={!settings}
             onChange={(v) => save({ markRead: v })}

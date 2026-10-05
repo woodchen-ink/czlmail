@@ -8,6 +8,7 @@ import {
   calendarColor,
   calendarKey,
 } from "@/components/calendar/calendar-utils";
+import { OptionSelect } from "@/components/option-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,14 @@ import {
   hm,
 } from "@/lib/date";
 import { main } from "@/wailsjs/go/models";
+
+// iCalendar 的优先级: 1 最高, 9 最低, 0 未设置。
+const PRIORITY_OPTIONS = [
+  ["0", "无"],
+  ["1", "高"],
+  ["5", "中"],
+  ["9", "低"],
+] as const;
 
 type Filter = "open" | "done" | "all";
 
@@ -415,44 +424,23 @@ function TaskEditor({
         </div>
         <div className="flex flex-col gap-1.5">
           <Label>优先级</Label>
-          <select
-            value={priority}
-            onChange={(e) => setPriority(Number(e.target.value))}
-            className="border-input h-9 rounded-sm border bg-transparent px-2 text-sm"
-          >
-            <option value={0} className="bg-popover">
-              无
-            </option>
-            <option value={1} className="bg-popover">
-              高
-            </option>
-            <option value={5} className="bg-popover">
-              中
-            </option>
-            <option value={9} className="bg-popover">
-              低
-            </option>
-          </select>
+          <OptionSelect
+            value={String(priority)}
+            onChange={(v) => setPriority(Number(v))}
+            options={PRIORITY_OPTIONS}
+            className="w-full"
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label>日历</Label>
-          <select
+          <OptionSelect
             value={calendar}
-            onChange={(e) => setCalendar(e.target.value)}
-            className="border-input h-9 rounded-sm border bg-transparent px-2 text-sm"
-          >
-            {calendars
+            onChange={setCalendar}
+            options={calendars
               .filter((c) => c.accountId === task.accountId)
-              .map((c) => (
-                <option
-                  key={c.id}
-                  value={calendarKey(c.accountId, c.id)}
-                  className="bg-popover"
-                >
-                  {c.name}
-                </option>
-              ))}
-          </select>
+              .map((c) => [calendarKey(c.accountId, c.id), c.name] as const)}
+            className="w-full"
+          />
         </div>
       </div>
       <footer className="border-border flex shrink-0 justify-end gap-2 border-t px-4 py-2.5">

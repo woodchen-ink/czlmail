@@ -5,6 +5,7 @@ import { Camera, ChevronDown, Loader2, Plus, Search, Trash2, X } from "lucide-re
 import { toast } from "sonner";
 
 import { SenderAvatar } from "@/components/sender-avatar";
+import { OptionSelect } from "@/components/option-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -238,23 +239,19 @@ export function ContactEditor({ initial, books, accounts, candidates, allKeyword
               )}
               <div className="flex flex-col gap-1.5">
                 <Label>通讯录</Label>
-                <select
-                  value={bookKey}
+                <OptionSelect
+                  value={f.addressBookId ? bookKey : ""}
                   disabled={!isNew && writable.length <= 1}
-                  onChange={(e) => {
-                    const [acc, book] = e.target.value.split("/");
+                  onChange={(v) => {
+                    const [acc, book] = v.split("/");
                     setF((prev) => main.ContactForm.createFrom({ ...prev, accountId: acc, addressBookId: book, memberIds: acc === prev.accountId ? prev.memberIds : [] }));
                   }}
-                  className="border-input h-9 rounded-sm border bg-transparent px-2 text-sm"
-                >
-                  {!f.addressBookId && <option value="/">请选择</option>}
-                  {writable.map((b) => (
-                    <option key={`${b.accountId}/${b.id}`} value={`${b.accountId}/${b.id}`} className="bg-popover">
-                      {bookLabel(b)}
-                      {accounts.length > 1 ? ` — ${accountName(b.accountId)}` : ""}
-                    </option>
-                  ))}
-                </select>
+                  options={writable.map(
+                    (b) => [`${b.accountId}/${b.id}`, bookLabel(b) + (accounts.length > 1 ? ` — ${accountName(b.accountId)}` : "")] as const,
+                  )}
+                  placeholder="请选择"
+                  className="w-full"
+                />
               </div>
             </div>
           </div>
@@ -498,19 +495,7 @@ function Text({
 }
 
 function Choice({ value, options, onChange }: { value: string; options: string[][]; onChange: (v: string) => void }) {
-  return (
-    <select
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value)}
-      className="border-input h-9 w-24 shrink-0 rounded-sm border bg-transparent px-2 text-sm"
-    >
-      {options.map(([v, label]) => (
-        <option key={v} value={v} className="bg-popover">
-          {label}
-        </option>
-      ))}
-    </select>
-  );
+  return <OptionSelect value={value ?? ""} onChange={onChange} options={options} className="w-24 shrink-0" />;
 }
 
 function Row({ onRemove, children }: { onRemove: () => void; children: React.ReactNode }) {

@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Code2, ListFilter, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { AccountPicker, Card, NativeSelect, SectionTitle, useAccounts } from "@/components/settings/ui";
+import { OptionSelect } from "@/components/option-select";
+import { AccountPicker, Card, SectionTitle, useAccounts } from "@/components/settings/ui";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -378,7 +379,7 @@ function RuleDialog({
           <section className="flex flex-col gap-2">
             <div className="flex items-center gap-2 text-sm">
               <span>满足</span>
-              <NativeSelect
+              <OptionSelect
                 value={r.matchType}
                 onChange={(v) => set({ matchType: v })}
                 options={[
@@ -390,7 +391,7 @@ function RuleDialog({
             </div>
             {r.conditions.map((c, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2">
-                <NativeSelect
+                <OptionSelect
                   value={c.field}
                   onChange={(v) => setCond(i, { field: v, comparator: comparatorsFor(v)[0][0] })}
                   options={FIELDS}
@@ -404,7 +405,7 @@ function RuleDialog({
                     placeholder="邮件头名称"
                   />
                 )}
-                <NativeSelect value={c.comparator} onChange={(v) => setCond(i, { comparator: v })} options={comparatorsFor(c.field)} className="w-32" />
+                <OptionSelect value={c.comparator} onChange={(v) => setCond(i, { comparator: v })} options={comparatorsFor(c.field)} className="w-32" />
                 {!(c.field === "attachment" && c.comparator === "has_any") && (
                   <Input
                     className="h-8 min-w-40 flex-1"
@@ -439,12 +440,13 @@ function RuleDialog({
             <p className="text-sm">执行以下动作</p>
             {r.actions.map((a, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2">
-                <NativeSelect value={a.type} onChange={(v) => setAct(i, { type: v, value: "" })} options={ACTIONS} className="w-36" />
+                <OptionSelect value={a.type} onChange={(v) => setAct(i, { type: v, value: "" })} options={ACTIONS} className="w-36" />
                 {(a.type === "move" || a.type === "copy") && (
-                  <NativeSelect
+                  <OptionSelect
                     value={a.value ?? ""}
                     onChange={(v) => setAct(i, { value: v })}
-                    options={[["", "选择文件夹"], ...folders.map((f) => [f, f] as [string, string])]}
+                    options={folders.map((f) => [f, f] as const)}
+                    placeholder="选择文件夹"
                     className="min-w-40 flex-1"
                   />
                 )}

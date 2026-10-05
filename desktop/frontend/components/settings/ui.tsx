@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { OptionSelect } from "@/components/option-select";
 import { cn } from "@/lib/utils";
 import { api, errorMessage, type Account, type AppSettings } from "@/lib/api";
 import { main } from "@/wailsjs/go/models";
@@ -93,46 +94,12 @@ export function AccountPicker({
 }) {
   if (accounts.length <= 1) return null;
   return (
-    <select
+    <OptionSelect
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="border-input h-8 max-w-56 rounded-sm border bg-transparent px-2 text-sm"
+      onChange={onChange}
+      options={accounts.map((a) => [a.id, a.name] as const)}
+      className="max-w-56"
       aria-label="账号"
-    >
-      {accounts.map((a) => (
-        <option key={a.id} value={a.id} className="bg-popover">
-          {a.name}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-export function NativeSelect({
-  value,
-  onChange,
-  options,
-  className,
-  disabled,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: [string, string][];
-  className?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <select
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-      className={cn("border-input h-8 rounded-sm border bg-transparent px-2 text-sm disabled:opacity-50", className)}
-    >
-      {options.map(([v, label]) => (
-        <option key={v} value={v} className="bg-popover">
-          {label}
-        </option>
-      ))}
-    </select>
+    />
   );
 }

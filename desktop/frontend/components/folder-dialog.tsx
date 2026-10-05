@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { OptionSelect } from "@/components/option-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -123,21 +124,13 @@ export function FolderDialog({ action, mailboxes, onClose, onDone }: Props) {
           {(action.kind === "create" || action.kind === "move") && (
             <div className="flex flex-col gap-2">
               <Label htmlFor="folder-parent">{action.kind === "create" ? "位置" : "移动到"}</Label>
-              <select
+              <OptionSelect
                 id="folder-parent"
                 value={parent}
-                onChange={(e) => setParent(e.target.value)}
-                className="border-input h-9 rounded-sm border bg-transparent px-2 text-sm"
-              >
-                <option value={ROOT} className="bg-popover">
-                  （顶层）
-                </option>
-                {targets.map((m) => (
-                  <option key={m.id} value={m.id} className="bg-popover">
-                    {pathOf(m, mailboxes)}
-                  </option>
-                ))}
-              </select>
+                onChange={setParent}
+                options={[[ROOT, "（顶层）"], ...targets.map((m) => [m.id, pathOf(m, mailboxes)] as const)]}
+                className="w-full"
+              />
             </div>
           )}
 

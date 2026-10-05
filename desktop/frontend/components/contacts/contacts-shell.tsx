@@ -42,6 +42,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { OptionSelect } from "@/components/option-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -695,17 +696,13 @@ function BookNameDialog({
         >
           <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="通讯录名称" />
           {!target.book && accounts.length > 1 && (
-            <select
+            <OptionSelect
               value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className="border-input h-9 rounded-sm border bg-transparent px-2 text-sm"
-            >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id} className="bg-popover">
-                  {a.name}
-                </option>
-              ))}
-            </select>
+              onChange={setAccountId}
+              options={accounts.map((a) => [a.id, a.name] as const)}
+              className="w-full"
+              aria-label="账号"
+            />
           )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

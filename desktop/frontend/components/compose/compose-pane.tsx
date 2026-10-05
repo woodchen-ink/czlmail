@@ -29,6 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { OptionSelect } from "@/components/option-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -482,21 +483,16 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
 
       <div className="border-border flex shrink-0 flex-col border-b text-sm">
         <Field label="发件人">
-          <select
+          <OptionSelect
             value={identityId}
-            onChange={(e) => {
-              setIdentityId(e.target.value);
+            onChange={(v) => {
+              setIdentityId(v);
               markDirty();
             }}
-            className="h-9 min-w-0 flex-1 truncate bg-transparent outline-none"
+            options={identities.map((i) => [i.id, fromLabel(i)] as const)}
+            className="-ml-2.5 flex-1 border-transparent dark:bg-transparent"
             aria-label="发件人"
-          >
-            {identities.map((i) => (
-              <option key={i.id} value={i.id} className="bg-popover">
-                {fromLabel(i)}
-              </option>
-            ))}
-          </select>
+          />
         </Field>
         <Field
           label="收件人"
