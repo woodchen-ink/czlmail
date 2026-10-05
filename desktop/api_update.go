@@ -12,7 +12,6 @@ import (
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/notify"
 	"github.com/woodchen-ink/czlmail/desktop/update"
@@ -80,8 +79,8 @@ func (a *App) CheckForUpdate() (UpdateInfo, error) {
 	return info, nil
 }
 
-// InstallUpdate 下载并校验最新安装包, 启动安装程序后退出应用。
-// 安装程序以静默模式运行, 结束后会自动重新打开 CZL Mail。
+// InstallUpdate 下载并校验最新安装包, 安装后退出应用并自动重新打开 CZL Mail。
+// Windows 静默运行 NSIS 安装程序; macOS 解压 .app 的 zip 包原地替换。
 func (a *App) InstallUpdate() error {
 	if !updateMu.TryLock() {
 		return errors.New("2151 an update is already in progress")
@@ -103,15 +102,19 @@ func (a *App) InstallUpdate() error {
 		return fmt.Errorf("2153 %w", err)
 	}
 
-	if runtime.GOOS != "windows" {
-		// macOS 未签名, 无法静默替换 .app: 打开 DMG, 由用户把新版本拖进「应用程序」覆盖。
-		return platform.OpenPath(path)
-	}
-
-	if err := exec.Command(path, "/S").Start(); err != nil {
+	if runtime.GOOS == "darwin" {
+		// 解压新版 .app, 本进程退出后由后台脚本替换并重新打开。
+		if err := update.InstallApp(path); err != nil {
+			if errors.Is(err, update.ErrAppDirNotWritable) {
+				return errors.New("2155 应用所在文件夹没有写入权限, 已在访达中显示新版本, 请手动拖入「应用程序」")
+			}
+			return fmt.Errorf("2154 install update: %w", err)
+		}
+	} else if err := exec.Command(path, "/S").Start(); err != nil {
 		return fmt.Errorf("2154 start installer: %w", err)
 	}
-	wruntime.Quit(a.ctx)
+	// 留一点时间让界面收到响应。
+	time.AfterFunc(300*time.Millisecond, func() { wruntime.Quit(a.ctx) })
 	return nil
 }
 

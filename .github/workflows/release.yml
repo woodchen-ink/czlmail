@@ -85,7 +85,7 @@ jobs:
           "$(go env GOPATH)/bin/wails" build -platform darwin/universal -ldflags "-X main.version=${VERSION}"
 
       # 没有 Apple 开发者证书: 整个包做 ad-hoc 签名(Apple Silicon 不运行无签名代码, lipo 合并与写入 Info.plist
-      # 会让链接器给的签名失效), 再打 DMG(拖进「应用程序」)。zip 保留给 0.0.x 旧版的在线更新。
+      # 会让链接器给的签名失效), 再打 DMG(首次安装, 拖进「应用程序」)与 zip(在线更新, 解压后原地替换 .app)。
       - name: Package
         working-directory: desktop/build/bin
         run: |
@@ -111,9 +111,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # 版本说明写在带注释的 tag 里(git tag -a vX.Y.Z -F notes.md), 这里取出作为 Release 正文。
-      # 轻量 tag 没有注释时 %(contents) 为空, 只保留自动生成的提交列表。
+      # 版本说明写在带注释的 tag 里(git tag -a vX.Y.Z -F notes.md), 这里取出作为 Release 正文,
+      # 桌面端「发现新版本」里展示的也是它。
+      # 误打了轻量 tag 时退回到上个版本以来的提交说明, 不让 Release 只剩一行 Full Changelog。
       - name: Release notes from tag message
         env:
           TAG: ${{ github.ref_name }}
@@ -122,7 +125,10 @@ jobs:
           if [ "$(git cat-file -t "$TAG")" = "tag" ]; then
             git tag -l --format='%(contents)' "$TAG" | sed '/-----BEGIN PGP SIGNATURE-----/,$d' > release-notes.md
           else
-            : > release-notes.md
+            echo "::warning::${TAG} 是轻量 tag, 没有版本说明, 改用提交记录。请用 git tag -a ${TAG} -F notes.md"
+            prev=$(git describe --tags --abbrev=0 --match 'v*' "${TAG}^" 2>/dev/null || true)
+            range="$TAG -1"; [ -n "$prev" ] && range="${prev}..${TAG}"
+            git log --no-merges --format='### %s%n%n%b' $range | grep -vE '^(Co-Authored-By|Claude-Session):' > release-notes.md
           fi
           cat release-notes.md
 

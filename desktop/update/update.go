@@ -108,7 +108,8 @@ func assetName() string {
 	case "windows":
 		return "czlmail-" + runtime.GOARCH + "-installer.exe"
 	case "darwin":
-		return "czlmail-darwin-universal.dmg"
+		// macOS 用 .app 的 zip 包原地替换; DMG 只给首次安装的用户下载。
+		return "czlmail-darwin-universal.zip"
 	}
 	return ""
 }
