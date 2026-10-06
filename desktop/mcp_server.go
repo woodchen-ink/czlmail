@@ -202,6 +202,7 @@ func (a *App) SetMCP(enabled, allowSend, allowModify bool) (MCPStatus, error) {
 	} else {
 		a.stopMCP()
 	}
+	a.syncAISettingsSoon()
 	return a.GetMCPStatus()
 }
 

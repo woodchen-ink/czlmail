@@ -1,26 +1,22 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"sync"
 	"time"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
 // 邮件模板跨设备同步。
 //
-// 模板存成个人账号网盘里的 CZL Mail/email-templates.json, 格式沿用 Bulwark 的导出格式
+// 模板存成个人账号网盘里的 CZL Mail/email-templates.json(读写见 drive_sync.go), 格式沿用 Bulwark 的导出格式
 // (type = webmail-templates), 两边的导出文件可以直接互相导入。在此基础上多一个
 // deletedAt 字段表示墓碑, Bulwark 导入时会忽略它。
 //
@@ -28,7 +24,6 @@ import (
 // 模板时后改的覆盖先改的, 对模板这种低频编辑的数据足够。
 
 const (
-	templateFolder   = "CZL Mail"
 	templateFileName = "email-templates.json"
 	templateFileType = "webmail-templates"
 	// 墓碑保留 90 天, 足够让长期离线的设备也收到删除。
@@ -58,8 +53,6 @@ type templateEntry struct {
 	DeletedAt  string   `json:"deletedAt,omitempty"`
 }
 
-var templateSyncMu sync.Mutex
-
 // syncTemplatesSoon 在后台同步模板, 失败只记日志。
 func (a *App) syncTemplatesSoon() {
 	go func() {
@@ -71,44 +64,25 @@ func (a *App) syncTemplatesSoon() {
 
 // SyncTemplates 立即与服务端合并模板。
 func (a *App) SyncTemplates() error {
-	templateSyncMu.Lock()
-	defer templateSyncMu.Unlock()
+	driveSyncMu.Lock()
+	defer driveSyncMu.Unlock()
 
-	s, err := a.currentSyncer()
-	if err != nil {
-		return err
-	}
 	st, err := a.currentStore()
 	if err != nil {
 		return err
 	}
-	accountID := a.personalAccountID(st)
-	if accountID == "" {
-		return errors.New("2160 no personal account")
-	}
 	ctx, cancel := context.WithTimeout(a.ctx, time.Minute)
 	defer cancel()
 
-	folder, _ := st.FileNodeByName(ctx, accountID, "", templateFolder)
-	var file *store.FileNode
-	if folder != nil {
-		file, _ = st.FileNodeByName(ctx, accountID, folder.ID, templateFileName)
+	file, data, err := a.openDriveSyncFile(ctx, templateFileName)
+	if err != nil {
+		return err
 	}
-
 	var remote []templateEntry
-	if file != nil && file.BlobID != "" {
-		rc, err := s.DownloadBlob(ctx, accountID, file.BlobID)
-		if err != nil {
-			return err
-		}
-		data, err := io.ReadAll(io.LimitReader(rc, 8<<20))
-		rc.Close()
-		if err != nil {
-			return err
-		}
+	if data != nil {
 		var tf templateFile
 		if err := json.Unmarshal(data, &tf); err != nil || tf.Type != templateFileType {
-			return fmt.Errorf("2161 %s/%s is not a template file", templateFolder, templateFileName)
+			return fmt.Errorf("2161 %s/%s is not a template file", driveSyncFolder, templateFileName)
 		}
 		remote = tf.Templates
 	}
@@ -133,41 +107,17 @@ func (a *App) SyncTemplates() error {
 		a.emit(EventTemplatesChanged)
 	}
 
-	if !remoteChanged && file != nil {
+	if !remoteChanged && file.exists() {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(templateFile{
+	out, err := json.MarshalIndent(templateFile{
 		Version: 1, Type: templateFileType, ExportedAt: time.Now().UTC().Format(time.RFC3339), Templates: merged,
 	}, "", "  ")
 	if err != nil {
 		return err
 	}
-	blobID, _, _, err := s.UploadBlob(ctx, accountID, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-
-	if file != nil {
-		_, err = s.SetPIM(ctx, accountID, jmapx.FileNode, nil,
-			map[string]map[string]any{file.ID: {"blobId": blobID, "type": "application/json"}}, nil, nil)
-		return err
-	}
-	folderID := ""
-	if folder != nil {
-		folderID = folder.ID
-	} else {
-		created, err := s.SetPIM(ctx, accountID, jmapx.FileNode,
-			map[string]any{"dir": map[string]any{"parentId": nil, "name": templateFolder}}, nil, nil, nil)
-		if err != nil {
-			return err
-		}
-		folderID = created["dir"]
-	}
-	_, err = s.SetPIM(ctx, accountID, jmapx.FileNode, map[string]any{"file": map[string]any{
-		"parentId": folderID, "name": templateFileName, "blobId": blobID, "type": "application/json",
-	}}, nil, nil, nil)
-	return err
+	return file.write(ctx, out)
 }
 
 // mergeTemplates 合并本地与远端, 返回合并结果、需要写回本地的条目, 以及远端是否需要更新。

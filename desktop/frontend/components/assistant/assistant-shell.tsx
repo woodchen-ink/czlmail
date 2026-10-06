@@ -32,7 +32,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { api, errorMessage, type MCPStatus } from "@/lib/api";
+import { api, errorMessage, Events, onEvent, type MCPStatus } from "@/lib/api";
 
 // 与 Go 端 newMCPServer 注册的工具保持一致。level: read 只读 / write 直接可用的写入 /
 // modify 需开「允许 AI 整理邮件与日程」/ send 需开「允许 AI 发送邮件」。
@@ -134,6 +134,9 @@ export function AssistantShell({ active }: { active: boolean }) {
     if (active) load();
   }, [active, load]);
 
+  // 别的设备改了 MCP 开关, 经网盘同步过来。
+  useEffect(() => onEvent(Events.aiSettingsChanged, load), [load]);
+
   async function apply(enabled: boolean, allowSend: boolean, allowModify: boolean) {
     setBusy(true);
     try {
@@ -186,7 +189,7 @@ export function AssistantShell({ active }: { active: boolean }) {
             desc={
               status?.running
                 ? `正在运行：${status.url}`
-                : "开启后 CZL Mail 会在本机提供 MCP 服务。CZL Mail 需要保持运行（关闭窗口后会留在托盘）。"
+                : "开启后 CZL Mail 会在本机提供 MCP 服务。CZL Mail 需要保持运行（关闭窗口后会留在托盘）。开关与权限经网盘同步到你的其它设备，令牌各设备独立。"
             }
           >
             {busy && <Loader2 className="text-muted-foreground size-4 animate-spin" />}

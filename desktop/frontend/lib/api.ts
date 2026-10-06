@@ -93,6 +93,7 @@ export const Events = {
   openUpdate: "update:open",
   updateProgress: "update:progress",
   templatesChanged: "templates:changed",
+  aiSettingsChanged: "ai-settings:changed",
   aiStream: "ai:stream",
   openRequest: "app:open-request",
 } as const;

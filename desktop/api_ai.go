@@ -131,6 +131,12 @@ func (a *App) SaveAIConfig(cfg AIConfig, apiKey string) (AIConfig, error) {
 			return cfg, fmt.Errorf("2201 save api key to system keychain: %w", err)
 		}
 	}
+	if apiKey != "" {
+		if err := markAIKeyChanged(a.ctx, st); err != nil {
+			return cfg, err
+		}
+	}
+	a.syncAISettingsSoon()
 	return a.GetAIConfig(), nil
 }
 

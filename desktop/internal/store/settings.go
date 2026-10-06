@@ -46,3 +46,37 @@ func (s *Store) SetStringSetting(ctx context.Context, key, value string) error {
 func (s *Store) SetBoolSettingNow(ctx context.Context, key string, value bool) error {
 	return s.WithTx(ctx, func(tx *sql.Tx) error { return SetBoolSetting(ctx, tx, key, value) })
 }
+
+// TimedSetting 是带修改时间的设置值, 供跨设备同步按"最后修改者胜"合并。
+type TimedSetting struct {
+	Value     string
+	UpdatedAt int64
+}
+
+// TimedSettings 读取给定键的值与修改时间, 未设置的键不出现在结果里。
+func (s *Store) TimedSettings(ctx context.Context, keys []string) (map[string]TimedSetting, error) {
+	out := make(map[string]TimedSetting, len(keys))
+	for _, k := range keys {
+		var v TimedSetting
+		err := s.db.QueryRowContext(ctx, `SELECT value, updated_at FROM app_settings WHERE key = ?`, k).
+			Scan(&v.Value, &v.UpdatedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, wrap(CodeQuery, "read timed setting", err)
+		}
+		out[k] = v
+	}
+	return out, nil
+}
+
+// PutTimedSetting 写入从远端合并来的设置, 保留其原有的修改时间。
+// 与 SetStringSetting 不同: 后者代表本地修改, 会把时间改成当前时间。
+func PutTimedSetting(ctx context.Context, tx *sql.Tx, key string, v TimedSetting) error {
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+		 ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		key, v.Value, v.UpdatedAt)
+	return wrap(CodeQuery, "put timed setting", err)
+}

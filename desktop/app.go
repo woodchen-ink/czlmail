@@ -284,9 +284,9 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client) error {
 	}
 	s.OnPIMChanged = func(accountID, typeName string) {
 		a.emit(EventPIMChanged, PIMChange{AccountID: accountID, Type: typeName})
-		// 模板文件存在个人网盘里; 网盘有变化(含首次同步)时合并一次。
+		// 模板与 AI/MCP 设置存在个人网盘里; 网盘有变化(含首次同步)时合并一次。
 		if (typeName == "" || typeName == "FileNode") && accountID == a.personalAccountID(st) {
-			a.syncTemplatesSoon()
+			a.syncDriveSoon()
 		}
 	}
 	a.sync = s
