@@ -66,6 +66,9 @@ func main() {
 			},
 		},
 
+		// macOS 顶部菜单栏, 提供 ⌘Q/⌘W 及编辑快捷键; 其他平台为 nil。见 menu_darwin.go。
+		Menu: appMenu(app),
+
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
 		OnDomReady: app.domReady,

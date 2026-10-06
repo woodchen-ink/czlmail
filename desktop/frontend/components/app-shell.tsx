@@ -19,12 +19,15 @@ import { listen, send, type Module } from "@/lib/app-bus";
 
 const MODULE_KEY = "czlmail.module";
 
+// macOS 习惯用 ⌘ 而不是 Ctrl 作组合键; 两个都认, 提示按平台显示。
+const MOD = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent) ? "⌘" : "Ctrl+";
+
 const NAV: { id: Module; label: string; icon: typeof Mail; shortcut: string }[] = [
-  { id: "mail", label: "邮件", icon: Mail, shortcut: "Ctrl+1" },
-  { id: "calendar", label: "日历", icon: CalendarDays, shortcut: "Ctrl+2" },
-  { id: "contacts", label: "通讯录", icon: UsersRound, shortcut: "Ctrl+3" },
-  { id: "files", label: "文件", icon: FolderOpen, shortcut: "Ctrl+4" },
-  { id: "assistant", label: "AI 助手", icon: Bot, shortcut: "Ctrl+5" },
+  { id: "mail", label: "邮件", icon: Mail, shortcut: `${MOD}1` },
+  { id: "calendar", label: "日历", icon: CalendarDays, shortcut: `${MOD}2` },
+  { id: "contacts", label: "通讯录", icon: UsersRound, shortcut: `${MOD}3` },
+  { id: "files", label: "文件", icon: FolderOpen, shortcut: `${MOD}4` },
+  { id: "assistant", label: "AI 助手", icon: Bot, shortcut: `${MOD}5` },
 ];
 
 /**
@@ -92,7 +95,12 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
     const offOpenUpdate = onEvent(Events.openUpdate, openAbout);
 
     function onKey(e: KeyboardEvent) {
-      if (!e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (e.key === ",") {
+        e.preventDefault();
+        go("settings");
+        return;
+      }
       const index = Number(e.key) - 1;
       if (index >= 0 && index < NAV.length) {
         e.preventDefault();
@@ -121,7 +129,7 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
         <div className="flex-1" />
         <RailButton
           badge={!!update?.available}
-          item={{ label: update?.available ? "设置（有新版本）" : "设置", icon: Settings, shortcut: "" }}
+          item={{ label: update?.available ? "设置（有新版本）" : "设置", icon: Settings, shortcut: `${MOD},` }}
           active={module === "settings"}
           onClick={() => go("settings")}
         />
