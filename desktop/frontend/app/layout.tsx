@@ -1,16 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { themeBootScript } from "@/lib/theme";
 
 import "./globals.css";
-
-// next/font 在构建期下载并自托管字体, 导出产物里是本地文件,
-// 运行时不联网 —— 桌面端离线也能正确渲染。
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "CZL Mail",
@@ -23,7 +17,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="zh-CN"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className="h-full antialiased"
       // 首帧前的内联脚本会改 class，服务端导出的 HTML 与之必然不一致，属预期。
       suppressHydrationWarning
     >
