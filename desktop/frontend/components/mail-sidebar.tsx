@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, Plus, UserRound } from "lucide-react";
@@ -39,6 +42,7 @@ export function MailSidebar({
   onMailboxesChanged,
   onFolderAction,
 }: Props) {
+  useI18n();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [folderAction, setFolderAction] = useState<FolderAction | null>(null);
 
@@ -83,11 +87,11 @@ export function MailSidebar({
       const id = `pull:${s.accountId}/${s.mailboxId}`;
       if (!s.done) {
         const total = s.total > 0 ? ` / ${s.total}` : "";
-        toast.loading(`正在拉取：已检查 ${s.scanned}${total} 封，新增 ${s.fetched} 封`, { id });
+        toast.loading(t("正在拉取：已检查 {0}{1} 封，新增 {2} 封", s.scanned, total, s.fetched), { id });
       } else if (s.error) {
-        toast.error(`拉取中断：${s.error}（已拉取的部分保留，可重试）`, { id });
+        toast.error(t("拉取中断：{0}（已拉取的部分保留，可重试）", s.error), { id });
       } else {
-        toast.success(`拉取完成：共 ${s.scanned} 封，新增 ${s.fetched} 封`, { id });
+        toast.success(t("拉取完成：共 {0} 封，新增 {1} 封", s.scanned, s.fetched), { id });
       }
     });
   }, []);
@@ -95,7 +99,7 @@ export function MailSidebar({
   async function pull(accId: string, boxId: string, label: string) {
     try {
       await api.pullMailbox(accId, boxId);
-      toast.loading(`开始拉取「${label}」`, { id: `pull:${accId}/${boxId}` });
+      toast.loading(t("开始拉取「{0}」", label), { id: `pull:${accId}/${boxId}` });
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -108,7 +112,7 @@ export function MailSidebar({
     <div className="flex flex-col gap-3">
       {personal.length > 0 && (
         <Section
-          title="文件夹"
+          title={t("文件夹")}
           open={!collapsed.personal}
           onToggle={() => toggle("personal")}
           onAdd={() => setFolderAction({ kind: "create", accountId: personal[0].id })}
@@ -126,7 +130,7 @@ export function MailSidebar({
       )}
 
       {shared.length > 0 && (
-        <Section title="共享" open={!collapsed.shared} onToggle={() => toggle("shared")}>
+        <Section title={t("共享")} open={!collapsed.shared} onToggle={() => toggle("shared")}>
           {shared.map((acc) => {
             const key = `acc:${acc.id}`;
             const open = !collapsed[key];
@@ -182,6 +186,7 @@ function Section({
   onAdd?: () => void;
   children: React.ReactNode;
 }) {
+  useI18n();
   return (
     <section className="flex flex-col gap-0.5">
       <div className="group/section flex items-center">
@@ -198,8 +203,8 @@ function Section({
           <button
             type="button"
             onClick={onAdd}
-            aria-label="新建文件夹"
-            title="新建文件夹"
+            aria-label={t("新建文件夹")}
+            title={t("新建文件夹")}
             className="text-muted-foreground hover:bg-secondary hover:text-foreground rounded-sm p-1 opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100"
           >
             <Plus className="size-3.5" />

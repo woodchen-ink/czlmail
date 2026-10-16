@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarClock, Flag, Loader2, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -34,12 +37,12 @@ import {
 import { main } from "@/wailsjs/go/models";
 
 // iCalendar 的优先级: 1 最高, 9 最低, 0 未设置。
-const PRIORITY_OPTIONS = [
-  ["0", "无"],
-  ["1", "高"],
-  ["5", "中"],
-  ["9", "低"],
-] as const;
+const getPriorityOptions = () => ([
+  ["0", t("无")],
+  ["1", t("高")],
+  ["5", t("中")],
+  ["9", t("低")],
+] as const);
 
 type Filter = "open" | "done" | "all";
 
@@ -56,6 +59,7 @@ export function TasksView({
   hidden: Set<string>;
   active: boolean;
 }) {
+  const { locale } = useI18n();
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<Filter>("open");
@@ -105,10 +109,10 @@ export function TasksView({
       if (a.due && b.due && a.due !== b.due) return a.due < b.due ? -1 : 1;
       return (
         prioRank(a.priority) - prioRank(b.priority) ||
-        a.title.localeCompare(b.title, "zh-CN")
+        a.title.localeCompare(b.title, locale)
       );
     });
-  }, [tasks, hidden, filter]);
+  }, [tasks, hidden, filter, locale]);
 
   async function addQuick() {
     const title = quick.trim();
@@ -169,8 +173,8 @@ export function TasksView({
               onChange={(e) => setQuick(e.target.value)}
               placeholder={
                 defaultCal
-                  ? `添加任务到「${defaultCal.name}」，回车保存`
-                  : "没有可写入的日历"
+                  ? t("添加任务到「{0}」，回车保存", defaultCal.name)
+                  : t("没有可写入的日历")
               }
               disabled={!defaultCal}
               className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0"
@@ -179,9 +183,9 @@ export function TasksView({
           <div className="bg-muted flex rounded-md p-0.5 text-xs">
             {(
               [
-                ["open", "未完成"],
-                ["done", "已完成"],
-                ["all", "全部"],
+                ["open", t("未完成")],
+                ["done", t("已完成")],
+                ["all", t("全部")],
               ] as [Filter, string][]
             ).map(([k, label]) => (
               <button
@@ -205,29 +209,29 @@ export function TasksView({
         <div className="czl-scroll min-h-0 flex-1 overflow-y-auto">
           {shown.length === 0 ? (
             <p className="text-muted-foreground py-12 text-center text-sm">
-              {filter === "done" ? "没有已完成的任务" : "没有任务"}
+              {filter === "done" ? t("没有已完成的任务") : t("没有任务")}
             </p>
           ) : (
             <ul>
-              {shown.map((t) => {
-                const due = t.due ? parseLocalDateTime(t.due) : null;
-                const overdue = !!due && !t.completed && due < now;
+              {shown.map((task) => {
+                const due = task.due ? parseLocalDateTime(task.due) : null;
+                const overdue = !!due && !task.completed && due < now;
                 const selected =
-                  editing?.accountId === t.accountId && editing.id === t.id;
+                  editing?.accountId === task.accountId && editing.id === task.id;
                 return (
                   <li
-                    key={`${t.accountId}/${t.id}`}
+                    key={`${task.accountId}/${task.id}`}
                     className={cn(
                       "border-border hover:bg-secondary flex cursor-default items-center gap-3 border-b px-4 py-2.5",
                       selected && "bg-muted",
                     )}
-                    onClick={() => setEditing(t)}
+                    onClick={() => setEditing(task)}
                   >
                     <span onClick={(e) => e.stopPropagation()}>
                       <Checkbox
-                        checked={t.completed}
-                        onCheckedChange={(v) => toggle(t, v === true)}
-                        aria-label="完成"
+                        checked={task.completed}
+                        onCheckedChange={(v) => toggle(task, v === true)}
+                        aria-label={t("完成")}
                       />
                     </span>
                     <span
@@ -235,20 +239,20 @@ export function TasksView({
                       style={{
                         background: calendarColor(
                           calendars,
-                          t.accountId,
-                          t.calendarId,
+                          task.accountId,
+                          task.calendarId,
                         ),
                       }}
                     />
                     <span
                       className={cn(
                         "min-w-0 flex-1 truncate text-sm",
-                        t.completed && "text-muted-foreground line-through",
+                        task.completed && "text-muted-foreground line-through",
                       )}
                     >
-                      {t.title || "(无标题)"}
+                      {task.title || t("(无标题)")}
                     </span>
-                    {t.priority > 0 && t.priority <= 4 && (
+                    {task.priority > 0 && task.priority <= 4 && (
                       <Flag className="text-destructive size-3.5 shrink-0" />
                     )}
                     {due && (
@@ -262,7 +266,7 @@ export function TasksView({
                       >
                         <CalendarClock className="size-3.5" />
                         {shortDate(due)}
-                        {!t.dueAllDay && ` ${hm(due)}`}
+                        {!task.dueAllDay && ` ${hm(due)}`}
                       </span>
                     )}
                   </li>
@@ -302,6 +306,7 @@ function TaskEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  useI18n();
   const due = task.due ? parseLocalDateTime(task.due) : null;
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
@@ -317,7 +322,7 @@ function TaskEditor({
 
   async function save() {
     if (!title.trim()) {
-      toast.error("请填写标题");
+      toast.error(t("请填写标题"));
       return;
     }
     const [accountId, calendarId] = calendar.split("/");
@@ -337,7 +342,7 @@ function TaskEditor({
           completed: task.completed,
         }),
       );
-      toast.success("已保存");
+      toast.success(t("已保存"));
       onSaved();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -348,7 +353,7 @@ function TaskEditor({
   async function remove() {
     try {
       await api.deleteTask(task.accountId, task.id);
-      toast.success("已删除任务");
+      toast.success(t("已删除任务"));
       onSaved();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -362,17 +367,17 @@ function TaskEditor({
           variant="ghost"
           size="icon"
           className="size-8"
-          aria-label="关闭"
+          aria-label={t("关闭")}
           onClick={onClose}
         >
           <X className="size-4" />
         </Button>
-        <h2 className="flex-1 text-base font-semibold">编辑任务</h2>
+        <h2 className="flex-1 text-base font-semibold">{t("编辑任务")}</h2>
         <Button
           variant="ghost"
           size="icon"
           className="hover:text-destructive size-8"
-          aria-label="删除"
+          aria-label={t("删除")}
           onClick={remove}
         >
           <Trash2 className="size-4" />
@@ -382,17 +387,17 @@ function TaskEditor({
         <Input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="标题"
+          placeholder={t("标题")}
           className="h-10 text-base font-medium"
         />
         <Textarea
           rows={4}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="描述"
+          placeholder={t("描述")}
         />
         <div className="flex flex-col gap-1.5">
-          <Label>截止时间</Label>
+          <Label>{t("截止时间")}</Label>
           <div className="flex gap-2">
             <Input
               type="date"
@@ -411,7 +416,7 @@ function TaskEditor({
                 variant="ghost"
                 size="icon"
                 className="size-9 shrink-0"
-                aria-label="清除截止时间"
+                aria-label={t("清除截止时间")}
                 onClick={() => {
                   setDueDate("");
                   setDueTime("");
@@ -423,16 +428,16 @@ function TaskEditor({
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label>优先级</Label>
+          <Label>{t("优先级")}</Label>
           <OptionSelect
             value={String(priority)}
             onChange={(v) => setPriority(Number(v))}
-            options={PRIORITY_OPTIONS}
+            options={getPriorityOptions()}
             className="w-full"
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label>日历</Label>
+          <Label>{t("日历")}</Label>
           <OptionSelect
             value={calendar}
             onChange={setCalendar}
@@ -445,12 +450,10 @@ function TaskEditor({
       </div>
       <footer className="border-border flex shrink-0 justify-end gap-2 border-t px-4 py-2.5">
         <Button variant="outline" onClick={onClose}>
-          取消
-        </Button>
+          {t("取消")}</Button>
         <Button onClick={save} disabled={busy}>
           {busy && <Loader2 className="size-4 animate-spin" />}
-          保存
-        </Button>
+          {t("保存")}</Button>
       </footer>
     </div>
   );

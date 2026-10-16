@@ -6,6 +6,8 @@
  * 一个看不懂的 undefined 报错。
  */
 
+import { t } from "@/lib/i18n";
+
 import * as App from "@/wailsjs/go/main/App";
 import { EventsOn } from "@/wailsjs/runtime/runtime";
 import type { main, store, syncer } from "@/wailsjs/go/models";
@@ -111,7 +113,7 @@ export function hasRuntime(): boolean {
 
 class NoRuntimeError extends Error {
   constructor() {
-    super("Wails 运行时不可用");
+    super(t("Wails 运行时不可用"));
     this.name = "NoRuntimeError";
   }
 }

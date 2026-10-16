@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Copy, ExternalLink, ImageOff, UserCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -62,6 +65,7 @@ export function EmailBody({
   inlineImages,
   translated,
 }: Props) {
+  useI18n();
   // 自带配色的邮件在暗色主题下仍用亮色纸面，见 hasOwnColors。
   const mode = requestedMode === "dark" && html && hasOwnColors(html) ? "light" : requestedMode;
 
@@ -201,17 +205,13 @@ export function EmailBody({
         <div className="border-border bg-secondary flex flex-wrap items-center gap-3 rounded-md border px-3 py-2.5">
           <ImageOff className="text-muted-foreground size-4 shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">
-              已屏蔽 {blockedImages} 张远程图片
-            </p>
+            <p className="text-sm font-medium">{t("已屏蔽{0}张远程图片", blockedImages)}</p>
             <p className="text-muted-foreground text-xs">
-              加载后发件人会得知你打开邮件的时间与网络位置
-            </p>
+              {t("加载后发件人会得知你打开邮件的时间与网络位置")}</p>
           </div>
           <div className="flex shrink-0 gap-2">
             <Button size="sm" variant="secondary" onClick={() => setAllowOnce(true)}>
-              加载图片
-            </Button>
+              {t("加载图片")}</Button>
             {senderEmail && (
               <Button
                 size="sm"
@@ -219,8 +219,7 @@ export function EmailBody({
                 onClick={() => onTrustSender(senderEmail)}
               >
                 <UserCheck className="size-3.5" />
-                始终信任此发件人
-              </Button>
+                {t("始终信任此发件人")}</Button>
             )}
           </div>
         </div>
@@ -236,7 +235,7 @@ export function EmailBody({
       >
         <iframe
           ref={frameRef}
-          title="邮件正文"
+          title={t("邮件正文")}
           key={nonce}
           srcDoc={doc}
           sandbox="allow-scripts"
@@ -261,11 +260,10 @@ export function EmailBody({
             <>
               <DropdownMenuItem onSelect={() => openExternal(linkMenu.url)}>
                 <ExternalLink />
-                在浏览器中打开
-              </DropdownMenuItem>
+                {t("在浏览器中打开")}</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => copyLink(linkMenu.url)}>
                 <Copy />
-                {isMailto(linkMenu.url) ? "复制邮箱地址" : "复制链接"}
+                {isMailto(linkMenu.url) ? t("复制邮箱地址") : t("复制链接")}
               </DropdownMenuItem>
             </>
           )}
@@ -284,9 +282,9 @@ async function copyLink(url: string) {
   const text = isMailto(url) ? decodeURIComponent(url.slice(7).split("?")[0]) : url;
   try {
     await navigator.clipboard.writeText(text);
-    toast.success(isMailto(url) ? "已复制邮箱地址" : "已复制链接");
+    toast.success(isMailto(url) ? t("已复制邮箱地址") : t("已复制链接"));
   } catch {
-    toast.error("复制失败");
+    toast.error(t("复制失败"));
   }
 }
 

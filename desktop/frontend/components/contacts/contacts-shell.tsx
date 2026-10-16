@@ -1,5 +1,8 @@
 "use client";
 
+import { dateLocale, t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BookPlus,
@@ -90,6 +93,7 @@ type BookDialog = { accountId: string; book?: AddressBook } | null;
 const TRUSTED = "Trusted Senders";
 
 export function ContactsShell({ active }: { active: boolean }) {
+  const { locale } = useI18n();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [books, setBooks] = useState<AddressBook[]>([]);
   const [all, setAll] = useState<ContactSummary[]>([]);
@@ -171,8 +175,8 @@ export function ContactsShell({ active }: { active: boolean }) {
   }, [all, books]);
 
   const keywords = useMemo(
-    () => [...new Set(all.flatMap((c) => c.keywords ?? []))].sort((a, b) => a.localeCompare(b, "zh-CN")),
-    [all],
+    () => [...new Set(all.flatMap((c) => c.keywords ?? []))].sort((a, b) => a.localeCompare(b, locale)),
+    [all, locale],
   );
 
   const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? id;
@@ -202,7 +206,7 @@ export function ContactsShell({ active }: { active: boolean }) {
   function startNew(kind: "individual" | "group") {
     const b = defaultBook();
     if (!b) {
-      toast.error("没有可写入的通讯录，请先新建通讯录");
+      toast.error(t("没有可写入的通讯录，请先新建通讯录"));
       return;
     }
     const form = emptyContact(kind, b.accountId, b.id);
@@ -222,7 +226,7 @@ export function ContactsShell({ active }: { active: boolean }) {
   async function importTo(b: AddressBook) {
     try {
       const n = await api.importContactsFile(b.accountId, b.id);
-      if (n > 0) toast.success(`已导入 ${n} 位联系人到「${bookLabel(b)}」`);
+      if (n > 0) toast.success(t("已导入 {0} 位联系人到「{1}」", n, bookLabel(b)));
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -234,7 +238,7 @@ export function ContactsShell({ active }: { active: boolean }) {
     const byAccount = groupByAccount(checkedList);
     try {
       for (const [acc, ids] of byAccount) await api.deleteContacts(acc, ids);
-      toast.success(`已删除 ${checkedList.length} 位联系人`);
+      toast.success(t("已删除 {0} 位联系人", checkedList.length));
       setChecked(new Set());
       setPane({ kind: "none" });
       loadContacts();
@@ -245,11 +249,11 @@ export function ContactsShell({ active }: { active: boolean }) {
 
   async function bulkMove(b: AddressBook) {
     const ids = checkedList.filter((c) => c.accountId === b.accountId).map((c) => c.id);
-    if (ids.length < checkedList.length) toast.warning("只能在同一账号内移动，其它账号的联系人已跳过");
+    if (ids.length < checkedList.length) toast.warning(t("只能在同一账号内移动，其它账号的联系人已跳过"));
     if (ids.length === 0) return;
     try {
       await api.moveContacts(b.accountId, ids, b.id);
-      toast.success(`已移动到「${bookLabel(b)}」`);
+      toast.success(t("已移动到「{0}」", bookLabel(b)));
       setChecked(new Set());
       loadContacts();
     } catch (err) {
@@ -262,35 +266,30 @@ export function ContactsShell({ active }: { active: boolean }) {
       <div className="flex items-center gap-1 p-2">
         <Button className="flex-1" size="sm" onClick={() => startNew("individual")}>
           <UserPlus className="size-4" />
-          新建联系人
-        </Button>
+          {t("新建联系人")}</Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="size-8" aria-label="更多新建选项">
+            <Button variant="outline" size="icon" className="size-8" aria-label={t("更多新建选项")}>
               <Plus className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuItem onSelect={() => startNew("individual")}>
               <UserPlus className="size-4" />
-              新联系人
-            </DropdownMenuItem>
+              {t("新联系人")}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => startNew("group")}>
               <UsersRound className="size-4" />
-              新建群组
-            </DropdownMenuItem>
+              {t("新建群组")}</DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => setBookDialog({ accountId: accounts.find((a) => a.isPersonal)?.id ?? accounts[0]?.id ?? "" })}
             >
               <BookPlus className="size-4" />
-              新建通讯录
-            </DropdownMenuItem>
+              {t("新建通讯录")}</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <Upload className="size-4" />
-                导入联系人（.vcf）
-              </DropdownMenuSubTrigger>
+                {t("导入联系人（.vcf）")}</DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-64">
                 {writableBooks.map((b) => (
                   <DropdownMenuItem key={`${b.accountId}/${b.id}`} onSelect={() => importTo(b)}>
@@ -307,7 +306,7 @@ export function ContactsShell({ active }: { active: boolean }) {
       <div className="czl-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <SidebarItem
           icon={UsersRound}
-          label="全部联系人"
+          label={t("全部联系人")}
           count={counts.all}
           active={scope.kind === "all"}
           onClick={() => setScope({ kind: "all" })}
@@ -321,8 +320,8 @@ export function ContactsShell({ active }: { active: boolean }) {
               </p>
               <button
                 type="button"
-                aria-label="新建通讯录"
-                title="新建通讯录"
+                aria-label={t("新建通讯录")}
+                title={t("新建通讯录")}
                 onClick={() => setBookDialog({ accountId })}
                 className="text-muted-foreground hover:bg-secondary hover:text-foreground rounded-sm p-1 opacity-0 group-hover/acc:opacity-100 focus-visible:opacity-100"
               >
@@ -349,19 +348,16 @@ export function ContactsShell({ active }: { active: boolean }) {
                   <ContextMenuContent className="w-48">
                     <ContextMenuItem onSelect={() => importTo(b)}>
                       <Upload />
-                      导入联系人
-                    </ContextMenuItem>
+                      {t("导入联系人")}</ContextMenuItem>
                     <ContextMenuItem onSelect={() => setBookDialog({ accountId: b.accountId, book: b })}>
                       <Pencil />
-                      重命名
-                    </ContextMenuItem>
+                      {t("重命名")}</ContextMenuItem>
                     {!b.isDefault && (
                       <>
                         <ContextMenuSeparator />
                         <ContextMenuItem variant="destructive" onSelect={() => setDeleteBook(b)}>
                           <Trash2 />
-                          删除通讯录
-                        </ContextMenuItem>
+                          {t("删除通讯录")}</ContextMenuItem>
                       </>
                     )}
                   </ContextMenuContent>
@@ -375,8 +371,7 @@ export function ContactsShell({ active }: { active: boolean }) {
           <section className="mt-3 flex flex-col gap-0.5">
             <p className="text-muted-foreground flex items-center gap-1.5 px-2 py-1 text-xs">
               <Tag className="size-3.5" />
-              类别
-            </p>
+              {t("类别")}</p>
             {keywords.map((k) => (
               <SidebarItem
                 key={k}
@@ -401,14 +396,14 @@ export function ContactsShell({ active }: { active: boolean }) {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索姓名、邮箱、电话、公司"
+            placeholder={t("搜索姓名、邮箱、电话、公司")}
             className="h-8 pr-8 pl-8"
           />
           {query && (
             <button
               type="button"
               onClick={() => setQuery("")}
-              aria-label="清除搜索"
+              aria-label={t("清除搜索")}
               className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
             >
               <X className="size-3.5" />
@@ -422,18 +417,17 @@ export function ContactsShell({ active }: { active: boolean }) {
           <Checkbox
             checked={checked.size === contacts.length ? true : "indeterminate"}
             onCheckedChange={(v) => setChecked(v === true ? new Set(contacts.map(key)) : new Set())}
-            aria-label="全选"
+            aria-label={t("全选")}
           />
-          <span className="ml-1 flex-1">已选 {checked.size} 位</span>
+          <span className="ml-1 flex-1">{t("已选{0}位", checked.size)}</span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="h-7">
                 <FolderInput className="size-4" />
-                移动
-              </Button>
+                {t("移动")}</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-60">
-              <DropdownMenuLabel>移动到通讯录</DropdownMenuLabel>
+              <DropdownMenuLabel>{t("移动到通讯录")}</DropdownMenuLabel>
               {writableBooks.map((b) => (
                 <DropdownMenuItem key={`${b.accountId}/${b.id}`} onSelect={() => bulkMove(b)}>
                   <span className="min-w-0 flex-1 truncate">{bookLabel(b)}</span>
@@ -444,9 +438,8 @@ export function ContactsShell({ active }: { active: boolean }) {
           </DropdownMenu>
           <Button variant="ghost" size="sm" className="hover:text-destructive h-7" onClick={() => setConfirmBulkDelete(true)}>
             <Trash2 className="size-4" />
-            删除
-          </Button>
-          <Button variant="ghost" size="icon" className="size-7" aria-label="取消选择" onClick={() => setChecked(new Set())}>
+            {t("删除")}</Button>
+          <Button variant="ghost" size="icon" className="size-7" aria-label={t("取消选择")} onClick={() => setChecked(new Set())}>
             <X className="size-4" />
           </Button>
         </div>
@@ -456,10 +449,9 @@ export function ContactsShell({ active }: { active: boolean }) {
         {loading && contacts.length === 0 ? (
           <div className="text-muted-foreground flex items-center justify-center gap-2 py-10 text-sm">
             <Loader2 className="size-4 animate-spin" />
-            载入中
-          </div>
+            {t("载入中")}</div>
         ) : contacts.length === 0 ? (
-          <p className="text-muted-foreground py-10 text-center text-sm">{query ? "没有匹配的联系人" : "没有联系人"}</p>
+          <p className="text-muted-foreground py-10 text-center text-sm">{query ? t("没有匹配的联系人") : t("没有联系人")}</p>
         ) : (
           sections.map(([initial, items]) => (
             <section key={initial}>
@@ -505,12 +497,12 @@ export function ContactsShell({ active }: { active: boolean }) {
                           toggleChecked(k);
                         }}
                       >
-                        <Checkbox checked={isChecked} aria-label="选择" />
+                        <Checkbox checked={isChecked} aria-label={t("选择")} />
                       </span>
                     </div>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-medium">{c.displayName || c.email || "(未命名)"}</span>
+                        <span className="truncate text-sm font-medium">{c.displayName || c.email || t("(未命名)")}</span>
                         {c.kind === "group" && <UsersRound className="text-muted-foreground size-3.5 shrink-0" />}
                         {c.kind === "org" && <Building2 className="text-muted-foreground size-3.5 shrink-0" />}
                       </span>
@@ -575,8 +567,7 @@ export function ContactsShell({ active }: { active: boolean }) {
     detail = (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-sm">
         <UsersRound className="size-8" />
-        选择一位联系人
-      </div>
+        {t("选择一位联系人")}</div>
     );
   }
 
@@ -597,14 +588,13 @@ export function ContactsShell({ active }: { active: boolean }) {
       <AlertDialog open={deleteBook !== null} onOpenChange={(o) => !o && setDeleteBook(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除通讯录</AlertDialogTitle>
+            <AlertDialogTitle>{t("删除通讯录")}</AlertDialogTitle>
             <AlertDialogDescription>
-              确定删除「{deleteBook ? bookLabel(deleteBook) : ""}」？其中的 {deleteBook ? (counts[`${deleteBook.accountId}/${deleteBook.id}`] ?? 0) : 0}{" "}
-              位联系人会一并从服务器删除，无法恢复。
-            </AlertDialogDescription>
+              {t("确定删除「")}{deleteBook ? bookLabel(deleteBook) : ""}{t("」？其中的")} {deleteBook ? (counts[`${deleteBook.accountId}/${deleteBook.id}`] ?? 0) : 0}{" "}
+              {t("位联系人会一并从服务器删除，无法恢复。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={async () => {
@@ -612,7 +602,7 @@ export function ContactsShell({ active }: { active: boolean }) {
                 if (!b) return;
                 try {
                   await api.deleteAddressBook(b.accountId, b.id);
-                  toast.success("已删除通讯录");
+                  toast.success(t("已删除通讯录"));
                   setScope({ kind: "all" });
                   loadBooks();
                 } catch (err) {
@@ -620,8 +610,7 @@ export function ContactsShell({ active }: { active: boolean }) {
                 }
               }}
             >
-              删除
-            </AlertDialogAction>
+              {t("删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -629,14 +618,13 @@ export function ContactsShell({ active }: { active: boolean }) {
       <AlertDialog open={confirmBulkDelete} onOpenChange={setConfirmBulkDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除联系人</AlertDialogTitle>
-            <AlertDialogDescription>确定删除选中的 {checked.size} 位联系人？删除会同步到服务器。</AlertDialogDescription>
+            <AlertDialogTitle>{t("删除联系人")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("确定删除选中的{0}位联系人？删除会同步到服务器。", checked.size)}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={bulkDelete}>
-              删除
-            </AlertDialogAction>
+              {t("删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -655,6 +643,7 @@ function BookNameDialog({
   onClose: () => void;
   onSaved: (accountId: string, id: string) => void;
 }) {
+  useI18n();
   const [name, setName] = useState("");
   const [accountId, setAccountId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -685,7 +674,7 @@ function BookNameDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>{target.book ? "重命名通讯录" : "新建通讯录"}</DialogTitle>
+          <DialogTitle>{target.book ? t("重命名通讯录") : t("新建通讯录")}</DialogTitle>
         </DialogHeader>
         <form
           className="flex flex-col gap-3"
@@ -694,24 +683,22 @@ function BookNameDialog({
             submit();
           }}
         >
-          <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="通讯录名称" />
+          <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("通讯录名称")} />
           {!target.book && accounts.length > 1 && (
             <OptionSelect
               value={accountId}
               onChange={setAccountId}
               options={accounts.map((a) => [a.id, a.name] as const)}
               className="w-full"
-              aria-label="账号"
+              aria-label={t("账号")}
             />
           )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button type="submit" disabled={!name.trim() || busy}>
               {busy && <Loader2 className="size-4 animate-spin" />}
-              确定
-            </Button>
+              {t("确定")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -720,6 +707,7 @@ function BookNameDialog({
 }
 
 function ContactAvatar({ c, className }: { c: ContactSummary; className?: string }) {
+  useI18n();
   if (c.hasPhoto) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -746,6 +734,7 @@ function SidebarItem({
   active: boolean;
   onClick: () => void;
 }) {
+  useI18n();
   return (
     <button
       type="button"
@@ -763,10 +752,10 @@ function SidebarItem({
   );
 }
 
-const CONTEXT_LABEL: Record<string, string> = { work: "工作", private: "个人" };
-const PHONE_LABEL: Record<string, string> = { mobile: "手机", voice: "电话", fax: "传真", pager: "寻呼", text: "短信" };
-const DATE_LABEL: Record<string, string> = { birth: "生日", wedding: "结婚纪念日", death: "逝世" };
-const INFO_LABEL: Record<string, string> = { expertise: "专长", hobby: "爱好", interest: "兴趣" };
+const getContextLabel: () => (Record<string, string>) = () => ({ work: t("工作"), private: t("个人") });
+const getPhoneLabel: () => (Record<string, string>) = () => ({ mobile: t("手机"), voice: t("电话"), fax: t("传真"), pager: t("寻呼"), text: t("短信") });
+const getDateLabel: () => (Record<string, string>) = () => ({ birth: t("生日"), wedding: t("结婚纪念日"), death: t("逝世") });
+const getInfoLabel: () => (Record<string, string>) = () => ({ expertise: t("专长"), hobby: t("爱好"), interest: t("兴趣") });
 
 function ContactDetailPane({
   accountId,
@@ -787,6 +776,7 @@ function ContactDetailPane({
   onEdit: () => void;
   onDeleted: () => void;
 }) {
+  useI18n();
   const [detail, setDetail] = useState<ContactForm | null>(null);
   const [emails, setEmails] = useState<EmailWithAccount[]>([]);
   const [events, setEvents] = useState<EventOccurrence[]>([]);
@@ -824,8 +814,7 @@ function ContactDetailPane({
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
         <Loader2 className="size-4 animate-spin" />
-        载入中
-      </div>
+        {t("载入中")}</div>
     );
   }
 
@@ -840,7 +829,7 @@ function ContactDetailPane({
   async function remove() {
     try {
       await api.deleteContacts(accountId, [id]);
-      toast.success(isGroup ? "已删除群组" : "已删除联系人");
+      toast.success(isGroup ? t("已删除群组") : t("已删除联系人"));
       onDeleted();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -864,11 +853,11 @@ function ContactDetailPane({
           )}
           <div className="min-w-0 flex-1">
             <h1 className="flex items-center gap-2 truncate text-xl font-semibold">
-              {detail.displayName || "(未命名)"}
+              {detail.displayName || t("(未命名)")}
               {isGroup && <UsersRound className="text-muted-foreground size-4" />}
             </h1>
             {subtitle && <p className="text-muted-foreground truncate text-sm">{subtitle}</p>}
-            {detail.nickname && <p className="text-muted-foreground truncate text-sm">昵称：{detail.nickname}</p>}
+            {detail.nickname && <p className="text-muted-foreground truncate text-sm">{t("昵称：{0}", detail.nickname)}</p>}
             <p className="text-muted-foreground truncate text-xs">
               {accountName} · {book ? bookLabel(book) : ""}
             </p>
@@ -877,35 +866,33 @@ function ContactDetailPane({
             {(primary || memberAddresses.length > 0) && (
               <Button variant="outline" size="sm" onClick={() => compose(isGroup ? memberAddresses.join(", ") : detail.displayName ? `${detail.displayName} <${primary}>` : primary)}>
                 <Mail className="size-4" />
-                {isGroup ? "群发邮件" : "写邮件"}
+                {isGroup ? t("群发邮件") : t("写邮件")}
               </Button>
             )}
             {!detail.readOnly && (
               <Button variant="outline" size="sm" onClick={onEdit}>
                 <Pencil className="size-4" />
-                编辑
-              </Button>
+                {t("编辑")}</Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="size-8" aria-label="更多">
+                <Button variant="outline" size="icon" className="size-8" aria-label={t("更多")}>
                   <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuItem
-                  onSelect={() => navigator.clipboard?.writeText(primary).then(() => toast.success("已复制邮箱"))}
+                  onSelect={() => navigator.clipboard?.writeText(primary).then(() => toast.success(t("已复制邮箱")))}
                   disabled={!primary}
                 >
                   <Mail className="size-4" />
-                  复制邮箱
-                </DropdownMenuItem>
+                  {t("复制邮箱")}</DropdownMenuItem>
                 {!detail.readOnly && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem variant="destructive" onSelect={() => setConfirmDelete(true)}>
                       <Trash2 className="size-4" />
-                      {isGroup ? "删除群组" : "删除联系人"}
+                      {isGroup ? t("删除群组") : t("删除联系人")}
                     </DropdownMenuItem>
                   </>
                 )}
@@ -927,8 +914,8 @@ function ContactDetailPane({
 
         {isGroup ? (
           <section className="border-border flex flex-col gap-1 border-t pt-5">
-            <h2 className="text-muted-foreground mb-1 text-xs font-medium">成员（{members.length}）</h2>
-            {members.length === 0 && <p className="text-muted-foreground text-sm">群组里还没有成员</p>}
+            <h2 className="text-muted-foreground mb-1 text-xs font-medium">{t("成员（{0}）", members.length)}</h2>
+            {members.length === 0 && <p className="text-muted-foreground text-sm">{t("群组里还没有成员")}</p>}
             {members.map((m) => (
               <button
                 key={m.id}
@@ -945,46 +932,46 @@ function ContactDetailPane({
         ) : (
           <section className="border-border grid gap-4 border-t pt-5 sm:grid-cols-2">
             {detail.emails?.map((e, i) => (
-              <InfoRow key={`e${i}`} icon={Mail} label={e.label || CONTEXT_LABEL[e.context] || "邮箱"}>
+              <InfoRow key={`e${i}`} icon={Mail} label={e.label || getContextLabel()[e.context] || t("邮箱")}>
                 <button type="button" className="text-accent truncate text-left hover:underline" onClick={() => compose(e.value)}>
                   {e.value}
                 </button>
               </InfoRow>
             ))}
             {detail.phones?.map((p, i) => (
-              <InfoRow key={`p${i}`} icon={Phone} label={p.label || PHONE_LABEL[p.feature] || "电话"}>
+              <InfoRow key={`p${i}`} icon={Phone} label={p.label || getPhoneLabel()[p.feature] || t("电话")}>
                 <span className="select-text">{p.value}</span>
               </InfoRow>
             ))}
             {detail.organization && detail.kind !== "org" && (
-              <InfoRow icon={Building2} label="公司">
+              <InfoRow icon={Building2} label={t("公司")}>
                 {detail.organization}
               </InfoRow>
             )}
             {detail.anniversaries?.map((d, i) => (
-              <InfoRow key={`d${i}`} icon={d.kind === "birth" ? Cake : CalendarDays} label={DATE_LABEL[d.kind] || d.kind || "纪念日"}>
+              <InfoRow key={`d${i}`} icon={d.kind === "birth" ? Cake : CalendarDays} label={getDateLabel()[d.kind] || d.kind || t("纪念日")}>
                 {d.date.replace(/^--/, "")}
               </InfoRow>
             ))}
             {detail.addresses?.map((a, i) => (
-              <InfoRow key={`a${i}`} icon={MapPin} label={CONTEXT_LABEL[a.context] ? `${CONTEXT_LABEL[a.context]}地址` : "地址"}>
+              <InfoRow key={`a${i}`} icon={MapPin} label={getContextLabel()[a.context] ? t("{0}地址", getContextLabel()[a.context]) : t("地址")}>
                 <span className="whitespace-pre-wrap select-text">
                   {a.full || [a.street, [a.locality, a.region, a.postcode].filter(Boolean).join(" "), a.country].filter(Boolean).join("\n")}
                 </span>
               </InfoRow>
             ))}
             {detail.onlineServices?.map((s, i) => (
-              <InfoRow key={`s${i}`} icon={Globe} label={s.service || s.label || "在线服务"}>
+              <InfoRow key={`s${i}`} icon={Globe} label={s.service || s.label || t("在线服务")}>
                 <span className="select-text">{s.uri}</span>
               </InfoRow>
             ))}
             {detail.personalInfo?.map((p, i) => (
-              <InfoRow key={`i${i}`} icon={UserRound} label={INFO_LABEL[p.kind] || "个人信息"}>
+              <InfoRow key={`i${i}`} icon={UserRound} label={getInfoLabel()[p.kind] || t("个人信息")}>
                 {p.value}
               </InfoRow>
             ))}
             {detail.notes && (
-              <InfoRow icon={StickyNote} label="备注" wide>
+              <InfoRow icon={StickyNote} label={t("备注")} wide>
                 <span className="whitespace-pre-wrap select-text">{detail.notes}</span>
               </InfoRow>
             )}
@@ -994,9 +981,9 @@ function ContactDetailPane({
         {!isGroup && (
           <div className="border-border grid gap-6 border-t pt-5 lg:grid-cols-2">
             <section className="flex flex-col gap-2">
-              <h2 className="text-muted-foreground text-xs font-medium">最近往来邮件</h2>
+              <h2 className="text-muted-foreground text-xs font-medium">{t("最近往来邮件")}</h2>
               {emails.length === 0 ? (
-                <p className="text-muted-foreground text-sm">没有往来邮件</p>
+                <p className="text-muted-foreground text-sm">{t("没有往来邮件")}</p>
               ) : (
                 emails.map((e) => (
                   <button
@@ -1009,7 +996,7 @@ function ContactDetailPane({
                     className="hover:bg-secondary -mx-2 flex flex-col rounded-md px-2 py-1.5 text-left"
                   >
                     <span className="flex items-baseline gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{e.subject || "(无主题)"}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{e.subject || t("(无主题)")}</span>
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{listDate(e.receivedAt)}</span>
                     </span>
                     <span className="text-muted-foreground truncate text-xs">
@@ -1021,9 +1008,9 @@ function ContactDetailPane({
             </section>
 
             <section className="flex flex-col gap-2">
-              <h2 className="text-muted-foreground text-xs font-medium">近期日程</h2>
+              <h2 className="text-muted-foreground text-xs font-medium">{t("近期日程")}</h2>
               {events.length === 0 ? (
-                <p className="text-muted-foreground text-sm">没有即将到来的日程</p>
+                <p className="text-muted-foreground text-sm">{t("没有即将到来的日程")}</p>
               ) : (
                 events.map((o) => (
                   <button
@@ -1033,9 +1020,9 @@ function ContactDetailPane({
                     className="hover:bg-secondary -mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-left"
                   >
                     <CalendarDays className="text-muted-foreground size-4 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate text-sm">{o.title || "(无标题)"}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm">{o.title || t("(无标题)")}</span>
                     <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                      {shortDate(new Date(o.start))} {o.allDay ? "全天" : hm(new Date(o.start))}
+                      {shortDate(new Date(o.start))} {o.allDay ? t("全天") : hm(new Date(o.start))}
                     </span>
                   </button>
                 ))
@@ -1048,16 +1035,15 @@ function ContactDetailPane({
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{isGroup ? "删除群组" : "删除联系人"}</AlertDialogTitle>
+            <AlertDialogTitle>{isGroup ? t("删除群组") : t("删除联系人")}</AlertDialogTitle>
             <AlertDialogDescription>
-              确定删除「{detail.displayName}」？删除会同步到服务器，其它设备上也会消失。{isGroup ? "群组成员本身不会被删除。" : ""}
+              {t("确定删除「")}{detail.displayName}{t("」？删除会同步到服务器，其它设备上也会消失。")}{isGroup ? t("群组成员本身不会被删除。") : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={remove}>
-              删除
-            </AlertDialogAction>
+              {t("删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -1076,6 +1062,7 @@ function InfoRow({
   wide?: boolean;
   children: React.ReactNode;
 }) {
+  useI18n();
   return (
     <div className={cn("flex min-w-0 items-start gap-3", wide && "sm:col-span-2")}>
       <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
@@ -1118,6 +1105,6 @@ function groupByInitial(list: ContactSummary[]): [string, ContactSummary[]][] {
     const la = /[A-Z]/.test(a);
     const lb = /[A-Z]/.test(b);
     if (la !== lb) return la ? 1 : -1;
-    return a.localeCompare(b, "zh-CN");
+    return a.localeCompare(b, dateLocale());
   });
 }

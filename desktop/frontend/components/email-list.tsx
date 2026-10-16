@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import {
   Fragment,
   useCallback,
@@ -68,6 +71,7 @@ export function EmailList({
   onScrolledAway,
   mailboxes,
 }: Props) {
+  useI18n();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const setScrollEl = useCallback(
@@ -78,10 +82,7 @@ export function EmailList({
     [onScrollContainer],
   );
 
-  const folderNames = useMemo(
-    () => (mailboxes ? new Map(mailboxes.map((m) => [m.id, mailboxLabel(m)])) : null),
-    [mailboxes],
-  );
+  const folderNames = mailboxes ? new Map(mailboxes.map((m) => [m.id, mailboxLabel(m)])) : null;
 
   // 骨架屏与空列表时没有滚动容器, 切换文件夹后容器重新挂载在顶部; 列表每次变化都重新报一次。
   const reportScroll = useCallback(() => {
@@ -202,8 +203,7 @@ export function EmailList({
   if (!loading && emails.length === 0) {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
-        没有邮件
-      </div>
+        {t("没有邮件")}</div>
     );
   }
 
@@ -270,7 +270,7 @@ export function EmailList({
                     >
                       <Checkbox
                         checked={checked?.has(email.id) ?? false}
-                        aria-label="选择邮件"
+                        aria-label={t("选择邮件")}
                         tabIndex={-1}
                       />
                     </span>
@@ -280,8 +280,8 @@ export function EmailList({
                         选中的邮件头像保持对勾, 进入多选后左侧再出现一列勾选框。 */}
                     <button
                       type="button"
-                      title={onCheck ? "选择" : undefined}
-                      aria-label="选择邮件"
+                      title={onCheck ? t("选择") : undefined}
+                      aria-label={t("选择邮件")}
                       aria-pressed={checked?.has(email.id) ?? false}
                       disabled={!onCheck}
                       onClick={(e) => {
@@ -311,7 +311,7 @@ export function EmailList({
                     {unread && (
                       <span
                         className="bg-accent ring-background absolute -top-0.5 -left-0.5 size-2.5 rounded-full ring-2"
-                        aria-label="未读"
+                        aria-label={t("未读")}
                       />
                     )}
                   </div>
@@ -324,17 +324,17 @@ export function EmailList({
                           unread && "font-medium",
                         )}
                       >
-                        {displayAddressList(email.from) || "(无发件人)"}
+                        {displayAddressList(email.from) || t("(无发件人)")}
                       </span>
                       {count > 1 && (
                         <button
                           type="button"
                           aria-label={
-                            isOpen ? "收起会话" : `展开会话，共 ${count} 封`
+                            isOpen ? t("收起会话") : t("展开会话，共 {0} 封", count)
                           }
                           aria-expanded={isOpen}
                           title={
-                            isOpen ? "收起会话" : `展开会话（共 ${count} 封）`
+                            isOpen ? t("收起会话") : t("展开会话（共 {0} 封）", count)
                           }
                           onClick={(e) => {
                             e.stopPropagation();
@@ -369,7 +369,7 @@ export function EmailList({
                           unread ? "text-foreground" : "text-muted-foreground",
                         )}
                       >
-                        {email.subject || "(无主题)"}
+                        {email.subject || t("(无主题)")}
                       </span>
                       {where && (
                         <span className="bg-secondary text-muted-foreground max-w-24 shrink-0 truncate rounded-sm px-1.5 text-xs">
@@ -380,7 +380,7 @@ export function EmailList({
                         <Paperclip className="text-muted-foreground size-3.5 shrink-0" />
                       )}
                       {email.isPinned && (
-                        <Pin className="text-accent size-3.5 shrink-0" aria-label="已固定" />
+                        <Pin className="text-accent size-3.5 shrink-0" aria-label={t("已固定")} />
                       )}
                       {onDelete && (
                         <button
@@ -389,8 +389,8 @@ export function EmailList({
                             e.stopPropagation();
                             onDelete(email);
                           }}
-                          aria-label="删除"
-                          title="删除"
+                          aria-label={t("删除")}
+                          title={t("删除")}
                           className="hover:bg-muted text-muted-foreground hover:text-destructive shrink-0 rounded-sm p-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                         >
                           <Trash2 className="size-3.5" />
@@ -402,7 +402,7 @@ export function EmailList({
                           e.stopPropagation();
                           onToggleFlag(email);
                         }}
-                        aria-label={email.isFlagged ? "取消星标" : "加星标"}
+                        aria-label={email.isFlagged ? t("取消星标") : t("加星标")}
                         className="hover:bg-muted shrink-0 rounded-sm p-0.5"
                       >
                         <Star
@@ -426,8 +426,7 @@ export function EmailList({
                 <ul className="border-border bg-secondary/40 border-b py-1">
                   {members.length === 0 && (
                     <li className="text-muted-foreground px-12 py-2 text-xs">
-                      载入中…
-                    </li>
+                      {t("载入中…")}</li>
                   )}
                   {members.map((m) => (
                     <Fragment key={m.id}>
@@ -459,7 +458,7 @@ export function EmailList({
                           >
                             {m.from?.[0]?.name ||
                               m.from?.[0]?.email ||
-                              "(无发件人)"}
+                              t("(无发件人)")}
                           </span>
                           <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
                             {m.preview}

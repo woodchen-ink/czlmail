@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { EventChip } from "@/components/calendar/event-chip";
@@ -12,7 +15,7 @@ import {
   type DragPayload,
 } from "@/components/calendar/calendar-utils";
 import { cn } from "@/lib/utils";
-import { WEEKDAYS, addDays, monthGrid, sameDay } from "@/lib/date";
+import { getWeekdays, addDays, monthGrid, sameDay } from "@/lib/date";
 import type { Calendar, EventOccurrence } from "@/lib/api";
 
 interface Props {
@@ -56,6 +59,7 @@ export function MonthView({
   onDrop,
   onShowDay,
 }: Props) {
+  useI18n();
   const days = useMemo(() => monthGrid(cursor), [cursor]);
   const weeks = useMemo(
     () => Array.from({ length: 6 }, (_, i) => days.slice(i * 7, i * 7 + 7)),
@@ -65,7 +69,7 @@ export function MonthView({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-border grid shrink-0 grid-cols-7 border-b">
-        {WEEKDAYS.map((w) => (
+        {getWeekdays().map((w) => (
           <div
             key={w}
             className="text-muted-foreground py-2 text-center text-xs"
@@ -106,6 +110,7 @@ function WeekRow({
   onDrop,
   onShowDay,
 }: Omit<Props, "cursor"> & { week: Date[]; month: number }) {
+  useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(120);
   const [dropCol, setDropCol] = useState(-1);
@@ -257,7 +262,7 @@ function WeekRow({
           >
             <span className="truncate">
               {s.continuesBefore ? "← " : ""}
-              {s.occ.title || "(无标题)"}
+              {s.occ.title || t("(无标题)")}
             </span>
           </button>
         );
@@ -278,9 +283,7 @@ function WeekRow({
               left: `${(col / 7) * 100}%`,
               width: `${100 / 7}%`,
             }}
-          >
-            还有 {n} 项
-          </button>
+          >{t("还有{0}项", n)}</button>
         ) : null,
       )}
     </div>

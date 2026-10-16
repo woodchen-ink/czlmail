@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useState } from "react";
 import { Bot, CalendarDays, FolderOpen, Mail, Settings, UsersRound } from "lucide-react";
 
@@ -22,13 +25,13 @@ const MODULE_KEY = "czlmail.module";
 // macOS 习惯用 ⌘ 而不是 Ctrl 作组合键; 两个都认, 提示按平台显示。
 const MOD = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent) ? "⌘" : "Ctrl+";
 
-const NAV: { id: Module; label: string; icon: typeof Mail; shortcut: string }[] = [
-  { id: "mail", label: "邮件", icon: Mail, shortcut: `${MOD}1` },
-  { id: "calendar", label: "日历", icon: CalendarDays, shortcut: `${MOD}2` },
-  { id: "contacts", label: "通讯录", icon: UsersRound, shortcut: `${MOD}3` },
-  { id: "files", label: "文件", icon: FolderOpen, shortcut: `${MOD}4` },
-  { id: "assistant", label: "AI 助手", icon: Bot, shortcut: `${MOD}5` },
-];
+const getNav: () => ({ id: Module; label: string; icon: typeof Mail; shortcut: string }[]) = () => ([
+  { id: "mail", label: t("邮件"), icon: Mail, shortcut: `${MOD}1` },
+  { id: "calendar", label: t("日历"), icon: CalendarDays, shortcut: `${MOD}2` },
+  { id: "contacts", label: t("通讯录"), icon: UsersRound, shortcut: `${MOD}3` },
+  { id: "files", label: t("文件"), icon: FolderOpen, shortcut: `${MOD}4` },
+  { id: "assistant", label: t("AI 助手"), icon: Bot, shortcut: `${MOD}5` },
+]);
 
 /**
  * 应用外壳：最左侧的模块导航栏加各模块。
@@ -37,6 +40,7 @@ const NAV: { id: Module; label: string; icon: typeof Mail; shortcut: string }[] 
  * 在切来切去时不该丢。
  */
 export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
+  useI18n();
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [module, setModule] = useState<Module>("mail");
   // 未打开过的模块不挂载，避免启动时一次性拉取全部数据。
@@ -55,7 +59,7 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(MODULE_KEY) as Module | null;
-      if (saved && saved !== "settings" && NAV.some((n) => n.id === saved)) go(saved);
+      if (saved && saved !== "settings" && getNav().some((n) => n.id === saved)) go(saved);
     } catch {
       // 忽略
     }
@@ -73,18 +77,18 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
     };
     const announce = (info: UpdateInfo) => {
       setUpdate(info);
-      toast.info(`CZL Mail ${info.release?.version ?? ""} 已发布`, {
+      toast.info(t("CZL Mail {0} 已发布", info.release?.version ?? ""), {
         id: "update-available",
         duration: Infinity,
-        description: "更新会自动下载、校验并重新打开程序。",
+        description: t("更新会自动下载、校验并重新打开程序。"),
         action: {
-          label: "立即更新",
+          label: t("立即更新"),
           onClick: () => {
-            toast.loading("正在下载更新…", { id: "update-install" });
+            toast.loading(t("正在下载更新…"), { id: "update-install" });
             api.installUpdate().catch((err) => toast.error(errorMessage(err), { id: "update-install" }));
           },
         },
-        cancel: { label: "稍后", onClick: () => {} },
+        cancel: { label: t("稍后"), onClick: () => {} },
       });
     };
     api
@@ -102,9 +106,9 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
         return;
       }
       const index = Number(e.key) - 1;
-      if (index >= 0 && index < NAV.length) {
+      if (index >= 0 && index < getNav().length) {
         e.preventDefault();
-        go(NAV[index].id);
+        go(getNav()[index].id);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -120,16 +124,16 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
 
   return (
     <div className="flex h-full">
-      <nav className="border-border bg-sidebar flex w-14 shrink-0 flex-col items-center gap-1 border-r py-3" aria-label="模块">
+      <nav className="border-border bg-sidebar flex w-14 shrink-0 flex-col items-center gap-1 border-r py-3" aria-label={t("模块")}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="CZL Mail" className="mb-3 size-8" />
-        {NAV.map((item) => (
+        {getNav().map((item) => (
           <RailButton key={item.id} item={item} active={module === item.id} onClick={() => go(item.id)} />
         ))}
         <div className="flex-1" />
         <RailButton
           badge={!!update?.available}
-          item={{ label: update?.available ? "设置（有新版本）" : "设置", icon: Settings, shortcut: `${MOD},` }}
+          item={{ label: update?.available ? t("设置（有新版本）") : t("设置"), icon: Settings, shortcut: `${MOD},` }}
           active={module === "settings"}
           onClick={() => go("settings")}
         />
@@ -171,6 +175,7 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
 }
 
 function Pane({ show, children }: { show: boolean; children: React.ReactNode }) {
+  useI18n();
   return <div className={cn("absolute inset-0", !show && "hidden")}>{children}</div>;
 }
 
@@ -185,6 +190,7 @@ function RailButton({
   onClick: () => void;
   badge?: boolean;
 }) {
+  useI18n();
   const Icon = item.icon;
   return (
     <Tooltip>

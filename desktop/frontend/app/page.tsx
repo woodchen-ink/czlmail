@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 
@@ -9,7 +12,8 @@ import { Events, api, hasRuntime, onEvent } from "@/lib/api";
 
 type Phase = "loading" | "signed-out" | "signed-in" | "no-runtime";
 
-export default function Page() {
+export default function Page()  {
+  useI18n();
   const [phase, setPhase] = useState<Phase>("loading");
 
   const refresh = useCallback(async () => {
@@ -40,8 +44,7 @@ export default function Page() {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
         <Loader2 className="size-4 animate-spin" />
-        启动中
-      </div>
+        {t("启动中")}</div>
     );
   }
 
@@ -49,9 +52,7 @@ export default function Page() {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <p className="text-muted-foreground max-w-sm text-center text-sm">
-          需要在桌面应用中运行。开发时请使用 <code className="font-mono">wails dev</code>，
-          直接打开浏览器页面无法访问本地邮件数据。
-        </p>
+          {t("需要在桌面应用中运行。开发时请使用")}<code className="font-mono">wails dev</code>{t("， 直接打开浏览器页面无法访问本地邮件数据。")}</p>
       </div>
     );
   }

@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useState } from "react";
 import { CalendarDays, Check, Loader2, MailCheck, MailX, MapPin } from "lucide-react";
 import { toast } from "sonner";
@@ -58,6 +61,7 @@ export function EmailBanners({
   /** 自己的发件地址; 自己发出的邮件不提示回执。 */
   ownAddresses: Set<string>;
 }) {
+  useI18n();
   const fromSelf = (email.from ?? []).some((a) => ownAddresses.has((a.email || "").toLowerCase()));
 
   return (
@@ -71,6 +75,7 @@ export function EmailBanners({
 }
 
 function ReceiptBanner({ accountId, email, to }: { accountId: string; email: EmailDetail; to: string }) {
+  useI18n();
   const [state, setState] = useState<"idle" | "busy" | "done">("idle");
   if (state === "done") return null;
 
@@ -79,7 +84,7 @@ function ReceiptBanner({ accountId, email, to }: { accountId: string; email: Ema
     try {
       if (sendIt) {
         await api.sendReadReceipt(accountId, email.id);
-        toast.success("已发送已读回执");
+        toast.success(t("已发送已读回执"));
       } else {
         await api.ignoreReadReceipt(accountId, email.id);
       }
@@ -94,15 +99,13 @@ function ReceiptBanner({ accountId, email, to }: { accountId: string; email: Ema
     <div className="border-border bg-secondary flex flex-wrap items-center gap-3 rounded-md border px-4 py-2.5 text-sm">
       <MailCheck className="text-muted-foreground size-4 shrink-0" />
       <span className="min-w-0 flex-1">
-        发件人请求已读回执<span className="text-muted-foreground">（发送到 {to}）</span>
+        {t("发件人请求已读回执")}<span className="text-muted-foreground">{t("（发送到{0}）", to)}</span>
       </span>
       <Button size="sm" variant="outline" className="h-7" disabled={state === "busy"} onClick={() => run(true)}>
         {state === "busy" && <Loader2 className="size-3.5 animate-spin" />}
-        发送回执
-      </Button>
+        {t("发送回执")}</Button>
       <Button size="sm" variant="ghost" className="h-7" disabled={state === "busy"} onClick={() => run(false)}>
-        不发送
-      </Button>
+        {t("不发送")}</Button>
     </div>
   );
 }
@@ -115,6 +118,7 @@ function hasInvite(email: EmailDetail) {
 }
 
 function InviteBanner({ accountId, email }: { accountId: string; email: EmailDetail }) {
+  useI18n();
   const [invite, setInvite] = useState<Invite | null>(null);
   const [busy, setBusy] = useState("");
 
@@ -136,7 +140,7 @@ function InviteBanner({ accountId, email }: { accountId: string; email: EmailDet
   const end = invite.end ? parseLocalDateTime(invite.end) : null;
   const when = start
     ? invite.allDay
-      ? `${shortDate(start)}${end && end.getTime() - start.getTime() > 86400000 ? ` – ${shortDate(new Date(end.getTime() - 86400000))}` : ""} 全天`
+      ? t("{0}{1} 全天", shortDate(start), end && end.getTime() - start.getTime() > 86400000 ? ` – ${shortDate(new Date(end.getTime() - 86400000))}` : "")
       : `${shortDate(start)} ${hm(start)}${end ? ` – ${hm(end)}` : ""}`
     : "";
 
@@ -146,7 +150,7 @@ function InviteBanner({ accountId, email }: { accountId: string; email: EmailDet
     try {
       const eventId = await api.addInviteToCalendar(accountId, email.id, status);
       toast.success(
-        status === "accepted" ? "已接受邀请" : status === "tentative" ? "已回复暂定" : status === "declined" ? "已拒绝邀请" : "已加入日历",
+        status === "accepted" ? t("已接受邀请") : status === "tentative" ? t("已回复暂定") : status === "declined" ? t("已拒绝邀请") : t("已加入日历"),
       );
       setInvite({ ...invite, eventId, myStatus: status || invite.myStatus } as Invite);
     } catch (err) {
@@ -161,8 +165,8 @@ function InviteBanner({ accountId, email }: { accountId: string; email: EmailDet
       <CalendarDays className="text-accent size-5 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">
-          {invite.cancelled ? "日程已取消：" : "日历邀请："}
-          {invite.title || "(无标题)"}
+          {invite.cancelled ? t("日程已取消：") : t("日历邀请：")}
+          {invite.title || t("(无标题)")}
         </p>
         <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 text-xs">
           {when && <span className="tabular-nums">{when}</span>}
@@ -172,8 +176,8 @@ function InviteBanner({ accountId, email }: { accountId: string; email: EmailDet
               {invite.location}
             </span>
           )}
-          {invite.organizer && <span>组织者 {invite.organizer}</span>}
-          {invite.recurring && <span>重复日程</span>}
+          {invite.organizer && <span>{t("组织者{0}", invite.organizer)}</span>}
+          {invite.recurring && <span>{t("重复日程")}</span>}
         </p>
       </div>
       {!invite.cancelled && (
@@ -188,18 +192,16 @@ function InviteBanner({ accountId, email }: { accountId: string; email: EmailDet
               onClick={() => act(s)}
             >
               {busy === s ? <Loader2 className="size-3.5 animate-spin" /> : invite.myStatus === s ? <Check className="size-3.5" /> : null}
-              {{ accepted: "接受", tentative: "暂定", declined: "拒绝" }[s]}
+              {{ accepted: t("接受"), tentative: t("暂定"), declined: t("拒绝") }[s]}
             </Button>
           ))}
           {invite.eventId ? (
             <Button size="sm" variant="ghost" className="h-7" onClick={() => send("navigate", { module: "calendar" })}>
-              在日历中查看
-            </Button>
+              {t("在日历中查看")}</Button>
           ) : (
             <Button size="sm" variant="ghost" className="h-7" disabled={!!busy} onClick={() => act("")}>
               {busy === "add" && <Loader2 className="size-3.5 animate-spin" />}
-              仅加入日历
-            </Button>
+              {t("仅加入日历")}</Button>
           )}
         </div>
       )}
@@ -209,6 +211,7 @@ function InviteBanner({ accountId, email }: { accountId: string; email: EmailDet
 
 /** 订阅邮件的退订按钮, 放在阅读栏操作行右侧。 */
 export function UnsubscribeButton({ accountId, email, info }: { accountId: string; email: EmailDetail; info: Unsubscribe | null }) {
+  useI18n();
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -216,17 +219,17 @@ export function UnsubscribeButton({ accountId, email, info }: { accountId: strin
   if (!info || (!info.http && !info.mailto)) return null;
 
   const how = info.oneClick
-    ? "会直接向发件方发送退订请求，无需打开网页。"
+    ? t("会直接向发件方发送退订请求，无需打开网页。")
     : info.mailto
-      ? `会从你的邮箱向 ${info.mailto.replace(/^mailto:/i, "").split("?")[0]} 发送一封退订邮件。`
-      : "会在浏览器中打开发件方的退订页面。";
+      ? t("会从你的邮箱向 {0} 发送一封退订邮件。", info.mailto.replace(/^mailto:/i, "").split("?")[0])
+      : t("会在浏览器中打开发件方的退订页面。");
 
   async function run() {
     setBusy(true);
     try {
       const mode = await api.unsubscribe(accountId, email.id);
       setDone(true);
-      toast.success(mode === "opened" ? "已打开退订页面，请在网页上完成退订" : "已发送退订请求");
+      toast.success(mode === "opened" ? t("已打开退订页面，请在网页上完成退订") : t("已发送退订请求"));
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -239,8 +242,7 @@ export function UnsubscribeButton({ accountId, email, info }: { accountId: strin
       {done ? (
         <span className="text-muted-foreground flex h-7 items-center gap-1 px-2 text-xs">
           <Check className="size-3.5" />
-          已退订
-        </span>
+          {t("已退订")}</span>
       ) : (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -252,21 +254,20 @@ export function UnsubscribeButton({ accountId, email, info }: { accountId: strin
               disabled={busy}
             >
               {busy ? <Loader2 className="size-4 animate-spin" /> : <MailX className="size-4" />}
-              退订
-            </Button>
+              {t("退订")}</Button>
           </TooltipTrigger>
-          <TooltipContent>这是一封订阅邮件</TooltipContent>
+          <TooltipContent>{t("这是一封订阅邮件")}</TooltipContent>
         </Tooltip>
       )}
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>退订这类邮件</AlertDialogTitle>
-            <AlertDialogDescription>{how} 只对可信的发件方使用退订；垃圾邮件请标记为垃圾邮件。</AlertDialogDescription>
+            <AlertDialogTitle>{t("退订这类邮件")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("{0}只对可信的发件方使用退订；垃圾邮件请标记为垃圾邮件。", how)}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={run}>退订</AlertDialogAction>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
+            <AlertDialogAction onClick={run}>{t("退订")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

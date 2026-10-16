@@ -1,8 +1,12 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useState } from "react";
 import { ExternalLink, Loader2, LogIn, X } from "lucide-react";
 
+import { LanguageSelect } from "@/components/language-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -15,6 +19,7 @@ interface Props {
 type Mode = "password" | "oauth";
 
 export function SignIn({ onSignedIn }: Props) {
+  useI18n();
   const [mode, setMode] = useState<Mode>("password");
   const [server, setServer] = useState("");
   const [email, setEmail] = useState("");
@@ -58,7 +63,7 @@ export function SignIn({ onSignedIn }: Props) {
       await api.signIn(server.trim(), hint.issuer, hint.clientId);
       onSignedIn();
     } catch (err) {
-      setError(signInError(errorMessage(err)));
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
       setHintBusy(false);
@@ -87,7 +92,7 @@ export function SignIn({ onSignedIn }: Props) {
       }
       onSignedIn();
     } catch (err) {
-      setError(signInError(errorMessage(err)));
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -107,15 +112,17 @@ export function SignIn({ onSignedIn }: Props) {
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto p-6">
       <div className="w-full max-w-sm py-8">
+        <div className="mb-6 flex justify-end">
+          <LanguageSelect />
+        </div>
         <h1 className="from-brand-from to-brand-to bg-gradient-to-r bg-clip-text text-center text-2xl font-semibold text-transparent">
           CZL Mail
         </h1>
         <p className="text-muted-foreground mt-2 text-center text-sm">
-          连接你的 JMAP 邮箱服务器
-        </p>
+          {t("连接你的 JMAP 邮箱服务器")}</p>
 
         <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
-          <Field label="服务器" htmlFor="server">
+          <Field label={t("服务器")} htmlFor="server">
             <Input
               id="server"
               value={server}
@@ -133,26 +140,24 @@ export function SignIn({ onSignedIn }: Props) {
                 <div className="flex flex-col gap-2">
                   <div className="border-border bg-secondary flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm">
                     <Loader2 className="size-4 shrink-0 animate-spin" />
-                    <span className="flex-1">请在浏览器中完成 {hint.name} 登录</span>
+                    <span className="flex-1">{t("请在浏览器中完成 {0} 登录", hint.name)}</span>
                   </div>
                   <Button type="button" variant="ghost" size="sm" onClick={cancel}>
                     <X className="size-4" />
-                    取消
-                  </Button>
+                    {t("取消")}</Button>
                 </div>
               ) : (
                 <Button type="button" onClick={signInWithHint} disabled={busy}>
                   <ExternalLink className="size-4" />
-                  使用 {hint.name} 登录
-                </Button>
+                  {t("使用 {0} 登录", hint.name)}</Button>
               )}
-              <p className="text-muted-foreground text-center text-xs">或者使用应用专用密码登录</p>
+              <p className="text-muted-foreground text-center text-xs">{t("或者使用应用专用密码登录")}</p>
             </div>
           )}
 
           {mode === "password" && (
             <>
-              <Field label="邮箱" htmlFor="email">
+              <Field label={t("邮箱")} htmlFor="email">
                 <Input
                   id="email"
                   type="email"
@@ -165,9 +170,9 @@ export function SignIn({ onSignedIn }: Props) {
               </Field>
 
               <Field
-                label="应用专用密码"
+                label={t("应用专用密码")}
                 htmlFor="password"
-                hint="在邮箱网页端的设置里创建。账号使用单点登录（SSO）时，这里不能填 SSO 的密码。"
+                hint={t("在邮箱网页端的设置里创建。账号使用单点登录（SSO）时，这里不能填 SSO 的密码。")}
               >
                 <Input
                   id="password"
@@ -185,21 +190,20 @@ export function SignIn({ onSignedIn }: Props) {
             <div className="flex flex-col gap-3">
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox checked={sso} onCheckedChange={(v) => setSso(v === true)} disabled={busy} />
-                通过单点登录（外部身份提供商）
-              </label>
+                {t("通过单点登录（外部身份提供商）")}</label>
               {sso && (
                 <>
                   <Field
-                    label="身份提供商地址"
+                    label={t("身份提供商地址")}
                     htmlFor="idp"
-                    hint="邮件服务器把登录交给外部身份提供商（如 Stalwart 配置了 OIDC 目录）时填写，例如 connect.example.net。"
+                    hint={t("邮件服务器把登录交给外部身份提供商（如 Stalwart 配置了 OIDC 目录）时填写，例如 connect.example.net。")}
                   >
                     <Input id="idp" value={idp} onChange={(e) => setIdp(e.target.value)} placeholder="connect.example.net" disabled={busy} />
                   </Field>
                   <Field
-                    label="客户端 ID"
+                    label={t("客户端 ID")}
                     htmlFor="client-id"
-                    hint="由管理员在身份提供商上创建的公开客户端（无密钥、PKCE），回调地址需包含 http://127.0.0.1:47821/callback。"
+                    hint={t("由管理员在身份提供商上创建的公开客户端（无密钥、PKCE），回调地址需包含 http://127.0.0.1:47821/callback。")}
                   >
                     <Input id="client-id" value={clientId} onChange={(e) => setClientId(e.target.value)} disabled={busy} />
                   </Field>
@@ -212,12 +216,11 @@ export function SignIn({ onSignedIn }: Props) {
             <div className="flex flex-col gap-2">
               <div className="border-border bg-secondary flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm">
                 <Loader2 className="size-4 shrink-0 animate-spin" />
-                <span className="flex-1">请在浏览器中完成授权</span>
+                <span className="flex-1">{t("请在浏览器中完成授权")}</span>
               </div>
               <Button type="button" variant="ghost" size="sm" onClick={cancel}>
                 <X className="size-4" />
-                取消
-              </Button>
+                {t("取消")}</Button>
             </div>
           ) : (
             <Button type="submit" disabled={busy || !canSubmit}>
@@ -228,13 +231,13 @@ export function SignIn({ onSignedIn }: Props) {
               ) : (
                 <ExternalLink className="size-4" />
               )}
-              {mode === "password" ? "登录" : "在浏览器中登录"}
+              {mode === "password" ? t("登录") : t("在浏览器中登录")}
             </Button>
           )}
 
           {error && (
             <p className="text-destructive text-sm leading-relaxed" role="alert">
-              {error}
+              {signInError(error)}
             </p>
           )}
         </form>
@@ -246,7 +249,7 @@ export function SignIn({ onSignedIn }: Props) {
             disabled={busy}
             className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
           >
-            {mode === "password" ? "改用浏览器授权登录（OAuth）" : "改用应用专用密码登录"}
+            {mode === "password" ? t("改用浏览器授权登录（OAuth）") : t("改用应用专用密码登录")}
           </button>
         </div>
       </div>
@@ -265,6 +268,7 @@ function Field({
   hint?: string;
   children: React.ReactNode;
 }) {
+  useI18n();
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={htmlFor} className="text-sm font-medium">
@@ -280,17 +284,17 @@ function Field({
 function signInError(msg: string): string {
   const code = msg.slice(0, 4);
   const map: Record<string, string> = {
-    "2060": "认证失败：请检查邮箱地址与应用专用密码（单点登录的密码在这里不能用）。",
-    "2061": "这个地址上没有找到 JMAP 服务，请确认服务器地址。",
-    "2062": "连不上邮件服务器，请检查网络与服务器地址。",
-    "2063": "邮件服务器没有正常响应，请稍后重试。",
-    "2064": "邮件服务器不接受这次浏览器授权得到的令牌（服务器可能把认证交给了外部身份提供商）。请改用应用专用密码登录。",
-    "2052": "单点登录需要同时填写身份提供商地址和客户端 ID。",
-    "3001": "这个服务器没有提供浏览器授权登录，请改用应用专用密码。",
-    "3021": "浏览器授权超时或已取消。",
-    "3022": "换取令牌失败，请重试；多次失败请改用应用专用密码登录。",
-    "3023": "授权被拒绝。",
-    "3024": "授权状态校验失败，请重新登录。",
+    "2060": t("认证失败：请检查邮箱地址与应用专用密码（单点登录的密码在这里不能用）。"),
+    "2061": t("这个地址上没有找到 JMAP 服务，请确认服务器地址。"),
+    "2062": t("连不上邮件服务器，请检查网络与服务器地址。"),
+    "2063": t("邮件服务器没有正常响应，请稍后重试。"),
+    "2064": t("邮件服务器不接受这次浏览器授权得到的令牌（服务器可能把认证交给了外部身份提供商）。请改用应用专用密码登录。"),
+    "2052": t("单点登录需要同时填写身份提供商地址和客户端 ID。"),
+    "3001": t("这个服务器没有提供浏览器授权登录，请改用应用专用密码。"),
+    "3021": t("浏览器授权超时或已取消。"),
+    "3022": t("换取令牌失败，请重试；多次失败请改用应用专用密码登录。"),
+    "3023": t("授权被拒绝。"),
+    "3024": t("授权状态校验失败，请重新登录。"),
   };
   return map[code] ? `${map[code]}（${code}）` : msg;
 }

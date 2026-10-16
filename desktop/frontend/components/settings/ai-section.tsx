@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -27,6 +30,7 @@ function effortValue(v: string): string {
 
 /** 标题固定宽度, 两行的按钮组左边缘才对得齐。 */
 function EffortRow({ title, children }: { title: string; children: React.ReactNode }) {
+  useI18n();
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <p className="w-28 shrink-0 text-sm font-medium">{title}</p>
@@ -36,6 +40,7 @@ function EffortRow({ title, children }: { title: string; children: React.ReactNo
 }
 
 function EffortChoice({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  useI18n();
   return (
     <ToggleGroup
       type="single"
@@ -59,6 +64,7 @@ function EffortChoice({ value, onChange }: { value: string; onChange: (v: string
  * API Key 只存系统钥匙串, 界面上不回显。
  */
 export function AISection({ active }: { active: boolean }) {
+  useI18n();
   const [cfg, setCfg] = useState<AIConfig | null>(null);
   const [key, setKey] = useState("");
   const [saving, setSaving] = useState(false);
@@ -89,7 +95,7 @@ export function AISection({ active }: { active: boolean }) {
       const saved = await api.saveAIConfig(next, apiKey);
       setCfg(saved);
       setKey("");
-      if (!patch) toast.success("AI 设置已保存");
+      if (!patch) toast.success(t("AI 设置已保存"));
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -103,7 +109,7 @@ export function AISection({ active }: { active: boolean }) {
     try {
       if (key.trim() || cfg) await save(undefined);
       const reply = await api.testAI();
-      setTestResult(reply || "连接成功");
+      setTestResult(reply || t("连接成功"));
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -114,12 +120,11 @@ export function AISection({ active }: { active: boolean }) {
   if (!cfg) {
     return (
       <>
-        <SectionTitle title="AI 助手" />
+        <SectionTitle title={t("AI 助手")} />
         <Card>
           <div className="text-muted-foreground flex items-center justify-center gap-2 py-6 text-sm">
             <Loader2 className="size-4 animate-spin" />
-            载入中
-          </div>
+            {t("载入中")}</div>
         </Card>
       </>
     );
@@ -130,11 +135,11 @@ export function AISection({ active }: { active: boolean }) {
   return (
     <>
       <SectionTitle
-        title="AI 助手"
-        desc="接入兼容 OpenAI Responses API 的模型服务后，可以翻译邮件、润色和翻译草稿、按你的意图起草回复。邮件内容只发送到你配置的服务。这些设置（含 API Key）与 MCP 开关保存在网盘的「CZL Mail」文件夹里，自动同步到你的其它设备。"
+        title={t("AI 助手")}
+        desc={t("接入兼容 OpenAI Responses API 的模型服务后，可以翻译邮件、润色和翻译草稿、按你的意图起草回复。邮件内容只发送到你配置的服务。这些设置（含 API Key）与 MCP 开关保存在网盘的「CZL Mail」文件夹里，自动同步到你的其它设备。")}
       />
       <Card>
-        <Row title="启用 AI 功能" desc={ready ? "已就绪：阅读邮件与写信时会显示 AI 按钮" : "填好接口信息并启用后，才会显示 AI 相关按钮"}>
+        <Row title={t("启用 AI 功能")} desc={ready ? t("已就绪：阅读邮件与写信时会显示 AI 按钮") : t("填好接口信息并启用后，才会显示 AI 相关按钮")}>
           <Switch checked={cfg.enabled} disabled={saving} onCheckedChange={(on) => save({ enabled: on }, "")} />
         </Row>
       </Card>
@@ -142,11 +147,11 @@ export function AISection({ active }: { active: boolean }) {
       <Card>
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor="ai-base">接口地址</Label>
+            <Label htmlFor="ai-base">{t("接口地址")}</Label>
             <Input id="ai-base" value={cfg.baseUrl} onChange={(e) => update("baseUrl", e.target.value)} placeholder="https://api.openai.com/v1" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="ai-model">模型名称</Label>
+            <Label htmlFor="ai-model">{t("模型名称")}</Label>
             <Input id="ai-model" value={cfg.model} onChange={(e) => update("model", e.target.value)} placeholder="gpt-5-mini" />
           </div>
           <div className="flex flex-col gap-1.5 sm:col-span-2">
@@ -157,25 +162,23 @@ export function AISection({ active }: { active: boolean }) {
               autoComplete="off"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder={cfg.hasKey ? "已存入系统钥匙串，留空保持不变" : "sk-..."}
+              placeholder={cfg.hasKey ? t("已存入系统钥匙串，留空保持不变") : "sk-..."}
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="ai-lang">翻译语言</Label>
+            <Label htmlFor="ai-lang">{t("翻译语言")}</Label>
             <Input id="ai-lang" list="ai-langs" value={cfg.translateLang} onChange={(e) => update("translateLang", e.target.value)} />
             <datalist id="ai-langs">
               {LANGS.map((l) => (
-                <option key={l} value={l} />
+                <option key={l} value={l} label={t(l)} />
               ))}
             </datalist>
           </div>
         </div>
         <p className="text-muted-foreground text-xs">
-          会请求 {"{接口地址}"}/responses，填到 /v1 或只填域名都可以。
-          {cfg.hasKey && (
+          {t("会请求")}{t("{接口地址}")}{t("/responses，填到 /v1 或只填域名都可以。")}{cfg.hasKey && (
             <button type="button" className="hover:text-destructive ml-2 underline underline-offset-2" onClick={() => save(undefined, "-")}>
-              清除已保存的 Key
-            </button>
+              {t("清除已保存的 Key")}</button>
           )}
         </p>
       </Card>
@@ -183,13 +186,13 @@ export function AISection({ active }: { active: boolean }) {
       <Card>
         <SectionTitle
           small
-          title="思考档位"
-          desc="auto 不带这个参数，由模型自己决定；none 要求完全不思考，模型关不掉时自动改为不带。档位用接口原词。"
+          title={t("思考档位")}
+          desc={t("auto 不带这个参数，由模型自己决定；none 要求完全不思考，模型关不掉时自动改为不带。档位用接口原词。")}
         />
-        <EffortRow title="翻译">
+        <EffortRow title={t("翻译")}>
           <EffortChoice value={cfg.reasoningTranslate} onChange={(v) => update("reasoningTranslate", v)} />
         </EffortRow>
-        <EffortRow title="润色、起草回复">
+        <EffortRow title={t("润色、起草回复")}>
           <EffortChoice value={cfg.reasoningWrite} onChange={(v) => update("reasoningWrite", v)} />
         </EffortRow>
       </Card>
@@ -203,12 +206,10 @@ export function AISection({ active }: { active: boolean }) {
         )}
         <Button variant="outline" onClick={test} disabled={testing || saving}>
           {testing ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-          测试连接
-        </Button>
+          {t("测试连接")}</Button>
         <Button onClick={() => save()} disabled={saving}>
           {saving && <Loader2 className="size-4 animate-spin" />}
-          保存
-        </Button>
+          {t("保存")}</Button>
       </div>
     </>
   );

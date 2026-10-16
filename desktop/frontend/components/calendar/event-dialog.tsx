@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   AlignLeft,
@@ -55,7 +58,7 @@ import {
   type EventDetail,
 } from "@/lib/api";
 import {
-  WEEKDAYS,
+  getWeekdays,
   addDays,
   parseLocalDateTime,
   toDateInput,
@@ -86,18 +89,18 @@ interface Props {
 
 const DAY_CODES = ["mo", "tu", "we", "th", "fr", "sa", "su"];
 
-const ALERT_OPTIONS = [
-  { value: 0, label: "开始时" },
-  { value: 5, label: "提前 5 分钟" },
-  { value: 10, label: "提前 10 分钟" },
-  { value: 15, label: "提前 15 分钟" },
-  { value: 30, label: "提前 30 分钟" },
-  { value: 60, label: "提前 1 小时" },
-  { value: 120, label: "提前 2 小时" },
-  { value: 1440, label: "提前 1 天" },
-  { value: 2880, label: "提前 2 天" },
-  { value: 10080, label: "提前 1 周" },
-];
+const getAlertOptions = () => ([
+  { value: 0, label: t("开始时") },
+  { value: 5, label: t("提前 5 分钟") },
+  { value: 10, label: t("提前 10 分钟") },
+  { value: 15, label: t("提前 15 分钟") },
+  { value: 30, label: t("提前 30 分钟") },
+  { value: 60, label: t("提前 1 小时") },
+  { value: 120, label: t("提前 2 小时") },
+  { value: 1440, label: t("提前 1 天") },
+  { value: 2880, label: t("提前 2 天") },
+  { value: 10080, label: t("提前 1 周") },
+]);
 
 interface Form {
   calendar: string; // accountId/calendarId
@@ -130,6 +133,7 @@ export function EventPanel({
   onClose,
   onSaved,
 }: Props) {
+  useI18n();
   const [detail, setDetail] = useState<EventDetail | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   const [busy, setBusy] = useState(false);
@@ -218,7 +222,7 @@ export function EventPanel({
       ? addDays(parseLocalDateTime(form.endDate), 1)
       : parseLocalDateTime(`${form.endDate}T${form.endTime}`);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      toast.error("请填写有效的开始与结束时间");
+      toast.error(t("请填写有效的开始与结束时间"));
       return;
     }
     if (end < start) end = start;
@@ -285,7 +289,7 @@ export function EventPanel({
           attendees,
         }),
       );
-      toast.success(isEdit ? "已保存" : "已创建日程");
+      toast.success(isEdit ? t("已保存") : t("已创建日程"));
       onSaved();
       onClose();
     } catch (err) {
@@ -300,7 +304,7 @@ export function EventPanel({
     setBusy(true);
     try {
       await api.deleteEvent(detail.accountId, detail.id, recurrenceId, scope);
-      toast.success("已删除");
+      toast.success(t("已删除"));
       onSaved();
       onClose();
     } catch (err) {
@@ -317,9 +321,9 @@ export function EventPanel({
       setDetail(main.EventDetail.createFrom({ ...detail, myStatus: status }));
       toast.success(
         {
-          accepted: "已接受邀请",
-          tentative: "已回复暂定",
-          declined: "已拒绝邀请",
+          accepted: t("已接受邀请"),
+          tentative: t("已回复暂定"),
+          declined: t("已拒绝邀请"),
         }[status],
       );
       onSaved();
@@ -330,7 +334,7 @@ export function EventPanel({
 
   function onSubmit() {
     if (!form?.title.trim()) {
-      toast.error("请填写标题");
+      toast.error(t("请填写标题"));
       return;
     }
     if (isEdit && recurring && recurrenceId) setAskScope("save");
@@ -357,20 +361,20 @@ export function EventPanel({
           variant="ghost"
           size="icon"
           className="size-8"
-          aria-label="关闭"
+          aria-label={t("关闭")}
           onClick={onClose}
         >
           <X className="size-4" />
         </Button>
         <h2 className="flex-1 truncate text-base font-semibold">
-          {isEdit ? (readOnly ? "日程详情" : "编辑日程") : "新建日程"}
+          {isEdit ? (readOnly ? t("日程详情") : t("编辑日程")) : t("新建日程")}
         </h2>
         {isEdit && !readOnly && (
           <Button
             variant="ghost"
             size="icon"
             className="hover:text-destructive size-8"
-            aria-label="删除"
+            aria-label={t("删除")}
             onClick={onDelete}
             disabled={busy || !form}
           >
@@ -382,16 +386,15 @@ export function EventPanel({
       {!form ? (
         <div className="text-muted-foreground flex flex-1 items-center justify-center gap-2 text-sm">
           <Loader2 className="size-4 animate-spin" />
-          载入中
-        </div>
+          {t("载入中")}</div>
       ) : (
         <div className="czl-scroll min-h-0 flex-1 overflow-y-auto">
           {detail?.myStatus && (
             <div className="border-border bg-secondary flex flex-wrap items-center gap-2 border-b px-4 py-2.5 text-sm">
               <span className="text-muted-foreground mr-auto">
                 {detail.organizer
-                  ? `${detail.organizer} 邀请你参加`
-                  : "你被邀请参加此日程"}
+                  ? t("{0} 邀请你参加", detail.organizer)
+                  : t("你被邀请参加此日程")}
               </span>
               {(["accepted", "tentative", "declined"] as const).map((s) => (
                 <Button
@@ -402,7 +405,7 @@ export function EventPanel({
                   onClick={() => respond(s)}
                 >
                   {detail.myStatus === s && <Check className="size-3.5" />}
-                  {{ accepted: "接受", tentative: "暂定", declined: "拒绝" }[s]}
+                  {{ accepted: t("接受"), tentative: t("暂定"), declined: t("拒绝") }[s]}
                 </Button>
               ))}
             </div>
@@ -414,7 +417,7 @@ export function EventPanel({
           >
             <Input
               autoFocus={!isEdit}
-              placeholder="标题"
+              placeholder={t("标题")}
               value={form.title}
               onChange={(e) => update("title", e.target.value)}
               className="h-10 text-base font-medium"
@@ -422,7 +425,7 @@ export function EventPanel({
 
             <Row icon={AlignLeft}>
               <Textarea
-                placeholder="描述"
+                placeholder={t("描述")}
                 rows={3}
                 value={form.description}
                 onChange={(e) => update("description", e.target.value)}
@@ -431,7 +434,7 @@ export function EventPanel({
 
             <Row icon={MapPin}>
               <Input
-                placeholder="地点"
+                placeholder={t("地点")}
                 value={form.location}
                 onChange={(e) => update("location", e.target.value)}
               />
@@ -440,7 +443,7 @@ export function EventPanel({
             <Row icon={Video}>
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 <Input
-                  placeholder="会议链接"
+                  placeholder={t("会议链接")}
                   value={form.virtualLocation}
                   onChange={(e) => update("virtualLocation", e.target.value)}
                 />
@@ -451,8 +454,7 @@ export function EventPanel({
                     size="sm"
                     onClick={() => BrowserOpenURL(form.virtualLocation.trim())}
                   >
-                    加入
-                  </Button>
+                    {t("加入")}</Button>
                 )}
               </div>
             </Row>
@@ -463,8 +465,8 @@ export function EventPanel({
                   <RecipientInput
                     value={form.attendees}
                     onChange={(v) => update("attendees", v)}
-                    placeholder="添加参加者"
-                    label="参加者"
+                    placeholder={t("添加参加者")}
+                    label={t("参加者")}
                   />
                 ) : null}
                 {detail && (detail.participants ?? []).length > 0 && (
@@ -485,7 +487,7 @@ export function EventPanel({
                         </span>
                         <span className="text-muted-foreground shrink-0 text-xs">
                           {p.role === "owner"
-                            ? "组织者"
+                            ? t("组织者")
                             : participationLabel(p.status)}
                         </span>
                       </li>
@@ -494,8 +496,7 @@ export function EventPanel({
                 )}
                 {!canEditAttendees && !(detail?.participants ?? []).length && (
                   <span className="text-muted-foreground text-sm">
-                    无参加者
-                  </span>
+                    {t("无参加者")}</span>
                 )}
               </div>
             </Row>
@@ -509,10 +510,9 @@ export function EventPanel({
                     checked={form.allDay}
                     onCheckedChange={(v) => update("allDay", v === true)}
                   />
-                  全天
-                </Label>
+                  {t("全天")}</Label>
                 <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
-                  <span className="text-muted-foreground text-sm">开始</span>
+                  <span className="text-muted-foreground text-sm">{t("开始")}</span>
                   <Input
                     type="date"
                     value={form.startDate}
@@ -528,7 +528,7 @@ export function EventPanel({
                   ) : (
                     <span />
                   )}
-                  <span className="text-muted-foreground text-sm">结束</span>
+                  <span className="text-muted-foreground text-sm">{t("结束")}</span>
                   <Input
                     type="date"
                     value={form.endDate}
@@ -554,7 +554,7 @@ export function EventPanel({
                 onValueChange={(v) => update("calendar", v)}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="选择日历" />
+                  <SelectValue placeholder={t("选择日历")} />
                 </SelectTrigger>
                 <SelectContent>
                   {groups.map(([acc, list]) => (
@@ -588,8 +588,7 @@ export function EventPanel({
               <div className="flex flex-col gap-2">
                 {complexRule ? (
                   <p className="text-muted-foreground py-1.5 text-sm">
-                    此日程使用了复杂的重复规则，保存时保持不变
-                  </p>
+                    {t("此日程使用了复杂的重复规则，保存时保持不变")}</p>
                 ) : (
                   <>
                     <div className="flex flex-wrap items-center gap-2">
@@ -601,18 +600,17 @@ export function EventPanel({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">不重复</SelectItem>
-                          <SelectItem value="daily">每天</SelectItem>
-                          <SelectItem value="weekly">每周</SelectItem>
-                          <SelectItem value="monthly">每月</SelectItem>
-                          <SelectItem value="yearly">每年</SelectItem>
+                          <SelectItem value="none">{t("不重复")}</SelectItem>
+                          <SelectItem value="daily">{t("每天")}</SelectItem>
+                          <SelectItem value="weekly">{t("每周")}</SelectItem>
+                          <SelectItem value="monthly">{t("每月")}</SelectItem>
+                          <SelectItem value="yearly">{t("每年")}</SelectItem>
                         </SelectContent>
                       </Select>
                       {form.frequency !== "none" && (
                         <>
                           <span className="text-muted-foreground text-sm">
-                            每
-                          </span>
+                            {t("每")}</span>
                           <Input
                             type="number"
                             min={1}
@@ -625,10 +623,10 @@ export function EventPanel({
                           <span className="text-muted-foreground text-sm">
                             {
                               {
-                                daily: "天",
-                                weekly: "周",
-                                monthly: "月",
-                                yearly: "年",
+                                daily: t("天"),
+                                weekly: t("周"),
+                                monthly: t("月"),
+                                yearly: t("年"),
                               }[form.frequency]
                             }
                           </span>
@@ -655,7 +653,7 @@ export function EventPanel({
                                 )
                               }
                             >
-                              {WEEKDAYS[i].slice(1)}
+                              {getWeekdays()[i]}
                             </Button>
                           );
                         })}
@@ -673,9 +671,9 @@ export function EventPanel({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="never">永不结束</SelectItem>
-                            <SelectItem value="count">重复次数</SelectItem>
-                            <SelectItem value="until">结束日期</SelectItem>
+                            <SelectItem value="never">{t("永不结束")}</SelectItem>
+                            <SelectItem value="count">{t("重复次数")}</SelectItem>
+                            <SelectItem value="until">{t("结束日期")}</SelectItem>
                           </SelectContent>
                         </Select>
                         {form.endMode === "count" && (
@@ -708,8 +706,7 @@ export function EventPanel({
               <div className="flex flex-col gap-2">
                 {form.alerts.length === 0 && (
                   <span className="text-muted-foreground py-1.5 text-sm">
-                    不提醒
-                  </span>
+                    {t("不提醒")}</span>
                 )}
                 {form.alerts.map((m, i) => (
                   <div key={i} className="flex items-center gap-2">
@@ -738,7 +735,7 @@ export function EventPanel({
                       variant="ghost"
                       size="icon"
                       className="size-8"
-                      aria-label="移除提醒"
+                      aria-label={t("移除提醒")}
                       onClick={() =>
                         update(
                           "alerts",
@@ -760,8 +757,7 @@ export function EventPanel({
                   }
                 >
                   <Plus className="size-4" />
-                  添加提醒
-                </Button>
+                  {t("添加提醒")}</Button>
               </div>
             </Row>
           </fieldset>
@@ -771,12 +767,10 @@ export function EventPanel({
       {!readOnly && (
         <footer className="border-border flex shrink-0 justify-end gap-2 border-t px-4 py-2.5">
           <Button variant="outline" onClick={onClose}>
-            取消
-          </Button>
+            {t("取消")}</Button>
           <Button onClick={onSubmit} disabled={busy || !form}>
             {busy && <Loader2 className="size-4 animate-spin" />}
-            保存
-          </Button>
+            {t("保存")}</Button>
         </footer>
       )}
 
@@ -787,14 +781,13 @@ export function EventPanel({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {askScope === "delete" ? "删除重复日程" : "修改重复日程"}
+              {askScope === "delete" ? t("删除重复日程") : t("修改重复日程")}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              这是一个重复日程，要应用到哪些次？
-            </AlertDialogDescription>
+              {t("这是一个重复日程，要应用到哪些次？")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <Button
               variant="outline"
               onClick={() => {
@@ -803,8 +796,7 @@ export function EventPanel({
                 void (action === "delete" ? remove("this") : save("this"));
               }}
             >
-              仅此一次
-            </Button>
+              {t("仅此一次")}</Button>
             <Button
               variant={askScope === "delete" ? "destructive" : "default"}
               onClick={() => {
@@ -813,8 +805,7 @@ export function EventPanel({
                 void (action === "delete" ? remove("all") : save("all"));
               }}
             >
-              所有日程
-            </Button>
+              {t("所有日程")}</Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -829,6 +820,7 @@ function Row({
   icon: React.ComponentType<{ className?: string }>;
   children: React.ReactNode;
 }) {
+  useI18n();
   return (
     <div className="grid grid-cols-[20px_1fr] items-start gap-3">
       <Icon className="text-muted-foreground mt-2.5 size-4" />
@@ -840,20 +832,20 @@ function Row({
 function confirmInvite(isEdit: boolean): boolean {
   return window.confirm(
     isEdit
-      ? "保存后会向参加者发送更新通知。继续？"
-      : "保存后会向参加者发送邀请邮件。继续？",
+      ? t("保存后会向参加者发送更新通知。继续？")
+      : t("保存后会向参加者发送邀请邮件。继续？"),
   );
 }
 
 function withCurrent(m: number) {
-  if (ALERT_OPTIONS.some((o) => o.value === m)) return ALERT_OPTIONS;
+  if (getAlertOptions().some((o) => o.value === m)) return getAlertOptions();
   const label =
     m % 1440 === 0
-      ? `提前 ${m / 1440} 天`
+      ? t("提前 {0} 天", m / 1440)
       : m % 60 === 0
-        ? `提前 ${m / 60} 小时`
-        : `提前 ${m} 分钟`;
-  return [...ALERT_OPTIONS, { value: m, label }].sort(
+        ? t("提前 {0} 小时", m / 60)
+        : t("提前 {0} 分钟", m);
+  return [...getAlertOptions(), { value: m, label }].sort(
     (a, b) => a.value - b.value,
   );
 }
@@ -949,11 +941,11 @@ function groupCalendars(list: Calendar[]): [string, Calendar[]][] {
 function participationLabel(status: string): string {
   return (
     {
-      accepted: "已接受",
-      declined: "已拒绝",
-      tentative: "暂定",
-      "needs-action": "未回复",
-      delegated: "已委托",
+      accepted: t("已接受"),
+      declined: t("已拒绝"),
+      tentative: t("暂定"),
+      "needs-action": t("未回复"),
+      delegated: t("已委托"),
     }[status] ??
     status ??
     ""

@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { Repeat } from "lucide-react";
 
 import { EVENT_DRAG_TYPE, type DragPayload } from "@/components/calendar/calendar-utils";
@@ -23,6 +26,7 @@ interface Props {
  * 日历颜色来自服务器，可能是任意高饱和色，用作文字色会不可读。
  */
 export function EventChip({ occ, color, draggable, onOpen, compact, className, style }: Props) {
+  useI18n();
   const start = new Date(occ.start);
   return (
     <button
@@ -58,7 +62,7 @@ export function EventChip({ occ, color, draggable, onOpen, compact, className, s
       }}
     >
       {!occ.allDay && <span className="text-muted-foreground shrink-0 tabular-nums">{hm(start)}</span>}
-      <span className="min-w-0 flex-1 truncate font-medium">{occ.title || "(无标题)"}</span>
+      <span className="min-w-0 flex-1 truncate font-medium">{occ.title || t("(无标题)")}</span>
       {occ.recurring && !compact && <Repeat className="text-muted-foreground mt-0.5 size-3 shrink-0" />}
     </button>
   );

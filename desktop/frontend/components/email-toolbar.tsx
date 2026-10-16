@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useState } from "react";
 import {
   Archive,
@@ -80,75 +83,70 @@ export function EmailToolbar({
   bodyAlwaysLight,
   actions,
 }: Props) {
+  useI18n();
   const inJunk = currentKind === "junk";
 
   return (
     <div className="border-border flex shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2 py-1.5">
-      <Action icon={Reply} label="回复" shortcut="R" onClick={actions.reply} showLabel />
-      <Action icon={ReplyAll} label="全部回复" shortcut="A" onClick={actions.replyAll} />
-      <Action icon={Forward} label="转发" shortcut="F" onClick={actions.forward} showLabel />
+      <Action icon={Reply} label={t("回复")} shortcut="R" onClick={actions.reply} showLabel />
+      <Action icon={ReplyAll} label={t("全部回复")} shortcut="A" onClick={actions.replyAll} />
+      <Action icon={Forward} label={t("转发")} shortcut="F" onClick={actions.forward} showLabel />
 
       <Divider />
 
-      <Action icon={Archive} label="归档" shortcut="E" onClick={actions.archive} showLabel />
-      <Action icon={Trash2} label="删除" shortcut="#" onClick={actions.trash} showLabel />
+      <Action icon={Archive} label={t("归档")} shortcut="E" onClick={actions.archive} showLabel />
+      <Action icon={Trash2} label={t("删除")} shortcut="#" onClick={actions.trash} showLabel />
       <MoveMenu mailboxes={mailboxes} onMove={actions.move} />
       <LabelMenu current={email.labels ?? []} known={labels} onSet={actions.setLabel} />
       {inJunk ? (
-        <Action icon={ShieldCheck} label="不是垃圾邮件" onClick={() => actions.junk(false)} showLabel />
+        <Action icon={ShieldCheck} label={t("不是垃圾邮件")} onClick={() => actions.junk(false)} showLabel />
       ) : (
-        <Action icon={ShieldAlert} label="垃圾邮件" shortcut="!" onClick={() => actions.junk(true)} showLabel />
+        <Action icon={ShieldAlert} label={t("垃圾邮件")} shortcut="!" onClick={() => actions.junk(true)} showLabel />
       )}
-      <Action icon={Mail} label="标为未读" shortcut="U" onClick={actions.markUnread} />
+      <Action icon={Mail} label={t("标为未读")} shortcut="U" onClick={actions.markUnread} />
 
       <div className="min-w-2 flex-1" />
 
-      <Action icon={Printer} label="打印" onClick={actions.print} />
+      <Action icon={Printer} label={t("打印")} onClick={actions.print} />
       <Action
         icon={focusMode ? Shrink : Expand}
-        label={focusMode ? "退出全屏阅读" : "全屏阅读"}
+        label={focusMode ? t("退出全屏阅读") : t("全屏阅读")}
         shortcut={focusMode ? "Esc" : undefined}
         onClick={actions.toggleFocus}
       />
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-8 shrink-0" aria-label="更多操作">
+          <Button variant="ghost" size="icon" className="size-8 shrink-0" aria-label={t("更多操作")}>
             <MoreVertical className="size-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onSelect={actions.toggleFlag}>
             <Star className="size-4" />
-            {email.isFlagged ? "取消星标" : "加星标"}
+            {email.isFlagged ? t("取消星标") : t("加星标")}
             <Kbd>S</Kbd>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={actions.viewSource}>
             <Code2 className="size-4" />
-            查看源码
-          </DropdownMenuItem>
+            {t("查看源码")}</DropdownMenuItem>
           <DropdownMenuCheckboxItem checked={bodyAlwaysLight} onCheckedChange={actions.toggleBodyLight}>
             <Sun className="size-4" />
-            正文始终亮色显示
-          </DropdownMenuCheckboxItem>
+            {t("正文始终亮色显示")}</DropdownMenuCheckboxItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={actions.forwardAsAttachment}>
             <Paperclip className="size-4" />
-            作为附件转发
-          </DropdownMenuItem>
+            {t("作为附件转发")}</DropdownMenuItem>
           <DropdownMenuItem onSelect={actions.exportEml}>
             <Download className="size-4" />
-            导出为 .eml
-          </DropdownMenuItem>
+            {t("导出为 .eml")}</DropdownMenuItem>
           <DropdownMenuItem onSelect={actions.importEml}>
             <Upload className="size-4" />
-            导入 .eml 或 .zip
-          </DropdownMenuItem>
+            {t("导入 .eml 或 .zip")}</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={actions.showShortcuts}>
             <Keyboard className="size-4" />
-            键盘快捷键
-            <Kbd>?</Kbd>
+            {t("键盘快捷键")}<Kbd>?</Kbd>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -169,6 +167,7 @@ function Action({
   onClick: () => void;
   showLabel?: boolean;
 }) {
+  useI18n();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -193,21 +192,22 @@ function Action({
 }
 
 function MoveMenu({ mailboxes, onMove }: { mailboxes: Mailbox[]; onMove: (id: string) => void }) {
+  useI18n();
   return (
     <DropdownMenu>
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 shrink-0" aria-label="移动">
+            <Button variant="ghost" size="sm" className="h-8 shrink-0" aria-label={t("移动")}>
               <FolderInput className="size-4" />
-              <span className="hidden 2xl:inline">移动</span>
+              <span className="hidden 2xl:inline">{t("移动")}</span>
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>移动到文件夹</TooltipContent>
+        <TooltipContent>{t("移动到文件夹")}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" className="max-h-80 w-52 overflow-y-auto">
-        <DropdownMenuLabel>移动到</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("移动到")}</DropdownMenuLabel>
         {mailboxes.map((m) => (
           <DropdownMenuItem key={m.id} onSelect={() => onMove(m.id)}>
             {m.name}
@@ -227,6 +227,7 @@ function LabelMenu({
   known: string[];
   onSet: (label: string, set: boolean) => void;
 }) {
+  useI18n();
   const [draft, setDraft] = useState("");
   const all = Array.from(new Set([...known, ...current])).sort();
 
@@ -235,18 +236,18 @@ function LabelMenu({
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 shrink-0" aria-label="标签">
+            <Button variant="ghost" size="sm" className="h-8 shrink-0" aria-label={t("标签")}>
               <Tag className="size-4" />
-              <span className="hidden 2xl:inline">标签</span>
+              <span className="hidden 2xl:inline">{t("标签")}</span>
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>标签</TooltipContent>
+        <TooltipContent>{t("标签")}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel>标签</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("标签")}</DropdownMenuLabel>
         {all.length === 0 && (
-          <p className="text-muted-foreground px-2 py-1.5 text-xs">还没有标签</p>
+          <p className="text-muted-foreground px-2 py-1.5 text-xs">{t("还没有标签")}</p>
         )}
         {all.map((label) => (
           <DropdownMenuCheckboxItem
@@ -274,7 +275,7 @@ function LabelMenu({
             onChange={(e) => setDraft(e.target.value)}
             // 菜单会抢键盘事件用于上下选择，输入框里的按键不能冒泡上去。
             onKeyDown={(e) => e.stopPropagation()}
-            placeholder="新标签（英文），回车添加"
+            placeholder={t("新标签（英文），回车添加")}
             className="h-8 text-sm"
           />
         </form>
@@ -284,9 +285,11 @@ function LabelMenu({
 }
 
 function Divider() {
+  useI18n();
   return <div className="bg-border mx-1 h-5 w-px shrink-0" />;
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
+  useI18n();
   return <span className="text-muted-foreground ml-auto font-mono text-xs">{children}</span>;
 }

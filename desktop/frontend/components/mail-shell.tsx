@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
@@ -70,6 +73,7 @@ function locateDepth(index: number): number {
 }
 
 export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
+  useI18n();
   const { bodyMode, bodyAppearance, setBodyAppearance } = useAppearance();
 
   const [username, setUsername] = useState("");
@@ -545,18 +549,18 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   const trashIds = useCallback(
     (ids: string[]) => {
       if (currentKind === "trash") {
-        const what = ids.length > 1 ? `选中的 ${ids.length} 封邮件` : "这封邮件";
-        if (!window.confirm(`彻底删除${what}？此操作无法撤销。`)) return;
-        mutate({ ids, remove: true, op: () => api.deleteEmails(accountId, ids), done: "已彻底删除" });
+        const what = ids.length > 1 ? t("选中的 {0} 封邮件", ids.length) : t("这封邮件");
+        if (!window.confirm(t("彻底删除{0}？此操作无法撤销。", what))) return;
+        mutate({ ids, remove: true, op: () => api.deleteEmails(accountId, ids), done: t("已彻底删除") });
         return;
       }
-      mutate({ ids, remove: true, op: () => api.trashEmails(accountId, ids), done: "已删除" });
+      mutate({ ids, remove: true, op: () => api.trashEmails(accountId, ids), done: t("已删除") });
     },
     [accountId, currentKind, mutate],
   );
 
   const archiveIds = useCallback(
-    (ids: string[]) => mutate({ ids, remove: true, op: () => api.archiveEmails(accountId, ids), done: "已归档" }),
+    (ids: string[]) => mutate({ ids, remove: true, op: () => api.archiveEmails(accountId, ids), done: t("已归档") }),
     [accountId, mutate],
   );
 
@@ -567,7 +571,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         ids,
         remove: true,
         op: () => api.moveEmails(accountId, ids, target),
-        done: box ? `已移动到「${mailboxLabel(box)}」` : "已移动",
+        done: box ? t("已移动到「{0}」", mailboxLabel(box)) : t("已移动"),
       });
     },
     [accountId, mailboxes, mutate],
@@ -579,7 +583,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         ids,
         remove: true,
         op: () => api.markJunk(accountId, ids, junk),
-        done: junk ? "已标记为垃圾邮件" : "已移回收件箱",
+        done: junk ? t("已标记为垃圾邮件") : t("已移回收件箱"),
       }),
     [accountId, mutate],
   );
@@ -681,9 +685,9 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         const res = await api.importEmails(acc, box);
         if (!res || (res.imported === 0 && res.failed === 0)) return;
         if (res.failed > 0) {
-          toast.warning(`导入 ${res.imported} 封，失败 ${res.failed} 封：${res.firstError}`);
+          toast.warning(t("导入 {0} 封，失败 {1} 封：{2}", res.imported, res.failed, res.firstError));
         } else {
-          toast.success(`已导入 ${res.imported} 封`);
+          toast.success(t("已导入 {0} 封", res.imported));
         }
         loadMailboxes(acc);
         if (acc === accountId && box === mailboxId) reload();
@@ -696,7 +700,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
   const importEmails = useCallback(() => {
     if (!accountId || !mailboxId) {
-      toast.error("请先选择一个文件夹");
+      toast.error(t("请先选择一个文件夹"));
       return;
     }
     importInto(accountId, mailboxId);
@@ -725,10 +729,10 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
           if (isCurrent) {
             setEmails((prev) => prev.map((e) => (e.isUnread ? ({ ...e, isUnread: false } as EmailSummary) : e)));
           }
-          toast.loading(`正在将「${name}」标记为已读…`, { id: toastId });
+          toast.loading(t("正在将「{0}」标记为已读…", name), { id: toastId });
           try {
             const n = await api.markMailboxRead(acc, box.id);
-            toast.success(n > 0 ? `已将 ${n} 封标记为已读` : "没有未读邮件", { id: toastId });
+            toast.success(n > 0 ? t("已将 {0} 封标记为已读", n) : t("没有未读邮件"), { id: toastId });
           } catch (err) {
             toast.error(errorMessage(err), { id: toastId });
           }
@@ -736,7 +740,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
           if (isCurrent) reload();
           return;
         case "empty": {
-          if (!window.confirm(`彻底删除「${name}」里的全部 ${box.totalEmails} 封邮件？此操作无法撤销。`)) return;
+          if (!window.confirm(t("彻底删除「{0}」里的全部 {1} 封邮件？此操作无法撤销。", name, box.totalEmails))) return;
           const key = `${acc}/${box.id}`;
           emptying.current.add(key);
           adjustUnread(acc, box.id, "zero");
@@ -746,10 +750,10 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
             setChecked(new Set());
             setHasMore(false);
           }
-          toast.loading(`正在清空「${name}」…`, { id: toastId });
+          toast.loading(t("正在清空「{0}」…", name), { id: toastId });
           try {
             const n = await api.emptyMailbox(acc, box.id);
-            toast.success(`已清空「${name}」，删除 ${n} 封`, { id: toastId });
+            toast.success(t("已清空「{0}」，删除 {1} 封", name, n), { id: toastId });
           } catch (err) {
             toast.error(errorMessage(err), { id: toastId });
           } finally {
@@ -817,7 +821,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       exportEml: async () => {
         try {
           const path = await api.exportEmail(accountId, email.id);
-          if (path) toast.success(`已导出到 ${path}`);
+          if (path) toast.success(t("已导出到 {0}", path));
         } catch (err) {
           toast.error(errorMessage(err));
         }
@@ -827,20 +831,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       toggleFocus: () => setFocusMode((f) => !f),
       toggleBodyLight: () => setBodyAppearance(bodyAppearance === "light" ? "follow" : "light"),
     }),
-    [
-      accountId,
-      archiveIds,
-      trashIds,
-      moveIds,
-      setLabelIds,
-      junkIds,
-      markReadIds,
-      toggleFlag,
-      importEmails,
-      bodyAppearance,
-      setBodyAppearance,
-      setDraft,
-    ],
+    [accountId, archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft],
   );
 
   /* ---------- 键盘快捷键 ---------- */
@@ -931,8 +922,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
             <div className="px-2 pb-2">
               <Button className="w-full" size="sm" onClick={() => setDraft({ to: "", cc: "", subject: "", html: "" })}>
                 <PenSquare className="size-4" />
-                写邮件
-              </Button>
+                {t("写邮件")}</Button>
             </div>
 
             <ScrollArea className="min-h-0 flex-1 px-2 pb-2">
@@ -955,8 +945,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
           <>
             <div className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
               <Checkbox
-                aria-label="全选"
-                title="全选"
+                aria-label={t("全选")}
+                title={t("全选")}
                 disabled={emails.length === 0}
                 checked={checked.size === 0 ? false : checked.size === emails.length ? true : "indeterminate"}
                 onCheckedChange={(v) => setChecked(v === true ? new Set(emails.map((e) => e.id)) : new Set())}
@@ -973,21 +963,21 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                       e.currentTarget.blur();
                     }
                   }}
-                  placeholder="搜索全部文件夹（/）"
+                  placeholder={t("搜索全部文件夹（/）")}
                   className="h-8 pr-8 pl-8"
-                  aria-label="搜索邮件"
+                  aria-label={t("搜索邮件")}
                 />
                 {searching && searchingServer && (
                   <Loader2
                     className="text-muted-foreground absolute top-1/2 right-7 size-3.5 -translate-y-1/2 animate-spin"
-                    aria-label="正在搜索服务器"
+                    aria-label={t("正在搜索服务器")}
                   />
                 )}
                 {query && (
                   <button
                     type="button"
                     onClick={() => setQuery("")}
-                    aria-label="清除搜索"
+                    aria-label={t("清除搜索")}
                     className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
                   >
                     <X className="size-3.5" />
@@ -1001,8 +991,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                   size="icon"
                   className="size-8 shrink-0"
                   onClick={() => listScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
-                  aria-label="回到顶部"
-                  title="回到顶部"
+                  aria-label={t("回到顶部")}
+                  title={t("回到顶部")}
                 >
                   <ArrowUpToLine className="size-4" />
                 </Button>
@@ -1013,8 +1003,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                   className="size-8 shrink-0"
                   onClick={sync}
                   disabled={syncing}
-                  aria-label="立即同步"
-                  title="立即同步"
+                  aria-label={t("立即同步")}
+                  title={t("立即同步")}
                 >
                   {syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 </Button>
@@ -1023,44 +1013,40 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
             {checked.size > 0 && (
               <div className="border-border bg-secondary flex shrink-0 items-center gap-0.5 overflow-hidden border-b px-2 py-1 text-sm">
-                <span className="mr-auto pl-1 text-xs whitespace-nowrap tabular-nums">已选 {checked.size} 封</span>
-                <BulkBtn label="标为已读" onClick={() => markReadIds([...checked], true)}>
+                <span className="mr-auto pl-1 text-xs whitespace-nowrap tabular-nums">{t("已选{0}封", checked.size)}</span>
+                <BulkBtn label={t("标为已读")} onClick={() => markReadIds([...checked], true)}>
                   <MailOpen />
                 </BulkBtn>
-                <BulkBtn label="归档" onClick={() => archiveIds([...checked])}>
+                <BulkBtn label={t("归档")} onClick={() => archiveIds([...checked])}>
                   <Archive />
                 </BulkBtn>
-                <BulkBtn label={currentKind === "trash" ? "彻底删除" : "删除"} onClick={() => trashIds([...checked])}>
+                <BulkBtn label={currentKind === "trash" ? t("彻底删除") : t("删除")} onClick={() => trashIds([...checked])}>
                   <Trash2 />
                 </BulkBtn>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="size-7 [&_svg]:size-4" title="更多" aria-label="更多批量操作">
+                    <Button variant="ghost" size="icon" className="size-7 [&_svg]:size-4" title={t("更多")} aria-label={t("更多批量操作")}>
                       <MoreHorizontal />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">
                     <DropdownMenuItem onSelect={() => markReadIds([...checked], false)}>
                       <MailIcon className="size-4" />
-                      标为未读
-                    </DropdownMenuItem>
+                      {t("标为未读")}</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => flagIds([...checked], true)}>
                       <Star className="size-4" />
-                      加星标
-                    </DropdownMenuItem>
+                      {t("加星标")}</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => flagIds([...checked], false)}>
                       <Star className="size-4" />
-                      取消星标
-                    </DropdownMenuItem>
+                      {t("取消星标")}</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => junkIds([...checked], currentKind !== "junk")}>
                       <ShieldAlert className="size-4" />
-                      {currentKind === "junk" ? "不是垃圾邮件" : "标记为垃圾邮件"}
+                      {currentKind === "junk" ? t("不是垃圾邮件") : t("标记为垃圾邮件")}
                     </DropdownMenuItem>
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger>
                         <FolderInput className="size-4" />
-                        移动到
-                      </DropdownMenuSubTrigger>
+                        {t("移动到")}</DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
                         {mailboxes
                           .filter((m) => m.id !== mailboxId && m.kind !== "drafts" && m.kind !== "scheduled")
@@ -1073,7 +1059,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                     </DropdownMenuSub>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <BulkBtn label="取消选择" onClick={() => setChecked(new Set())}>
+                <BulkBtn label={t("取消选择")} onClick={() => setChecked(new Set())}>
                   <X />
                 </BulkBtn>
               </div>
@@ -1143,7 +1129,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 onMarkRead={(id) => markReadIds([id], true)}
               />
             ) : (
-              <div className="text-muted-foreground flex h-full items-center justify-center text-sm">选择一封邮件</div>
+              <div className="text-muted-foreground flex h-full items-center justify-center text-sm">{t("选择一封邮件")}</div>
             )}
           </div>
         }
@@ -1156,6 +1142,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 }
 
 function BulkBtn({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  useI18n();
   return (
     <Button variant="ghost" size="icon" className="size-7 [&_svg]:size-4" title={label} aria-label={label} onClick={onClick}>
       {children}
@@ -1194,7 +1181,7 @@ function replyDraft(accountId: string, email: EmailDetail, all: boolean): Compos
   // References 应是原邮件的 References 加上它自己的 Message-ID。本地没存完整链，
   // 用 In-Reply-To + Message-ID 近似，足够对方客户端把回复挂进线程。
   const refs = [email.inReplyTo, email.messageId].filter(Boolean) as string[];
-  const intro = `在 ${fullDate(email.receivedAt)}，${displayAddressList(email.from)} 写道：`;
+  const intro = t("在 {0}，{1} 写道：", fullDate(email.receivedAt), displayAddressList(email.from));
   return {
     to: addressesOf(email.replyTo?.length ? email.replyTo : email.from),
     cc: all ? addressesOf([...(email.to ?? []), ...(email.cc ?? [])]) : "",
@@ -1210,11 +1197,11 @@ function replyDraft(accountId: string, email: EmailDetail, all: boolean): Compos
 
 function forwardDraft(email: EmailDetail): ComposeDraft {
   const header = [
-    "-------- 转发的邮件 --------",
-    `发件人：${displayAddressList(email.from)}`,
-    `时间：${fullDate(email.receivedAt)}`,
-    `收件人：${displayAddressList(email.to)}`,
-    `主题：${email.subject}`,
+    t("-------- 转发的邮件 --------"),
+    t("发件人：{0}", displayAddressList(email.from)),
+    t("时间：{0}", fullDate(email.receivedAt)),
+    t("收件人：{0}", displayAddressList(email.to)),
+    t("主题：{0}", email.subject),
   ]
     .map(escapeHtml)
     .join("<br>");

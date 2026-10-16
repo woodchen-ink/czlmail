@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useState } from "react";
 import {
   Download,
@@ -45,6 +48,7 @@ const COLLAPSED_COUNT = 2;
  * 右键给出预览、在文件夹中显示、另存为。内嵌在正文里的 cid 图片不重复列出。
  */
 export function AttachmentList({ accountId, emailId, attachments }: Props) {
+  useI18n();
   const [preview, setPreview] = useState<Attachment | null>(null);
   const [busy, setBusy] = useState("");
   const [expanded, setExpanded] = useState(false);
@@ -72,7 +76,7 @@ export function AttachmentList({ accountId, emailId, attachments }: Props) {
   const open = (a: Attachment) =>
     run(a.blobId, async () => {
       const res = await api.openAttachment(accountId, emailId, a.blobId);
-      if (res.revealed) toast.warning("可执行文件不会直接打开，已在文件夹中选中，请确认来源可信后再运行");
+      if (res.revealed) toast.warning(t("可执行文件不会直接打开，已在文件夹中选中，请确认来源可信后再运行"));
     });
 
   const reveal = (a: Attachment) =>
@@ -83,7 +87,7 @@ export function AttachmentList({ accountId, emailId, attachments }: Props) {
   const saveAs = (a: Attachment) =>
     run(a.blobId, async () => {
       const path = await api.saveAttachment(accountId, a.blobId, a.name || "attachment");
-      if (path) toast.success(`已保存到 ${path}`);
+      if (path) toast.success(t("已保存到 {0}", path));
     });
 
   const downloadAll = () =>
@@ -109,9 +113,7 @@ export function AttachmentList({ accountId, emailId, attachments }: Props) {
           ))}
           {hidden > 0 && (
             <li>
-              <Button variant="outline" size="sm" className="h-9" onClick={() => setExpanded(true)}>
-                +{hidden} 附件
-              </Button>
+              <Button variant="outline" size="sm" className="h-9" onClick={() => setExpanded(true)}>{t("+{0}附件", hidden)}</Button>
             </li>
           )}
         </ul>
@@ -119,8 +121,7 @@ export function AttachmentList({ accountId, emailId, attachments }: Props) {
         {visible.length > 1 && (
           <Button variant="outline" size="sm" className="h-9 shrink-0" onClick={downloadAll} disabled={busy === "all"}>
             {busy === "all" ? <Loader2 className="size-4 animate-spin" /> : <FolderDown className="size-4" />}
-            全部下载
-          </Button>
+            {t("全部下载")}</Button>
         )}
       </div>
 
@@ -149,6 +150,7 @@ function AttachmentChip({
   onReveal: () => void;
   onSaveAs: () => void;
 }) {
+  useI18n();
   const Icon = iconFor(a);
   const canPreview = isPreviewable(a.type);
 
@@ -158,7 +160,7 @@ function AttachmentChip({
         <div
           role="button"
           tabIndex={0}
-          title={`${a.name || "(未命名附件)"}\n点击打开，右键更多操作`}
+          title={t("{0}\n点击打开，右键更多操作", a.name || t("(未命名附件)"))}
           onClick={onOpen}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
@@ -176,18 +178,18 @@ function AttachmentChip({
           ) : (
             <Icon className="text-muted-foreground size-4 shrink-0" />
           )}
-          <span className="min-w-0 truncate">{a.name || "(未命名附件)"}</span>
+          <span className="min-w-0 truncate">{a.name || t("(未命名附件)")}</span>
 
           {/* 大小与快捷操作占同一位置：平时显示大小，悬停时换成下载与预览。 */}
           <span className="text-muted-foreground shrink-0 text-xs tabular-nums group-hover:hidden group-focus-visible:hidden">
             {fileSize(a.size)}
           </span>
           <span className="hidden shrink-0 items-center group-hover:flex group-focus-visible:flex">
-            <ChipAction label="另存为" onClick={onSaveAs}>
+            <ChipAction label={t("另存为")} onClick={onSaveAs}>
               <Download className="size-3.5" />
             </ChipAction>
             {canPreview && (
-              <ChipAction label="预览" onClick={onPreview}>
+              <ChipAction label={t("预览")} onClick={onPreview}>
                 <Eye className="size-3.5" />
               </ChipAction>
             )}
@@ -198,23 +200,19 @@ function AttachmentChip({
       <ContextMenuContent>
         <ContextMenuItem onSelect={onOpen}>
           <SquareArrowOutUpRight />
-          打开
-        </ContextMenuItem>
+          {t("打开")}</ContextMenuItem>
         {canPreview && (
           <ContextMenuItem onSelect={onPreview}>
             <Eye />
-            预览
-          </ContextMenuItem>
+            {t("预览")}</ContextMenuItem>
         )}
         <ContextMenuItem onSelect={onReveal}>
           <FolderOpen />
-          在文件夹中显示
-        </ContextMenuItem>
+          {t("在文件夹中显示")}</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={onSaveAs}>
           <Download />
-          另存为…
-        </ContextMenuItem>
+          {t("另存为…")}</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -229,6 +227,7 @@ function ChipAction({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useI18n();
   return (
     <button
       type="button"
@@ -267,6 +266,7 @@ function AttachmentPreview({
   onClose: () => void;
   onOpen: (a: Attachment) => void;
 }) {
+  useI18n();
   const [text, setText] = useState<string | null>(null);
   const type = attachment?.type.split(";")[0].trim().toLowerCase() ?? "";
   const url = attachment ? blobUrl(accountId, attachment) : "";
@@ -290,12 +290,11 @@ function AttachmentPreview({
     <Dialog open={attachment !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-5xl">
         <DialogHeader className="flex-row items-center justify-between gap-2 pr-8">
-          <DialogTitle className="truncate">{attachment?.name || "附件"}</DialogTitle>
+          <DialogTitle className="truncate">{attachment?.name || t("附件")}</DialogTitle>
           {attachment && (
             <Button variant="ghost" size="sm" onClick={() => onOpen(attachment)}>
               <SquareArrowOutUpRight className="size-4" />
-              用系统程序打开
-            </Button>
+              {t("用系统程序打开")}</Button>
           )}
         </DialogHeader>
 

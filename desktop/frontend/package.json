@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:i18n": "node --test lib/i18n/i18n.test.cjs"
   },
   "dependencies": {
     "@tiptap/extension-color": "^3.31.3",

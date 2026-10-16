@@ -4,7 +4,9 @@
  * 不引入日期库：用到的只有加减天、取月格、格式化几种操作，Date 足够。
  */
 
-export const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+import { dateLocale, t } from "@/lib/i18n";
+
+export const getWeekdays = () => ([t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六"), t("周日")]);
 
 export function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -80,13 +82,13 @@ export function hm(d: Date): string {
 }
 
 export function monthTitle(d: Date): string {
-  return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`;
+  return new Intl.DateTimeFormat(dateLocale(), { year: "numeric", month: "long" }).format(d);
 }
 
 export function dayTitle(d: Date): string {
-  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 ${WEEKDAYS[weekdayIndex(d)]}`;
+  return new Intl.DateTimeFormat(dateLocale(), { month: "long", day: "numeric", weekday: "short" }).format(d);
 }
 
 export function shortDate(d: Date): string {
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
+  return new Intl.DateTimeFormat(dateLocale(), { month: "numeric", day: "numeric" }).format(d);
 }

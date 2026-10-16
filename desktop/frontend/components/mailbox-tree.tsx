@@ -1,5 +1,8 @@
 "use client";
 
+import { dateLocale, t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useMemo } from "react";
 import {
   Archive,
@@ -58,25 +61,25 @@ interface Props {
  * 服务器有 role 就用 role，没有则按常见名称识别；识别不出的是自建文件夹，保留原名。
  */
 // 颜色类名必须是完整字面量，Tailwind 按源码文本扫描生成样式，拼接出来的类名不会生效。
-const KIND_META: Record<string, { icon: typeof Inbox; label: string; color: string }> = {
-  inbox: { icon: Inbox, label: "收件箱", color: "text-folder-inbox" },
-  drafts: { icon: FileText, label: "草稿", color: "text-folder-drafts" },
-  scheduled: { icon: CalendarClock, label: "已计划", color: "text-folder-scheduled" },
-  sent: { icon: Send, label: "已发送", color: "text-folder-sent" },
-  archive: { icon: Archive, label: "归档", color: "text-folder-archive" },
-  junk: { icon: ShieldAlert, label: "垃圾邮件", color: "text-folder-junk" },
-  trash: { icon: Trash2, label: "已删除", color: "text-folder-trash" },
-};
+const getKindMeta: () => (Record<string, { icon: typeof Inbox; label: string; color: string }>) = () => ({
+  inbox: { icon: Inbox, label: t("收件箱"), color: "text-folder-inbox" },
+  drafts: { icon: FileText, label: t("草稿"), color: "text-folder-drafts" },
+  scheduled: { icon: CalendarClock, label: t("已计划"), color: "text-folder-scheduled" },
+  sent: { icon: Send, label: t("已发送"), color: "text-folder-sent" },
+  archive: { icon: Archive, label: t("归档"), color: "text-folder-archive" },
+  junk: { icon: ShieldAlert, label: t("垃圾邮件"), color: "text-folder-junk" },
+  trash: { icon: Trash2, label: t("已删除"), color: "text-folder-trash" },
+});
 
 /** 常用邮箱的固定顺序。服务端的 sortOrder 多数为 0，排不出有意义的次序。 */
 /** 界面上显示的文件夹名: 系统文件夹用中文名, 自建文件夹保留原名。 */
 export function mailboxLabel(m: Pick<Mailbox, "kind" | "name">): string {
-  return KIND_META[m.kind]?.label ?? m.name;
+  return getKindMeta()[m.kind]?.label ?? m.name;
 }
 
 /** 文件夹类别对应的图标, 自建文件夹为普通文件夹图标。 */
 export function mailboxIcon(kind: string): typeof Inbox {
-  return KIND_META[kind]?.icon ?? Folder;
+  return getKindMeta()[kind]?.icon ?? Folder;
 }
 
 const KIND_ORDER = ["inbox", "drafts", "scheduled", "sent", "archive", "junk", "trash"];
@@ -92,10 +95,11 @@ export function mailboxTreeOrder(mailboxes: Mailbox[]): (Mailbox & { depth: numb
 }
 
 export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent = 0 }: Props) {
+  useI18n();
   const nodes = useMemo(() => buildTree(mailboxes), [mailboxes]);
 
   return (
-    <nav className="flex flex-col gap-0.5" aria-label="邮箱">
+    <nav className="flex flex-col gap-0.5" aria-label={t("邮箱")}>
       {nodes.map((node) => (
         <MailboxRow
           key={node.id}
@@ -123,7 +127,8 @@ function MailboxRow({
   onAction?: Props["onAction"];
   indent: number;
 }) {
-  const meta = KIND_META[node.kind];
+  useI18n();
+  const meta = getKindMeta()[node.kind];
   const Icon = meta?.icon ?? Folder;
   const label = meta?.label ?? node.name;
 
@@ -167,30 +172,24 @@ function MailboxRow({
         </ContextMenuLabel>
         <ContextMenuItem onSelect={act("markRead")} disabled={node.unreadEmails === 0 || rights.maySetSeen === false}>
           <MailOpen />
-          将文件夹标记为已读
-        </ContextMenuItem>
+          {t("将文件夹标记为已读")}</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={act("create")} disabled={rights.mayCreateChild === false}>
           <FolderPlus />
-          新建子文件夹…
-        </ContextMenuItem>
+          {t("新建子文件夹…")}</ContextMenuItem>
         <ContextMenuItem onSelect={act("rename")} disabled={!custom || rights.mayRename === false}>
           <Pencil />
-          重命名…
-        </ContextMenuItem>
+          {t("重命名…")}</ContextMenuItem>
         <ContextMenuItem onSelect={act("move")} disabled={!custom || rights.mayRename === false}>
           <FolderInput />
-          移动到…
-        </ContextMenuItem>
+          {t("移动到…")}</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={act("import")} disabled={rights.mayAddItems === false}>
           <Upload />
-          导入 .eml 或 .zip…
-        </ContextMenuItem>
+          {t("导入 .eml 或 .zip…")}</ContextMenuItem>
         <ContextMenuItem onSelect={act("pull")}>
           <CloudDownload />
-          从服务器拉取全部邮件
-        </ContextMenuItem>
+          {t("从服务器拉取全部邮件")}</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
           variant="destructive"
@@ -198,17 +197,14 @@ function MailboxRow({
           disabled={node.totalEmails === 0 || rights.mayRemoveItems === false}
         >
           <FolderX />
-          清空文件夹
-        </ContextMenuItem>
+          {t("清空文件夹")}</ContextMenuItem>
         <ContextMenuItem variant="destructive" onSelect={act("delete")} disabled={!custom || rights.mayDelete === false}>
           <Trash2 />
-          删除文件夹
-        </ContextMenuItem>
+          {t("删除文件夹")}</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={act("refresh")}>
           <RefreshCw />
-          刷新
-        </ContextMenuItem>
+          {t("刷新")}</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -264,6 +260,6 @@ function sortNodes(list: Node[]) {
       if (rb === -1) return -1;
       return ra - rb;
     }
-    return a.name.localeCompare(b.name, "zh-CN");
+    return a.name.localeCompare(b.name, dateLocale());
   });
 }

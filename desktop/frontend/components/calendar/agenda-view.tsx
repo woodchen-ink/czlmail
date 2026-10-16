@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useMemo } from "react";
 import { CalendarDays, MapPin } from "lucide-react";
 
@@ -17,6 +20,7 @@ interface Props {
 
 /** 议程：按天分组的列表，只列有日程的日子。 */
 export function AgendaView({ events, calendars, onOpen }: Props) {
+  useI18n();
   const groups = useMemo(() => {
     const map = new Map<string, { day: Date; list: EventOccurrence[] }>();
     for (const o of events) {
@@ -32,8 +36,7 @@ export function AgendaView({ events, calendars, onOpen }: Props) {
     return (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-sm">
         <CalendarDays className="size-8" />
-        这段时间没有日程
-      </div>
+        {t("这段时间没有日程")}</div>
     );
   }
 
@@ -45,7 +48,7 @@ export function AgendaView({ events, calendars, onOpen }: Props) {
           <section key={day.toDateString()} className="flex gap-4">
             <div className="w-24 shrink-0 pt-1">
               <p className={cn("text-sm font-medium", sameDay(day, today) && "text-accent")}>{dayTitle(day)}</p>
-              {sameDay(day, today) && <p className="text-muted-foreground text-xs">今天</p>}
+              {sameDay(day, today) && <p className="text-muted-foreground text-xs">{t("今天")}</p>}
             </div>
             <ul className="flex min-w-0 flex-1 flex-col gap-1.5">
               {list.map((o) => (
@@ -57,10 +60,10 @@ export function AgendaView({ events, calendars, onOpen }: Props) {
                   >
                     <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: occurrenceColor(calendars, o) }} />
                     <span className="text-muted-foreground w-24 shrink-0 text-sm tabular-nums">
-                      {o.allDay ? "全天" : `${hm(occStart(o))} – ${hm(occEnd(o))}`}
+                      {o.allDay ? t("全天") : `${hm(occStart(o))} – ${hm(occEnd(o))}`}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{o.title || "(无标题)"}</span>
+                      <span className="block truncate text-sm font-medium">{o.title || t("(无标题)")}</span>
                       {o.location && (
                         <span className="text-muted-foreground flex items-center gap-1 truncate text-xs">
                           <MapPin className="size-3" />

@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Building2, X } from "lucide-react";
 
@@ -44,6 +47,7 @@ type Suggestion = Recipient & { directory?: boolean };
  * 候选来自通讯录、最近往来的地址与同邮局用户目录。
  */
 export function RecipientInput({ value, onChange, placeholder, label, bare }: Props) {
+  useI18n();
   const [text, setText] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [active, setActive] = useState(0);
@@ -163,7 +167,7 @@ export function RecipientInput({ value, onChange, placeholder, label, bare }: Pr
               <span className="truncate">{c.name ? `${c.name} (${c.email})` : c.email}</span>
               <button
                 type="button"
-                aria-label={`移除 ${c.email}`}
+                aria-label={t("移除 {0}", c.email)}
                 className="text-muted-foreground hover:text-foreground rounded-sm p-0.5"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => remove(i)}
@@ -259,8 +263,7 @@ export function RecipientInput({ value, onChange, placeholder, label, bare }: Pr
               {r.directory && (
                 <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
                   <Building2 className="size-3" />
-                  同邮局
-                </span>
+                  {t("同邮局")}</span>
               )}
             </li>
           ))}

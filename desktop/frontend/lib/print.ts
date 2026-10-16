@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+
 import { sanitizeEmailHtml } from "@/lib/sanitize-email";
 import { displayAddressList, fullDate } from "@/lib/format";
 import type { EmailDetail } from "@/lib/api";
@@ -15,16 +17,16 @@ export function printEmail(email: EmailDetail, allowRemoteImages: boolean) {
     : `<pre style="white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(email.bodyText ?? "")}</pre>`;
 
   const header = `
-    <h1 style="font-size:18px;margin:0 0 8px">${escapeHtml(email.subject || "(无主题)")}</h1>
-    <p style="margin:2px 0;color:#687280;font-size:12px">发件人：${escapeHtml(displayAddressList(email.from))}</p>
-    <p style="margin:2px 0;color:#687280;font-size:12px">收件人：${escapeHtml(displayAddressList(email.to))}</p>
-    <p style="margin:2px 0 12px;color:#687280;font-size:12px">时间：${escapeHtml(fullDate(email.receivedAt))}</p>
+    <h1 style="font-size:18px;margin:0 0 8px">${escapeHtml(email.subject || t("(无主题)"))}</h1>
+    <p style="margin:2px 0;color:#687280;font-size:12px">${escapeHtml(t("发件人"))}: ${escapeHtml(displayAddressList(email.from))}</p>
+    <p style="margin:2px 0;color:#687280;font-size:12px">${escapeHtml(t("收件人"))}: ${escapeHtml(displayAddressList(email.to))}</p>
+    <p style="margin:2px 0 12px;color:#687280;font-size:12px">${escapeHtml(t("时间"))}: ${escapeHtml(fullDate(email.receivedAt))}</p>
     <hr style="border:0;border-top:1px solid #D5DCE5;margin:0 0 16px">`;
 
   const img = allowRemoteImages ? "img-src https: data:;" : "img-src data:;";
   const doc = `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; ${img} style-src 'unsafe-inline'; script-src 'none';">
-<title>${escapeHtml(email.subject || "邮件")}</title>
+<title>${escapeHtml(email.subject || t("邮件"))}</title>
 <style>body{font:14px/1.6 system-ui,sans-serif;color:#10131A;margin:24px}img{max-width:100%}</style>
 </head><body>${header}${body}</body></html>`;
 

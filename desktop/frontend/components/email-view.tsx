@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Languages, Loader2, ShieldCheck, Sparkles, Undo2 } from "lucide-react";
 import { toast } from "sonner";
@@ -72,6 +75,7 @@ export function EmailView({
   onOpenEmail,
   onMarkRead,
 }: Props) {
+  useI18n();
   const [email, setEmail] = useState<EmailDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -156,7 +160,7 @@ export function EmailView({
     const offset = hasSubject ? 1 : 0;
     const texts = hasSubject ? [subject, ...seg.texts] : seg.texts;
     if (texts.length === 0) {
-      toast.info("没有需要翻译的文字");
+      toast.info(t("没有需要翻译的文字"));
       return;
     }
     const lang = ai?.translateLang || "简体中文";
@@ -285,11 +289,11 @@ export function EmailView({
     if (ctl.signal.aborted) return;
     if (failed === pending.length && pending.length === texts.length) {
       setTranslation(null);
-      toast.error("AI 没有按要求返回译文，翻译失败");
+      toast.error(t("AI 没有按要求返回译文，翻译失败"));
       return;
     }
     if (failed > 0) {
-      toast.warning("部分段落没有翻译成功，已保留原文");
+      toast.warning(t("部分段落没有翻译成功，已保留原文"));
       return;
     }
     api
@@ -410,8 +414,7 @@ export function EmailView({
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
         <Loader2 className="size-4 animate-spin" />
-        载入中
-      </div>
+        {t("载入中")}</div>
     );
   }
 
@@ -434,7 +437,7 @@ export function EmailView({
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto flex max-w-4xl flex-col gap-4 p-5">
           <h1 className="text-lg leading-snug font-semibold">
-            {translation?.subject || email.subject || "(无主题)"}
+            {translation?.subject || email.subject || t("(无主题)")}
           </h1>
 
           {email.labels && email.labels.length > 0 && (
@@ -469,7 +472,7 @@ export function EmailView({
                 )}
               </div>
               <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-1 text-xs">
-                <span>收件人：</span>
+                <span>{t("收件人：")}</span>
                 <AddressLine list={email.to} own={own} />
                 <button
                   type="button"
@@ -478,12 +481,12 @@ export function EmailView({
                   onClick={toggleDetails}
                 >
                   <ChevronDown className={`size-3.5 transition-transform ${showDetails ? "rotate-180" : ""}`} />
-                  {showDetails ? "隐藏详情" : "查看详情"}
+                  {showDetails ? t("隐藏详情") : t("查看详情")}
                 </button>
               </div>
               {email.cc && email.cc.length > 0 && (
                 <div className="text-muted-foreground flex flex-wrap items-center gap-x-1 text-xs">
-                  <span>抄送：</span>
+                  <span>{t("抄送：")}</span>
                   <AddressLine list={email.cc} own={own} />
                 </div>
               )}
@@ -517,7 +520,7 @@ export function EmailView({
                         onClick={translate}
                       >
                         <Languages className="size-4" />
-                        {hasCachedTranslation ? "显示译文" : `翻译为${ai.translateLang || "简体中文"}`}
+                        {hasCachedTranslation ? t("显示译文") : t("翻译为{0}", t(ai.translateLang || "简体中文"))}
                       </Button>
                     ) : (
                       <>
@@ -528,8 +531,8 @@ export function EmailView({
                             <Languages className="size-3.5" />
                           )}
                           {translation.running
-                            ? `正在翻译… ${translation.done}/${translation.total}`
-                            : `已由 AI 翻译为${ai.translateLang || "简体中文"}`}
+                            ? t("正在翻译… {0}/{1}", translation.done, translation.total)
+                            : t("已由 AI 翻译为{0}", t(ai.translateLang || "简体中文"))}
                         </span>
                         <Button
                           variant="ghost"
@@ -541,7 +544,7 @@ export function EmailView({
                           }}
                         >
                           <Undo2 className="size-4" />
-                          {translation.running ? "停止" : "显示原文"}
+                          {translation.running ? t("停止") : t("显示原文")}
                         </Button>
                       </>
                     ))}
@@ -554,8 +557,7 @@ export function EmailView({
                       onClick={summarize}
                     >
                       <Sparkles className="size-4" />
-                      AI 总结
-                    </Button>
+                      {t("AI 总结")}</Button>
                   ) : (
                     <Button
                       variant="ghost"
@@ -571,7 +573,7 @@ export function EmailView({
                       ) : (
                         <Undo2 className="size-4" />
                       )}
-                      {summary.running ? "停止总结" : "收起总结"}
+                      {summary.running ? t("停止总结") : t("收起总结")}
                     </Button>
                   )}
                 </>
@@ -583,12 +585,12 @@ export function EmailView({
                     <TooltipTrigger asChild>
                       <span
                         className="text-muted-foreground flex size-7 items-center justify-center"
-                        aria-label="此发件人在信任名单中，已加载远程内容"
+                        aria-label={t("此发件人在信任名单中，已加载远程内容")}
                       >
                         <ShieldCheck className="size-4" />
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent>此发件人在信任名单中，已加载远程内容</TooltipContent>
+                    <TooltipContent>{t("此发件人在信任名单中，已加载远程内容")}</TooltipContent>
                   </Tooltip>
                 )}
                 <UnsubscribeButton accountId={accountId} email={email} info={listHeaders} />
@@ -600,12 +602,11 @@ export function EmailView({
             <div className="border-border bg-card rounded-md border px-3 py-2.5">
               <div className="text-muted-foreground mb-1.5 flex items-center gap-1.5 text-xs">
                 <Sparkles className="size-3.5" />
-                AI 总结
-              </div>
+                {t("AI 总结")}</div>
               {summary.text ? (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">{summary.text}</p>
               ) : (
-                <p className="text-muted-foreground text-sm">正在生成…</p>
+                <p className="text-muted-foreground text-sm">{t("正在生成…")}</p>
               )}
             </div>
           )}
@@ -613,8 +614,7 @@ export function EmailView({
           {loading && !email.bodyFetched ? (
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <Loader2 className="size-4 animate-spin" />
-              正在取回正文
-            </div>
+              {t("正在取回正文")}</div>
           ) : (
             <>
               <EmailBanners
@@ -658,7 +658,8 @@ export function EmailView({
 
 /** 收件人一栏：每个地址可点开看完整邮箱，自己的显示「我」。 */
 function AddressLine({ list, own }: { list: Address[] | undefined; own: Set<string> }) {
-  if (!list || list.length === 0) return <span>(未列出)</span>;
+  useI18n();
+  if (!list || list.length === 0) return <span>{t("(未列出)")}</span>;
   return list.map((a, i) => (
     <span key={i}>
       <AddressChip address={a} own={own.has((a.email ?? "").toLowerCase())} />

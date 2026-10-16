@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useCallback, useEffect, useState } from "react";
 import {
   AppWindow,
@@ -97,43 +100,43 @@ type Section =
   | "addressbooks"
   | "about";
 
-const GROUPS: { title: string; items: { id: Section; label: string; icon: typeof Palette }[] }[] = [
+const getGroups: () => ({ title: string; items: { id: Section; label: string; icon: typeof Palette }[] }[]) = () => ([
   {
-    title: "通用",
+    title: t("通用"),
     items: [
-      { id: "account", label: "账户", icon: UserRound },
-      { id: "appearance", label: "外观", icon: Palette },
-      { id: "notifications", label: "通知", icon: Bell },
-      { id: "integration", label: "默认应用与启动", icon: AppWindow },
-      { id: "reading", label: "阅读", icon: BookOpen },
-      { id: "compose", label: "写信", icon: PenLine },
-      { id: "ai", label: "AI 助手", icon: Sparkles },
+      { id: "account", label: t("账户"), icon: UserRound },
+      { id: "appearance", label: t("外观"), icon: Palette },
+      { id: "notifications", label: t("通知"), icon: Bell },
+      { id: "integration", label: t("默认应用与启动"), icon: AppWindow },
+      { id: "reading", label: t("阅读"), icon: BookOpen },
+      { id: "compose", label: t("写信"), icon: PenLine },
+      { id: "ai", label: t("AI 助手"), icon: Sparkles },
     ],
   },
   {
-    title: "邮件",
+    title: t("邮件"),
     items: [
-      { id: "identities", label: "发件身份与签名", icon: IdCard },
-      { id: "vacation", label: "自动回复", icon: Plane },
-      { id: "filters", label: "过滤规则", icon: ListFilter },
-      { id: "templates", label: "邮件模板", icon: FileText },
-      { id: "folders", label: "文件夹", icon: Folder },
-      { id: "scheduled", label: "定时发送", icon: CalendarClock },
-      { id: "privacy", label: "内容与发件人", icon: ShieldCheck },
+      { id: "identities", label: t("发件身份与签名"), icon: IdCard },
+      { id: "vacation", label: t("自动回复"), icon: Plane },
+      { id: "filters", label: t("过滤规则"), icon: ListFilter },
+      { id: "templates", label: t("邮件模板"), icon: FileText },
+      { id: "folders", label: t("文件夹"), icon: Folder },
+      { id: "scheduled", label: t("定时发送"), icon: CalendarClock },
+      { id: "privacy", label: t("内容与发件人"), icon: ShieldCheck },
     ],
   },
   {
-    title: "日历与通讯录",
+    title: t("日历与通讯录"),
     items: [
-      { id: "calendars", label: "日历", icon: CalendarDays },
-      { id: "addressbooks", label: "通讯录", icon: BookUser },
+      { id: "calendars", label: t("日历"), icon: CalendarDays },
+      { id: "addressbooks", label: t("通讯录"), icon: BookUser },
     ],
   },
   {
-    title: "其它",
-    items: [{ id: "about", label: "关于与更新", icon: Info }],
+    title: t("其它"),
+    items: [{ id: "about", label: t("关于与更新"), icon: Info }],
   },
-];
+]);
 
 export const GITHUB_URL = "https://github.com/woodchen-ink/czlmail";
 export const FORUM_URL = "https://sunai.net/t/topic/1485";
@@ -141,6 +144,7 @@ export const FORUM_URL = "https://sunai.net/t/topic/1485";
 export const CHANGELOG_URL = "https://www.sunai.net/t/topic/1495";
 
 export function SettingsShell({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
+  useI18n();
   const [section, setSection] = useState<Section>("account");
   const [hasUpdate, setHasUpdate] = useState(false);
 
@@ -160,9 +164,9 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
 
   return (
     <div className="flex h-full">
-      <nav className="border-border bg-sidebar czl-scroll flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r p-2" aria-label="设置">
-        <h1 className="px-2 py-2 text-base font-semibold">设置</h1>
-        {GROUPS.map((g) => (
+      <nav className="border-border bg-sidebar czl-scroll flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r p-2" aria-label={t("设置")}>
+        <h1 className="px-2 py-2 text-base font-semibold">{t("设置")}</h1>
+        {getGroups().map((g) => (
           <div key={g.title} className="mb-2 flex flex-col gap-0.5">
             <p className="text-muted-foreground px-2 pt-1 pb-0.5 text-xs">{g.title}</p>
             {g.items.map((s) => (
@@ -179,7 +183,7 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
                 <s.icon className="text-muted-foreground size-4" />
                 {s.label}
                 {s.id === "about" && hasUpdate && (
-                  <span className="bg-destructive text-primary-foreground ml-auto rounded-sm px-1.5 text-[10px] leading-4">新版本</span>
+                  <span className="bg-destructive text-primary-foreground ml-auto rounded-sm px-1.5 text-[10px] leading-4">{t("新版本")}</span>
                 )}
               </button>
             ))}
@@ -215,6 +219,7 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
 /* ---------------- 隐私 ---------------- */
 
 function PrivacySection({ active }: { active: boolean }) {
+  useI18n();
   const { settings, save } = useSettings(active);
   const [accountId, setAccountId] = useState("");
   const [senders, setSenders] = useState<string[]>([]);
@@ -240,7 +245,7 @@ function PrivacySection({ active }: { active: boolean }) {
   async function add() {
     const addr = adding.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+$/.test(addr)) {
-      toast.error("请输入完整的邮箱地址");
+      toast.error(t("请输入完整的邮箱地址"));
       return;
     }
     try {
@@ -265,9 +270,9 @@ function PrivacySection({ active }: { active: boolean }) {
 
   return (
     <>
-      <SectionTitle title="隐私与安全" desc="远程图片默认全部拦截：加载图片会让发件人知道你何时、在哪打开了邮件。" />
+      <SectionTitle title={t("隐私与安全")} desc={t("远程图片默认全部拦截：加载图片会让发件人知道你何时、在哪打开了邮件。")} />
       <Card>
-        <Row title="信任通讯录里的联系人" desc="来自通讯录联系人的邮件自动加载图片">
+        <Row title={t("信任通讯录里的联系人")} desc={t("来自通讯录联系人的邮件自动加载图片")}>
           <Switch
             checked={!!settings?.trustAddressBookSenders}
             disabled={!settings}
@@ -277,8 +282,8 @@ function PrivacySection({ active }: { active: boolean }) {
       </Card>
 
       <SectionTitle
-        title="信任的发件人"
-        desc="这些地址的邮件会直接加载图片。名单保存在服务器的「Trusted Senders」通讯录里，与 Bulwark 网页端及其它设备共用。"
+        title={t("信任的发件人")}
+        desc={t("这些地址的邮件会直接加载图片。名单保存在服务器的「Trusted Senders」通讯录里，与 Bulwark 网页端及其它设备共用。")}
         small
       />
       <Card>
@@ -287,22 +292,21 @@ function PrivacySection({ active }: { active: boolean }) {
             value={adding}
             onChange={(e) => setAdding(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && add()}
-            placeholder="添加邮箱地址"
+            placeholder={t("添加邮箱地址")}
           />
           <Button onClick={add} disabled={!adding.trim()}>
             <Plus className="size-4" />
-            添加
-          </Button>
+            {t("添加")}</Button>
         </div>
-        {senders.length > 8 && <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={`在 ${senders.length} 个地址中筛选`} />}
+        {senders.length > 8 && <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t("在 {0} 个地址中筛选", senders.length)} />}
         {shown.length === 0 ? (
-          <p className="text-muted-foreground py-4 text-center text-sm">{senders.length ? "没有匹配的地址" : "还没有信任的发件人"}</p>
+          <p className="text-muted-foreground py-4 text-center text-sm">{senders.length ? t("没有匹配的地址") : t("还没有信任的发件人")}</p>
         ) : (
           <ul className="border-border max-h-96 overflow-y-auto rounded-md border">
             {shown.map((addr, i) => (
               <li key={addr} className={cn("flex items-center gap-2 px-3 py-1.5 text-sm", i > 0 && "border-border border-t")}>
                 <span className="min-w-0 flex-1 truncate">{addr}</span>
-                <Button variant="ghost" size="icon" className="size-7" aria-label={`移除 ${addr}`} onClick={() => remove(addr)}>
+                <Button variant="ghost" size="icon" className="size-7" aria-label={t("移除 {0}", addr)} onClick={() => remove(addr)}>
                   <X className="size-4" />
                 </Button>
               </li>
@@ -316,14 +320,15 @@ function PrivacySection({ active }: { active: boolean }) {
 
 /* ---------------- 模板 ---------------- */
 
-const BUILTIN_PLACEHOLDERS = [
-  { name: "date", label: "今天日期" },
-  { name: "day_of_week", label: "星期" },
-  { name: "sender_name", label: "你的名字" },
-  { name: "recipient_name", label: "收件人名字" },
-];
+const getBuiltinPlaceholders = () => ([
+  { name: "date", label: t("今天日期") },
+  { name: "day_of_week", label: t("星期") },
+  { name: "sender_name", label: t("你的名字") },
+  { name: "recipient_name", label: t("收件人名字") },
+]);
 
 function TemplateSection({ active }: { active: boolean }) {
+  useI18n();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<Template | null>(null);
   const [deleting, setDeleting] = useState<Template | null>(null);
@@ -346,7 +351,7 @@ function TemplateSection({ active }: { active: boolean }) {
     try {
       const n = await api.importTemplatesFile();
       if (n > 0) {
-        toast.success(`已导入 ${n} 个模板`);
+        toast.success(t("已导入 {0} 个模板", n));
         load();
       }
     } catch (err) {
@@ -367,41 +372,38 @@ function TemplateSection({ active }: { active: boolean }) {
     <>
       <div className="flex items-end justify-between gap-4">
         <SectionTitle
-          title="邮件模板"
-          desc="写信时从模板开始，可以使用 {{占位符}}。模板保存在网盘的「CZL Mail」文件夹里，自动同步到你的其它设备。"
+          title={t("邮件模板")}
+          desc={t("写信时从模板开始，可以使用 {{占位符}}。模板保存在网盘的「CZL Mail」文件夹里，自动同步到你的其它设备。")}
         />
         <div className="flex shrink-0 gap-2">
-          <Button variant="outline" size="sm" onClick={importFile} title="支持本程序与 Bulwark 导出的模板文件">
+          <Button variant="outline" size="sm" onClick={importFile} title={t("支持本程序与 Bulwark 导出的模板文件")}>
             <Upload className="size-4" />
-            导入
-          </Button>
+            {t("导入")}</Button>
           <Button size="sm" onClick={() => setEditing(store.Template.createFrom({ id: "", name: "", category: "", subject: "", body: "" }))}>
             <Plus className="size-4" />
-            新建模板
-          </Button>
+            {t("新建模板")}</Button>
         </div>
       </div>
 
       {templates.length === 0 ? (
         <Card>
-          <p className="text-muted-foreground py-6 text-center text-sm">还没有模板</p>
+          <p className="text-muted-foreground py-6 text-center text-sm">{t("还没有模板")}</p>
         </Card>
       ) : (
         <Card className="gap-0 p-0">
-          {templates.map((t, i) => (
-            <div key={t.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-border border-t")}>
+          {templates.map((template, i) => (
+            <div key={template.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-border border-t")}>
               <FileText className="text-muted-foreground size-4 shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
-                  {t.name}
-                  {t.category && <span className="text-muted-foreground ml-2 text-xs font-normal">{t.category}</span>}
+                  {template.name}
+                  {template.category && <span className="text-muted-foreground ml-2 text-xs font-normal">{template.category}</span>}
                 </p>
-                <p className="text-muted-foreground truncate text-xs">{t.subject || t.body.slice(0, 80)}</p>
+                <p className="text-muted-foreground truncate text-xs">{template.subject || template.body.slice(0, 80)}</p>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setEditing(t)}>
-                编辑
-              </Button>
-              <Button variant="ghost" size="icon" className="size-8" aria-label="删除" onClick={() => setDeleting(t)}>
+              <Button variant="ghost" size="sm" onClick={() => setEditing(template)}>
+                {t("编辑")}</Button>
+              <Button variant="ghost" size="icon" className="size-8" aria-label={t("删除")} onClick={() => setDeleting(template)}>
                 <Trash2 className="size-4" />
               </Button>
             </div>
@@ -414,14 +416,13 @@ function TemplateSection({ active }: { active: boolean }) {
       <AlertDialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除模板</AlertDialogTitle>
-            <AlertDialogDescription>确定删除「{deleting?.name}」？</AlertDialogDescription>
+            <AlertDialogTitle>{t("删除模板")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("确定删除「{0}」？", deleting?.name)}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={() => deleting && remove(deleting)}>
-              删除
-            </AlertDialogAction>
+              {t("删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -430,6 +431,7 @@ function TemplateSection({ active }: { active: boolean }) {
 }
 
 function TemplateDialog({ template, onClose, onSaved }: { template: Template | null; onClose: () => void; onSaved: () => void }) {
+  useI18n();
   const [form, setForm] = useState<Template | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -448,13 +450,13 @@ function TemplateDialog({ template, onClose, onSaved }: { template: Template | n
 
   async function save() {
     if (!form?.name.trim()) {
-      toast.error("请填写模板名称");
+      toast.error(t("请填写模板名称"));
       return;
     }
     setBusy(true);
     try {
       await api.saveTemplate(form);
-      toast.success("模板已保存");
+      toast.success(t("模板已保存"));
       onSaved();
       onClose();
     } catch (err) {
@@ -468,28 +470,28 @@ function TemplateDialog({ template, onClose, onSaved }: { template: Template | n
     <Dialog open={template !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{template?.id ? "编辑模板" : "新建模板"}</DialogTitle>
+          <DialogTitle>{template?.id ? t("编辑模板") : t("新建模板")}</DialogTitle>
         </DialogHeader>
         {form && (
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label>名称</Label>
+                <Label>{t("名称")}</Label>
                 <Input value={form.name} onChange={(e) => update("name", e.target.value)} autoFocus />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>分类</Label>
-                <Input value={form.category} onChange={(e) => update("category", e.target.value)} placeholder="可选" />
+                <Label>{t("分类")}</Label>
+                <Input value={form.category} onChange={(e) => update("category", e.target.value)} placeholder={t("可选")} />
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>主题</Label>
+              <Label>{t("主题")}</Label>
               <Input value={form.subject} onChange={(e) => update("subject", e.target.value)} />
             </div>
             <div className="flex flex-col gap-1.5">
               <div className="flex flex-wrap items-center gap-1">
-                <Label className="mr-2">正文</Label>
-                {BUILTIN_PLACEHOLDERS.map((p) => (
+                <Label className="mr-2">{t("正文")}</Label>
+                {getBuiltinPlaceholders().map((p) => (
                   <Button key={p.name} type="button" variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => insert(p.name)}>
                     {p.label}
                   </Button>
@@ -497,19 +499,16 @@ function TemplateDialog({ template, onClose, onSaved }: { template: Template | n
               </div>
               <Textarea rows={12} value={form.body} onChange={(e) => update("body", e.target.value)} />
               <p className="text-muted-foreground text-xs">
-                自定义占位符写成 {"{{客户名称}}"} 这样的形式，套用模板时会让你填写。
-              </p>
+                {t("自定义占位符写成")}{t("{{客户名称}}")} {t("这样的形式，套用模板时会让你填写。")}</p>
             </div>
           </div>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            取消
-          </Button>
+            {t("取消")}</Button>
           <Button onClick={save} disabled={busy}>
             {busy && <Loader2 className="size-4 animate-spin" />}
-            保存
-          </Button>
+            {t("保存")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -519,6 +518,7 @@ function TemplateDialog({ template, onClose, onSaved }: { template: Template | n
 /* ---------------- 图片缓存 ---------------- */
 
 function ImageCacheCard({ active }: { active: boolean }) {
+  useI18n();
   const [size, setSize] = useState<number | null>(null);
   const [clearing, setClearing] = useState(false);
 
@@ -531,7 +531,7 @@ function ImageCacheCard({ active }: { active: boolean }) {
     setClearing(true);
     try {
       await api.clearImageCache();
-      toast.success("已清除图片缓存");
+      toast.success(t("已清除图片缓存"));
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -542,16 +542,15 @@ function ImageCacheCard({ active }: { active: boolean }) {
 
   return (
     <>
-      <SectionTitle title="本机缓存" small />
+      <SectionTitle title={t("本机缓存")} small />
       <Card>
         <Row
-          title="图片缓存"
-          desc={`邮件里的远程图片与内嵌图片，再次打开邮件时不重新下载。上限 500 MB，超出后自动删除最久没看的。当前占用 ${size === null ? "…" : fileSize(size) || "0 B"}。`}
+          title={t("图片缓存")}
+          desc={t("邮件里的远程图片与内嵌图片，再次打开邮件时不重新下载。上限 500 MB，超出后自动删除最久没看的。当前占用 {0}。", size === null ? "…" : fileSize(size) || "0 B")}
         >
           <Button variant="outline" size="sm" onClick={clear} disabled={clearing || !size}>
             {clearing ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-            清除
-          </Button>
+            {t("清除")}</Button>
         </Row>
       </Card>
     </>
@@ -561,6 +560,7 @@ function ImageCacheCard({ active }: { active: boolean }) {
 /* ---------------- 账户 ---------------- */
 
 function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
+  useI18n();
   const [status, setStatus] = useState<SessionStatus | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [confirm, setConfirm] = useState(false);
@@ -576,25 +576,24 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
 
   return (
     <>
-      <SectionTitle title="账户" />
+      <SectionTitle title={t("账户")} />
       <Card>
-        <Row title={status?.username || "未登录"} desc={status ? `服务器 ${status.server} · ${status.connected ? "已连接" : "离线"}` : ""}>
+        <Row title={status?.username || t("未登录")} desc={status ? t("服务器 {0} · {1}", status.server, status.connected ? t("已连接") : t("离线")) : ""}>
           <Button variant="outline" size="sm" onClick={() => setConfirm(true)}>
             <LogOut className="size-4" />
-            退出登录
-          </Button>
+            {t("退出登录")}</Button>
         </Row>
       </Card>
 
       {accounts.length > 1 && (
         <>
-          <SectionTitle title="可访问的邮箱" desc="由服务器按你的权限共享，在邮件侧栏的「共享」下显示。" small />
+          <SectionTitle title={t("可访问的邮箱")} desc={t("由服务器按你的权限共享，在邮件侧栏的「共享」下显示。")} small />
           <Card className="gap-0 p-0">
             {accounts.map((a, i) => (
               <div key={a.id} className={cn("flex items-center gap-2 px-4 py-2.5 text-sm", i > 0 && "border-border border-t")}>
                 <UserRound className="text-muted-foreground size-4" />
                 <span className="flex-1 truncate">{a.name}</span>
-                <span className="text-muted-foreground text-xs">{a.isPersonal ? "个人" : "共享"}</span>
+                <span className="text-muted-foreground text-xs">{a.isPersonal ? t("个人") : t("共享")}</span>
               </div>
             ))}
           </Card>
@@ -603,11 +602,11 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
 
       <ImageCacheCard active={active} />
 
-      <SectionTitle title="删除本机数据" small />
+      <SectionTitle title={t("删除本机数据")} small />
       <Card className="border-destructive/40">
         <Row
-          title="删除所有数据并退出"
-          desc="删除本机的邮件缓存、设置、日志、已下载的附件，以及系统钥匙串里的登录凭据与 AI 密钥，并取消开机自启和默认应用登记。服务器上的邮件、日历、联系人不受影响。"
+          title={t("删除所有数据并退出")}
+          desc={t("删除本机的邮件缓存、设置、日志、已下载的附件，以及系统钥匙串里的登录凭据与 AI 密钥，并取消开机自启和默认应用登记。服务器上的邮件、日历、联系人不受影响。")}
         >
           <Button
             variant="outline"
@@ -619,33 +618,28 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
             }}
           >
             <Trash2 className="size-4" />
-            删除所有数据
-          </Button>
+            {t("删除所有数据")}</Button>
         </Row>
       </Card>
 
       <Dialog open={purgeOpen} onOpenChange={(o) => !purging && setPurgeOpen(o)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>删除本机所有数据</DialogTitle>
+            <DialogTitle>{t("删除本机所有数据")}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3 text-sm">
             <p className="text-muted-foreground leading-relaxed">
-              CZL Mail 会退出，并删除本机保存的全部内容：邮件缓存、设置、日志、已下载的附件与文件、登录凭据和 AI 密钥。
-              下次打开需要重新登录并重新同步。服务器上的数据不会被删除。
-            </p>
+              {t("CZL Mail 会退出，并删除本机保存的全部内容：邮件缓存、设置、日志、已下载的附件与文件、登录凭据和 AI 密钥。 下次打开需要重新登录并重新同步。服务器上的数据不会被删除。")}</p>
             <p>
-              请输入 <span className="font-medium">删除</span> 确认：
-            </p>
+              {t("请输入")}<span className="font-medium">{t("删除")}</span> {t("确认：")}</p>
             <Input autoFocus value={purgeText} onChange={(e) => setPurgeText(e.target.value)} disabled={purging} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPurgeOpen(false)} disabled={purging}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button
               variant="destructive"
-              disabled={purgeText.trim() !== "删除" || purging}
+              disabled={purgeText.trim() !== t("删除") || purging}
               onClick={async () => {
                 setPurging(true);
                 try {
@@ -657,8 +651,7 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
               }}
             >
               {purging && <Loader2 className="size-4 animate-spin" />}
-              删除并退出
-            </Button>
+              {t("删除并退出")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -666,11 +659,11 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>退出登录</AlertDialogTitle>
-            <AlertDialogDescription>会删除本机保存的应用专用密码。本地缓存的邮件保留，重新登录后无需重新下载。</AlertDialogDescription>
+            <AlertDialogTitle>{t("退出登录")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("会删除本机保存的应用专用密码。本地缓存的邮件保留，重新登录后无需重新下载。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
                 try {
@@ -681,8 +674,7 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
                 }
               }}
             >
-              退出登录
-            </AlertDialogAction>
+              {t("退出登录")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -693,6 +685,7 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
 /* ---------------- 关于 ---------------- */
 
 function AboutSection({ active }: { active: boolean }) {
+  useI18n();
   const [version, setVersion] = useState("");
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [checking, setChecking] = useState(false);
@@ -710,7 +703,7 @@ function AboutSection({ active }: { active: boolean }) {
     try {
       const res = await api.checkForUpdate();
       setInfo(res);
-      if (!res.available) toast.success(res.message || "已是最新版本");
+      if (!res.available) toast.success(res.message || t("已是最新版本"));
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -730,25 +723,24 @@ function AboutSection({ active }: { active: boolean }) {
 
   return (
     <>
-      <SectionTitle title="关于与更新" />
+      <SectionTitle title={t("关于与更新")} />
       <Card>
         <div className="flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="" className="size-12" />
           <div className="min-w-0 flex-1">
             <p className="font-semibold">CZL Mail</p>
-            <p className="text-muted-foreground text-sm">版本 {version || "—"}</p>
+            <p className="text-muted-foreground text-sm">{t("版本")} {version || "—"}</p>
           </div>
           <Button variant="outline" size="sm" onClick={check} disabled={checking || installing}>
             {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-            检查更新
-          </Button>
+            {t("检查更新")}</Button>
         </div>
         {info?.available && info.release && (
           <>
             <Divider />
             <div className="flex flex-col gap-2">
-              <p className="text-sm font-medium">发现新版本 {info.release.version}</p>
+              <p className="text-sm font-medium">{t("发现新版本{0}", info.release.version)}</p>
               {info.release.notes && (
                 <pre className="bg-secondary text-muted-foreground max-h-48 overflow-y-auto rounded-md p-3 font-sans text-xs whitespace-pre-wrap">
                   {info.release.notes}
@@ -757,30 +749,28 @@ function AboutSection({ active }: { active: boolean }) {
               <div className="flex items-center gap-3">
                 <Button onClick={install} disabled={installing || !info.release.assetUrl}>
                   {installing ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-                  下载并安装
-                </Button>
+                  {t("下载并安装")}</Button>
                 {progress && progress.total > 0 && installing && (
                   <span className="text-muted-foreground text-xs tabular-nums">
                     {Math.round((progress.done / progress.total) * 100)}%
                   </span>
                 )}
-                {!info.release.assetUrl && <span className="text-muted-foreground text-xs">此版本没有适用于本系统的安装包</span>}
+                {!info.release.assetUrl && <span className="text-muted-foreground text-xs">{t("此版本没有适用于本系统的安装包")}</span>}
               </div>
-              <p className="text-muted-foreground text-xs">下载后会校验安装包的 SHA-256，安装完成后自动重新打开。</p>
+              <p className="text-muted-foreground text-xs">{t("下载后会校验安装包的 SHA-256，安装完成后自动重新打开。")}</p>
             </div>
           </>
         )}
       </Card>
       <Card>
-        <Row title="更新日志" desc="每个版本新增了什么、修了什么">
+        <Row title={t("更新日志")} desc={t("每个版本新增了什么、修了什么")}>
           <Button variant="outline" size="sm" onClick={() => BrowserOpenURL(CHANGELOG_URL)}>
             <ScrollText className="size-4" />
-            查看更新日志
-            <ExternalLink className="size-3.5" />
+            {t("查看更新日志")}<ExternalLink className="size-3.5" />
           </Button>
         </Row>
         <Divider />
-        <Row title="开源项目" desc="源代码、发布记录与问题反馈（AGPL-3.0）">
+        <Row title={t("开源项目")} desc={t("源代码、发布记录与问题反馈（AGPL-3.0）")}>
           <Button variant="outline" size="sm" onClick={() => BrowserOpenURL(GITHUB_URL)}>
             <Code2 className="size-4" />
             GitHub
@@ -788,17 +778,15 @@ function AboutSection({ active }: { active: boolean }) {
           </Button>
         </Row>
         <Divider />
-        <Row title="反馈与交流" desc="使用中遇到问题或有建议，欢迎到论坛的反馈帖留言">
+        <Row title={t("反馈与交流")} desc={t("使用中遇到问题或有建议，欢迎到论坛的反馈帖留言")}>
           <Button variant="outline" size="sm" onClick={() => BrowserOpenURL(FORUM_URL)}>
             <MessageSquare className="size-4" />
-            去论坛反馈
-            <ExternalLink className="size-3.5" />
+            {t("去论坛反馈")}<ExternalLink className="size-3.5" />
           </Button>
         </Row>
       </Card>
       <p className="text-muted-foreground text-xs leading-relaxed">
-        CZL Mail 是为 Stalwart 打造的原生 JMAP 桌面客户端：邮件、日历、通讯录、文件、系统通知、AI 助手与 MCP 接入。
-      </p>
+        {t("CZL Mail 是为 Stalwart 打造的原生 JMAP 桌面客户端：邮件、日历、通讯录、文件、系统通知、AI 助手与 MCP 接入。")}</p>
     </>
   );
 }

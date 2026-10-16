@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft,
@@ -111,6 +114,7 @@ function writeJSON(key: string, value: unknown) {
 }
 
 export function CalendarShell({ active }: { active: boolean }) {
+  useI18n();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -312,7 +316,7 @@ export function CalendarShell({ active }: { active: boolean }) {
         payload.recurrenceId,
         toLocalDateTime(next),
       );
-      if (payload.recurrenceId) toast.success("已改期（仅这一次）");
+      if (payload.recurrenceId) toast.success(t("已改期（仅这一次）"));
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -321,7 +325,7 @@ export function CalendarShell({ active }: { active: boolean }) {
   async function importTo(cal: Calendar) {
     try {
       const n = await api.importCalendarFile(cal.accountId, cal.id);
-      if (n > 0) toast.success(`已导入 ${n} 个日程到「${cal.name}」`);
+      if (n > 0) toast.success(t("已导入 {0} 个日程到「{1}」", n, cal.name));
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -329,11 +333,11 @@ export function CalendarShell({ active }: { active: boolean }) {
 
   const title =
     view === "tasks"
-      ? "任务"
+      ? t("任务")
       : view === "month" || view === "agenda"
         ? monthTitle(cursor)
         : view === "week"
-          ? `${startOfWeek(cursor).getFullYear()} 年 ${shortDate(startOfWeek(cursor))} – ${shortDate(addDays(startOfWeek(cursor), 6))}`
+          ? t("{0} 年 {1} – {2}", startOfWeek(cursor).getFullYear(), shortDate(startOfWeek(cursor)), shortDate(addDays(startOfWeek(cursor), 6)))
           : dayTitle(cursor);
 
   const accountName = (id: string) =>
@@ -357,8 +361,7 @@ export function CalendarShell({ active }: { active: boolean }) {
           onClick={() => createAt(nextHalfHour(), false)}
         >
           <Plus className="size-4" />
-          新建日程
-        </Button>
+          {t("新建日程")}</Button>
       </div>
       <ScrollArea className="min-h-0 flex-1 pb-2">
         <MiniMonth
@@ -376,8 +379,8 @@ export function CalendarShell({ active }: { active: boolean }) {
                 </p>
                 <button
                   type="button"
-                  aria-label="新建日历"
-                  title="新建日历"
+                  aria-label={t("新建日历")}
+                  title={t("新建日历")}
                   onClick={() => setCalDialog({ accountId })}
                   className="text-muted-foreground hover:bg-secondary hover:text-foreground rounded-sm p-1 opacity-0 group-hover/acc:opacity-100 focus-visible:opacity-100"
                 >
@@ -414,12 +417,10 @@ export function CalendarShell({ active }: { active: boolean }) {
                         }
                       >
                         <Pencil />
-                        编辑日历
-                      </ContextMenuItem>
+                        {t("编辑日历")}</ContextMenuItem>
                       <ContextMenuItem onSelect={() => importTo(c)}>
                         <Upload />
-                        导入 .ics
-                      </ContextMenuItem>
+                        {t("导入 .ics")}</ContextMenuItem>
                       {!c.isDefault && (
                         <>
                           <ContextMenuSeparator />
@@ -428,8 +429,7 @@ export function CalendarShell({ active }: { active: boolean }) {
                             onSelect={() => setDeleteCal(c)}
                           >
                             <Trash2 />
-                            删除日历
-                          </ContextMenuItem>
+                            {t("删除日历")}</ContextMenuItem>
                         </>
                       )}
                     </ContextMenuContent>
@@ -451,13 +451,12 @@ export function CalendarShell({ active }: { active: boolean }) {
           size="sm"
           onClick={() => setCursor(startOfDay(new Date()))}
         >
-          今天
-        </Button>
+          {t("今天")}</Button>
         <Button
           variant="ghost"
           size="icon"
           className="size-8"
-          aria-label="上一页"
+          aria-label={t("上一页")}
           onClick={() => step(-1)}
         >
           <ChevronLeft className="size-4" />
@@ -466,7 +465,7 @@ export function CalendarShell({ active }: { active: boolean }) {
           variant="ghost"
           size="icon"
           className="size-8"
-          aria-label="下一页"
+          aria-label={t("下一页")}
           onClick={() => step(1)}
         >
           <ChevronRight className="size-4" />
@@ -484,22 +483,21 @@ export function CalendarShell({ active }: { active: boolean }) {
             value={view}
             onValueChange={(v) => v && changeView(v as CalendarView)}
           >
-            <ToggleGroupItem value="month">月</ToggleGroupItem>
-            <ToggleGroupItem value="week">周</ToggleGroupItem>
-            <ToggleGroupItem value="day">天</ToggleGroupItem>
-            <ToggleGroupItem value="agenda">议程</ToggleGroupItem>
-            <ToggleGroupItem value="tasks">任务</ToggleGroupItem>
+            <ToggleGroupItem value="month">{t("月")}</ToggleGroupItem>
+            <ToggleGroupItem value="week">{t("周")}</ToggleGroupItem>
+            <ToggleGroupItem value="day">{t("天")}</ToggleGroupItem>
+            <ToggleGroupItem value="agenda">{t("议程")}</ToggleGroupItem>
+            <ToggleGroupItem value="tasks">{t("任务")}</ToggleGroupItem>
           </ToggleGroup>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
                 <Upload className="size-4" />
-                导入
-              </Button>
+                {t("导入")}</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuLabel>导入 .ics 到</DropdownMenuLabel>
+              <DropdownMenuLabel>{t("导入 .ics 到")}</DropdownMenuLabel>
               {writable.map((c) => (
                 <DropdownMenuItem
                   key={calendarKey(c.accountId, c.id)}
@@ -611,14 +609,11 @@ export function CalendarShell({ active }: { active: boolean }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除日历</AlertDialogTitle>
-            <AlertDialogDescription>
-              确定删除「{deleteCal?.name}
-              」？其中的全部日程与任务会一并从服务器删除，无法恢复。
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t("删除日历")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("确定删除「{0}」？其中的全部日程与任务会一并从服务器删除，无法恢复。", deleteCal?.name)}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={async () => {
@@ -626,7 +621,7 @@ export function CalendarShell({ active }: { active: boolean }) {
                 if (!c) return;
                 try {
                   await api.deleteCalendar(c.accountId, c.id);
-                  toast.success("已删除日历");
+                  toast.success(t("已删除日历"));
                   loadCalendars();
                   loadEvents();
                 } catch (err) {
@@ -634,8 +629,7 @@ export function CalendarShell({ active }: { active: boolean }) {
                 }
               }}
             >
-              删除
-            </AlertDialogAction>
+              {t("删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -663,6 +657,7 @@ function CalendarDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  useI18n();
   const [name, setName] = useState("");
   const [color, setColor] = useState("");
   const [busy, setBusy] = useState(false);
@@ -686,7 +681,7 @@ function CalendarDialog({
         name,
         color,
       );
-      toast.success(target.calendar ? "已保存" : "已创建日历");
+      toast.success(target.calendar ? t("已保存") : t("已创建日历"));
       onSaved();
       onClose();
     } catch (err) {
@@ -699,7 +694,7 @@ function CalendarDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>{target.calendar ? "编辑日历" : "新建日历"}</DialogTitle>
+          <DialogTitle>{target.calendar ? t("编辑日历") : t("新建日历")}</DialogTitle>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -712,7 +707,7 @@ function CalendarDialog({
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="日历名称"
+            placeholder={t("日历名称")}
           />
           {/* 日历颜色是存到服务器的用户数据, 各客户端共用, 因此以色值保存。 */}
           <div className="flex flex-wrap gap-2">
@@ -731,17 +726,15 @@ function CalendarDialog({
               value={/^#[0-9a-f]{6}$/i.test(color) ? color : "#5B7FA6"}
               onChange={(e) => setColor(e.target.value)}
               className="size-7 cursor-pointer rounded-full bg-transparent"
-              aria-label="自定义颜色"
+              aria-label={t("自定义颜色")}
             />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button type="submit" disabled={!name.trim() || busy}>
               {busy && <Loader2 className="size-4 animate-spin" />}
-              确定
-            </Button>
+              {t("确定")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useCallback, useEffect, useState } from "react";
 import { CalendarPlus, Loader2, Mail, Power } from "lucide-react";
 import { toast } from "sonner";
@@ -19,6 +22,7 @@ const ONBOARD_KEY = "czlmail.onboarded.integration";
  * 以及首次使用时引导开启开机自启和设为默认应用。
  */
 export function Integration() {
+  useI18n();
   const [icsSource, setIcsSource] = useState<string | null>(null);
   const [onboard, setOnboard] = useState<IntegrationStatus | null>(null);
 
@@ -39,7 +43,7 @@ export function Integration() {
             emailId = list[list.length - 1]?.id ?? "";
           }
           if (!emailId) {
-            toast.error("本地找不到链接指向的邮件");
+            toast.error(t("本地找不到链接指向的邮件"));
             continue;
           }
           send("navigate", { module: "mail" });
@@ -102,6 +106,7 @@ export function Integration() {
 }
 
 function IcsImportDialog({ source, onClose }: { source: string | null; onClose: () => void }) {
+  useI18n();
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [target, setTarget] = useState("");
   const [busy, setBusy] = useState(false);
@@ -129,7 +134,7 @@ function IcsImportDialog({ source, onClose }: { source: string | null; onClose: 
     setBusy(true);
     try {
       const n = await api.importCalendarSource(acc, cal, source);
-      toast.success(`已导入 ${n} 个日程`);
+      toast.success(t("已导入 {0} 个日程", n));
       send("navigate", { module: "calendar" });
       onClose();
     } catch (err) {
@@ -144,28 +149,24 @@ function IcsImportDialog({ source, onClose }: { source: string | null; onClose: 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarPlus className="size-5" />
-            导入日历
-          </DialogTitle>
+            {t("导入日历")}</DialogTitle>
           <DialogDescription className="break-all">{name}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2 text-sm">
-          导入到
-          <OptionSelect
+          {t("导入到")}<OptionSelect
             value={target}
             onChange={setTarget}
             options={calendars.map((c) => [`${c.accountId}/${c.id}`, c.name] as const)}
             className="w-full"
-            aria-label="导入到"
+            aria-label={t("导入到")}
           />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            取消
-          </Button>
+            {t("取消")}</Button>
           <Button onClick={run} disabled={!target || busy}>
             {busy && <Loader2 className="size-4 animate-spin" />}
-            导入
-          </Button>
+            {t("导入")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -181,22 +182,22 @@ function OnboardDialog({
   onChange: (s: IntegrationStatus) => void;
   onClose: () => void;
 }) {
+  useI18n();
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>让 CZL Mail 更顺手</DialogTitle>
-          <DialogDescription>这些设置随时可以在「设置 → 默认应用」里修改。</DialogDescription>
+          <DialogTitle>{t("让 CZL Mail 更顺手")}</DialogTitle>
+          <DialogDescription>{t("这些设置随时可以在「设置 → 默认应用」里修改。")}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 text-sm">
           <div className="flex items-start gap-3">
             <Power className="text-muted-foreground mt-0.5 size-5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="font-medium">开机自动启动</p>
+              <p className="font-medium">{t("开机自动启动")}</p>
               <p className="text-muted-foreground text-xs">
-                在后台启动并驻留{status.platform === "darwin" ? "菜单栏" : "托盘"}，新邮件与日程提醒能及时通知。
-              </p>
+                {t("在后台启动并驻留")}{status.platform === "darwin" ? t("菜单栏") : t("托盘")}{t("，新邮件与日程提醒能及时通知。")}</p>
             </div>
             <Switch
               checked={status.autostart}
@@ -213,13 +214,12 @@ function OnboardDialog({
           <div className="flex items-start gap-3">
             <Mail className="text-muted-foreground mt-0.5 size-5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="font-medium">设为默认邮件与日历应用</p>
+              <p className="font-medium">{t("设为默认邮件与日历应用")}</p>
               <p className="text-muted-foreground text-xs">
-                点击网页上的邮箱链接、双击 .ics 文件时用 CZL Mail 打开。
-                {status.platform === "darwin" ? "" : "Windows 需要在系统设置里确认。"}
+                {t("点击网页上的邮箱链接、双击 .ics 文件时用 CZL Mail 打开。")}{status.platform === "darwin" ? "" : t("Windows 需要在系统设置里确认。")}
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
-                当前：邮件 {status.defaultMail ? "已是默认" : "未设置"} · 日历 {status.defaultCalendar ? "已是默认" : "未设置"}
+                {t("当前：邮件")}{status.defaultMail ? t("已是默认") : t("未设置")}  {t("· 日历")} {status.defaultCalendar ? t("已是默认") : t("未设置")}
               </p>
             </div>
             <Button
@@ -235,13 +235,13 @@ function OnboardDialog({
                 }
               }}
             >
-              {status.platform === "darwin" ? "设为默认" : "去设置"}
+              {status.platform === "darwin" ? t("设为默认") : t("去设置")}
             </Button>
           </div>
         </div>
 
         <DialogFooter>
-          <Button onClick={onClose}>完成</Button>
+          <Button onClick={onClose}>{t("完成")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

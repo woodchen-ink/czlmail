@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useState } from "react";
 import {
   Archive,
@@ -74,9 +77,9 @@ export function emailLink(kind: "email" | "thread", accountId: string, id: strin
 async function copyLink(link: string) {
   try {
     await navigator.clipboard.writeText(link);
-    toast.success("已复制链接");
+    toast.success(t("已复制链接"));
   } catch {
-    toast.error("复制失败");
+    toast.error(t("复制失败"));
   }
 }
 
@@ -92,6 +95,7 @@ export function EmailContextMenu({
   actions,
   children,
 }: Props) {
+  useI18n();
   const batch = checked.has(email.id) && checked.size > 1;
   const ids = batch ? [...checked] : [email.id];
   // 列表摘要里没有标签, 打开菜单时从本地缓存读。
@@ -126,35 +130,29 @@ export function EmailContextMenu({
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-56">
         {batch ? (
-          <ContextMenuLabel>已选 {ids.length} 封</ContextMenuLabel>
+          <ContextMenuLabel>{t("已选{0}封", ids.length)}</ContextMenuLabel>
         ) : (
           <>
             <ContextMenuItem onSelect={() => actions.reply(email, false)}>
               <Reply />
-              回复
-            </ContextMenuItem>
+              {t("回复")}</ContextMenuItem>
             <ContextMenuItem onSelect={() => actions.reply(email, true)}>
               <ReplyAll />
-              全部回复
-            </ContextMenuItem>
+              {t("全部回复")}</ContextMenuItem>
             <ContextMenuItem onSelect={() => actions.forward(email, false)}>
               <Forward />
-              转发
-            </ContextMenuItem>
+              {t("转发")}</ContextMenuItem>
             <ContextMenuItem onSelect={() => actions.forward(email, true)}>
               <Paperclip />
-              作为附件转发
-            </ContextMenuItem>
+              {t("作为附件转发")}</ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onSelect={() => copyLink(emailLink("email", accountId, email.id))}>
               <LinkIcon />
-              复制邮件链接
-            </ContextMenuItem>
+              {t("复制邮件链接")}</ContextMenuItem>
             {email.threadId && (
               <ContextMenuItem onSelect={() => copyLink(emailLink("thread", accountId, email.threadId))}>
                 <MessagesSquare />
-                复制会话链接
-              </ContextMenuItem>
+                {t("复制会话链接")}</ContextMenuItem>
             )}
           </>
         )}
@@ -162,11 +160,10 @@ export function EmailContextMenu({
 
         <ContextMenuItem onSelect={() => actions.archive(ids)} disabled={currentKind === "archive"}>
           <Archive />
-          归档
-        </ContextMenuItem>
+          {t("归档")}</ContextMenuItem>
         <ContextMenuItem variant="destructive" onSelect={() => actions.trash(ids)}>
           <Trash2 />
-          {currentKind === "trash" ? "彻底删除" : "删除"}
+          {currentKind === "trash" ? t("彻底删除") : t("删除")}
         </ContextMenuItem>
         <ContextMenuSeparator />
 
@@ -174,8 +171,7 @@ export function EmailContextMenu({
           <ContextMenuSub>
             <ContextMenuSubTrigger>
               <FolderInput />
-              移动到…
-            </ContextMenuSubTrigger>
+              {t("移动到…")}</ContextMenuSubTrigger>
             <ContextMenuSubContent className="max-h-80 w-52 overflow-y-auto">
               {targets.map((m) => {
                 const Icon = mailboxIcon(m.kind);
@@ -197,19 +193,18 @@ export function EmailContextMenu({
           <>
             <ContextMenuItem onSelect={() => actions.toggleFlag(email)}>
               {email.isFlagged ? <StarOff /> : <Star />}
-              {email.isFlagged ? "取消星标" : "加星标"}
+              {email.isFlagged ? t("取消星标") : t("加星标")}
             </ContextMenuItem>
             <ContextMenuItem onSelect={() => actions.togglePin(email)}>
               {email.isPinned ? <PinOff /> : <Pin />}
-              {email.isPinned ? "取消固定" : "固定"}
+              {email.isPinned ? t("取消固定") : t("固定")}
             </ContextMenuItem>
             <ContextMenuSub>
               <ContextMenuSubTrigger>
                 <Tag />
-                标签
-              </ContextMenuSubTrigger>
+                {t("标签")}</ContextMenuSubTrigger>
               <ContextMenuSubContent className="w-56">
-                {allLabels.length === 0 && <p className="text-muted-foreground px-2 py-1.5 text-xs">还没有标签</p>}
+                {allLabels.length === 0 && <p className="text-muted-foreground px-2 py-1.5 text-xs">{t("还没有标签")}</p>}
                 {allLabels.map((label) => {
                   const on = labels?.includes(label) ?? false;
                   return (
@@ -245,7 +240,7 @@ export function EmailContextMenu({
                     onChange={(e) => setDraft(e.target.value)}
                     // 菜单会抢键盘事件用于上下选择，输入框里的按键不能冒泡上去。
                     onKeyDown={(e) => e.stopPropagation()}
-                    placeholder="新标签（英文），回车添加"
+                    placeholder={t("新标签（英文），回车添加")}
                     className="h-8 text-sm"
                   />
                 </form>
@@ -259,7 +254,7 @@ export function EmailContextMenu({
             <ContextMenuSeparator />
             <ContextMenuItem variant={inJunk ? "default" : "destructive"} onSelect={() => actions.junk(ids, !inJunk)}>
               {inJunk ? <ShieldCheck /> : <ShieldAlert />}
-              {inJunk ? "不是垃圾邮件" : "举报垃圾邮件"}
+              {inJunk ? t("不是垃圾邮件") : t("举报垃圾邮件")}
             </ContextMenuItem>
           </>
         )}
@@ -267,7 +262,7 @@ export function EmailContextMenu({
 
         <ContextMenuItem onSelect={() => actions.markRead(ids, email.isUnread)}>
           {email.isUnread ? <MailOpen /> : <Mail />}
-          {email.isUnread ? "标记为已读" : "标记为未读"}
+          {email.isUnread ? t("标记为已读") : t("标记为未读")}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

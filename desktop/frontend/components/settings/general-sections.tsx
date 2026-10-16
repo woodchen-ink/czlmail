@@ -1,9 +1,13 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useState } from "react";
 import { ExternalLink, Monitor, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 
+import { LanguageSelect } from "@/components/language-select";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -13,32 +17,37 @@ import { api, errorMessage, type Account, type IntegrationStatus } from "@/lib/a
 import { useAppearance, type ThemePreference } from "@/lib/theme";
 
 export function AppearanceSection({ active }: { active: boolean }) {
+  useI18n();
   const { theme, setTheme, bodyAppearance, setBodyAppearance } = useAppearance();
   const { settings, save } = useSettings(active);
 
   return (
     <>
-      <SectionTitle title="外观" />
+      <SectionTitle title={t("外观")} />
       <Card>
-        <Row title="主题" desc="跟随系统时，Windows 切换深浅色后界面会同步变化">
+        <Row title={t("语言")} desc={t("选择界面语言，立即生效并保存在此设备")}>
+          <LanguageSelect />
+        </Row>
+        <Divider />
+        <Row title={t("界面主题")} desc={t("跟随系统时，Windows 切换深浅色后界面会同步变化")}>
           <ToggleGroup type="single" variant="outline" size="sm" value={theme} onValueChange={(v) => v && setTheme(v as ThemePreference)}>
-            <ToggleGroupItem value="system" aria-label="跟随系统">
+            <ToggleGroupItem value="system" aria-label={t("跟随系统")}>
               <Monitor className="size-4" />
             </ToggleGroupItem>
-            <ToggleGroupItem value="light" aria-label="亮色">
+            <ToggleGroupItem value="light" aria-label={t("亮色")}>
               <Sun className="size-4" />
             </ToggleGroupItem>
-            <ToggleGroupItem value="dark" aria-label="暗色">
+            <ToggleGroupItem value="dark" aria-label={t("暗色")}>
               <Moon className="size-4" />
             </ToggleGroupItem>
           </ToggleGroup>
         </Row>
         <Divider />
-        <Row title="邮件正文始终亮色" desc="多数营销与通知邮件按白底设计，暗色主题下也用白色纸面显示正文">
+        <Row title={t("邮件正文始终亮色")} desc={t("多数营销与通知邮件按白底设计，暗色主题下也用白色纸面显示正文")}>
           <Switch checked={bodyAppearance === "light"} onCheckedChange={(on) => setBodyAppearance(on ? "light" : "follow")} />
         </Row>
         <Divider />
-        <Row title="显示发件人头像" desc="头像由本程序代理获取（Gravatar、发件方网站图标），发件方看不到你的 IP；关闭后显示首字母">
+        <Row title={t("显示发件人头像")} desc={t("头像由本程序代理获取（Gravatar、发件方网站图标），发件方看不到你的 IP；关闭后显示首字母")}>
           <Switch checked={!!settings?.senderAvatars} disabled={!settings} onCheckedChange={(on) => save({ senderAvatars: on })} />
         </Row>
       </Card>
@@ -47,6 +56,7 @@ export function AppearanceSection({ active }: { active: boolean }) {
 }
 
 export function NotificationsSection({ active }: { active: boolean }) {
+  useI18n();
   const { settings, save } = useSettings(active);
   const [accounts, setAccounts] = useState<Account[]>([]);
 
@@ -63,24 +73,24 @@ export function NotificationsSection({ active }: { active: boolean }) {
 
   return (
     <>
-      <SectionTitle title="通知" desc="使用系统通知中心。关闭主窗口后程序驻留托盘，仍会收到通知。" />
+      <SectionTitle title={t("通知")} desc={t("使用系统通知中心。关闭主窗口后程序驻留托盘，仍会收到通知。")} />
       <Card>
-        <Row title="新邮件通知" desc="只通知收件箱里的来信；自己发出的邮件（任一发件身份）不通知。点击通知直接打开这封邮件">
+        <Row title={t("新邮件通知")} desc={t("只通知收件箱里的来信；自己发出的邮件（任一发件身份）不通知。点击通知直接打开这封邮件")}>
           <Switch checked={mailOn} disabled={!settings} onCheckedChange={(on) => save({ notifyMail: on })} />
         </Row>
         <Divider />
-        <Row title="日程提醒" desc="按日程上设置的提醒时间通知；在服务器上设置的提醒与其它设备一致">
+        <Row title={t("日程提醒")} desc={t("按日程上设置的提醒时间通知；在服务器上设置的提醒与其它设备一致")}>
           <Switch checked={!!settings?.notifyEvents} disabled={!settings} onCheckedChange={(on) => save({ notifyEvents: on })} />
         </Row>
       </Card>
 
       {accounts.length > 1 && (
         <>
-          <SectionTitle title="按邮箱设置" desc="共享邮箱来信多时可以单独关闭，邮件照常同步，只是不弹通知。" small />
+          <SectionTitle title={t("按邮箱设置")} desc={t("共享邮箱来信多时可以单独关闭，邮件照常同步，只是不弹通知。")} small />
           <Card className="gap-0 p-0">
             {accounts.map((a, i) => (
               <div key={a.id} className={i > 0 ? "border-border border-t px-4 py-2.5" : "px-4 py-2.5"}>
-                <Row title={a.name} desc={a.isPersonal ? "个人邮箱" : "共享邮箱"}>
+                <Row title={a.name} desc={a.isPersonal ? t("个人邮箱") : t("共享邮箱")}>
                   <Switch
                     checked={mailOn && !muted.has(a.id)}
                     disabled={!settings || !mailOn}
@@ -102,6 +112,7 @@ export function NotificationsSection({ active }: { active: boolean }) {
 }
 
 export function IntegrationSection({ active }: { active: boolean }) {
+  useI18n();
   const [status, setStatus] = useState<IntegrationStatus | null>(null);
 
   useEffect(() => {
@@ -117,9 +128,9 @@ export function IntegrationSection({ active }: { active: boolean }) {
   if (status && !status.supported) {
     return (
       <>
-        <SectionTitle title="默认应用与启动" />
+        <SectionTitle title={t("默认应用与启动")} />
         <Card>
-          <p className="text-muted-foreground text-sm">当前系统暂不支持这些设置。</p>
+          <p className="text-muted-foreground text-sm">{t("当前系统暂不支持这些设置。")}</p>
         </Card>
       </>
     );
@@ -127,11 +138,11 @@ export function IntegrationSection({ active }: { active: boolean }) {
 
   return (
     <>
-      <SectionTitle title="默认应用与启动" />
+      <SectionTitle title={t("默认应用与启动")} />
       <Card>
         <Row
-          title="开机自动启动"
-          desc={`登录系统后在后台启动并驻留${mac ? "菜单栏" : "托盘"}，新邮件和日程提醒能及时送达`}
+          title={t("开机自动启动")}
+          desc={t("登录系统后在后台启动并驻留{0}，新邮件和日程提醒能及时送达", mac ? t("菜单栏") : t("托盘"))}
         >
           <Switch
             checked={!!status?.autostart}
@@ -148,15 +159,15 @@ export function IntegrationSection({ active }: { active: boolean }) {
       </Card>
       <Card>
         <Row
-          title="默认邮件应用"
-          desc={status?.defaultMail ? "已是默认：点击网页上的邮箱链接会用 CZL Mail 写信" : "未设置：点击网页上的邮箱链接时不会打开 CZL Mail"}
+          title={t("默认邮件应用")}
+          desc={status?.defaultMail ? t("已是默认：点击网页上的邮箱链接会用 CZL Mail 写信") : t("未设置：点击网页上的邮箱链接时不会打开 CZL Mail")}
         >
           <StatusDot on={!!status?.defaultMail} />
         </Row>
         <Divider />
         <Row
-          title="默认日历应用"
-          desc={status?.defaultCalendar ? "已是默认：双击 .ics 文件或订阅 webcal 链接会导入到日历" : "未设置：.ics 文件不会用 CZL Mail 打开"}
+          title={t("默认日历应用")}
+          desc={status?.defaultCalendar ? t("已是默认：双击 .ics 文件或订阅 webcal 链接会导入到日历") : t("未设置：.ics 文件不会用 CZL Mail 打开")}
         >
           <StatusDot on={!!status?.defaultCalendar} />
         </Row>
@@ -164,8 +175,8 @@ export function IntegrationSection({ active }: { active: boolean }) {
         <div className="flex items-center gap-3">
           <p className="text-muted-foreground flex-1 text-xs leading-relaxed">
             {mac
-              ? "把 CZL Mail 设为邮箱链接、.ics 文件与 webcal 订阅的默认打开程序。以后想改回，在「邮件」或「日历」自己的设置里选。"
-              : "Windows 不允许程序自行修改默认应用。点击右侧按钮打开系统设置，在「CZL Mail」页面把 MAILTO、.ics、WEBCAL 设为 CZL Mail。"}
+              ? t("把 CZL Mail 设为邮箱链接、.ics 文件与 webcal 订阅的默认打开程序。以后想改回，在「邮件」或「日历」自己的设置里选。")
+              : t("Windows 不允许程序自行修改默认应用。点击右侧按钮打开系统设置，在「CZL Mail」页面把 MAILTO、.ics、WEBCAL 设为 CZL Mail。")}
           </p>
           <Button
             variant="outline"
@@ -180,7 +191,7 @@ export function IntegrationSection({ active }: { active: boolean }) {
             }}
           >
             {!mac && <ExternalLink className="size-4" />}
-            {mac ? "设为默认" : "打开系统设置"}
+            {mac ? t("设为默认") : t("打开系统设置")}
           </Button>
         </div>
       </Card>
@@ -189,24 +200,26 @@ export function IntegrationSection({ active }: { active: boolean }) {
 }
 
 function StatusDot({ on }: { on: boolean }) {
-  return <span className={on ? "text-chart-3 text-xs font-medium" : "text-muted-foreground text-xs"}>{on ? "已设置" : "未设置"}</span>;
+  useI18n();
+  return <span className={on ? "text-chart-3 text-xs font-medium" : "text-muted-foreground text-xs"}>{on ? t("已设置") : t("未设置")}</span>;
 }
 
 export function ReadingSection({ active }: { active: boolean }) {
+  useI18n();
   const { settings, save } = useSettings(active);
   return (
     <>
-      <SectionTitle title="阅读" />
+      <SectionTitle title={t("阅读")} />
       <Card>
-        <Row title="标记为已读" desc="打开邮件后何时标记为已读">
+        <Row title={t("标记为已读")} desc={t("打开邮件后何时标记为已读")}>
           <OptionSelect
             value={settings?.markRead ?? "immediate"}
             disabled={!settings}
             onChange={(v) => save({ markRead: v })}
             options={[
-              ["immediate", "立即"],
-              ["delay", "停留 3 秒后"],
-              ["never", "从不（手动标记）"],
+              ["immediate", t("立即")],
+              ["delay", t("停留 3 秒后")],
+              ["never", t("从不（手动标记）")],
             ]}
           />
         </Row>
@@ -216,12 +229,13 @@ export function ReadingSection({ active }: { active: boolean }) {
 }
 
 export function ComposeSection({ active }: { active: boolean }) {
+  useI18n();
   const { settings, save } = useSettings(active);
   return (
     <>
-      <SectionTitle title="写信" desc="默认发件身份在「发件身份与签名」里设置。" />
+      <SectionTitle title={t("写信")} desc={t("默认发件身份在「发件身份与签名」里设置。")} />
       <Card>
-        <Row title="签名前加分隔线" desc={'在签名前插入标准的 "-- " 行，收件方客户端可以识别并折叠签名'}>
+        <Row title={t("签名前加分隔线")} desc={t("在签名前插入标准的 \"-- \" 行，收件方客户端可以识别并折叠签名")}>
           <Switch
             checked={!!settings?.signatureSeparator}
             disabled={!settings}
@@ -229,7 +243,7 @@ export function ComposeSection({ active }: { active: boolean }) {
           />
         </Row>
         <Divider />
-        <Row title="默认请求已读回执" desc="新邮件默认勾选「请求已读回执」，对方客户端是否回执由对方决定">
+        <Row title={t("默认请求已读回执")} desc={t("新邮件默认勾选「请求已读回执」，对方客户端是否回执由对方决定")}>
           <Switch
             checked={!!settings?.readReceiptDefault}
             disabled={!settings}
@@ -237,13 +251,13 @@ export function ComposeSection({ active }: { active: boolean }) {
           />
         </Row>
       </Card>
-      <SectionTitle title="发送前检查" small />
+      <SectionTitle title={t("发送前检查")} small />
       <Card>
-        <Row title="主题为空时提醒">
+        <Row title={t("主题为空时提醒")}>
           <Switch checked={!!settings?.warnEmptySubject} disabled={!settings} onCheckedChange={(on) => save({ warnEmptySubject: on })} />
         </Row>
         <Divider />
-        <Row title="提到附件但没有添加时提醒" desc="正文或主题里出现「附件」「attached」等字样时检查">
+        <Row title={t("提到附件但没有添加时提醒")} desc={t("正文或主题里出现「附件」「attached」等字样时检查")}>
           <Switch
             checked={!!settings?.warnMissingAttachment}
             disabled={!settings}

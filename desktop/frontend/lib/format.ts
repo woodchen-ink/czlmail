@@ -1,3 +1,5 @@
+import { dateLocale } from "@/lib/i18n";
+
 import type { Address } from "@/lib/api";
 
 /**
@@ -26,7 +28,7 @@ export function listDate(value: string | Date): string {
 export function fullDate(value: string | Date): string {
   const d = toDate(value);
   if (!d) return "";
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(dateLocale(), {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -41,7 +43,7 @@ export function fullDate(value: string | Date): string {
 export function detailDate(value: string | Date): string {
   const d = toDate(value);
   if (!d) return "";
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(dateLocale(), {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

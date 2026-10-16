@@ -1,11 +1,14 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { WEEKDAYS, addMonths, monthGrid, sameDay, startOfMonth, toDateInput } from "@/lib/date";
+import { getWeekdays, monthTitle, addMonths, monthGrid, sameDay, startOfMonth, toDateInput } from "@/lib/date";
 
 interface Props {
   selected: Date;
@@ -16,6 +19,7 @@ interface Props {
 
 /** 侧栏的小月历。翻页只影响自身显示，点日期才跳转主视图。 */
 export function MiniMonth({ selected, busyDays, onSelect }: Props) {
+  useI18n();
   const [month, setMonth] = useState(() => startOfMonth(selected));
 
   useEffect(() => {
@@ -28,21 +32,20 @@ export function MiniMonth({ selected, busyDays, onSelect }: Props) {
   return (
     <div className="flex flex-col gap-1 px-2 select-none">
       <div className="flex items-center justify-between">
-        <Button variant="ghost" size="icon" className="size-7" aria-label="上个月" onClick={() => setMonth(addMonths(month, -1))}>
+        <Button variant="ghost" size="icon" className="size-7" aria-label={t("上个月")} onClick={() => setMonth(addMonths(month, -1))}>
           <ChevronLeft className="size-4" />
         </Button>
         <span className="text-sm font-medium">
-          {month.getFullYear()} 年 {month.getMonth() + 1} 月
-        </span>
-        <Button variant="ghost" size="icon" className="size-7" aria-label="下个月" onClick={() => setMonth(addMonths(month, 1))}>
+          {monthTitle(month)}</span>
+        <Button variant="ghost" size="icon" className="size-7" aria-label={t("下个月")} onClick={() => setMonth(addMonths(month, 1))}>
           <ChevronRight className="size-4" />
         </Button>
       </div>
 
       <div className="grid grid-cols-7 text-center">
-        {WEEKDAYS.map((w) => (
+        {getWeekdays().map((w) => (
           <span key={w} className="text-muted-foreground py-1 text-[11px]">
-            {w.slice(1)}
+            {w}
           </span>
         ))}
         {days.map((d) => {

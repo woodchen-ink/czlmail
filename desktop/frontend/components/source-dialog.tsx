@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useState } from "react";
 import { Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,6 +28,7 @@ interface Props {
  * 因为这里从不把它当 HTML 解析。
  */
 export function SourceDialog({ target, onClose }: Props) {
+  useI18n();
   const [source, setSource] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -46,7 +50,7 @@ export function SourceDialog({ target, onClose }: Props) {
   async function copy() {
     try {
       await navigator.clipboard.writeText(source);
-      toast.success("已复制原文");
+      toast.success(t("已复制原文"));
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -56,17 +60,15 @@ export function SourceDialog({ target, onClose }: Props) {
     <Dialog open={target !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-4xl">
         <DialogHeader className="flex-row items-center justify-between gap-2">
-          <DialogTitle>邮件原文</DialogTitle>
+          <DialogTitle>{t("邮件原文")}</DialogTitle>
           <Button variant="ghost" size="sm" onClick={copy} disabled={!source}>
             <Copy className="size-4" />
-            复制
-          </Button>
+            {t("复制")}</Button>
         </DialogHeader>
         {loading ? (
           <div className="text-muted-foreground flex items-center gap-2 py-8 text-sm">
             <Loader2 className="size-4 animate-spin" />
-            正在下载原文
-          </div>
+            {t("正在下载原文")}</div>
         ) : (
           <pre className="bg-secondary min-h-0 flex-1 overflow-auto rounded-md p-3 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
             {source}

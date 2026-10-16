@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronRight,
@@ -100,6 +103,7 @@ type Prompt =
   | { kind: "delete"; nodes: FileNode[] };
 
 export function FilesShell({ active }: { active: boolean }) {
+  useI18n();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState("");
   const [folderId, setFolderId] = useState("");
@@ -213,7 +217,7 @@ export function FilesShell({ active }: { active: boolean }) {
       if (!accountId || favView) return false;
       void run("upload", async () => {
         const n = await api.uploadPaths(accountId, folderId, paths);
-        if (n > 0) toast.success(`已上传 ${n} 个项目`);
+        if (n > 0) toast.success(t("已上传 {0} 个项目", n));
       });
       return true;
     });
@@ -235,7 +239,7 @@ export function FilesShell({ active }: { active: boolean }) {
   function paste() {
     if (!clip) return;
     if (clip.accountId !== accountId) {
-      toast.error("不能跨账号粘贴");
+      toast.error(t("不能跨账号粘贴"));
       return;
     }
     const ids = clip.nodes.map((n) => n.id);
@@ -243,10 +247,10 @@ export function FilesShell({ active }: { active: boolean }) {
       if (clip.mode === "cut") {
         await api.moveFiles(accountId, ids, folderId);
         setClip(null);
-        toast.success("已移动");
+        toast.success(t("已移动"));
       } else {
         await api.copyFiles(accountId, ids, folderId);
-        toast.success("已复制");
+        toast.success(t("已复制"));
       }
     });
   }
@@ -264,7 +268,7 @@ export function FilesShell({ active }: { active: boolean }) {
       const res = await api.openFile(n.accountId, n.id);
       if (res.revealed)
         toast.warning(
-          "可执行文件不会直接打开，已在文件夹中选中，请确认来源可信后再运行",
+          t("可执行文件不会直接打开，已在文件夹中选中，请确认来源可信后再运行"),
         );
     });
   }
@@ -272,19 +276,19 @@ export function FilesShell({ active }: { active: boolean }) {
   const upload = () =>
     run("upload", async () => {
       const n = await api.uploadFiles(accountId, folderId);
-      if (n > 0) toast.success(`已上传 ${n} 个文件`);
+      if (n > 0) toast.success(t("已上传 {0} 个文件", n));
     });
 
   const uploadFolder = () =>
     run("upload", async () => {
       const n = await api.uploadFolder(accountId, folderId);
-      if (n > 0) toast.success(`已上传 ${n} 个项目`);
+      if (n > 0) toast.success(t("已上传 {0} 个项目", n));
     });
 
   const saveAs = (n: FileNode) =>
     run(n.id, async () => {
       const path = await api.saveFileAs(n.accountId, n.id);
-      if (path) toast.success(`已保存到 ${path}`);
+      if (path) toast.success(t("已保存到 {0}", path));
     });
 
   function toggle(id: string, on: boolean) {
@@ -336,15 +340,15 @@ export function FilesShell({ active }: { active: boolean }) {
             </SelectContent>
           </Select>
         ) : (
-          <span className="text-sm font-medium">文件</span>
+          <span className="text-sm font-medium">{t("文件")}</span>
         )}
 
         <nav
           className="flex min-w-0 flex-1 items-center gap-0.5 text-sm"
-          aria-label="路径"
+          aria-label={t("路径")}
         >
           <Crumb
-            label={favView ? "收藏" : "全部文件"}
+            label={favView ? t("收藏") : t("全部文件")}
             onClick={() => {
               setFavView(false);
               setFolderId("");
@@ -366,9 +370,7 @@ export function FilesShell({ active }: { active: boolean }) {
           {query && (
             <>
               <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
-              <span className="text-muted-foreground truncate">
-                搜索「{query}」
-              </span>
+              <span className="text-muted-foreground truncate">{t("搜索「{0}」", query)}</span>
             </>
           )}
         </nav>
@@ -378,14 +380,14 @@ export function FilesShell({ active }: { active: boolean }) {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索文件"
+            placeholder={t("搜索文件")}
             className="h-8 pr-8 pl-8"
           />
           {query && (
             <button
               type="button"
               onClick={() => setQuery("")}
-              aria-label="清除搜索"
+              aria-label={t("清除搜索")}
               className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
             >
               <X className="size-3.5" />
@@ -394,13 +396,13 @@ export function FilesShell({ active }: { active: boolean }) {
         </div>
         <div className="flex items-center gap-0.5">
           <ToolBtn
-            label={layout === "list" ? "网格视图" : "列表视图"}
+            label={layout === "list" ? t("网格视图") : t("列表视图")}
             onClick={() => changeLayout(layout === "list" ? "grid" : "list")}
           >
             {layout === "list" ? <LayoutGrid /> : <List />}
           </ToolBtn>
           <ToolBtn
-            label={favView ? "返回全部文件" : "收藏"}
+            label={favView ? t("返回全部文件") : t("收藏")}
             active={favView}
             onClick={() => {
               setFavView(!favView);
@@ -412,7 +414,7 @@ export function FilesShell({ active }: { active: boolean }) {
           </ToolBtn>
           <span className="bg-border mx-1 h-5 w-px" />
           <ToolBtn
-            label="上传文件"
+            label={t("上传文件")}
             onClick={upload}
             disabled={!accountId || busy === "upload" || favView}
           >
@@ -423,21 +425,21 @@ export function FilesShell({ active }: { active: boolean }) {
             )}
           </ToolBtn>
           <ToolBtn
-            label="上传文件夹"
+            label={t("上传文件夹")}
             onClick={uploadFolder}
             disabled={!accountId || busy === "upload" || favView}
           >
             <FolderUp />
           </ToolBtn>
           <ToolBtn
-            label="新建文件夹"
+            label={t("新建文件夹")}
             onClick={() => setPrompt({ kind: "newFolder" })}
             disabled={!accountId || !!query || favView}
           >
             <FolderPlus />
           </ToolBtn>
           <ToolBtn
-            label="新建文本文件"
+            label={t("新建文本文件")}
             onClick={() => setPrompt({ kind: "newFile" })}
             disabled={!accountId || !!query || favView}
           >
@@ -445,14 +447,14 @@ export function FilesShell({ active }: { active: boolean }) {
           </ToolBtn>
           {clip && !favView && !query && (
             <ToolBtn
-              label={`粘贴 ${clip.nodes.length} 项到这里`}
+              label={t("粘贴 {0} 项到这里", clip.nodes.length)}
               onClick={paste}
               disabled={busy === "paste"}
             >
               <ClipboardPaste />
             </ToolBtn>
           )}
-          <ToolBtn label="刷新" onClick={load}>
+          <ToolBtn label={t("刷新")} onClick={load}>
             {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
           </ToolBtn>
         </div>
@@ -460,7 +462,7 @@ export function FilesShell({ active }: { active: boolean }) {
 
       {selected.size > 0 && (
         <div className="bg-secondary border-border flex shrink-0 items-center gap-2 border-b px-4 py-1.5 text-sm">
-          <span>已选 {selected.size} 项</span>
+          <span>{t("已选{0}项", selected.size)}</span>
           <Button
             variant="ghost"
             size="sm"
@@ -469,8 +471,7 @@ export function FilesShell({ active }: { active: boolean }) {
             }
           >
             <Scissors className="size-4" />
-            剪切
-          </Button>
+            {t("剪切")}</Button>
           <Button
             variant="ghost"
             size="sm"
@@ -479,16 +480,14 @@ export function FilesShell({ active }: { active: boolean }) {
             }
           >
             <Copy className="size-4" />
-            复制
-          </Button>
+            {t("复制")}</Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setPrompt({ kind: "move", nodes: selectedNodes })}
           >
             <FolderInput className="size-4" />
-            移动
-          </Button>
+            {t("移动")}</Button>
           <Button
             variant="ghost"
             size="sm"
@@ -496,16 +495,14 @@ export function FilesShell({ active }: { active: boolean }) {
             onClick={() => setPrompt({ kind: "delete", nodes: selectedNodes })}
           >
             <Trash2 className="size-4" />
-            删除
-          </Button>
+            {t("删除")}</Button>
           <Button
             variant="ghost"
             size="sm"
             className="ml-auto"
             onClick={() => setSelected(new Set())}
           >
-            取消选择
-          </Button>
+            {t("取消选择")}</Button>
         </div>
       )}
 
@@ -522,12 +519,12 @@ export function FilesShell({ active }: { active: boolean }) {
               v === true ? new Set(nodes.map((n) => n.id)) : new Set(),
             )
           }
-          aria-label="全选"
+          aria-label={t("全选")}
           className="justify-self-center"
         />
-        <span>名称</span>
-        <span className="text-right">大小</span>
-        <span className="pl-6">修改时间</span>
+        <span>{t("名称")}</span>
+        <span className="text-right">{t("大小")}</span>
+        <span className="pl-6">{t("修改时间")}</span>
         <span />
       </div>
 
@@ -536,10 +533,10 @@ export function FilesShell({ active }: { active: boolean }) {
           <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 py-16 text-sm">
             <Folder className="size-8" />
             {favView
-              ? "还没有收藏的文件"
+              ? t("还没有收藏的文件")
               : query
-                ? "没有匹配的文件"
-                : "这个文件夹是空的，可以把文件拖到窗口里上传"}
+                ? t("没有匹配的文件")
+                : t("这个文件夹是空的，可以把文件拖到窗口里上传")}
           </div>
         ) : (
           <div
@@ -561,13 +558,12 @@ export function FilesShell({ active }: { active: boolean }) {
                     ) : (
                       <Eye className="size-4" />
                     )}
-                    {n.isDirectory ? "打开" : "预览"}
+                    {n.isDirectory ? t("打开") : t("预览")}
                   </Item>
                   {!n.isDirectory && (
                     <Item onSelect={() => saveAs(n)}>
                       <Download className="size-4" />
-                      下载…
-                    </Item>
+                      {t("下载…")}</Item>
                   )}
                   <Sep />
                   <Item
@@ -580,8 +576,7 @@ export function FilesShell({ active }: { active: boolean }) {
                     }
                   >
                     <Scissors className="size-4" />
-                    剪切
-                  </Item>
+                    {t("剪切")}</Item>
                   <Item
                     onSelect={() =>
                       setClip({
@@ -592,46 +587,41 @@ export function FilesShell({ active }: { active: boolean }) {
                     }
                   >
                     <Copy className="size-4" />
-                    复制
-                  </Item>
+                    {t("复制")}</Item>
                   {!n.isDirectory && (
                     <Item
                       onSelect={() =>
                         run(n.id, async () => {
                           await api.duplicateFile(n.accountId, n.id);
-                          toast.success("已创建副本");
+                          toast.success(t("已创建副本"));
                         })
                       }
                     >
                       <CopyPlus className="size-4" />
-                      创建副本
-                    </Item>
+                      {t("创建副本")}</Item>
                   )}
                   <Item onSelect={() => toggleFavorite(n)}>
                     <Star className="size-4" />
                     {favKeys.has(`${n.accountId}/${n.id}`)
-                      ? "取消收藏"
-                      : "收藏"}
+                      ? t("取消收藏")
+                      : t("收藏")}
                   </Item>
                   <Item
                     onSelect={() => setPrompt({ kind: "details", node: n })}
                   >
                     <Info className="size-4" />
-                    详情
-                  </Item>
+                    {t("详情")}</Item>
                   <Sep />
                   <Item onSelect={() => setPrompt({ kind: "rename", node: n })}>
                     <Pencil className="size-4" />
-                    重命名
-                  </Item>
+                    {t("重命名")}</Item>
                   <Item
                     onSelect={() =>
                       setPrompt({ kind: "move", nodes: targetsFor(n) })
                     }
                   >
                     <FolderInput className="size-4" />
-                    移动到…
-                  </Item>
+                    {t("移动到…")}</Item>
                   <Sep />
                   <Item
                     variant="destructive"
@@ -640,8 +630,7 @@ export function FilesShell({ active }: { active: boolean }) {
                     }
                   >
                     <Trash2 className="size-4" />
-                    删除
-                  </Item>
+                    {t("删除")}</Item>
                 </>
               );
               if (layout === "grid") {
@@ -677,7 +666,7 @@ export function FilesShell({ active }: { active: boolean }) {
                           <Checkbox
                             checked={isSel}
                             onCheckedChange={(v) => toggle(n.id, v === true)}
-                            aria-label={`选择 ${n.name}`}
+                            aria-label={t("选择 {0}", n.name)}
                           />
                         </span>
                         {favKeys.has(`${n.accountId}/${n.id}`) && (
@@ -700,7 +689,7 @@ export function FilesShell({ active }: { active: boolean }) {
                           {n.name}
                         </span>
                         <span className="text-muted-foreground text-[11px] tabular-nums">
-                          {n.isDirectory ? "文件夹" : fileSize(n.size) || "0 B"}
+                          {n.isDirectory ? t("文件夹") : fileSize(n.size) || "0 B"}
                         </span>
                       </div>
                     </ContextMenuTrigger>
@@ -728,7 +717,7 @@ export function FilesShell({ active }: { active: boolean }) {
                         checked={selected.has(n.id)}
                         onCheckedChange={(v) => toggle(n.id, v === true)}
                         onClick={(e) => e.stopPropagation()}
-                        aria-label={`选择 ${n.name}`}
+                        aria-label={t("选择 {0}", n.name)}
                         className="justify-self-center"
                       />
                       <button
@@ -766,7 +755,7 @@ export function FilesShell({ active }: { active: boolean }) {
                             variant="ghost"
                             size="icon"
                             className="size-7"
-                            aria-label="更多操作"
+                            aria-label={t("更多操作")}
                           >
                             <MoreVertical className="size-4" />
                           </Button>
@@ -795,16 +784,16 @@ export function FilesShell({ active }: { active: boolean }) {
         }
         title={
           prompt?.kind === "rename"
-            ? "重命名"
+            ? t("重命名")
             : prompt?.kind === "newFile"
-              ? "新建文本文件"
-              : "新建文件夹"
+              ? t("新建文本文件")
+              : t("新建文件夹")
         }
         initial={
           prompt?.kind === "rename"
             ? prompt.node.name
             : prompt?.kind === "newFile"
-              ? "新建文本.txt"
+              ? t("新建文本.txt")
               : ""
         }
         onClose={() => setPrompt(null)}
@@ -823,36 +812,35 @@ export function FilesShell({ active }: { active: boolean }) {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>详情</DialogTitle>
+            <DialogTitle>{t("详情")}</DialogTitle>
           </DialogHeader>
           {prompt?.kind === "details" && (
             <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">名称</dt>
+              <dt className="text-muted-foreground">{t("名称")}</dt>
               <dd className="break-all select-text">{prompt.node.name}</dd>
-              <dt className="text-muted-foreground">类型</dt>
+              <dt className="text-muted-foreground">{t("类型")}</dt>
               <dd>
                 {prompt.node.isDirectory
-                  ? "文件夹"
-                  : prompt.node.contentType || "文件"}
+                  ? t("文件夹")
+                  : prompt.node.contentType || t("文件")}
               </dd>
               {!prompt.node.isDirectory && (
                 <>
-                  <dt className="text-muted-foreground">大小</dt>
+                  <dt className="text-muted-foreground">{t("大小")}</dt>
                   <dd className="tabular-nums">
                     {fileSize(prompt.node.size) || "0 B"}（
-                    {prompt.node.size.toLocaleString()} 字节）
-                  </dd>
+                    {prompt.node.size.toLocaleString()} {t("字节）")}</dd>
                 </>
               )}
-              <dt className="text-muted-foreground">位置</dt>
+              <dt className="text-muted-foreground">{t("位置")}</dt>
               <dd className="break-all">
                 /{path.map((p) => p.name).join("/")}
               </dd>
-              <dt className="text-muted-foreground">修改时间</dt>
+              <dt className="text-muted-foreground">{t("修改时间")}</dt>
               <dd className="tabular-nums">
                 {formatTime(prompt.node.modified)}
               </dd>
-              <dt className="text-muted-foreground">账号</dt>
+              <dt className="text-muted-foreground">{t("账号")}</dt>
               <dd>
                 {accounts.find((a) => a.id === prompt.node.accountId)?.name ??
                   prompt.node.accountId}
@@ -875,16 +863,15 @@ export function FilesShell({ active }: { active: boolean }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除文件</AlertDialogTitle>
+            <AlertDialogTitle>{t("删除文件")}</AlertDialogTitle>
             <AlertDialogDescription>
               {prompt?.kind === "delete" && prompt.nodes.length === 1
-                ? `确定删除「${prompt.nodes[0].name}」？`
-                : `确定删除选中的 ${prompt?.kind === "delete" ? prompt.nodes.length : 0} 项？`}
-              文件夹会连同其中的内容一起删除，无法撤销。
-            </AlertDialogDescription>
+                ? t("确定删除「{0}」？", prompt.nodes[0].name)
+                : t("确定删除选中的 {0} 项？", prompt?.kind === "delete" ? prompt.nodes.length : 0)}
+              {t("文件夹会连同其中的内容一起删除，无法撤销。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
@@ -893,12 +880,11 @@ export function FilesShell({ active }: { active: boolean }) {
                 void run("delete", async () => {
                   await api.deleteFiles(accountId, ids);
                   setSelected(new Set());
-                  toast.success("已删除");
+                  toast.success(t("已删除"));
                 });
               }}
             >
-              删除
-            </AlertDialogAction>
+              {t("删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -929,6 +915,7 @@ function ToolBtn({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useI18n();
   return (
     <Button
       variant="ghost"
@@ -957,6 +944,7 @@ function Crumb({
   onClick: () => void;
   current: boolean;
 }) {
+  useI18n();
   return (
     <button
       type="button"
@@ -984,6 +972,7 @@ function NamePrompt({
   onClose: () => void;
   onSubmit: (name: string) => Promise<void>;
 }) {
+  useI18n();
   const [name, setName] = useState(initial);
   const [busy, setBusy] = useState(false);
 
@@ -1026,12 +1015,10 @@ function NamePrompt({
         />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            取消
-          </Button>
+            {t("取消")}</Button>
           <Button onClick={submit} disabled={busy || !name.trim()}>
             {busy && <Loader2 className="size-4 animate-spin" />}
-            确定
-          </Button>
+            {t("确定")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1050,6 +1037,7 @@ function MoveDialog({
   onClose: () => void;
   onMoved: () => void;
 }) {
+  useI18n();
   const [folderId, setFolderId] = useState("");
   const [path, setPath] = useState<FileNode[]>([]);
   const [folders, setFolders] = useState<FileNode[]>([]);
@@ -1085,7 +1073,7 @@ function MoveDialog({
         nodes.map((n) => n.id),
         folderId,
       );
-      toast.success("已移动");
+      toast.success(t("已移动"));
       onMoved();
       onClose();
     } catch (err) {
@@ -1099,11 +1087,11 @@ function MoveDialog({
     <Dialog open={nodes !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>移动到</DialogTitle>
+          <DialogTitle>{t("移动到")}</DialogTitle>
         </DialogHeader>
         <nav className="flex flex-wrap items-center gap-0.5 text-sm">
           <Crumb
-            label="全部文件"
+            label={t("全部文件")}
             onClick={() => setFolderId("")}
             current={!folderId}
           />
@@ -1121,8 +1109,7 @@ function MoveDialog({
         <div className="border-border h-64 overflow-y-auto rounded-md border">
           {folders.length === 0 ? (
             <p className="text-muted-foreground py-10 text-center text-sm">
-              没有子文件夹
-            </p>
+              {t("没有子文件夹")}</p>
           ) : (
             folders.map((f) => (
               <button
@@ -1140,12 +1127,10 @@ function MoveDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            取消
-          </Button>
+            {t("取消")}</Button>
           <Button onClick={move} disabled={busy}>
             {busy && <Loader2 className="size-4 animate-spin" />}
-            移动到这里
-          </Button>
+            {t("移动到这里")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

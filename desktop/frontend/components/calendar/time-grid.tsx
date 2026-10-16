@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { EventChip } from "@/components/calendar/event-chip";
@@ -15,7 +18,7 @@ import {
 } from "@/components/calendar/calendar-utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { WEEKDAYS, hm, sameDay, weekdayIndex } from "@/lib/date";
+import { getWeekdays, hm, sameDay, weekdayIndex } from "@/lib/date";
 import type { Calendar, EventOccurrence } from "@/lib/api";
 
 interface Props {
@@ -34,6 +37,7 @@ const SNAP_MINUTES = 15;
 
 /** 周视图与日视图共用的时间网格。 */
 export function TimeGrid({ days, events, calendars, canWrite, onOpen, onCreate, onDrop, onShowDay }: Props) {
+  useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [now, setNow] = useState(() => new Date());
   const [dropSlot, setDropSlot] = useState("");
@@ -76,7 +80,7 @@ export function TimeGrid({ days, events, calendars, canWrite, onOpen, onCreate, 
             onClick={() => onShowDay(d)}
             className="hover:bg-secondary flex flex-col items-center py-1.5"
           >
-            <span className="text-muted-foreground text-xs">{WEEKDAYS[weekdayIndex(d)]}</span>
+            <span className="text-muted-foreground text-xs">{getWeekdays()[weekdayIndex(d)]}</span>
             <span
               className={cn(
                 "flex size-7 items-center justify-center rounded-full text-sm tabular-nums",
@@ -90,7 +94,7 @@ export function TimeGrid({ days, events, calendars, canWrite, onOpen, onCreate, 
       </div>
 
       <div className="border-border relative grid shrink-0 border-b" style={cols}>
-        <div className="text-muted-foreground flex items-center justify-end pr-2 text-[11px]">全天</div>
+        <div className="text-muted-foreground flex items-center justify-end pr-2 text-[11px]">{t("全天")}</div>
         {days.map((d) => (
           <div
             key={d.toDateString()}
@@ -205,7 +209,7 @@ export function TimeGrid({ days, events, calendars, canWrite, onOpen, onCreate, 
         </div>
       </ScrollArea>
 
-      <p className="sr-only">当前时间 {hm(now)}</p>
+      <p className="sr-only">{t("当前时间{0}", hm(now))}</p>
     </div>
   );
 }

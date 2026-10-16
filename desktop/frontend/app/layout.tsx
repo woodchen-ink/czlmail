@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { LocaleProvider } from "@/components/locale-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { themeBootScript } from "@/lib/theme";
@@ -30,19 +31,21 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       {/* 主壳锁死视口高度并禁止整页滚动: 三栏各自内部滚动,
           否则邮件列表变长会把整个窗口撑出滚动条, 侧栏与工具条跟着跑掉。 */}
       <body className="h-full overflow-hidden">
-        <TooltipProvider delayDuration={300}>
-          <div className="flex h-full flex-col">
-            {/* 仅 macOS 显示(见 globals.css 的 html.mac): 给红绿灯让出位置, 同时充当拖动窗口的把手。 */}
-            <div
-              className="mac-titlebar bg-sidebar border-border text-muted-foreground h-9 shrink-0 items-center justify-center border-b text-xs font-medium select-none"
-              style={{ "--wails-draggable": "drag" } as React.CSSProperties}
-            >
-              CZL Mail
+        <LocaleProvider>
+          <TooltipProvider delayDuration={300}>
+            <div className="flex h-full flex-col">
+              {/* 仅 macOS 显示(见 globals.css 的 html.mac): 给红绿灯让出位置, 同时充当拖动窗口的把手。 */}
+              <div
+                className="mac-titlebar bg-sidebar border-border text-muted-foreground h-9 shrink-0 items-center justify-center border-b text-xs font-medium select-none"
+                style={{ "--wails-draggable": "drag" } as React.CSSProperties}
+              >
+                CZL Mail
+              </div>
+              <div className="min-h-0 flex-1">{children}</div>
             </div>
-            <div className="min-h-0 flex-1">{children}</div>
-          </div>
-          <Toaster position="bottom-right" />
-        </TooltipProvider>
+            <Toaster position="bottom-right" />
+          </TooltipProvider>
+        </LocaleProvider>
       </body>
     </html>
   );

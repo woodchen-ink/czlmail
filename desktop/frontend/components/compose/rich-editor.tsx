@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -53,6 +56,7 @@ interface Props {
 const TEXT_COLORS = ["#000000", "#444444", "#C0392B", "#D35400", "#B7950B", "#1E8449", "#1F618D", "#7D3C98"];
 
 export function RichEditor({ content, placeholder, onChange, onReady, className, toolbarExtra }: Props) {
+  useI18n();
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -91,6 +95,7 @@ export function RichEditor({ content, placeholder, onChange, onReady, className,
 }
 
 function Toolbar({ editor, extra }: { editor: Editor; extra?: React.ReactNode }) {
+  useI18n();
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -117,7 +122,7 @@ function Toolbar({ editor, extra }: { editor: Editor; extra?: React.ReactNode })
 
   function setLink() {
     const prev = editor.getAttributes("link").href as string | undefined;
-    const url = window.prompt("链接地址", prev ?? "https://");
+    const url = window.prompt(t("链接地址"), prev ?? "https://");
     if (url === null) return;
     if (url.trim() === "" || url.trim() === "https://") {
       chain().extendMarkRange("link").unsetLink().run();
@@ -128,21 +133,21 @@ function Toolbar({ editor, extra }: { editor: Editor; extra?: React.ReactNode })
 
   return (
     <div className="border-border flex shrink-0 flex-wrap items-center gap-0.5 border-b px-2 py-1.5">
-      <Btn label="加粗" active={s.bold} onClick={() => chain().toggleBold().run()}>
+      <Btn label={t("加粗")} active={s.bold} onClick={() => chain().toggleBold().run()}>
         <Bold />
       </Btn>
-      <Btn label="斜体" active={s.italic} onClick={() => chain().toggleItalic().run()}>
+      <Btn label={t("斜体")} active={s.italic} onClick={() => chain().toggleItalic().run()}>
         <Italic />
       </Btn>
-      <Btn label="下划线" active={s.underline} onClick={() => chain().toggleUnderline().run()}>
+      <Btn label={t("下划线")} active={s.underline} onClick={() => chain().toggleUnderline().run()}>
         <UnderlineIcon />
       </Btn>
-      <Btn label="删除线" active={s.strike} onClick={() => chain().toggleStrike().run()}>
+      <Btn label={t("删除线")} active={s.strike} onClick={() => chain().toggleStrike().run()}>
         <Strikethrough />
       </Btn>
       <Popover>
         <PopoverTrigger asChild>
-          <button type="button" aria-label="文字颜色" className={btnClass(false)}>
+          <button type="button" aria-label={t("文字颜色")} className={btnClass(false)}>
             <Palette />
           </button>
         </PopoverTrigger>
@@ -163,56 +168,55 @@ function Toolbar({ editor, extra }: { editor: Editor; extra?: React.ReactNode })
               className="border-border text-muted-foreground rounded-sm border px-1.5 text-xs"
               onClick={() => chain().unsetColor().run()}
             >
-              默认
-            </button>
+              {t("默认")}</button>
           </div>
         </PopoverContent>
       </Popover>
       <Sep />
-      <Btn label="标题 1" active={s.h1} onClick={() => chain().toggleHeading({ level: 1 }).run()}>
+      <Btn label={t("标题 1")} active={s.h1} onClick={() => chain().toggleHeading({ level: 1 }).run()}>
         <Heading1 />
       </Btn>
-      <Btn label="标题 2" active={s.h2} onClick={() => chain().toggleHeading({ level: 2 }).run()}>
+      <Btn label={t("标题 2")} active={s.h2} onClick={() => chain().toggleHeading({ level: 2 }).run()}>
         <Heading2 />
       </Btn>
       <Sep />
-      <Btn label="无序列表" active={s.bullet} onClick={() => chain().toggleBulletList().run()}>
+      <Btn label={t("无序列表")} active={s.bullet} onClick={() => chain().toggleBulletList().run()}>
         <List />
       </Btn>
-      <Btn label="有序列表" active={s.ordered} onClick={() => chain().toggleOrderedList().run()}>
+      <Btn label={t("有序列表")} active={s.ordered} onClick={() => chain().toggleOrderedList().run()}>
         <ListOrdered />
       </Btn>
-      <Btn label="引用" active={s.quote} onClick={() => chain().toggleBlockquote().run()}>
+      <Btn label={t("引用")} active={s.quote} onClick={() => chain().toggleBlockquote().run()}>
         <Quote />
       </Btn>
-      <Btn label="代码块" active={s.code} onClick={() => chain().toggleCodeBlock().run()}>
+      <Btn label={t("代码块")} active={s.code} onClick={() => chain().toggleCodeBlock().run()}>
         <Code />
       </Btn>
       <Sep />
-      <Btn label="左对齐" active={s.left} onClick={() => chain().setTextAlign("left").run()}>
+      <Btn label={t("左对齐")} active={s.left} onClick={() => chain().setTextAlign("left").run()}>
         <AlignLeft />
       </Btn>
-      <Btn label="居中" active={s.center} onClick={() => chain().setTextAlign("center").run()}>
+      <Btn label={t("居中")} active={s.center} onClick={() => chain().setTextAlign("center").run()}>
         <AlignCenter />
       </Btn>
-      <Btn label="右对齐" active={s.right} onClick={() => chain().setTextAlign("right").run()}>
+      <Btn label={t("右对齐")} active={s.right} onClick={() => chain().setTextAlign("right").run()}>
         <AlignRight />
       </Btn>
       <Sep />
-      <Btn label="链接" active={s.link} onClick={setLink}>
+      <Btn label={t("链接")} active={s.link} onClick={setLink}>
         <Link2 />
       </Btn>
-      <Btn label="插入表格" onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
+      <Btn label={t("插入表格")} onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
         <TableIcon />
       </Btn>
-      <Btn label="清除格式" onClick={() => chain().unsetAllMarks().clearNodes().run()}>
+      <Btn label={t("清除格式")} onClick={() => chain().unsetAllMarks().clearNodes().run()}>
         <RemoveFormatting />
       </Btn>
       <Sep />
-      <Btn label="撤销" disabled={!s.canUndo} onClick={() => chain().undo().run()}>
+      <Btn label={t("撤销")} disabled={!s.canUndo} onClick={() => chain().undo().run()}>
         <Undo2 />
       </Btn>
-      <Btn label="重做" disabled={!s.canRedo} onClick={() => chain().redo().run()}>
+      <Btn label={t("重做")} disabled={!s.canRedo} onClick={() => chain().redo().run()}>
         <Redo2 />
       </Btn>
       {extra && <div className="ml-auto flex items-center gap-1">{extra}</div>}
@@ -241,6 +245,7 @@ function Btn({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useI18n();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -254,5 +259,6 @@ function Btn({
 }
 
 function Sep() {
+  useI18n();
   return <span className="bg-border mx-1 h-4 w-px" />;
 }

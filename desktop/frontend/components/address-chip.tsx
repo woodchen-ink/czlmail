@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { Copy, Send } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,13 +18,14 @@ import { displayAddress } from "@/lib/format";
  * 名字（尤其是「我」）看不出是哪个邮箱，别名、共享账号多的时候要能随手点开确认。
  */
 export function AddressChip({ address, own }: { address: Address; own: boolean }) {
+  useI18n();
   const email = address.email ?? "";
-  const label = own ? "我" : displayAddress(address);
+  const label = own ? t("我") : displayAddress(address);
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(email);
-      toast.success("已复制邮箱地址");
+      toast.success(t("已复制邮箱地址"));
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -47,13 +51,11 @@ export function AddressChip({ address, own }: { address: Address; own: boolean }
         <div className="border-border flex gap-1 border-t p-1.5">
           <Button variant="ghost" size="sm" className="h-7" onClick={copy}>
             <Copy className="size-3.5" />
-            复制
-          </Button>
+            {t("复制")}</Button>
           {!own && (
             <Button variant="ghost" size="sm" className="h-7" onClick={() => send("compose", { to: email })}>
               <Send className="size-3.5" />
-              写邮件
-            </Button>
+              {t("写邮件")}</Button>
           )}
         </div>
       </PopoverContent>

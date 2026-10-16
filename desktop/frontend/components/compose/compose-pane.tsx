@@ -1,5 +1,8 @@
 "use client";
 
+import { dateLocale, t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import {
@@ -106,6 +109,7 @@ const LANGUAGES = ["简体中文", "English", "日本語", "한국어", "Deutsch
  * 找旧签名; 分开放, 发送时再按「正文 + 分隔线 + 签名 + 引用」拼起来。
  */
 export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
+  useI18n();
   const [identities, setIdentities] = useState<Identity[]>([]);
   const [identityId, setIdentityId] = useState("");
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -157,7 +161,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
           if (list?.length) {
             setAttachments((prev) => [...prev, ...list]);
             markDirty();
-            toast.success(`已添加 ${list.length} 个附件`);
+            toast.success(t("已添加 {0} 个附件", list.length));
           }
         })
         .catch((err) => toast.error(errorMessage(err)))
@@ -273,7 +277,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
     const hasContent = parseAddresses(to).length > 0 || subject.trim() || !isHtmlEmpty(html) || attachments.length > 0;
     if (dirty.current && hasContent) {
       await saveDraft();
-      toast.success("已存为草稿");
+      toast.success(t("已存为草稿"));
     } else if (!hasContent && draftId.current) {
       // 内容被清空的草稿不再保留。
       await saving.current;
@@ -311,10 +315,10 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
     }
   }
 
-  async function applyTemplate(t: Template) {
+  async function applyTemplate(template: Template) {
     try {
       const recipient = parseAddresses(to)[0];
-      const fill = await api.applyTemplate(t.id, {}, recipient?.name || "");
+      const fill = await api.applyTemplate(template.id, {}, recipient?.name || "");
       if (fill.subject && !subject.trim()) setSubject(fill.subject);
       const body = fill.isHtml ? fill.body : textToHtml(fill.body);
       editorRef.current?.commands.setContent(body + (isHtmlEmpty(html) ? "" : html));
@@ -325,7 +329,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       }
       markDirty();
       if (fill.unresolved?.length) {
-        toast.warning(`模板里还有未填写的占位符：${fill.unresolved.map((n) => `{{${n}}}`).join("、")}`);
+        toast.warning(t("模板里还有未填写的占位符：{0}", fill.unresolved.map((n) => `{{${n}}}`).join("、")));
       }
     } catch (err) {
       toast.error(errorMessage(err));
@@ -333,11 +337,11 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
   }
 
   async function saveAsTemplate() {
-    const name = window.prompt("模板名称", subject || "新模板");
+    const name = window.prompt(t("模板名称"), subject || t("新模板"));
     if (!name?.trim()) return;
     try {
       await api.saveTemplate(store.Template.createFrom({ id: "", name: name.trim(), category: "", subject, body: html, isHtml: true }));
-      toast.success("已保存为模板");
+      toast.success(t("已保存为模板"));
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -345,20 +349,20 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
 
   function checks(then: () => void) {
     if (parseAddresses(to).length + parseAddresses(cc).length + parseAddresses(bcc).length === 0) {
-      toast.error("请填写收件人");
+      toast.error(t("请填写收件人"));
       return;
     }
     if (!identityId) {
-      toast.error("没有可用的发件身份");
+      toast.error(t("没有可用的发件身份"));
       return;
     }
     const text = htmlToText(html).toLowerCase();
     if ((settings?.warnMissingAttachment ?? true) && attachments.length === 0 && ATTACHMENT_WORDS.some((w) => text.includes(w) || subject.toLowerCase().includes(w))) {
-      setConfirm({ message: "正文提到了附件，但还没有添加附件。仍然发送？", proceed: then });
+      setConfirm({ message: t("正文提到了附件，但还没有添加附件。仍然发送？"), proceed: then });
       return;
     }
     if ((settings?.warnEmptySubject ?? true) && !subject.trim()) {
-      setConfirm({ message: "这封邮件没有主题。仍然发送？", proceed: then });
+      setConfirm({ message: t("这封邮件没有主题。仍然发送？"), proceed: then });
       return;
     }
     then();
@@ -372,7 +376,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       const req = buildRequest();
       req.sendAt = sendAt;
       await api.sendEmail(req);
-      toast.success(sendAt ? `已安排在 ${new Date(sendAt).toLocaleString("zh-CN")} 发送` : separately ? "已分别发送" : "已发送");
+      toast.success(sendAt ? t("已安排在 {0} 发送", new Date(sendAt).toLocaleString(dateLocale())) : separately ? t("已分别发送") : t("已发送"));
       onSent();
       onClose();
     } catch (err) {
@@ -384,11 +388,11 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
 
   function schedule(date: Date) {
     if (date.getTime() <= Date.now() + 60_000) {
-      toast.error("定时发送的时间需要晚于现在");
+      toast.error(t("定时发送的时间需要晚于现在"));
       return;
     }
     if (maxDelay > 0 && date.getTime() > Date.now() + maxDelay * 1000) {
-      toast.error(`服务器最多支持延后 ${Math.floor(maxDelay / 86400)} 天发送`);
+      toast.error(t("服务器最多支持延后 {0} 天发送", Math.floor(maxDelay / 86400)));
       return;
     }
     checks(() => send(date.toISOString()));
@@ -433,24 +437,23 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       <DropdownMenuContent align="end" className="w-52">
         {draft.replyTo && (
           <>
-            <DropdownMenuItem onSelect={() => setReplyIntentOpen(true)}>帮我写回复…</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setReplyIntentOpen(true)}>{t("帮我写回复…")}</DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
         )}
         <DropdownMenuItem
           disabled={isHtmlEmpty(html)}
-          onSelect={() => runAITask("优化正文", main.AIRequest.createFrom({ kind: "polish", text: bodyText() }))}
+          onSelect={() => runAITask(t("优化正文"), main.AIRequest.createFrom({ kind: "polish", text: bodyText() }))}
         >
-          优化润色正文
-        </DropdownMenuItem>
-        <DropdownMenuLabel className="text-muted-foreground text-xs">把正文翻译成</DropdownMenuLabel>
+          {t("优化润色正文")}</DropdownMenuItem>
+        <DropdownMenuLabel className="text-muted-foreground text-xs">{t("把正文翻译成")}</DropdownMenuLabel>
         {LANGUAGES.map((lang) => (
           <DropdownMenuItem
             key={lang}
             disabled={isHtmlEmpty(html)}
-            onSelect={() => runAITask(`翻译成${lang}`, main.AIRequest.createFrom({ kind: "translate_text", text: bodyText(), language: lang }))}
+            onSelect={() => runAITask(t("翻译成{0}", t(lang)), main.AIRequest.createFrom({ kind: "translate_text", text: bodyText(), language: lang }))}
           >
-            {lang}
+            {t(lang)}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -471,18 +474,17 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
     >
       {dragging && (
         <div className="border-accent bg-card/90 text-accent pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-md border-2 border-dashed text-sm font-medium">
-          松开即可添加为附件
-        </div>
+          {t("松开即可添加为附件")}</div>
       )}
       <header className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
-        <Button variant="ghost" size="icon" className="size-8" aria-label="关闭" onClick={close}>
+        <Button variant="ghost" size="icon" className="size-8" aria-label={t("关闭")} onClick={close}>
           <X className="size-4" />
         </Button>
-        <h2 className="text-base font-semibold">{draft.replyTo ? "回复" : "新邮件"}</h2>
+        <h2 className="text-base font-semibold">{draft.replyTo ? t("回复") : t("新邮件")}</h2>
       </header>
 
       <div className="border-border flex shrink-0 flex-col border-b text-sm">
-        <Field label="发件人">
+        <Field label={t("发件人")}>
           <OptionSelect
             value={identityId}
             onChange={(v) => {
@@ -491,48 +493,46 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
             }}
             options={identities.map((i) => [i.id, fromLabel(i)] as const)}
             className="-ml-2.5 flex-1 border-transparent dark:bg-transparent"
-            aria-label="发件人"
+            aria-label={t("发件人")}
           />
         </Field>
         <Field
-          label="收件人"
+          label={t("收件人")}
           extra={
             <div className="flex gap-1">
               {!showCc && (
                 <button type="button" className="text-muted-foreground hover:text-foreground px-1 text-xs" onClick={() => setShowCc(true)}>
-                  抄送
-                </button>
+                  {t("抄送")}</button>
               )}
               {!showBcc && (
                 <button type="button" className="text-muted-foreground hover:text-foreground px-1 text-xs" onClick={() => setShowBcc(true)}>
-                  密送
-                </button>
+                  {t("密送")}</button>
               )}
             </div>
           }
         >
-          <RecipientInput value={to} onChange={(v) => (setTo(v), markDirty())} placeholder="收件人" label="收件人" bare />
+          <RecipientInput value={to} onChange={(v) => (setTo(v), markDirty())} placeholder={t("收件人")} label={t("收件人")} bare />
         </Field>
         {showCc && (
-          <Field label="抄送">
-            <RecipientInput value={cc} onChange={(v) => (setCc(v), markDirty())} placeholder="抄送" label="抄送" bare />
+          <Field label={t("抄送")}>
+            <RecipientInput value={cc} onChange={(v) => (setCc(v), markDirty())} placeholder={t("抄送")} label={t("抄送")} bare />
           </Field>
         )}
         {showBcc && (
-          <Field label="密送">
-            <RecipientInput value={bcc} onChange={(v) => (setBcc(v), markDirty())} placeholder="密送" label="密送" bare />
+          <Field label={t("密送")}>
+            <RecipientInput value={bcc} onChange={(v) => (setBcc(v), markDirty())} placeholder={t("密送")} label={t("密送")} bare />
           </Field>
         )}
-        <Field label="主题">
+        <Field label={t("主题")}>
           <input
             value={subject}
             onChange={(e) => {
               setSubject(e.target.value);
               markDirty();
             }}
-            placeholder="主题"
+            placeholder={t("主题")}
             className="placeholder:text-muted-foreground h-9 min-w-0 flex-1 bg-transparent outline-none"
-            aria-label="主题"
+            aria-label={t("主题")}
           />
         </Field>
       </div>
@@ -541,7 +541,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
         <div className="czl-scroll flex h-full flex-col overflow-y-auto">
           <RichEditor
             content={draft.html}
-            placeholder="正文"
+            placeholder={t("正文")}
             className="shrink-0"
             onReady={(e) => (editorRef.current = e)}
             onChange={(v) => {
@@ -559,7 +559,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
                 {aiPanel.running && <Loader2 className="text-muted-foreground size-3.5 animate-spin" />}
               </div>
               <p className="max-h-72 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap select-text">
-                {aiPanel.text || "正在生成…"}
+                {aiPanel.text || t("正在生成…")}
               </p>
               <div className="flex justify-end gap-2">
                 <Button
@@ -570,14 +570,12 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
                     setAIPanel(null);
                   }}
                 >
-                  {aiPanel.running ? "停止" : "放弃"}
+                  {aiPanel.running ? t("停止") : t("放弃")}
                 </Button>
                 <Button variant="outline" size="sm" disabled={aiPanel.running || !aiPanel.text} onClick={() => applyAI("insert")}>
-                  插入到光标处
-                </Button>
+                  {t("插入到光标处")}</Button>
                 <Button size="sm" disabled={aiPanel.running || !aiPanel.text} onClick={() => applyAI("replace")}>
-                  替换正文
-                </Button>
+                  {t("替换正文")}</Button>
               </div>
             </div>
           )}
@@ -590,7 +588,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
           )}
           {draft.quoteHtml && (
             <details className="text-muted-foreground px-4 pb-4 text-sm">
-              <summary className="cursor-pointer select-none">显示引用的原邮件</summary>
+              <summary className="cursor-pointer select-none">{t("显示引用的原邮件")}</summary>
               <div className="czl-signature mt-2" dangerouslySetInnerHTML={{ __html: quotePreview }} />
             </details>
           )}
@@ -610,7 +608,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
                 variant="ghost"
                 size="icon"
                 className="size-6"
-                aria-label={`移除 ${a.name}`}
+                aria-label={t("移除 {0}", a.name)}
                 onClick={() => {
                   setAttachments((prev) => prev.filter((x) => x.blobId !== a.blobId));
                   markDirty();
@@ -624,23 +622,23 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       )}
 
       <footer className="border-border flex shrink-0 items-center gap-1 border-t px-3 py-2">
-        <IconBtn label={uploading ? "上传中" : "添加附件"} onClick={addAttachments} disabled={uploading}>
+        <IconBtn label={uploading ? t("上传中") : t("添加附件")} onClick={addAttachments} disabled={uploading}>
           {uploading ? <Loader2 className="animate-spin" /> : <Paperclip />}
         </IconBtn>
         <DropdownMenu>
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-8" aria-label="使用模板">
+                <Button variant="ghost" size="icon" className="size-8" aria-label={t("使用模板")}>
                   <FileText className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
-            <TooltipContent>使用模板</TooltipContent>
+            <TooltipContent>{t("使用模板")}</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
-            <DropdownMenuLabel>插入模板</DropdownMenuLabel>
-            {templates.length === 0 && <p className="text-muted-foreground px-2 py-1.5 text-xs">还没有模板</p>}
+            <DropdownMenuLabel>{t("插入模板")}</DropdownMenuLabel>
+            {templates.length === 0 && <p className="text-muted-foreground px-2 py-1.5 text-xs">{t("还没有模板")}</p>}
             {templates.map((t) => (
               <DropdownMenuItem key={t.id} onSelect={() => applyTemplate(t)}>
                 <span className="min-w-0 flex-1 truncate">{t.name}</span>
@@ -649,14 +647,14 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <IconBtn label="存为模板" onClick={saveAsTemplate}>
+        <IconBtn label={t("存为模板")} onClick={saveAsTemplate}>
           <BookmarkPlus />
         </IconBtn>
-        <IconBtn label={receipt ? "已请求已读回执" : "请求已读回执"} active={receipt} onClick={() => (setReceipt(!receipt), markDirty())}>
+        <IconBtn label={receipt ? t("已请求已读回执") : t("请求已读回执")} active={receipt} onClick={() => (setReceipt(!receipt), markDirty())}>
           <MailCheck />
         </IconBtn>
         <IconBtn
-          label={separately ? "分开发送：每位收件人单独收到一封" : "分开发送"}
+          label={separately ? t("分开发送：每位收件人单独收到一封") : t("分开发送")}
           active={separately}
           onClick={() => setSeparately(!separately)}
         >
@@ -665,33 +663,30 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
 
         <div className="flex-1" />
         <Button variant="ghost" size="sm" onClick={discard} disabled={sending}>
-          丢弃
-        </Button>
+          {t("丢弃")}</Button>
         <div className="flex">
           <Button className="rounded-r-none" onClick={() => checks(() => send())} disabled={sending || uploading}>
             {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            发送
-          </Button>
+            {t("发送")}</Button>
           {maxDelay > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button className="border-primary-foreground/20 rounded-l-none border-l px-2" aria-label="定时发送" disabled={sending || uploading}>
+                <Button className="border-primary-foreground/20 rounded-l-none border-l px-2" aria-label={t("定时发送")} disabled={sending || uploading}>
                   <ChevronDown className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel className="flex items-center gap-1.5">
                   <CalendarClock className="size-4" />
-                  定时发送
-                </DropdownMenuLabel>
+                  {t("定时发送")}</DropdownMenuLabel>
                 {schedulePresets().map((p) => (
                   <DropdownMenuItem key={p.label} onSelect={() => schedule(p.date)}>
                     <span className="flex-1">{p.label}</span>
-                    <span className="text-muted-foreground text-xs">{p.date.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                    <span className="text-muted-foreground text-xs">{p.date.toLocaleString(dateLocale(), { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => setScheduleOpen(true)}>自定义时间…</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setScheduleOpen(true)}>{t("自定义时间…")}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -701,13 +696,12 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>定时发送</DialogTitle>
+            <DialogTitle>{t("定时发送")}</DialogTitle>
           </DialogHeader>
           <Input type="datetime-local" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setScheduleOpen(false)}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button
               disabled={!scheduleAt}
               onClick={() => {
@@ -715,8 +709,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
                 schedule(new Date(scheduleAt));
               }}
             >
-              安排发送
-            </Button>
+              {t("安排发送")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -724,30 +717,28 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       <Dialog open={replyIntentOpen} onOpenChange={setReplyIntentOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>让 AI 帮我回复</DialogTitle>
+            <DialogTitle>{t("让 AI 帮我回复")}</DialogTitle>
           </DialogHeader>
           <Textarea
             autoFocus
             rows={4}
             value={intent}
             onChange={(e) => setIntent(e.target.value)}
-            placeholder="想怎么回复？例如：同意报价，但希望下周三前发货，并确认发票抬头"
+            placeholder={t("想怎么回复？例如：同意报价，但希望下周三前发货，并确认发票抬头")}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setReplyIntentOpen(false)}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button
               onClick={() => {
                 setReplyIntentOpen(false);
                 if (draft.replyTo) {
-                  runAITask("AI 回复草稿", main.AIRequest.createFrom({ kind: "reply", accountId: draft.replyTo.accountId, emailId: draft.replyTo.emailId, text: intent }));
+                  runAITask(t("AI 回复草稿"), main.AIRequest.createFrom({ kind: "reply", accountId: draft.replyTo.accountId, emailId: draft.replyTo.emailId, text: intent }));
                 }
               }}
             >
               <Sparkles className="size-4" />
-              生成
-            </Button>
+              {t("生成")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -755,11 +746,11 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       <AlertDialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>发送前确认</AlertDialogTitle>
+            <AlertDialogTitle>{t("发送前确认")}</AlertDialogTitle>
             <AlertDialogDescription>{confirm?.message}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>返回修改</AlertDialogCancel>
+            <AlertDialogCancel>{t("返回修改")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 const next = confirm?.proceed;
@@ -767,8 +758,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
                 next?.();
               }}
             >
-              仍然发送
-            </AlertDialogAction>
+              {t("仍然发送")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -777,6 +767,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
 }
 
 function Field({ label, extra, children }: { label: string; extra?: React.ReactNode; children: React.ReactNode }) {
+  useI18n();
   return (
     <div className="border-border flex items-center gap-3 border-b px-4 last:border-b-0">
       <span className="text-muted-foreground w-12 shrink-0 text-sm">{label}</span>
@@ -800,6 +791,7 @@ function IconBtn({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useI18n();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -825,11 +817,11 @@ function schedulePresets(): { label: string; date: Date }[] {
   const at = (days: number, hour: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour, 0);
   const nextMonday = (8 - now.getDay()) % 7 || 7;
   const list = [
-    { label: "明天上午", date: at(1, 8) },
-    { label: "明天下午", date: at(1, 13) },
-    { label: "下周一上午", date: at(nextMonday, 8) },
+    { label: t("明天上午"), date: at(1, 8) },
+    { label: t("明天下午"), date: at(1, 13) },
+    { label: t("下周一上午"), date: at(nextMonday, 8) },
   ];
-  if (now.getHours() < 17) list.unshift({ label: "今天傍晚", date: at(0, 18) });
+  if (now.getHours() < 17) list.unshift({ label: t("今天傍晚"), date: at(0, 18) });
   return list;
 }
 

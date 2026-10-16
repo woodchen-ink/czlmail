@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -9,6 +12,7 @@ import { api, errorMessage, type Account, type AppSettings } from "@/lib/api";
 import { main } from "@/wailsjs/go/models";
 
 export function SectionTitle({ title, desc, small }: { title: string; desc?: React.ReactNode; small?: boolean }) {
+  useI18n();
   return (
     <div>
       <h2 className={cn("font-semibold", small ? "text-sm" : "text-lg")}>{title}</h2>
@@ -18,14 +22,17 @@ export function SectionTitle({ title, desc, small }: { title: string; desc?: Rea
 }
 
 export function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+  useI18n();
   return <div className={cn("border-border bg-card flex flex-col gap-3 rounded-md border p-4", className)}>{children}</div>;
 }
 
 export function Divider() {
+  useI18n();
   return <div className="border-border border-t" />;
 }
 
 export function Row({ title, desc, children }: { title: React.ReactNode; desc?: React.ReactNode; children: React.ReactNode }) {
+  useI18n();
   return (
     <div className="flex items-center gap-4">
       <div className="min-w-0 flex-1">
@@ -92,6 +99,7 @@ export function AccountPicker({
   value: string;
   onChange: (id: string) => void;
 }) {
+  useI18n();
   if (accounts.length <= 1) return null;
   return (
     <OptionSelect
@@ -99,7 +107,7 @@ export function AccountPicker({
       onChange={onChange}
       options={accounts.map((a) => [a.id, a.name] as const)}
       className="max-w-56"
-      aria-label="账号"
+      aria-label={t("账号")}
     />
   );
 }

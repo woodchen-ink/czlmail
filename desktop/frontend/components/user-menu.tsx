@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useState } from "react";
 import { ChevronsUpDown, Image as ImageIcon, Keyboard, LogOut, Monitor, Moon, Sun, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -31,6 +34,7 @@ interface Props {
 }
 
 export function UserMenu({ username, onImport, onShortcuts, onSignOut }: Props) {
+  useI18n();
   const { theme, setTheme, bodyAppearance, setBodyAppearance } = useAppearance();
   const [avatars, setAvatars] = useState(true);
 
@@ -46,7 +50,7 @@ export function UserMenu({ username, onImport, onShortcuts, onSignOut }: Props) 
     try {
       const current = await api.getSettings();
       await api.saveSettings(main.AppSettings.createFrom({ ...current, senderAvatars: on }));
-      toast.success(on ? "已开启发件人头像，新加载的列表生效" : "已关闭发件人头像");
+      toast.success(on ? t("已开启发件人头像，新加载的列表生效") : t("已关闭发件人头像"));
     } catch (err) {
       setAvatars(!on);
       toast.error(errorMessage(err));
@@ -57,7 +61,7 @@ export function UserMenu({ username, onImport, onShortcuts, onSignOut }: Props) 
     <DropdownMenu>
       <DropdownMenuTrigger className="hover:bg-secondary focus-visible:ring-ring flex w-full items-center gap-2 px-3 py-3 text-left focus-visible:ring-2 focus-visible:outline-none">
         <SenderAvatar email={username} className="size-7" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{username || "未登录"}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{username || t("未登录")}</span>
         <ChevronsUpDown className="text-muted-foreground size-4 shrink-0" />
       </DropdownMenuTrigger>
 
@@ -68,53 +72,44 @@ export function UserMenu({ username, onImport, onShortcuts, onSignOut }: Props) 
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <Sun className="size-4" />
-            外观
-          </DropdownMenuSubTrigger>
+            {t("外观")}</DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
             <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as ThemePreference)}>
               <DropdownMenuRadioItem value="system">
                 <Monitor className="size-4" />
-                跟随系统
-              </DropdownMenuRadioItem>
+                {t("跟随系统")}</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="light">
                 <Sun className="size-4" />
-                亮色
-              </DropdownMenuRadioItem>
+                {t("亮色")}</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="dark">
                 <Moon className="size-4" />
-                暗色
-              </DropdownMenuRadioItem>
+                {t("暗色")}</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
             <DropdownMenuCheckboxItem
               checked={bodyAppearance === "light"}
               onCheckedChange={(on) => setBodyAppearance(on ? "light" : "follow")}
             >
-              邮件正文始终亮色
-            </DropdownMenuCheckboxItem>
+              {t("邮件正文始终亮色")}</DropdownMenuCheckboxItem>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
 
         <DropdownMenuCheckboxItem checked={avatars} onCheckedChange={toggleAvatars}>
           <ImageIcon className="size-4" />
-          显示发件人头像
-        </DropdownMenuCheckboxItem>
+          {t("显示发件人头像")}</DropdownMenuCheckboxItem>
 
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onImport}>
           <Upload className="size-4" />
-          导入邮件到当前文件夹
-        </DropdownMenuItem>
+          {t("导入邮件到当前文件夹")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={onShortcuts}>
           <Keyboard className="size-4" />
-          键盘快捷键
-        </DropdownMenuItem>
+          {t("键盘快捷键")}</DropdownMenuItem>
 
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onSignOut}>
           <LogOut className="size-4" />
-          退出登录
-        </DropdownMenuItem>
+          {t("退出登录")}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,5 +1,8 @@
 "use client";
 
+import { t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
 import { useEffect, useState } from "react";
 import { Check, Loader2, Minus, ShieldAlert, ShieldCheck, X } from "lucide-react";
 
@@ -21,26 +24,26 @@ interface Props {
   ownAddresses: Set<string>;
 }
 
-const METHOD_LABEL: Record<string, string> = {
+const getMethodLabel: () => (Record<string, string>) = () => ({
   spf: "SPF",
   dkim: "DKIM",
   dmarc: "DMARC",
-  iprev: "反向 DNS",
+  iprev: t("反向 DNS"),
   arc: "ARC",
   "dkim-atps": "DKIM-ATPS",
-};
+});
 
-const RESULT_LABEL: Record<string, string> = {
-  pass: "通过",
-  fail: "失败",
-  softfail: "软失败",
-  neutral: "中性",
-  none: "无",
-  temperror: "临时错误",
-  permerror: "永久错误",
-  policy: "策略拒绝",
-  hardfail: "失败",
-};
+const getResultLabel: () => (Record<string, string>) = () => ({
+  pass: t("通过"),
+  fail: t("失败"),
+  softfail: t("软失败"),
+  neutral: t("中性"),
+  none: t("无"),
+  temperror: t("临时错误"),
+  permerror: t("永久错误"),
+  policy: t("策略拒绝"),
+  hardfail: t("失败"),
+});
 
 type Tone = "good" | "bad" | "neutral";
 
@@ -63,6 +66,7 @@ const TONE_CLASS: Record<Tone, string> = {
  * 认证与垃圾评分要现取邮件头(不落库)，取回之前先显示缓存里就有的部分。
  */
 export function EmailDetails({ accountId, email, ownAddresses }: Props) {
+  useI18n();
   // 结果按邮件记下, 切到另一封时旧结果自然失效, 不必在 effect 里先清空。
   const key = `${accountId}/${email.id}`;
   const [loaded, setLoaded] = useState<{ key: string; info: HeaderInfo | null; error: string } | null>(null);
@@ -91,56 +95,55 @@ export function EmailDetails({ accountId, email, ownAddresses }: Props) {
   return (
     <div className="@container border-border bg-card rounded-md border px-4 py-3 text-xs">
       <div className="grid gap-x-8 gap-y-4 @2xl:grid-cols-2">
-        <Section title="收件人与路由">
-          <Row label="发件人">
+        <Section title={t("收件人与路由")}>
+          <Row label={t("发件人")}>
             <AddressList list={email.from} own={ownAddresses} />
           </Row>
           {sender && (
-            <Row label="代发">
+            <Row label={t("代发")}>
               <AddressList list={[sender]} own={ownAddresses} />
             </Row>
           )}
           {replyTo.length > 0 && (
-            <Row label="回复地址">
+            <Row label={t("回复地址")}>
               <AddressList list={replyTo} own={ownAddresses} />
             </Row>
           )}
-          <Row label="收件人">
+          <Row label={t("收件人")}>
             {email.to && email.to.length > 0 ? (
               <AddressList list={email.to} own={ownAddresses} />
             ) : (
-              <span className="text-muted-foreground">(未列出)</span>
+              <span className="text-muted-foreground">{t("(未列出)")}</span>
             )}
           </Row>
           {email.cc && email.cc.length > 0 && (
-            <Row label="抄送">
+            <Row label={t("抄送")}>
               <AddressList list={email.cc} own={ownAddresses} />
             </Row>
           )}
           {email.bcc && email.bcc.length > 0 && (
-            <Row label="密送">
+            <Row label={t("密送")}>
               <AddressList list={email.bcc} own={ownAddresses} />
             </Row>
           )}
           {info?.deliveredTo && info.deliveredTo.length > 0 && (
-            <Row label="投递到">
+            <Row label={t("投递到")}>
               <span className="break-all">{info.deliveredTo.join("、")}</span>
             </Row>
           )}
-          {info?.sentAt && <Row label="发送时间">{detailDate(info.sentAt)}</Row>}
-          <Row label="接收时间">{detailDate(email.receivedAt)}</Row>
+          {info?.sentAt && <Row label={t("发送时间")}>{detailDate(info.sentAt)}</Row>}
+          <Row label={t("接收时间")}>{detailDate(email.receivedAt)}</Row>
         </Section>
 
-        <Section title="身份验证与安全">
+        <Section title={t("身份验证与安全")}>
           {error ? (
             <p className="text-destructive">{error}</p>
           ) : !info ? (
             <p className="text-muted-foreground flex items-center gap-1.5">
               <Loader2 className="size-3.5 animate-spin" />
-              正在读取邮件头
-            </p>
+              {t("正在读取邮件头")}</p>
           ) : (info.auth?.length ?? 0) === 0 && !info.spamVerdict ? (
-            <p className="text-muted-foreground">邮件头里没有认证结果</p>
+            <p className="text-muted-foreground">{t("邮件头里没有认证结果")}</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {(info.auth ?? []).map((r, i) => (
@@ -150,42 +153,42 @@ export function EmailDetails({ accountId, email, ownAddresses }: Props) {
             </div>
           )}
           {info?.authServer && (
-            <p className="text-muted-foreground mt-1.5">由 {info.authServer} 检查</p>
+            <p className="text-muted-foreground mt-1.5">{t("由{0}检查", info.authServer)}</p>
           )}
         </Section>
 
-        <Section title="标识符与会话">
+        <Section title={t("标识符与会话")}>
           {email.messageId && (
-            <Row label="消息 ID">
+            <Row label={t("消息 ID")}>
               <Mono>{email.messageId}</Mono>
             </Row>
           )}
           {email.inReplyTo && (
-            <Row label="回复于">
+            <Row label={t("回复于")}>
               <Mono>{email.inReplyTo}</Mono>
             </Row>
           )}
           {references.length > 0 && (
-            <Row label="引用">
-              <span title={references.join("\n")}>{references.length} 封邮件</span>
+            <Row label={t("引用")}>
+              <span title={references.join("\n")}>{t("{0}封邮件", references.length)}</span>
             </Row>
           )}
-          <Row label="会话 ID">
+          <Row label={t("会话 ID")}>
             <Mono>{email.threadId}</Mono>
           </Row>
-          <Row label="邮件 ID">
+          <Row label={t("邮件 ID")}>
             <Mono>{email.id}</Mono>
           </Row>
         </Section>
 
-        <Section title="邮件属性">
-          <Row label="主题">{email.subject || "(无主题)"}</Row>
-          <Row label="大小">
+        <Section title={t("邮件属性")}>
+          <Row label={t("主题")}>{email.subject || t("(无主题)")}</Row>
+          <Row label={t("大小")}>
             {fileSize(email.size) || "—"}
             {info?.contentType && <Mono className="text-muted-foreground ml-2">{info.contentType}</Mono>}
           </Row>
           {email.attachments && email.attachments.length > 0 && (
-            <Row label="附件">{email.attachments.length} 个</Row>
+            <Row label={t("附件")}>{t("{0}个", email.attachments.length)}</Row>
           )}
         </Section>
       </div>
@@ -194,6 +197,7 @@ export function EmailDetails({ accountId, email, ownAddresses }: Props) {
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  useI18n();
   return (
     <section className="min-w-0">
       <h3 className="text-muted-foreground mb-2 font-medium">{title}</h3>
@@ -203,6 +207,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  useI18n();
   return (
     <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-2">
       <span className="text-muted-foreground">{label}</span>
@@ -212,10 +217,12 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 function Mono({ children, className }: { children: React.ReactNode; className?: string }) {
+  useI18n();
   return <span className={cn("font-mono text-xs break-all", className)}>{children}</span>;
 }
 
 function AddressList({ list, own }: { list: Address[] | undefined; own: Set<string> }) {
+  useI18n();
   return (
     <span className="flex flex-col">
       {(list ?? []).map((a, i) => (
@@ -224,7 +231,7 @@ function AddressList({ list, own }: { list: Address[] | undefined; own: Set<stri
           <span className={a.name ? "text-muted-foreground" : undefined}>
             {a.name ? `<${a.email}>` : a.email}
           </span>
-          {own.has((a.email ?? "").toLowerCase()) && <span className="text-muted-foreground ml-1.5 text-xs">(我)</span>}
+          {own.has((a.email ?? "").toLowerCase()) && <span className="text-muted-foreground ml-1.5 text-xs">{t("(我)")}</span>}
         </span>
       ))}
     </span>
@@ -232,29 +239,31 @@ function AddressList({ list, own }: { list: Address[] | undefined; own: Set<stri
 }
 
 function AuthBadge({ result }: { result: AuthResult }) {
-  const t = tone(result.result);
-  const Icon = t === "good" ? Check : t === "bad" ? X : Minus;
+  useI18n();
+  const badgeTone = tone(result.result);
+  const Icon = badgeTone === "good" ? Check : badgeTone === "bad" ? X : Minus;
   return (
     <span className="border-border flex items-center gap-1.5 rounded-sm border px-2 py-1">
-      <Icon className={cn("size-3.5", TONE_CLASS[t])} />
-      <span className="font-medium">{METHOD_LABEL[result.method] ?? result.method.toUpperCase()}</span>
-      <span className={TONE_CLASS[t]}>{RESULT_LABEL[result.result] ?? result.result}</span>
+      <Icon className={cn("size-3.5", TONE_CLASS[badgeTone])} />
+      <span className="font-medium">{getMethodLabel()[result.method] ?? result.method.toUpperCase()}</span>
+      <span className={TONE_CLASS[badgeTone]}>{getResultLabel()[result.result] ?? result.result}</span>
       {result.detail && <span className="text-muted-foreground break-all">· {result.detail}</span>}
-      {result.policy && <span className="text-muted-foreground">· 策略: {result.policy}</span>}
+      {result.policy && <span className="text-muted-foreground">{t("· 策略:{0}", result.policy)}</span>}
     </span>
   );
 }
 
 function SpamBadge({ verdict, score }: { verdict: string; score: string }) {
+  useI18n();
   const spam = verdict === "spam";
   const Icon = spam ? ShieldAlert : ShieldCheck;
   const cls = spam ? TONE_CLASS.bad : TONE_CLASS.good;
   return (
     <span className="border-border flex items-center gap-1.5 rounded-sm border px-2 py-1">
       <Icon className={cn("size-3.5", cls)} />
-      <span className="font-medium">垃圾邮件评分</span>
+      <span className="font-medium">{t("垃圾邮件评分")}</span>
       {score && <span className={cls}>{score}</span>}
-      <span className="text-muted-foreground">· {spam ? "疑似垃圾邮件" : "正常"}</span>
+      <span className="text-muted-foreground">· {spam ? t("疑似垃圾邮件") : t("正常")}</span>
     </span>
   );
 }
