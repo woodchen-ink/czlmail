@@ -62,6 +62,7 @@
 ## MCP：让 Agent 使用你的邮箱
 
 在软件的 **AI 助手 → MCP** 页面开启，页面上有可以直接复制的配置。
+调用 MCP 时需要让 CZL Mail 保持运行（可以收起到托盘或菜单栏）。stdio 桥不会自动启动程序或唤出窗口；程序未运行或 MCP 未启用时会直接报错。
 
 工具：`list_accounts`、`list_mailboxes`、`list_emails`、`search_emails`、`read_email`、`mark_read`、
 `send_email`、`list_events`、`create_event`、`search_contacts`、`list_files`。

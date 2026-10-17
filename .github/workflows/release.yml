@@ -28,6 +28,10 @@ jobs:
           go-version-file: desktop/go.mod
           cache-dependency-path: desktop/go.sum
 
+      - name: Test MCP bridge
+        working-directory: desktop
+        run: go test ./internal/mcpbridge
+
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: desktop/frontend/package.json
@@ -63,6 +67,10 @@ jobs:
         with:
           go-version-file: desktop/go.mod
           cache-dependency-path: desktop/go.sum
+
+      - name: Test MCP bridge
+        working-directory: desktop
+        run: go test ./internal/mcpbridge
 
       - uses: pnpm/action-setup@v4
         with:

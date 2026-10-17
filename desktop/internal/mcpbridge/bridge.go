@@ -2,7 +2,7 @@
 //
 // 桥本身不碰邮件数据, 只把 stdio 上的工具调用转发到正在运行的桌面端的本地 HTTP 端点。
 // 这样数据只有一个读写方(桌面端), 不会出现两个进程同时同步、同时写缓存库。
-// 桌面端没在运行时先把它拉起来, 等端点就绪。
+// 桌面端未运行或 MCP 未启用时直接报错, 不启动桌面程序或唤出窗口。
 package mcpbridge
 
 import (
@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -38,13 +37,13 @@ func InfoPath() (string, error) {
 	return filepath.Join(dir, FileName), nil
 }
 
-const bridgeWaitTimeout = 30 * time.Second
+var errMCPUnavailable = errors.New("2141 mcp_unavailable: start CZL Mail and enable MCP in AI Assistant settings")
 
 // Run 运行 stdio 桥, 返回进程退出码。version 用于向客户端报告实现版本。
 func Run(version string) int {
 	ctx := context.Background()
 
-	info, err := waitForMCP(ctx)
+	info, err := runningMCP(ctx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "czlmail mcp:", err)
 		return 1
@@ -85,31 +84,16 @@ func Run(version string) int {
 	return 0
 }
 
-// waitForMCP 读取桌面端写下的连接信息; 桌面端未运行时启动它并等待。
-func waitForMCP(ctx context.Context) (Info, error) {
+// runningMCP 只连接已运行的桌面端; 不启动进程, 也不等待用户打开程序。
+func runningMCP(ctx context.Context) (Info, error) {
 	path, err := InfoPath()
 	if err != nil {
 		return Info{}, err
 	}
-
-	launched := false
-	deadline := time.Now().Add(bridgeWaitTimeout)
-	for {
-		if info, ok := ReadInfo(ctx, path); ok {
-			return info, nil
-		}
-		if !launched {
-			launched = true
-			if exe, err := os.Executable(); err == nil {
-				// 以普通方式启动桌面端(会缩在托盘里); 已在运行时单实例锁会让它立即退出。
-				_ = exec.Command(exe).Start()
-			}
-		}
-		if time.Now().After(deadline) {
-			return Info{}, errors.New("CZL Mail is not running or MCP is disabled; enable it in CZL Mail → 设置 → AI 助手 (MCP)")
-		}
-		time.Sleep(500 * time.Millisecond)
+	if info, ok := ReadInfo(ctx, path); ok {
+		return info, nil
 	}
+	return Info{}, errMCPUnavailable
 }
 
 // ReadInfo 读取连接信息并确认端点真的在监听: 桌面端异常退出时 mcp.json 可能残留。

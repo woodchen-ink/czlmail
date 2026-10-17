@@ -69,6 +69,8 @@ auto-update from GitHub Releases (SHA-256 verified)
 ## MCP: let agents use your mailbox
 
 Enable it in the app under **AI Assistant → MCP**. The page shows ready-to-paste configuration.
+Keep CZL Mail running when using MCP (it can stay in the tray or menu bar). The stdio bridge never starts
+the app or brings its window to the foreground; it fails immediately if the app is not running or MCP is disabled.
 
 Tools: `list_accounts`, `list_mailboxes`, `list_emails`, `search_emails`, `read_email`, `mark_read`,
 `send_email`, `list_events`, `create_event`, `search_contacts`, `list_files`.
