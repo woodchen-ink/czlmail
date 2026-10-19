@@ -77,7 +77,7 @@ func Run(version string) int {
 		})
 	}
 
-	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
+	if err := server.Run(ctx, &mcp.StdioTransport{MaxLineLength: 48 << 20}); err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "czlmail mcp:", err)
 		return 1
 	}

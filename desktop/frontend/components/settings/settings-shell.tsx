@@ -66,6 +66,7 @@ import {
   type UpdateInfo,
 } from "@/lib/api";
 import { BrowserOpenURL } from "@/wailsjs/runtime/runtime";
+import { NotesSection } from "@/components/settings/notes-section";
 import { AISection } from "@/components/settings/ai-section";
 import { FiltersSection } from "@/components/settings/filters-section";
 import {
@@ -88,6 +89,7 @@ type Section =
   | "integration"
   | "reading"
   | "compose"
+  | "notes"
   | "ai"
   | "identities"
   | "vacation"
@@ -110,6 +112,7 @@ const getGroups: () => ({ title: string; items: { id: Section; label: string; ic
       { id: "integration", label: t("默认应用与启动"), icon: AppWindow },
       { id: "reading", label: t("阅读"), icon: BookOpen },
       { id: "compose", label: t("写信"), icon: PenLine },
+      { id: "notes", label: t("笔记"), icon: FileText },
       { id: "ai", label: t("AI 助手"), icon: Sparkles },
     ],
   },
@@ -199,6 +202,7 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
           {section === "integration" && <IntegrationSection active={on("integration")} />}
           {section === "reading" && <ReadingSection active={on("reading")} />}
           {section === "compose" && <ComposeSection active={on("compose")} />}
+          {section === "notes" && <NotesSection active={on("notes")} />}
           {section === "ai" && <AISection active={on("ai")} />}
           {section === "identities" && <IdentitiesSection active={on("identities")} />}
           {section === "vacation" && <VacationSection active={on("vacation")} />}

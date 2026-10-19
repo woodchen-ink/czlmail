@@ -14,6 +14,7 @@ func (a *App) assetHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(avatar.Path, a.avatarHandler())
 	mux.HandleFunc(BlobPath, a.serveBlob)
+	mux.HandleFunc("/czl-note-resource", a.serveNoteResource)
 	mux.HandleFunc(RemoteImagePath, a.serveRemoteImage)
 	mux.HandleFunc(ContactPhotoPath, a.serveContactPhoto)
 	return mux

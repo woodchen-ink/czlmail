@@ -65,7 +65,7 @@ func (a *App) startMCP() error {
 	}
 
 	server := a.newMCPServer()
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{MaxRequestBodyBytes: 48 << 20})
 
 	mux := http.NewServeMux()
 	mux.Handle(mcpPath, requireToken(token, handler))
@@ -240,5 +240,6 @@ func (a *App) newMCPServer() *mcp.Server {
 	a.addComposeTools(server)
 	a.addCalendarTools(server)
 	a.addContactFileTools(server)
+	a.addNoteTools(server)
 	return server
 }

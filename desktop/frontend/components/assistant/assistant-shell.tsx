@@ -39,7 +39,7 @@ import { api, errorMessage, Events, onEvent, type MCPStatus } from "@/lib/api";
 
 // 与 Go 端 newMCPServer 注册的工具保持一致。level: read 只读 / write 直接可用的写入 /
 // modify 需开「允许 AI 整理邮件与日程」/ send 需开「允许 AI 发送邮件」。
-type ToolLevel = "read" | "write" | "modify" | "send";
+type ToolLevel = "read" | "write" | "modify" | "send" | "notes";
 
 const getToolGroups: () => ({ title: string; tools: { name: string; desc: string; level: ToolLevel }[] }[]) = () => ([
   {
@@ -99,6 +99,13 @@ const getToolGroups: () => ({ title: string; tools: { name: string; desc: string
       { name: "read_file", desc: t("读取网盘里文本类文件的内容"), level: "read" },
     ],
   },
+  {
+    title: t("笔记"),
+    tools: [
+      ...["list_note_vaults", "list_notes", "search_notes", "read_note", "read_note_attachment", "get_note_diff", "get_note_operation"].map((name) => ({ name, desc: t("读取、搜索或对比本地笔记"), level: "read" as const })),
+      ...["bind_note_vault", "create_note", "create_note_folder", "update_note", "move_note_item", "trash_note_item", "restore_note_item", "add_note_attachment", "import_note_files", "resolve_note_conflict"].map((name) => ({ name, desc: t("修改笔记（需在设置中单独授权）"), level: "notes" as const })),
+    ],
+  },
 ]);
 
 const getLevelLabel: () => (Record<ToolLevel, string>) = () => ({
@@ -106,6 +113,7 @@ const getLevelLabel: () => (Record<ToolLevel, string>) = () => ({
   write: t("写入"),
   modify: t("需开启整理"),
   send: t("需开启发信"),
+  notes: t("允许 MCP 修改笔记"),
 });
 
 const getExamples = () => ([

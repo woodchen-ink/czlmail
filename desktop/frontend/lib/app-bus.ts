@@ -5,7 +5,7 @@
  * 只需约定消息名与负载。
  */
 
-export type Module = "mail" | "calendar" | "contacts" | "files" | "assistant" | "settings";
+export type Module = "mail" | "calendar" | "contacts" | "files" | "notes" | "assistant" | "settings";
 
 export interface AppMessages {
   navigate: { module: Module };

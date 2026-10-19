@@ -28,6 +28,7 @@ import (
 // 绑定方法一律返回 (数据, error): Wails 会把 error 转成前端 Promise 的 reject,
 // 吞掉错误只会让界面停在空列表上而不给任何线索。
 type App struct {
+	notes    noteState
 	opens    openQueue
 	prefetch prefetcher
 	mcp      mcpState
@@ -283,6 +284,9 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client) error {
 		a.prefetchRecent(accountID)
 	}
 	s.OnPIMChanged = func(accountID, typeName string) {
+		if typeName == "" || typeName == "FileNode" {
+			a.wakeNotes()
+		}
 		a.emit(EventPIMChanged, PIMChange{AccountID: accountID, Type: typeName})
 		// 模板与 AI/MCP 设置存在个人网盘里; 网盘有变化(含首次同步)时合并一次。
 		if (typeName == "" || typeName == "FileNode") && accountID == a.personalAccountID(st) {
@@ -300,6 +304,7 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client) error {
 		a.log.Error("persist accounts", "err", err)
 	}
 
+	go a.runNotes(syncCtx, s)
 	go a.runReminders(syncCtx)
 	go a.runReconcile(syncCtx, s, st)
 	go a.runBodyTextBackfill(syncCtx, st)

@@ -11,6 +11,7 @@
 /desktop/frontend/out/
 /desktop/frontend/.next/
 /desktop/frontend/node_modules/
+/desktop/frontend/public/pdfjs/
 
 # 本地数据与凭据
 *.db

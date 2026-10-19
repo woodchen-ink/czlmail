@@ -296,9 +296,20 @@ export function onEvent(name: string, handler: (...data: any[]) => void): () => 
 
 /** 把后端 error 转成可读文案。Go 侧的错误是「数字码 + 英文短语」。 */
 export function errorMessage(e: unknown): string {
-  if (e instanceof NoRuntimeError) return e.message;
-  if (e instanceof Error) return e.message;
-  return String(e);
+  const message = e instanceof Error ? e.message : String(e);
+  const code = /\b(220[0-8])\b/.exec(message)?.[1];
+  const notes: Record<string, () => string> = {
+    "2200": () => t("笔记已关闭，请在设置中重新开启。"),
+    "2201": () => t("笔记版本已变化，请保留当前编辑并重新读取或另存为恢复笔记。"),
+    "2202": () => t("笔记存在版本或引用冲突，请先对比双方内容。"),
+    "2203": () => t("文件名称、路径或大小不符合要求，请检查后重试。"),
+    "2204": () => t("笔记或附件不存在，请刷新目录后重试。"),
+    "2205": () => t("笔记同步暂不可用，本地内容仍保留，请检查连接后重试。"),
+    "2206": () => t("本地保存失败，请检查磁盘空间与目录权限，勿关闭当前编辑。"),
+    "2207": () => t("笔记写入未获授权，请检查笔记 MCP 设置与账号权限。"),
+    "2208": () => t("远端提交结果尚不确定，请等待核对，不要重复创建文件。"),
+  };
+  return code && notes[code] ? `${notes[code]()} (${code})` : message;
 }
 
 /** Events.aiStream 的负载。 */

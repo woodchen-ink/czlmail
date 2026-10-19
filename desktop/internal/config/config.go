@@ -12,9 +12,9 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// KeyringService 是凭据在系统密钥库里的服务名。
-// Windows 落凭据管理器, macOS 落 Keychain, Linux 落 Secret Service。
-const KeyringService = "czlmail"
+// KeyringService isolates test-instance credentials as well as their files.
+// The default profile retains the established "czlmail" service name.
+var KeyringService = DirName()
 
 // Config 是可以明文落盘的部分。
 //
@@ -58,9 +58,20 @@ func (c Config) Configured() bool {
 	return c.Issuer != "" && c.ClientID != ""
 }
 
+// defaultInstance may be set by test-build ldflags, keeping double-click launches isolated too.
+var defaultInstance string
+
+// instanceName uses explicit development overrides before the build's profile default.
+func instanceName() string {
+	if value := os.Getenv("CZLMAIL_INSTANCE"); value != "" {
+		return value
+	}
+	return defaultInstance
+}
+
 // InstanceID 是单实例锁与 macOS LaunchAgent 的标识。开发调试时设置 CZLMAIL_INSTANCE 可以与已安装的正式版同时运行。
 func InstanceID() string {
-	if v := os.Getenv("CZLMAIL_INSTANCE"); v != "" {
+	if v := instanceName(); v != "" {
 		return "net.czl.mail." + v
 	}
 	return "net.czl.mail"
@@ -69,7 +80,7 @@ func InstanceID() string {
 // DirName 是 %APPDATA% 下的目录名。设置了 CZLMAIL_INSTANCE 的开发实例用独立目录,
 // 缓存库、配置、日志、MCP 连接信息都与正式版分开, 测试不会影响日常使用的数据。
 func DirName() string {
-	if v := os.Getenv("CZLMAIL_INSTANCE"); v != "" {
+	if v := instanceName(); v != "" {
 		return "czlmail-" + v
 	}
 	return "czlmail"

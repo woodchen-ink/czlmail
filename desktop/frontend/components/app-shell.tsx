@@ -3,8 +3,10 @@
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
-import { useEffect, useState } from "react";
-import { Bot, CalendarDays, FolderOpen, Mail, Settings, UsersRound } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Bot, CalendarDays, FolderOpen, Mail, NotebookPen, Settings, UsersRound } from "lucide-react";
+import { NotesShell } from "@/components/notes/notes-shell";
+import { flushNotes, noteApi, noteEvents, type NoteConfig } from "@/lib/notes/api";
 
 import { AssistantShell } from "@/components/assistant/assistant-shell";
 import { CalendarShell } from "@/components/calendar/calendar-shell";
@@ -30,7 +32,7 @@ const getNav: () => ({ id: Module; label: string; icon: typeof Mail; shortcut: s
   { id: "calendar", label: t("日历"), icon: CalendarDays, shortcut: `${MOD}2` },
   { id: "contacts", label: t("通讯录"), icon: UsersRound, shortcut: `${MOD}3` },
   { id: "files", label: t("文件"), icon: FolderOpen, shortcut: `${MOD}4` },
-  { id: "assistant", label: t("AI 助手"), icon: Bot, shortcut: `${MOD}5` },
+  { id: "notes", label: t("笔记"), icon: NotebookPen, shortcut: `${MOD}6` },
 ]);
 
 /**
@@ -43,27 +45,46 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
   useI18n();
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [module, setModule] = useState<Module>("mail");
+  const currentModule = useRef<Module>("mail");
+  const notesGate = useRef(false);
+  const [notesEnabled, setNotesEnabled] = useState(false);
   // 未打开过的模块不挂载，避免启动时一次性拉取全部数据。
   const [visited, setVisited] = useState<Set<Module>>(() => new Set(["mail"]));
 
-  function go(m: Module) {
+  // Navigation must not unmount or hide a failed save without letting the user recover it.
+  const go = useCallback(async (m: Module) => {
+    if (m === "notes" && !notesGate.current) return;
+    try {
+      if (currentModule.current === "notes" && m !== "notes") await flushNotes();
+    } catch (err) { toast.error(errorMessage(err)); return; }
+    currentModule.current = m;
     setModule(m);
     setVisited((v) => (v.has(m) ? v : new Set(v).add(m)));
-    try {
-      localStorage.setItem(MODULE_KEY, m);
-    } catch {
-      // 忽略
-    }
-  }
+    try { localStorage.setItem(MODULE_KEY, m); } catch { /* Ignore unavailable preference storage. */ }
+  }, []);
+
+  useEffect(() => {
+    const apply = (config: NoteConfig) => {
+      notesGate.current = config.enabled; setNotesEnabled(config.enabled);
+      if (!config.enabled && currentModule.current === "notes") {
+        currentModule.current = "mail"; setModule("mail"); localStorage.setItem(MODULE_KEY, "mail");
+      }
+    };
+    void noteApi.config().then((config) => {
+      apply(config);
+      if (config.enabled && localStorage.getItem(MODULE_KEY) === "notes") void go("notes");
+    }).catch((err) => toast.error(errorMessage(err)));
+    return onEvent(noteEvents.config, apply);
+  }, [go]);
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem(MODULE_KEY) as Module | null;
-      if (saved && saved !== "settings" && getNav().some((n) => n.id === saved)) go(saved);
+      if (saved && saved !== "settings" && (saved === "assistant" || getNav().some((n) => n.id === saved))) void go(saved);
     } catch {
       // 忽略
     }
-  }, []);
+  }, [go]);
 
   useEffect(() => {
     const offNav = listen("navigate", ({ module }) => go(module));
@@ -105,10 +126,11 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
         go("settings");
         return;
       }
-      const index = Number(e.key) - 1;
-      if (index >= 0 && index < getNav().length) {
-        e.preventDefault();
-        go(getNav()[index].id);
+      // Shortcuts are explicit: moving AI to the bottom or hiding notes never renumbers them.
+      const shortcuts: Record<string, Module> = { "1": "mail", "2": "calendar", "3": "contacts", "4": "files", "5": "assistant", "6": "notes" };
+      const target = shortcuts[e.key];
+      if (target && (target !== "notes" || notesGate.current)) {
+        e.preventDefault(); void go(target);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -120,17 +142,18 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
       offOpenUpdate();
       window.removeEventListener("keydown", onKey);
     };
-  }, []);
+  }, [go]);
 
   return (
     <div className="flex h-full">
       <nav className="border-border bg-sidebar flex w-14 shrink-0 flex-col items-center gap-1 border-r py-3" aria-label={t("模块")}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="CZL Mail" className="mb-3 size-8" />
-        {getNav().map((item) => (
+        {getNav().filter((item) => item.id !== "notes" || notesEnabled).map((item) => (
           <RailButton key={item.id} item={item} active={module === item.id} onClick={() => go(item.id)} />
         ))}
         <div className="flex-1" />
+        <RailButton item={{ label: t("AI 助手"), icon: Bot, shortcut: `${MOD}5` }} active={module === "assistant"} onClick={() => void go("assistant")} />
         <RailButton
           badge={!!update?.available}
           item={{ label: update?.available ? t("设置（有新版本）") : t("设置"), icon: Settings, shortcut: `${MOD},` }}
@@ -157,6 +180,9 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
           <Pane show={module === "files"}>
             <FilesShell active={module === "files"} />
           </Pane>
+        )}
+        {notesEnabled && visited.has("notes") && (
+          <Pane show={module === "notes"}><NotesShell active={module === "notes"} /></Pane>
         )}
         {visited.has("assistant") && (
           <Pane show={module === "assistant"}>

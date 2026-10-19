@@ -59,6 +59,8 @@ type Syncer struct {
 	// mu 串行化同一账号上的同步, 避免推送密集时同一类型被并发拉取,
 	// 造成两条协程拿着同一个旧 state token 各拉一遍。
 	mu sync.Mutex
+	// fileCAS records successful non-mutating conditional-write probes by account.
+	fileCAS sync.Map
 }
 
 // New 构造 Syncer。client 必须已完成 Authenticate, 因为 Core 限制取自 Session。
