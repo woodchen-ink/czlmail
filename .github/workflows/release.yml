@@ -45,8 +45,29 @@ jobs:
       - name: Install Wails CLI and NSIS
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
-          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) { choco install nsis -y --no-progress }
+          if ($LASTEXITCODE -ne 0) { throw 'Wails CLI installation failed' }
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis -y --no-progress
+            if ($LASTEXITCODE -ne 0) {
+              # Fixed upstream installer and checksum from microsoft/winget-pkgs NSIS.NSIS 3.13.
+              $installer = Join-Path $env:RUNNER_TEMP 'nsis-3.13-setup.exe'
+              curl.exe --fail --location --retry 3 --output $installer 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.13/nsis-3.13-setup.exe/download'
+              if ($LASTEXITCODE -ne 0) { throw 'NSIS download failed' }
+              if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne 'DB9A1038BBC0E53FEF24F423FD609979BD578E942F1BE1198DB186D1C42652A3') { throw 'NSIS checksum mismatch' }
+              $process = Start-Process $installer -ArgumentList '/S' -Wait -PassThru
+              if ($process.ExitCode -ne 0) { throw 'NSIS installation failed' }
+            }
+            $paths = @("${env:ProgramFiles(x86)}\NSIS", "$env:ProgramFiles\NSIS")
+            foreach ($path in $paths) {
+              if (Test-Path (Join-Path $path 'makensis.exe')) {
+                $env:PATH = "$path;$env:PATH"
+                $path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              }
+            }
+          }
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) { throw 'NSIS compiler unavailable' }
 
       - name: Build
         shell: pwsh
