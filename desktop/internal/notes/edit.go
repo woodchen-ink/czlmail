@@ -90,7 +90,7 @@ func (s *Service) List(vault, parent, query string, trash bool) ([]Entry, error)
 	query = strings.ToLower(strings.TrimSpace(query))
 	out := []Entry{}
 	for _, e := range s.entries {
-		if e.VaultID != vault || e.Attachment || e.Name == ".czl-trash" || (trash && (!e.Deleted || !s.trashRoot(e))) || (!trash && s.effectivelyDeleted(e)) {
+		if e.VaultID != vault || e.Name == ".czl-trash" || (trash && (!e.Deleted || !s.trashRoot(e))) || (!trash && s.effectivelyDeleted(e)) {
 			continue
 		}
 		if query == "" && e.ParentID != parent && !trash {
