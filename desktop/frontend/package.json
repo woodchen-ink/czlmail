@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test:i18n": "node --test lib/i18n/i18n.test.cjs",
-    "test:notes-sync": "node --test lib/notes/use-note-sync.test.cjs"
+    "test:notes-sync": "node --test lib/notes/use-note-sync.test.cjs",
+    "test:notes-browser": "node lib/notes/browser-regression.cjs",
+    "test:notes": "node --test lib/notes/markdown.test.cjs lib/notes/interactions.test.cjs lib/notes/rendering.test.cjs lib/notes/use-note-sync.test.cjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

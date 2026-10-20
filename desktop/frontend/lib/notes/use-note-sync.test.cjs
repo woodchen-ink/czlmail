@@ -19,12 +19,14 @@ function workspace() {
   let cursor = 0;
   const errors = [];
   let network = deferred();
-  const calls = { flush: 0, sync: 0, open: 0 };
+  const calls = { flush: 0, sync: 0, open: 0, created: [], moved: [] };
   let flushError = null;
   const doc = {
     note: null, text: "", dirty: false, error: "",
     flush: async () => { calls.flush++; if (flushError) throw flushError; },
-    open: async () => { calls.open++; },
+    open: async (vaultId, id) => { calls.open++; doc.note = { vaultId, id, name: "example.md", parentId: "", revision: 2 }; },
+    getNote: () => doc.note,
+    refresh: async () => {},
   };
   const react = {
     useState: (initial) => {
@@ -43,6 +45,10 @@ function workspace() {
   const noteApi = {
     bind: async () => ({ id: "vault" }),
     sync: async () => { calls.sync++; return network.promise; },
+    create: async (value, directory) => { calls.created.push(value); return { ...value, id: "created", directory }; },
+    read: async (vaultId, id) => ({ vaultId, id, name: "example.md", parentId: "", revision: 9 }),
+    move: async (value) => { calls.moved.push(value); return value; },
+    previewLink: async () => ({ previewType: "image/png", entry: { name: "image.png" } }),
   };
   const ui = new Proxy({}, { get: (_target, key) => key });
   const modules = {
@@ -66,7 +72,7 @@ function workspace() {
     vm.runInNewContext(output, {
       module: mod, exports: mod.exports,
       require: (name) => modules[name] ?? ui,
-      localStorage: { setItem: () => {} },
+      localStorage: { setItem: () => {} }, crypto: { randomUUID: () => "request-id" },
     });
     return mod.exports;
   }
@@ -115,6 +121,55 @@ async function openNote(app) {
   tree.props.onOpen({ vaultId: "vault", id: "note", parentId: "", name: "example.md" });
   await settle();
 }
+
+test("root creation ignores the last selected folder and folder menus remain scoped", async () => {
+  const app = workspace(); await start(app);
+  const tree = () => find(app.render(), (node) => node.type === "NoteTree");
+  const folder = { vaultId: "vault", id: "folder", parentId: "", name: "A", directory: true };
+  tree().props.onFolder(folder);
+  find(app.render(), (node) => node.props?.["aria-label"] === "新建文件夹").props.onClick();
+  find(app.render(), (node) => node.props?.["aria-label"] === "名称").props.onChange({ target: { value: "Root folder" } });
+  find(app.render(), (node) => node.type === "Button" && node.props.children === "确定").props.onClick(); await settle();
+  assert.equal(app.calls.created[0].parentId, "");
+  tree().props.onAction(folder, "folder");
+  find(app.render(), (node) => node.props?.["aria-label"] === "名称").props.onChange({ target: { value: "Child" } });
+  find(app.render(), (node) => node.type === "Button" && node.props.children === "确定").props.onClick(); await settle();
+  assert.equal(app.calls.created[1].parentId, "folder");
+  tree().props.onRootAction("folder");
+  find(app.render(), (node) => node.props?.["aria-label"] === "名称").props.onChange({ target: { value: "Another root" } });
+  find(app.render(), (node) => node.type === "Button" && node.props.children === "确定").props.onClick(); await settle();
+  assert.equal(app.calls.created[2].parentId, "");
+  app.network.resolve(); await settle();
+});
+
+test("tree moves flush and read the current revision, not the stale drag snapshot", async () => {
+  const app = workspace(); await start(app);
+  const tree = find(app.render(), (node) => node.type === "NoteTree");
+  tree.props.onMove({ vaultId: "vault", id: "note", name: "stale.md", revision: 1 }, "destination"); await settle();
+  assert.equal(app.calls.moved[0].expectedRevision, 9);
+  assert.equal(app.calls.moved[0].name, "example.md");
+  assert.equal(app.calls.moved[0].parentId, "destination");
+  app.network.resolve(); await settle();
+});
+
+test("attachments use the document pane and opening a note clears that preview", async () => {
+  const app = workspace(); await start(app);
+  find(app.render(), (node) => node.type === "NoteTree").props.onOpen({ vaultId: "vault", id: "image", attachment: true, name: "image.png" }); await settle();
+  assert.ok(find(app.render(), (node) => node.type === "NoteAttachmentPane"));
+  assert.equal(find(app.render(), (node) => node.type === "NoteAttachmentDialog"), null);
+  await openNote(app);
+  assert.equal(find(app.render(), (node) => node.type === "NoteAttachmentPane"), null);
+  assert.equal(find(app.render(), (node) => node.props?.["aria-label"] === "导入笔记"), null);
+  assert.equal(find(app.render(), (node) => node.props?.["aria-label"] === "导出笔记库"), null);
+  app.network.resolve(); await settle();
+});
+
+test("a failed local save blocks tree moves without losing the current document", async () => {
+  const app = workspace(); await start(app); app.network.resolve(); await settle();
+  app.failFlush(new Error("save failed"));
+  find(app.render(), (node) => node.type === "NoteTree").props.onMove({ vaultId: "vault", id: "note" }, "destination"); await settle();
+  assert.equal(app.calls.moved.length, 0); assert.deepEqual(app.errors, ["save failed"]);
+});
 
 test("first initialization opens downloaded notes before the full synchronization finishes", async () => {
   const app = workspace();

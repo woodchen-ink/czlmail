@@ -12,16 +12,12 @@ import { frontmatter } from "@/lib/notes/markdown";
 
 const theme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "transparent", color: "var(--foreground)" },
-  ".cm-scroller": { overflow: "auto", fontFamily: "inherit", fontSize: "16px", lineHeight: "1.8" },
-  ".cm-content": { padding: "24px 32px 160px", maxWidth: "960px", margin: "0 auto", width: "100%" },
+  ".cm-scroller": { overflow: "auto", fontFamily: "inherit", fontSize: "16px", lineHeight: "2" },
+  ".cm-content": { padding: "24px 32px 160px", maxWidth: "896px", margin: "0 auto", width: "100%" },
   "&.cm-focused": { outline: "none", border: "none", boxShadow: "none" },
   ".cm-content:focus, .cm-content:focus-visible, .cm-scroller:focus-visible": { outline: "none", boxShadow: "none" },
   ".cm-cursor": { borderLeftColor: "var(--foreground)" },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "var(--accent)" },
-  ".cm-note-h1": { fontSize: "2em", fontWeight: "700", lineHeight: "1.4", margin: "0.5em 0" },
-  ".cm-note-h2": { fontSize: "1.5em", fontWeight: "650", margin: "0.4em 0" },
-  ".cm-note-h3, .cm-note-h4, .cm-note-h5, .cm-note-h6": { fontSize: "1.15em", fontWeight: "600" },
-  ".cm-note-code-line": { backgroundColor: "var(--muted)", fontFamily: "monospace", fontSize: "14px", whiteSpace: "pre", paddingLeft: "16px", paddingRight: "16px" },
   ".cm-panels": { backgroundColor: "var(--card)", color: "var(--foreground)" },
 });
 

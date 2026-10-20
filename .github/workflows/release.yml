@@ -22,6 +22,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - name: Test notes persistence and directory moves
+        working-directory: desktop
+        run: go test ./internal/notes
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: desktop/frontend/package.json
@@ -33,12 +40,14 @@ jobs:
       - name: Install frontend dependencies
         working-directory: desktop/frontend
         run: pnpm install --frozen-lockfile
-      - name: Test notes synchronization interactions
+      - name: Test notes interactions and Markdown rendering
         working-directory: desktop/frontend
-        run: pnpm test:notes-sync
-      - name: Lint notes synchronization changes
+        run: pnpm test:notes
+      - name: Lint notes changes
         working-directory: desktop/frontend
-        run: pnpm exec eslint components/notes/notes-shell.tsx lib/notes/use-note-sync.ts lib/notes/use-note-sync.test.cjs
+        run: pnpm exec eslint components/notes lib/notes components/settings/notes-section.tsx
+      # Generated Wails bindings are absent on a clean checkout. Platform builds generate
+      # them before Next.js performs its type check; do not run bare tsc in this job.
 
   windows:
     needs: notes-regression

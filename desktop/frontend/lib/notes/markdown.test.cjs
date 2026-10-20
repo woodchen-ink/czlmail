@@ -12,7 +12,7 @@ function load(name) {
   const file = path.join(__dirname, `${name}.ts`);
   const output = ts.transpileModule(fs.readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const mod = { exports: {} }; const local = createRequire(file);
-  vm.runInNewContext(output, { URLSearchParams, module: mod, exports: mod.exports, require: (id) => id.startsWith("@/lib/notes/") ? load(id.slice("@/lib/notes/".length)) : id === "@/lib/i18n" ? { t: (value) => value } : local(id) });
+  vm.runInNewContext(output, { URLSearchParams, module: mod, exports: mod.exports, require: (id) => id.startsWith("@/lib/notes/") ? load(id.slice("@/lib/notes/".length)) : id === "@/lib/i18n" ? { t: (value) => value } : id === "@/components/notes/note-markdown" ? { NoteMarkdown: () => null, noteMarkdownClassName: "" } : local(id) });
   return mod.exports;
 }
 
@@ -53,11 +53,14 @@ test("live Markdown decorates YAML, standard and wiki images without changing or
   const { markdown } = require("@codemirror/lang-markdown");
   const field = load("live-preview").livePreview("v", "n");
   const text = '---\ntitle: Test\n---\n# Body\n\n![Remote](https://example.com/a.png)\n\n![[截图 (1).png]]\n\n```\n![[Not-an-image.png]]\n```\n';
-  const state = EditorState.create({ doc: text, extensions: [markdown(), field] });
+  const state = EditorState.create({ doc: text, selection: { anchor: text.length }, extensions: [markdown(), field] });
   let properties = 0, images = 0;
   state.field(field).between(0, text.length, (_from, _to, decoration) => {
-    if (decoration.spec.widget?.constructor.name === "MetadataWidget") properties++;
-    if (decoration.spec.widget?.constructor.name === "ImageWidget") images++;
+    const widget = decoration.spec.widget;
+    if (widget?.constructor.name !== "MarkdownWidget") return;
+    const block = text.slice(widget.from, widget.to);
+    if (block.startsWith("---")) properties++;
+    if (block.includes("![Remote]") || block.includes("![[截图")) images++;
   });
   assert.equal(properties, 1); assert.equal(images, 2); assert.equal(state.doc.toString(), text);
 });
@@ -74,16 +77,46 @@ test("code blocks preserve Markdown-looking content and expose an editable origi
   assert.equal(blocks[1].language, "go");
   let widgets = 0;
   state.field(field).between(0, text.length, (_a, _b, decoration) => {
-    if (decoration.spec.widget?.constructor.name === "CodeWidget") widgets++;
+    if (decoration.spec.widget?.constructor.name === "MarkdownWidget" && /^(?:```|~~~)/.test(text.slice(decoration.spec.widget.from, decoration.spec.widget.to))) widgets++;
   });
   assert.equal(widgets, 2);
   const edited = state.update({ selection: { anchor: blocks[0].from + 6 } }).state;
   let remaining = 0;
   edited.field(field).between(0, text.length, (_a, _b, decoration) => {
-    if (decoration.spec.widget?.constructor.name === "CodeWidget") remaining++;
+    if (decoration.spec.widget?.constructor.name === "MarkdownWidget" && /^(?:```|~~~)/.test(text.slice(decoration.spec.widget.from, decoration.spec.widget.to))) remaining++;
   });
   assert.equal(remaining, 1);
   assert.equal(edited.doc.toString(), text);
+});
+
+test("Backspace and Delete at rendered block boundaries never remove neighboring prose", () => {
+  const { EditorState } = require("@codemirror/state");
+  const { EditorView } = require("@codemirror/view");
+  const { markdown } = require("@codemirror/lang-markdown");
+  const { deleteCharBackward, deleteCharForward } = require("@codemirror/commands");
+  for (const [anchor, command] of [[5, deleteCharBackward], [3, deleteCharForward]]) {
+    const field = load("live-preview").livePreview("v", "n");
+    let state = EditorState.create({ doc: "AAA\n\nBBB", selection: { anchor }, extensions: [markdown(), field] });
+    const view = Object.create(EditorView.prototype);
+    Object.defineProperty(view, "state", { get: () => state });
+    view.dispatch = (transaction) => { state = transaction.state; };
+    assert.equal(state.facet(EditorView.atomicRanges).length, 0);
+    assert.equal(command(view), true);
+    assert.equal(state.doc.toString(), "AAA\nBBB");
+  }
+});
+
+test("global footnotes remain outside an inclusive final block at document end", () => {
+  const { EditorState } = require("@codemirror/state");
+  const { markdown } = require("@codemirror/lang-markdown");
+  const field = load("live-preview").livePreview("v", "n");
+  const text = "Intro\n\nReference[^n]\n\n[^n]: Definition\n\nTail without newline";
+  const state = EditorState.create({ doc: text, selection: { anchor: 0 }, extensions: [markdown(), field] });
+  let count = 0;
+  state.field(field).between(text.length, text.length, (from, to, decoration) => {
+    if (from === to && decoration.spec.side === 1) count++;
+  });
+  assert.equal(count, 1);
 });
 
 test("reading wiki compatibility never rewrites code", () => {

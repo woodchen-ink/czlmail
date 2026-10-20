@@ -1,4 +1,11 @@
 {
+  "导出": "Export",
+  "笔记根目录": "Notes root",
+  "拖到此处移至根目录": "Drop here to move to the root",
+  "返回笔记": "Back to note",
+  "请先在笔记中完成初始化": "Initialize Notes before importing or exporting",
+  "从本机文件夹导入 Markdown 和附件，保留目录结构。": "Import Markdown and attachments from a local folder, preserving its structure.",
+  "导出全部笔记和附件为普通文件，可用于备份或迁移。": "Export all notes and attachments as ordinary files for backup or migration.",
   "我": "Me",
   "已复制邮箱地址": "Email address copied",
   "复制": "Copy",

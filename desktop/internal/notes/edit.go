@@ -226,7 +226,7 @@ func (s *Service) Update(in Edit) (Entry, error) {
 }
 
 // Move changes a name or parent only when no existing links would need an unsafe rewrite.
-// Full reference rewriting is intentionally fail-closed until parsed-link transactions are available.
+// Non-empty directories retain child identities; parsed reference rewriting remains fail-closed.
 func (s *Service) Move(in Edit) (Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -237,7 +237,7 @@ func (s *Service) Move(in Edit) (Entry, error) {
 	if e.Revision != in.ExpectedRevision {
 		return Entry{}, ErrRevision
 	}
-	if e.Deleted || e.Status == "conflict" || e.Uncertain {
+	if s.effectivelyDeleted(e) || e.Status == "conflict" || e.Uncertain {
 		return Entry{}, ErrConflict
 	}
 	if !validName(in.Name) {
@@ -249,22 +249,8 @@ func (s *Service) Move(in Edit) (Entry, error) {
 	if err = s.unique(in.VaultID, in.ParentID, in.Name, e.ID); err != nil {
 		return Entry{}, err
 	}
-	if in.ParentID != e.ParentID || in.Name != e.Name {
-		for _, other := range s.entries {
-			if other.VaultID != e.VaultID || other.Attachment || other.Directory {
-				continue
-			}
-			if strings.Contains(other.Content, e.Name) || other.ID == e.ID && in.ParentID != e.ParentID && strings.Contains(other.Content, "](") {
-				return Entry{}, ErrConflict
-			}
-		}
-		if e.Directory {
-			for _, child := range s.entries {
-				if child.VaultID == e.VaultID && child.ParentID == e.ID {
-					return Entry{}, ErrConflict
-				}
-			}
-		}
+	if err = s.safeMove(e, in.ParentID, in.Name); err != nil {
+		return Entry{}, err
 	}
 	e.Name = in.Name
 	e.ParentID = in.ParentID
