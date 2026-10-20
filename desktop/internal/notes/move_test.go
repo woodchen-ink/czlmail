@@ -55,51 +55,59 @@ func TestMoveNonEmptyDirectory(t *testing.T) {
 	}
 }
 
-// TestMovePreservesReferenceGuard rejects potential link breakage without changing metadata.
-func TestMovePreservesReferenceGuard(t *testing.T) {
-	for _, content := range []string{"![image](assets/image.png)", "![[image.png]]", "[image]: assets/image.png"} {
+// TestMovePreservesReferenceContent allows links without rewriting any document.
+func TestMovePreservesReferenceContent(t *testing.T) {
+	for _, content := range []string{"![image](assets/image.png)", "![[image.png]]", "[image]: assets/image.png", "[website](https://example.com)"} {
 		t.Run(content, func(t *testing.T) {
 			s := testService(t, newRemote())
 			v := vaultID(t, s)
 			a := createMoveEntry(t, s, v, "", "A", "", true)
 			b := createMoveEntry(t, s, v, "", "B", "", true)
-			createMoveEntry(t, s, v, a.ID, "linked", content, false)
-			_, err := s.Move(Edit{VaultID: v, ID: a.ID, ExpectedRevision: a.Revision, ParentID: b.ID, Name: a.Name})
-			if !errors.Is(err, ErrConflict) {
-				t.Fatalf("expected reference protection, got %v", err)
+			n := createMoveEntry(t, s, v, a.ID, "linked", content, false)
+			moved, err := s.Move(Edit{VaultID: v, ID: a.ID, ExpectedRevision: a.Revision, ParentID: b.ID, Name: a.Name})
+			if err != nil || moved.ParentID != b.ID {
+				t.Fatalf("linked directory move failed: %v", err)
 			}
-			got, _ := s.Read(v, a.ID)
-			if got.ParentID != a.ParentID || got.Revision != a.Revision {
-				t.Fatal("rejected move changed metadata")
+			got, _ := s.Read(v, n.ID)
+			if got.Content != content || got.ParentID != a.ID || got.Revision != n.Revision {
+				t.Fatal("move rewrote descendant content or identity")
+			}
+			movedNote, err := s.Move(Edit{VaultID: v, ID: n.ID, ExpectedRevision: n.Revision, ParentID: b.ID, Name: n.Name})
+			if err != nil || movedNote.Content != content || movedNote.ParentID != b.ID {
+				t.Fatalf("linked note move failed: %v", err)
 			}
 		})
 	}
 }
 
-// TestMoveIncomingEncodedReference protects links even when a filename is percent encoded.
+// TestMoveIncomingEncodedReference permits moves without rewriting incoming references.
 func TestMoveIncomingEncodedReference(t *testing.T) {
 	s := testService(t, newRemote())
 	v := vaultID(t, s)
 	a := createMoveEntry(t, s, v, "", "A", "", true)
 	b := createMoveEntry(t, s, v, "", "B", "", true)
 	createMoveEntry(t, s, v, a.ID, "space name", "plain", false)
-	createMoveEntry(t, s, v, "", "incoming", "[open](space%20name.md)", false)
-	_, err := s.Move(Edit{VaultID: v, ID: a.ID, ExpectedRevision: a.Revision, ParentID: b.ID, Name: a.Name})
-	if !errors.Is(err, ErrConflict) {
-		t.Fatalf("expected reference protection, got %v", err)
+	incoming := createMoveEntry(t, s, v, "", "incoming", "[open](space%20name.md)", false)
+	moved, err := s.Move(Edit{VaultID: v, ID: a.ID, ExpectedRevision: a.Revision, ParentID: b.ID, Name: a.Name})
+	if err != nil || moved.ParentID != b.ID {
+		t.Fatalf("incoming reference blocked move: %v", err)
+	}
+	got, _ := s.Read(v, incoming.ID)
+	if got.Content != incoming.Content || got.Revision != incoming.Revision {
+		t.Fatal("incoming reference was rewritten")
 	}
 }
 
-// TestMoveSelfReferenceCannotBeRenamed protects ordinary and bare wiki self-links.
-func TestMoveSelfReferenceCannotBeRenamed(t *testing.T) {
+// TestMoveSelfReferenceCanBeRenamed leaves ordinary and wiki self-links unchanged.
+func TestMoveSelfReferenceCanBeRenamed(t *testing.T) {
 	for _, content := range []string{"[self](A.md)", "[[A]]", "[self]: A.md"} {
 		t.Run(content, func(t *testing.T) {
 			s := testService(t, newRemote())
 			v := vaultID(t, s)
 			n := createMoveEntry(t, s, v, "", "A", content, false)
-			_, err := s.Move(Edit{VaultID: v, ID: n.ID, ExpectedRevision: n.Revision, Name: "B.md"})
-			if !errors.Is(err, ErrConflict) {
-				t.Fatalf("self-reference rename accepted: %v", err)
+			got, err := s.Move(Edit{VaultID: v, ID: n.ID, ExpectedRevision: n.Revision, Name: "B.md"})
+			if err != nil || got.Name != "B.md" || got.Content != content {
+				t.Fatalf("self-reference rename failed: %v", err)
 			}
 		})
 	}

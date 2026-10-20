@@ -225,8 +225,8 @@ func (s *Service) Update(in Edit) (Entry, error) {
 	return e, s.commit(e, in.IdempotencyKey, hash)
 }
 
-// Move changes a name or parent only when no existing links would need an unsafe rewrite.
-// Non-empty directories retain child identities; parsed reference rewriting remains fail-closed.
+// Move changes only metadata; Markdown links and other notes' references remain untouched.
+// Revision, directory, name and synchronization-state checks still apply.
 func (s *Service) Move(in Edit) (Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -249,7 +249,7 @@ func (s *Service) Move(in Edit) (Entry, error) {
 	if err = s.unique(in.VaultID, in.ParentID, in.Name, e.ID); err != nil {
 		return Entry{}, err
 	}
-	if err = s.safeMove(e, in.ParentID, in.Name); err != nil {
+	if err = s.safeMove(e); err != nil {
 		return Entry{}, err
 	}
 	e.Name = in.Name
