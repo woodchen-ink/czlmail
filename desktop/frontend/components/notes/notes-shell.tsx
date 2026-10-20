@@ -20,6 +20,7 @@ import { api, errorMessage, onEvent } from "@/lib/api";
 import { onFileDrop } from "@/lib/file-drop";
 import { noteApi, noteEvents, fileBase64, type NoteEntry, type NoteVault, type NoteDiff } from "@/lib/notes/api";
 import { useNoteDocument } from "@/lib/notes/use-note-document";
+import { useNoteSync } from "@/lib/notes/use-note-sync";
 import { BrowserOpenURL } from "@/wailsjs/runtime/runtime";
 import { t } from "@/lib/i18n";
 
@@ -27,6 +28,7 @@ import { t } from "@/lib/i18n";
 export function NotesShell({ active }: { active: boolean }) {
   useI18n();
   const doc = useNoteDocument();
+  const { syncing, sync } = useNoteSync(doc.flush);
   const [vaults, setVaults] = useState<NoteVault[]>([]);
   const [vaultId, setVaultId] = useState("");
   const [parent, setParent] = useState("");
@@ -165,7 +167,7 @@ export function NotesShell({ active }: { active: boolean }) {
     <ResizablePanel id="notes-tree" panelRef={treePanel} defaultSize={320} minSize={240} maxSize={560} onResize={(size, _id, previous) => { if (!previous) return; try { localStorage.setItem("czlmail.notes.treeWidth", String(size.inPixels)); } catch { /* Ignore unavailable preferences. */ } }}>
     <aside className="bg-sidebar flex h-full min-w-0 flex-col">
       <div className="flex flex-col gap-2 p-3">
-        <div className="flex items-center gap-2"><NotebookPen className="size-4" /><h1 className="font-semibold">{t("笔记")}</h1><span className="flex-1" /><Button variant="ghost" size="icon-sm" aria-label={t("立即同步")} disabled={busy} onClick={() => void run(async () => { await doc.flush(); await noteApi.sync(); })}><RefreshCw /></Button></div>
+        <div className="flex items-center gap-2"><NotebookPen className="size-4" /><h1 className="font-semibold">{t("笔记")}</h1><span className="flex-1" /><Button variant="ghost" size="icon-sm" aria-label={t("立即同步")} disabled={busy || syncing || !vaultId} onClick={() => void sync()}><RefreshCw className={syncing ? "animate-spin" : undefined} /></Button></div>
         <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("搜索笔记正文和标题")} aria-label={t("搜索笔记正文和标题")} />
         <div className="flex gap-1">
           <Button variant="ghost" size="icon-sm" aria-label={t("新建笔记")} disabled={!vaultId || busy || trash} onClick={() => { setName(""); setAction("note"); }}><FilePlus2 /></Button>
@@ -185,7 +187,7 @@ export function NotesShell({ active }: { active: boolean }) {
     <ResizableHandle aria-label={t("调整目录宽度")} />
     <ResizablePanel id="notes-body" minSize={400}>
     <section className="flex h-full min-w-0 flex-col">
-      {!vaultId ? <div className="m-auto flex max-w-md flex-col gap-4 p-8"><h2 className="text-xl font-semibold">{t("笔记")}</h2><p className="text-muted-foreground text-sm">{t("笔记保存在个人账号的 Notes 目录中。")}</p><Button disabled={busy} onClick={() => void run(async () => { const accounts = await api.listAccounts(); const account = accounts.find((item) => item.isPersonal); if (!account) return; const v = await noteApi.bind(account.id, ""); setVaults([v]); setVaultId(v.id); await noteApi.sync(); })}>{t("开始使用笔记")}</Button></div> : <>
+      {!vaultId ? <div className="m-auto flex max-w-md flex-col gap-4 p-8"><h2 className="text-xl font-semibold">{t("笔记")}</h2><p className="text-muted-foreground text-sm">{t("笔记保存在个人账号的 Notes 目录中。")}</p><Button disabled={busy} onClick={() => void run(async () => { const accounts = await api.listAccounts(); const account = accounts.find((item) => item.isPersonal); if (!account) return; const v = await noteApi.bind(account.id, ""); setVaults([v]); setVaultId(v.id); void sync(); })}>{t("开始使用笔记")}</Button></div> : <>
         <header className="border-border flex min-h-12 items-center gap-3 border-b px-4"><span className="min-w-0 flex-1 truncate text-sm">{doc.note?.name ?? t("选择或新建一篇笔记")}</span><span className="text-muted-foreground text-xs">{status}</span>
           <Button variant="ghost" size="icon-sm" aria-label={t("本地与远端版本对比")} disabled={!doc.note || busy} onClick={() => void run(async () => { await doc.flush(); const n = doc.getNote(); if (n) setDiff(await noteApi.diff(n.vaultId, n.id)); })}><GitCompareArrows /></Button>
           <Button variant="ghost" size="icon-sm" aria-label={t("添加附件")} disabled={!doc.note || busy || mode === "read" || doc.note.deleted} onClick={() => picker.current?.click()}><Paperclip /></Button>

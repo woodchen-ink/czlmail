@@ -18,7 +18,30 @@ env:
   WAILS_VERSION: v2.12.0
 
 jobs:
+  notes-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: desktop/frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: desktop/frontend/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        working-directory: desktop/frontend
+        run: pnpm install --frozen-lockfile
+      - name: Test notes synchronization interactions
+        working-directory: desktop/frontend
+        run: pnpm test:notes-sync
+      - name: Lint notes synchronization changes
+        working-directory: desktop/frontend
+        run: pnpm exec eslint components/notes/notes-shell.tsx lib/notes/use-note-sync.ts lib/notes/use-note-sync.test.cjs
+
   windows:
+    needs: notes-regression
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,6 +103,7 @@ jobs:
           if-no-files-found: error
 
   macos:
+    needs: notes-regression
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

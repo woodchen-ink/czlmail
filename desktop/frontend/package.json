@@ -7,7 +7,8 @@
     "build": "node lib/notes/prepare-pdf-assets.mjs && next build",
     "start": "next start",
     "lint": "eslint",
-    "test:i18n": "node --test lib/i18n/i18n.test.cjs"
+    "test:i18n": "node --test lib/i18n/i18n.test.cjs",
+    "test:notes-sync": "node --test lib/notes/use-note-sync.test.cjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
