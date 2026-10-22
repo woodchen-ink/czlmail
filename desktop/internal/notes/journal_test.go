@@ -58,3 +58,31 @@ func TestEnsureNoteCreatesOnceAndReadsTemplates(t *testing.T) {
 		t.Fatalf("missing template: %v", err)
 	}
 }
+
+// TestTouchedWindow lists notes created or modified in a window, never folders or trash.
+func TestTouchedWindow(t *testing.T) {
+	s := testService(t, newRemote())
+	vault := vaultID(t, s)
+	note, err := s.Create(Edit{VaultID: vault, Name: "a"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Create(Edit{VaultID: vault, Name: "dir"}, true); err != nil {
+		t.Fatal(err)
+	}
+	trashed, err := s.Create(Edit{VaultID: vault, Name: "b"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Trash(vault, trashed.ID, trashed.Revision, false); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UnixMilli()
+	got, err := s.Touched(vault, now-60_000, now+60_000)
+	if err != nil || len(got) != 1 || got[0].ID != note.ID {
+		t.Fatalf("touched: %v %+v", err, got)
+	}
+	if got, _ = s.Touched(vault, now+60_000, now+120_000); len(got) != 0 {
+		t.Fatalf("outside window: %+v", got)
+	}
+}

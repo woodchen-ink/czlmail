@@ -20,7 +20,8 @@ import { NoteAttachmentPane, type NoteAttachmentPreview } from "@/components/not
 import { NoteDiffDialog } from "@/components/notes/note-diff-dialog";
 import { api, errorMessage, onEvent } from "@/lib/api";
 import { onFileDrop } from "@/lib/file-drop";
-import { noteApi, noteEvents, fileBase64, localDay, type NoteEntry, type NoteVault, type NoteDiff } from "@/lib/notes/api";
+import { noteApi, noteEvents, fileBase64, localDay, takePendingNote, type NoteEntry, type NoteVault, type NoteDiff } from "@/lib/notes/api";
+import { listen } from "@/lib/app-bus";
 import { toggleTask } from "@/lib/notes/live-editing";
 import { useNoteDocument } from "@/lib/notes/use-note-document";
 import { useNoteSync } from "@/lib/notes/use-note-sync";
@@ -96,8 +97,25 @@ export function NotesShell({ active }: { active: boolean }) {
     return () => { live = false; clearTimeout(timer); };
   }, [vaultId, query, trash, tick]);
 
-  /** Reopen the note that was open last time; a deleted or missing note is simply forgotten. */
   const restored = useRef("");
+  /** Notes opened from other modules (calendar markers); a request made before mounting is picked up here. */
+  useEffect(() => {
+    const show = (ref: { vaultId: string; id: string } | null) => {
+      if (!ref) return;
+      takePendingNote();
+      restored.current = ref.vaultId;
+      void run(async () => {
+        const entry = await noteApi.read(ref.vaultId, ref.id);
+        setVaultId(entry.vaultId); setQuery(""); setTrash(false);
+        await open(entry);
+      });
+    };
+    show(takePendingNote());
+    return listen("openNote", show);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- open is recreated every render; run is stable.
+  }, [run]);
+
+  /** Reopen the note that was open last time; a deleted or missing note is simply forgotten. */
   useEffect(() => {
     if (!vaultId || restored.current === vaultId || doc.getNote()) return;
     restored.current = vaultId;

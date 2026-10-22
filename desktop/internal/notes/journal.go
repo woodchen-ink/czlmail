@@ -3,6 +3,7 @@ package notes
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -183,4 +184,27 @@ func (s *Service) liveChild(vault, parent, name string) (Entry, bool) {
 		}
 	}
 	return Entry{}, false
+}
+
+// Touched lists live Markdown notes created or modified in [from, to) (Unix ms), newest first.
+func (s *Service) Touched(vault string, from, to int64) ([]Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.config.Enabled {
+		return nil, ErrDisabled
+	}
+	out := []Entry{}
+	for _, e := range s.entries {
+		if e.VaultID != vault || e.Directory || e.Attachment || s.effectivelyDeleted(e) {
+			continue
+		}
+		if e.Created >= from && e.Created < to || e.Modified >= from && e.Modified < to {
+			e = clone(e)
+			e.Content, e.RemoteContent = "", ""
+			e.Path = s.folderPath(e)
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Modified > out[j].Modified })
+	return out, nil
 }

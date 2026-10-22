@@ -11,6 +11,8 @@ export interface AppMessages {
   navigate: { module: Module };
   compose: { to: string; cc?: string; bcc?: string; subject?: string; body?: string };
   openEmail: { accountId: string; emailId: string };
+  /** 打开一篇笔记(笔记模块可能还没挂载, 见 lib/notes/api 的 requestOpenNote)。 */
+  openNote: { vaultId: string; id: string };
   /** 打开设置里的某一页。 */
   openSettings: { section: string };
 }

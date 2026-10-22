@@ -1,11 +1,13 @@
 import * as App from "@/wailsjs/go/main/App";
 import { main, notes } from "@/wailsjs/go/models";
+import { send } from "@/lib/app-bus";
 
 export type NoteEntry = notes.Entry;
 export type NoteVault = notes.Vault;
 export type NoteConfig = notes.Config;
 export type NoteDiff = notes.Diff;
 export type JournalConfig = main.JournalConfig;
+export type NoteDayItem = main.NoteDayItem;
 
 /** Every caller uses generated Wails bindings; no second note transport or browser database. */
 export const noteApi = {
@@ -31,7 +33,25 @@ export const noteApi = {
   openJournal: App.OpenJournal,
   journalConfig: App.GetJournalConfig,
   setJournalConfig: (value: JournalConfig) => App.SetJournalConfig(main.JournalConfig.createFrom(value)),
+  byDay: App.ListNotesByDay,
 };
+
+/** A note asked for before the Notes module mounted; it reads this once when it mounts. */
+let pendingNote: { vaultId: string; id: string } | null = null;
+
+/** Switch to Notes and open a note from another module, whether or not Notes is mounted yet. */
+export function requestOpenNote(ref: { vaultId: string; id: string }) {
+  pendingNote = { vaultId: ref.vaultId, id: ref.id };
+  send("navigate", { module: "notes" });
+  send("openNote", pendingNote);
+}
+
+/** Hand over and forget the pending request. */
+export function takePendingNote() {
+  const ref = pendingNote;
+  pendingNote = null;
+  return ref;
+}
 
 /** The local calendar day as YYYY-MM-DD; toISOString would give the UTC day. */
 export function localDay(date = new Date()) {

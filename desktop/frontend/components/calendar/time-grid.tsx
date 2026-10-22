@@ -6,6 +6,8 @@ import { useI18n } from "@/components/locale-provider";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { EventChip } from "@/components/calendar/event-chip";
+import { DayNotes } from "@/components/calendar/day-notes";
+import { localDay, type NoteDayItem } from "@/lib/notes/api";
 import { layoutWeek } from "@/components/calendar/month-view";
 import {
   EVENT_DRAG_TYPE,
@@ -30,13 +32,15 @@ interface Props {
   onCreate: (start: Date, allDay: boolean) => void;
   onDrop: (payload: DragPayload, target: Date, allDay: boolean) => void;
   onShowDay: (day: Date) => void;
+  /** Notes per local day (YYYY-MM-DD), shown as a marker beside the date. */
+  notes?: Map<string, NoteDayItem[]>;
 }
 
 const HOUR_HEIGHT = 48;
 const SNAP_MINUTES = 15;
 
 /** 周视图与日视图共用的时间网格。 */
-export function TimeGrid({ days, events, calendars, canWrite, onOpen, onCreate, onDrop, onShowDay }: Props) {
+export function TimeGrid({ days, events, calendars, canWrite, onOpen, onCreate, onDrop, onShowDay, notes }: Props) {
   useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [now, setNow] = useState(() => new Date());
@@ -74,11 +78,11 @@ export function TimeGrid({ days, events, calendars, canWrite, onOpen, onCreate, 
       <div className="border-border grid shrink-0 border-b" style={cols}>
         <div />
         {days.map((d) => (
+          <div key={d.toDateString()} className="relative">
           <button
-            key={d.toDateString()}
             type="button"
             onClick={() => onShowDay(d)}
-            className="hover:bg-secondary flex flex-col items-center py-1.5"
+            className="hover:bg-secondary flex w-full flex-col items-center py-1.5"
           >
             <span className="text-muted-foreground text-xs">{getWeekdays()[weekdayIndex(d)]}</span>
             <span
@@ -90,6 +94,10 @@ export function TimeGrid({ days, events, calendars, canWrite, onOpen, onCreate, 
               {d.getDate()}
             </span>
           </button>
+          <span className="absolute top-1 right-1">
+            <DayNotes notes={notes?.get(localDay(d))} />
+          </span>
+          </div>
         ))}
       </div>
 

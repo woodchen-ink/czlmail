@@ -123,3 +123,91 @@ func journalPath(cfg JournalConfig, at time.Time, lang string) ([]string, string
 	}
 	return folders, name, nil
 }
+
+// NoteDayItem 是日历某天下列出的一篇笔记。
+type NoteDayItem struct {
+	VaultID string `json:"vaultId"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	// Journal 表示这篇是当天的日记 (按日记设置推出的路径)。
+	Journal bool `json:"journal"`
+}
+
+// NoteDay 是日历一天的笔记, 日记排在最前。
+type NoteDay struct {
+	Day   string        `json:"day"`
+	Notes []NoteDayItem `json:"notes"`
+}
+
+// maxNotesPerDay 限制每天列出的笔记数, 悬浮列表不必列全。
+const maxNotesPerDay = 12
+
+// ListNotesByDay 列出 [from, to) 每天的日记以及当天新建或修改过的笔记, 日期为本地 YYYY-MM-DD。
+// 笔记模块关闭或尚未初始化时返回空列表而不是报错: 日历不应因此弹错误。
+func (a *App) ListNotesByDay(from, to, lang string) ([]NoteDay, error) {
+	start, err := time.ParseInLocation("2006-01-02", from, time.Local)
+	if err != nil {
+		return nil, notes.ErrInvalid
+	}
+	end, err := time.ParseInLocation("2006-01-02", to, time.Local)
+	if err != nil || !end.After(start) || end.Sub(start) > 62*24*time.Hour {
+		return nil, notes.ErrInvalid
+	}
+	s, err := a.noteService()
+	if err != nil || !s.GetConfig().Enabled {
+		return []NoteDay{}, nil
+	}
+	vaults, err := s.Vaults()
+	if err != nil {
+		return []NoteDay{}, nil
+	}
+	cfg := a.GetJournalConfig()
+	days := map[string]*NoteDay{}
+	order := []string{}
+	add := func(day string, item NoteDayItem) {
+		d := days[day]
+		if d == nil {
+			d = &NoteDay{Day: day}
+			days[day] = d
+			order = append(order, day)
+		}
+		for _, existing := range d.Notes {
+			if existing.ID == item.ID {
+				return
+			}
+		}
+		if len(d.Notes) < maxNotesPerDay {
+			d.Notes = append(d.Notes, item)
+		}
+	}
+	for _, v := range vaults {
+		for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
+			folders, name, err := journalPath(cfg, day, lang)
+			if err != nil {
+				break
+			}
+			path := strings.Join(append(folders, name+".md"), "/")
+			if e, err := s.ReadPath(v.ID, path); err == nil {
+				add(day.Format("2006-01-02"), NoteDayItem{VaultID: v.ID, ID: e.ID, Name: e.Name, Path: strings.Join(folders, "/"), Journal: true})
+			}
+		}
+		touched, err := s.Touched(v.ID, start.UnixMilli(), end.UnixMilli())
+		if err != nil {
+			continue
+		}
+		for _, e := range touched {
+			item := NoteDayItem{VaultID: v.ID, ID: e.ID, Name: e.Name, Path: e.Path}
+			for _, at := range []int64{e.Created, e.Modified} {
+				if t := time.UnixMilli(at); at > 0 && !t.Before(start) && t.Before(end) {
+					add(t.Format("2006-01-02"), item)
+				}
+			}
+		}
+	}
+	out := make([]NoteDay, 0, len(order))
+	for _, day := range order {
+		out = append(out, *days[day])
+	}
+	return out, nil
+}

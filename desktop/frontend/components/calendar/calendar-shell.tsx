@@ -1,6 +1,7 @@
 "use client";
 
-import { t } from "@/lib/i18n";
+import { getLocale, t } from "@/lib/i18n";
+import { localDay, noteApi, noteEvents, type NoteDayItem } from "@/lib/notes/api";
 import { useI18n } from "@/components/locale-provider";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -187,6 +188,34 @@ export function CalendarShell({ active }: { active: boolean }) {
   useEffect(() => {
     if (active) loadEvents();
   }, [active, loadEvents]);
+
+  /** Journals and notes edited on each visible day; only the grid views show them. */
+  const [dayNotes, setDayNotes] = useState<Map<string, NoteDayItem[]>>(new Map());
+  const showsNotes = view === "month" || view === "week" || view === "day";
+  useEffect(() => {
+    if (!active || !showsNotes) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () =>
+      noteApi
+        .byDay(localDay(range.from), localDay(range.to), getLocale())
+        .then((days) => {
+          if (live) setDayNotes(new Map((days ?? []).map((d) => [d.day, d.notes ?? []])));
+        })
+        .catch(() => {
+          // Notes are a side feature here; a failure must not interrupt the calendar.
+        });
+    void load();
+    const off = onEvent(noteEvents.changed, () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void load(), 1000);
+    });
+    return () => {
+      live = false;
+      clearTimeout(timer);
+      off();
+    };
+  }, [active, showsNotes, range]);
 
   useEffect(() => {
     const offChanged = onEvent(Events.pimChanged, (c: PIMChange) => {
@@ -536,6 +565,7 @@ export function CalendarShell({ active }: { active: boolean }) {
                 )
               }
               onDrop={(p, d) => drop(p, d, true)}
+              notes={dayNotes}
               onShowDay={(d) => {
                 setCursor(startOfDay(d));
                 changeView("day");
@@ -557,6 +587,7 @@ export function CalendarShell({ active }: { active: boolean }) {
               onOpen={openOccurrence}
               onCreate={createAt}
               onDrop={(p, d, allDay) => drop(p, d, allDay)}
+              notes={dayNotes}
               onShowDay={(d) => {
                 setCursor(startOfDay(d));
                 changeView("day");

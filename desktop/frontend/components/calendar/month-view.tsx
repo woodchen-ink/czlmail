@@ -6,6 +6,8 @@ import { useI18n } from "@/components/locale-provider";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { EventChip } from "@/components/calendar/event-chip";
+import { DayNotes } from "@/components/calendar/day-notes";
+import { localDay, type NoteDayItem } from "@/lib/notes/api";
 import {
   EVENT_DRAG_TYPE,
   occEnd,
@@ -27,6 +29,8 @@ interface Props {
   onCreate: (day: Date) => void;
   onDrop: (payload: DragPayload, day: Date) => void;
   onShowDay: (day: Date) => void;
+  /** Notes per local day (YYYY-MM-DD), shown as a marker beside the date. */
+  notes?: Map<string, NoteDayItem[]>;
 }
 
 const HEADER = 28; // 日期数字所占高度
@@ -58,6 +62,7 @@ export function MonthView({
   onCreate,
   onDrop,
   onShowDay,
+  notes,
 }: Props) {
   useI18n();
   const days = useMemo(() => monthGrid(cursor), [cursor]);
@@ -92,6 +97,7 @@ export function MonthView({
             onCreate={onCreate}
             onDrop={onDrop}
             onShowDay={onShowDay}
+            notes={notes}
           />
         ))}
       </div>
@@ -109,6 +115,7 @@ function WeekRow({
   onCreate,
   onDrop,
   onShowDay,
+  notes,
 }: Omit<Props, "cursor"> & { week: Date[]; month: number }) {
   useI18n();
   const ref = useRef<HTMLDivElement>(null);
@@ -177,7 +184,7 @@ function WeekRow({
                 if (raw) onDrop(JSON.parse(raw) as DragPayload, d);
               }}
               className={cn(
-                "border-border flex min-w-0 cursor-default justify-center border-r pt-1",
+                "border-border relative flex min-w-0 cursor-default justify-center border-r pt-1",
                 col === 6 && "border-r-0",
                 !inMonth && "bg-secondary/40",
                 dropCol === col && "bg-chart-5",
@@ -198,6 +205,9 @@ function WeekRow({
               >
                 {d.getDate()}
               </button>
+              <span className="absolute top-1 right-1">
+                <DayNotes notes={notes?.get(localDay(d))} />
+              </span>
             </div>
           );
         })}

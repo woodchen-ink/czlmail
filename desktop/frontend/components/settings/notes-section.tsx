@@ -23,9 +23,18 @@ export function NotesSection({ active }: { active: boolean }) {
     void noteApi.config().then(setConfig).catch((err) => toast.error(errorMessage(err)));
     void noteApi.journalConfig().then(setJournal).catch((err) => toast.error(errorMessage(err)));
   }, [active]);
-  /** Journal fields save when they lose focus; the backend validates and fills defaults. */
+  /** Journal fields save shortly after typing stops, and again on blur where the backend fills defaults. */
+  const journalTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  function editJournal(patch: Partial<JournalConfig>) {
+    if (!journal) return;
+    const next = { ...journal, ...patch };
+    setJournal(next);
+    clearTimeout(journalTimer.current);
+    journalTimer.current = setTimeout(() => void noteApi.setJournalConfig(next).catch((err) => toast.error(errorMessage(err))), 400);
+  }
   async function saveJournal() {
     if (!journal) return;
+    clearTimeout(journalTimer.current);
     try { setJournal(await noteApi.setJournalConfig(journal)); }
     catch (err) { toast.error(errorMessage(err)); }
   }
@@ -74,13 +83,13 @@ export function NotesSection({ active }: { active: boolean }) {
     <SectionTitle small title={t("日记")} desc={t("笔记页「今日日记」一键打开当天日记，没有就按模板新建。位置和文件名支持 YYYY、MM、DD、dddd（星期）等日期写法，与 Obsidian 相同；这些设置会同步到其他设备。")} />
     <Card>
       <Row title={t("日记目录")} desc={t("例如 dailynote/YYYY/MM，留空则放在笔记根目录。")}>
-        <Input className="w-56" aria-label={t("日记目录")} value={journal?.folder ?? ""} disabled={!journal || !config?.enabled} onChange={(event) => journal && setJournal({ ...journal, folder: event.target.value })} onBlur={() => void saveJournal()} />
+        <Input className="w-56" aria-label={t("日记目录")} value={journal?.folder ?? ""} disabled={!journal || !config?.enabled} onChange={(event) => editJournal({ folder: event.target.value })} onBlur={() => void saveJournal()} />
       </Row>
       <Row title={t("日记文件名")} desc={t("例如 YYYY-MM-DD-dddd 得到 2025-03-21-星期五。")}>
-        <Input className="w-56" aria-label={t("日记文件名")} value={journal?.name ?? ""} disabled={!journal || !config?.enabled} onChange={(event) => journal && setJournal({ ...journal, name: event.target.value })} onBlur={() => void saveJournal()} />
+        <Input className="w-56" aria-label={t("日记文件名")} value={journal?.name ?? ""} disabled={!journal || !config?.enabled} onChange={(event) => editJournal({ name: event.target.value })} onBlur={() => void saveJournal()} />
       </Row>
       <Row title={t("日记模板")} desc={t("笔记库里一篇笔记的路径，例如 模板/日记.md；留空用内置模板。模板可用 {{date}}、{{time}}、{{title}}、{{date:YYYY年M月D日}}。")}>
-        <Input className="w-56" aria-label={t("日记模板")} placeholder={t("内置模板")} value={journal?.template ?? ""} disabled={!journal || !config?.enabled} onChange={(event) => journal && setJournal({ ...journal, template: event.target.value })} onBlur={() => void saveJournal()} />
+        <Input className="w-56" aria-label={t("日记模板")} placeholder={t("内置模板")} value={journal?.template ?? ""} disabled={!journal || !config?.enabled} onChange={(event) => editJournal({ template: event.target.value })} onBlur={() => void saveJournal()} />
       </Row>
     </Card>
     <Card>
