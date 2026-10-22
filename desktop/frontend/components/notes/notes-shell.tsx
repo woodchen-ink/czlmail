@@ -1,29 +1,38 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FilePlus2, FolderPlus, RefreshCw, Paperclip, GitCompareArrows, Pencil, Trash2, FolderOpen, NotebookPen } from "lucide-react";
+import { CalendarDays, FilePlus2, FolderPlus, RefreshCw, Pencil, Trash2, FolderOpen, NotebookPen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useI18n } from "@/components/locale-provider";
 import { usePanelRef } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { NoteDocumentTools } from "@/components/notes/note-document-tools";
 import { NoteEditor } from "@/components/notes/note-editor";
+import { NoteHeader, type NoteMode } from "@/components/notes/note-header";
 import { NotePreview } from "@/components/notes/note-preview";
+import { NoteSearchResults } from "@/components/notes/note-search-results";
 import { NoteTree } from "@/components/notes/note-tree";
 import { NoteAttachmentPane, type NoteAttachmentPreview } from "@/components/notes/note-attachment-pane";
 import { NoteDiffDialog } from "@/components/notes/note-diff-dialog";
 import { api, errorMessage, onEvent } from "@/lib/api";
 import { onFileDrop } from "@/lib/file-drop";
-import { noteApi, noteEvents, fileBase64, type NoteEntry, type NoteVault, type NoteDiff } from "@/lib/notes/api";
+import { noteApi, noteEvents, fileBase64, localDay, type NoteEntry, type NoteVault, type NoteDiff } from "@/lib/notes/api";
+import { toggleTask } from "@/lib/notes/live-editing";
 import { useNoteDocument } from "@/lib/notes/use-note-document";
 import { useNoteSync } from "@/lib/notes/use-note-sync";
 import { BrowserOpenURL } from "@/wailsjs/runtime/runtime";
-import { t } from "@/lib/i18n";
+import { getLocale, t } from "@/lib/i18n";
+
+type DialogAction = "folder" | "rename" | "trash";
+
+/** Last opened note per library, restored when the module opens. */
+function lastNoteKey(vaultId: string) {
+  return `czlmail.notes.last.${vaultId}`;
+}
 
 /** A bounded notes workspace: native Markdown, lazy folders and one durable editor. */
 export function NotesShell({ active }: { active: boolean }) {
@@ -38,10 +47,11 @@ export function NotesShell({ active }: { active: boolean }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<NoteEntry[]>([]);
   const [trash, setTrash] = useState(false);
-  const [mode, setMode] = useState("live");
+  const [mode, setMode] = useState<NoteMode>("live");
   const [busy, setBusy] = useState(false);
-  const [action, setAction] = useState<"note" | "folder" | "rename" | "trash" | null>(null);
+  const [action, setAction] = useState<DialogAction | null>(null);
   const [name, setName] = useState("");
+  const [created, setCreated] = useState("");
   const [attachmentPreview, setAttachmentPreview] = useState<NoteAttachmentPreview | null>(null);
   const [diff, setDiff] = useState<NoteDiff | null>(null);
   const insert = useRef<((text: string) => void) | null>(null);
@@ -86,9 +96,46 @@ export function NotesShell({ active }: { active: boolean }) {
     return () => { live = false; clearTimeout(timer); };
   }, [vaultId, query, trash, tick]);
 
-  /** New root entries never inherit an unrelated selected folder. */
-  function createAtRoot(kind: "note" | "folder") {
-    setParent(""); setName(""); setAction(kind);
+  /** Reopen the note that was open last time; a deleted or missing note is simply forgotten. */
+  const restored = useRef("");
+  useEffect(() => {
+    if (!vaultId || restored.current === vaultId || doc.getNote()) return;
+    restored.current = vaultId;
+    let id = "";
+    try { id = localStorage.getItem(lastNoteKey(vaultId)) ?? ""; } catch { /* Ignore unavailable preferences. */ }
+    if (!id) return;
+    void noteApi.read(vaultId, id).then((entry) => {
+      if (entry.deleted || entry.directory || doc.getNote()) return;
+      return run(() => open(entry));
+    }).catch(() => { try { localStorage.removeItem(lastNoteKey(vaultId)); } catch { /* Ignore unavailable preferences. */ } });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Runs once per library; open is recreated every render.
+  }, [vaultId]);
+
+  /** Folder dialogs: root entries never inherit an unrelated selected folder. */
+  function folderAt(parentId: string) {
+    setParent(parentId); setName(""); setAction("folder");
+  }
+
+  /** A new note is created and opened at once as "Untitled"; its title is focused for naming. */
+  async function createNote(parentId: string) {
+    await run(async () => {
+      await doc.flush();
+      const entry = await noteApi.create({ vaultId, parentId, name: t("未命名"), unique: true, idempotencyKey: crypto.randomUUID() });
+      await open(entry);
+      if (mode === "read") setMode("live");
+      setCreated(entry.id); setTick((value) => value + 1);
+    });
+  }
+
+  /** Today's diary opens in one click; the backend creates folders and fills the template once. */
+  async function openJournal() {
+    await run(async () => {
+      await doc.flush();
+      const entry = await noteApi.openJournal(vaultId, localDay(), getLocale());
+      await open(entry);
+      if (mode === "read") setMode("live");
+      setTick((value) => value + 1);
+    });
   }
 
   /** Moves flush the editor and compare against the latest backend revision. */
@@ -99,6 +146,18 @@ export function NotesShell({ active }: { active: boolean }) {
       const saved = await noteApi.move({ vaultId: entry.vaultId, id: latest.id, expectedRevision: latest.revision, parentId, name: latest.name });
       if (selected?.id === saved.id) setSelected(saved);
       await doc.refresh(); setTick((value) => value + 1);
+    });
+  }
+
+  /** Renames keep the real extension; the title field shows note names without ".md". */
+  async function rename(entry: NoteEntry, value: string) {
+    await run(async () => {
+      await doc.flush();
+      const latest = await noteApi.read(entry.vaultId, entry.id);
+      const next = latest.directory || latest.attachment || /\.md$/i.test(value) ? value : `${value}.md`;
+      const saved = await noteApi.move({ vaultId: entry.vaultId, id: latest.id, expectedRevision: latest.revision, parentId: latest.parentId, name: next });
+      if (selected?.id === saved.id) setSelected(saved);
+      await doc.refresh(); setTick((v) => v + 1);
     });
   }
 
@@ -113,8 +172,8 @@ export function NotesShell({ active }: { active: boolean }) {
       } else await noteApi.openLink(entry.vaultId, entry.id, encodeURIComponent(entry.name));
       return;
     }
-    await doc.open(entry.vaultId, entry.id); setAttachmentPreview(null); setSelected(entry); setParent(entry.parentId);
-    localStorage.setItem(`czlmail.notes.last.${entry.vaultId}`, entry.id);
+    await doc.open(entry.vaultId, entry.id); setAttachmentPreview(null); setSelected(entry); setParent(entry.parentId); setCreated("");
+    try { localStorage.setItem(lastNoteKey(entry.vaultId), entry.id); } catch { /* Ignore unavailable preferences. */ }
   }
 
   /** A saved document revision is used for each attachment; insertion occurs only after persistence. */
@@ -150,13 +209,12 @@ export function NotesShell({ active }: { active: boolean }) {
     return () => { window.removeEventListener("online", sync); window.removeEventListener("focus", sync); };
   }, [active, vaultId]);
 
-  /** Form actions share the same version-checked backend as MCP. */
+  /** Dialog actions share the same version-checked backend as MCP. */
   async function submit() {
     await run(async () => {
       await doc.flush();
-      if (action === "note" || action === "folder") {
-        const entry = await noteApi.create({ vaultId, parentId: parent, name, idempotencyKey: crypto.randomUUID() }, action === "folder");
-        if (!entry.directory) await open(entry);
+      if (action === "folder") {
+        await noteApi.create({ vaultId, parentId: parent, name, idempotencyKey: crypto.randomUUID() }, true);
       } else if (selected) {
         const latest = await noteApi.read(vaultId, selected.id);
         if (action === "rename") await noteApi.move({ vaultId, id: latest.id, expectedRevision: latest.revision, parentId: latest.parentId, name });
@@ -199,37 +257,72 @@ export function NotesShell({ active }: { active: boolean }) {
     setAttachmentPreview(null); if (doc.note) setSelected(doc.note);
   }
 
-  const status = doc.dirty ? t("正在保存到本地…") : doc.note?.status === "synced" ? t("已同步") : doc.note?.status === "pending" ? t("本地已保存，等待同步") : doc.note?.status === "conflict" ? t("存在版本冲突") : doc.note?.status === "remote_deleted" ? t("远端文件已删除，本地副本仍保留") : doc.note?.status ?? "";
+  /** Reading mode toggles tasks through the same buffer and autosave as typing. */
+  function toggleReadingTask(from: number) {
+    const change = toggleTask(doc.text, from);
+    if (change && doc.note && !doc.note.deleted) doc.edit(doc.text.slice(0, change.from) + change.insert + doc.text.slice(change.to));
+  }
+
+  const compare = () => void run(async () => { await doc.flush(); const n = doc.getNote(); if (n) setDiff(await noteApi.diff(n.vaultId, n.id)); });
+  const openDocument = (entry: NoteEntry) => { if (!busy && !entry.directory) void run(() => open(entry)); };
+
+  const tree = <NoteTree vaultId={vaultId} tick={tick} selectedId={selected?.id ?? ""} disabled={busy}
+    onRootAction={(kind) => { if (kind === "note") void createNote(""); else folderAt(""); }}
+    onMove={(entry, parentId) => void move(entry, parentId)}
+    onOpen={openDocument}
+    onFolder={(entry) => { setSelected(entry); setParent(entry.id); }}
+    onAction={(entry, kind) => {
+      if (busy) return;
+      if (kind === "note") { void createNote(entry.id); return; }
+      setSelected(entry); setParent(entry.directory ? entry.id : entry.parentId); setName(kind === "rename" ? entry.name : ""); setAction(kind);
+    }} />;
+
+  const sidebar = <aside className="bg-sidebar flex h-full min-w-0 flex-col">
+    <div className="flex flex-col gap-2 p-3">
+      <div className="flex items-center gap-1">
+        <NotebookPen className="size-4" /><h1 className="ml-1 font-semibold">{t("笔记")}</h1><span className="flex-1" />
+        {iconButton(t("今日日记"), !vaultId || busy || trash, () => void openJournal(), <CalendarDays />)}
+        {iconButton(t("新建笔记"), !vaultId || busy || trash, () => void createNote(""), <FilePlus2 />)}
+        {iconButton(t("新建文件夹"), !vaultId || busy || trash, () => folderAt(""), <FolderPlus />)}
+        {iconButton(t("重命名"), !selected || busy || trash, () => { setName(selected?.name ?? ""); setAction("rename"); }, <Pencil />)}
+        {iconButton(t("立即同步"), busy || syncing || !vaultId, () => void sync(), <RefreshCw className={syncing ? "animate-spin" : undefined} />)}
+      </div>
+      <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("搜索笔记正文和标题")} aria-label={t("搜索笔记正文和标题")} />
+    </div>
+    <div className="czl-scroll min-h-0 flex-1 overflow-y-auto px-2">
+      {vaultId && !query && !trash && tree}
+      {(query || trash) && <NoteSearchResults entries={results} query={query} trash={trash} selectedId={selected?.id ?? ""} disabled={busy} onOpen={openDocument}
+        onRestore={(entry) => void run(async () => { await noteApi.trash(vaultId, entry.id, entry.revision, true); setTick((v) => v + 1); })} />}
+    </div>
+    <div className="border-border flex items-center gap-2 border-t p-2">
+      <Button variant={trash ? "secondary" : "ghost"} size="sm" onClick={() => setTrash((value) => !value)}>{trash ? <FolderOpen /> : <Trash2 />}{trash ? t("回到笔记区") : t("回收站")}</Button>
+    </div>
+  </aside>;
+
+  const body = doc.note
+    ? mode === "read"
+      ? <NotePreview vaultId={doc.note.vaultId} noteId={doc.note.id} text={doc.text} onLink={(href) => void follow(href)} onTask={doc.note.deleted ? undefined : toggleReadingTask} />
+      : <NoteEditor vaultId={doc.note.vaultId} noteId={doc.note.id} value={doc.text} source={mode === "source"} readOnly={doc.note.deleted} onChange={doc.edit} onFiles={(files, at) => void attachFiles(files, at)} onReady={(at) => { insert.current = at; }} />
+    : <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 text-sm">
+      <p>{t("选择或新建一篇笔记")}</p>
+      <Button variant="outline" size="sm" disabled={busy || trash} onClick={() => void createNote("")}><FilePlus2 />{t("新建笔记")}</Button>
+    </div>;
 
   return <div className="flex h-full min-h-0" style={{ "--wails-drop-target": "drop" } as React.CSSProperties}>
     <ResizablePanelGroup orientation="horizontal">
     <ResizablePanel id="notes-tree" panelRef={treePanel} defaultSize={320} minSize={240} maxSize={560} onResize={(size, _id, previous) => { if (!previous) return; try { localStorage.setItem("czlmail.notes.treeWidth", String(size.inPixels)); } catch { /* Ignore unavailable preferences. */ } }}>
-    <aside className="bg-sidebar flex h-full min-w-0 flex-col">
-      <div className="flex flex-col gap-2 p-3">
-        <div className="flex items-center gap-2"><NotebookPen className="size-4" /><h1 className="font-semibold">{t("笔记")}</h1><span className="flex-1" /><Tooltip><TooltipTrigger asChild><span className="inline-flex"><Button variant="ghost" size="icon-sm" aria-label={t("立即同步")} disabled={busy || syncing || !vaultId} onClick={() => void sync()}><RefreshCw className={syncing ? "animate-spin" : undefined} /></Button></span></TooltipTrigger><TooltipContent>{t("立即同步")}</TooltipContent></Tooltip></div>
-        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("搜索笔记正文和标题")} aria-label={t("搜索笔记正文和标题")} />
-        <div className="flex gap-1">
-          <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Button variant="ghost" size="icon-sm" aria-label={t("新建笔记")} disabled={!vaultId || busy || trash} onClick={() => createAtRoot("note")}><FilePlus2 /></Button></span></TooltipTrigger><TooltipContent>{t("新建笔记")}</TooltipContent></Tooltip>
-          <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Button variant="ghost" size="icon-sm" aria-label={t("新建文件夹")} disabled={!vaultId || busy || trash} onClick={() => createAtRoot("folder")}><FolderPlus /></Button></span></TooltipTrigger><TooltipContent>{t("新建文件夹")}</TooltipContent></Tooltip>
-          <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Button variant="ghost" size="icon-sm" aria-label={t("重命名")} disabled={!selected || busy || trash} onClick={() => { setName(selected?.name ?? ""); setAction("rename"); }}><Pencil /></Button></span></TooltipTrigger><TooltipContent>{t("重命名")}</TooltipContent></Tooltip>
-        </div>
-      </div>
-      <div className="czl-scroll min-h-0 flex-1 overflow-y-auto px-2">
-        {vaultId && !query && !trash && <><NoteTree vaultId={vaultId} tick={tick} selectedId={selected?.id ?? ""} disabled={busy} onRootAction={createAtRoot} onMove={(entry, parentId) => void move(entry, parentId)} onOpen={(entry) => { if (!busy) void run(() => open(entry)); }} onFolder={(entry) => { setSelected(entry); setParent(entry.id); }} onAction={(entry, kind) => { if (busy) return; setSelected(entry); setParent(entry.directory ? entry.id : entry.parentId); setName(kind === "rename" ? entry.name : ""); setAction(kind); }} /></>}
-        {(query || trash) && results.map((entry) => <div key={entry.id} className="flex items-center gap-1"><button className="hover:bg-secondary min-w-0 flex-1 truncate rounded-md px-2 py-2 text-left text-sm" onClick={() => { if (!entry.directory) void run(() => open(entry)); }}>{entry.name}</button>{trash && <Button variant="ghost" size="sm" onClick={() => void run(async () => { await noteApi.trash(vaultId, entry.id, entry.revision, true); setTick((v) => v + 1); })}>{t("恢复")}</Button>}</div>)}
-      </div>
-      <div className="border-border flex items-center gap-2 border-t p-2"><Button variant={trash ? "secondary" : "ghost"} size="sm" onClick={() => setTrash((value) => !value)}>{trash ? <FolderOpen /> : <Trash2 />}{trash ? t("回到笔记区") : t("回收站")}</Button>{selected && !trash && <Button variant="ghost" size="icon-sm" aria-label={t("移入回收站")} disabled={busy} onClick={() => setAction("trash")}><Trash2 /></Button>}</div>
-    </aside>
+      {sidebar}
     </ResizablePanel>
     <ResizableHandle aria-label={t("调整目录宽度")} />
     <ResizablePanel id="notes-body" minSize={400}>
     <section className="flex h-full min-w-0 flex-col">
       {!vaultId ? <div className="m-auto flex max-w-md flex-col gap-4 p-8"><h2 className="text-xl font-semibold">{t("笔记")}</h2><p className="text-muted-foreground text-sm">{t("笔记保存在个人账号的 Notes 目录中。")}</p><Button disabled={busy} onClick={() => void run(async () => { const accounts = await api.listAccounts(); const account = accounts.find((item) => item.isPersonal); if (!account) return; const v = await noteApi.bind(account.id, ""); setVaults([v]); setVaultId(v.id); void sync(); })}>{t("开始使用笔记")}</Button></div> : <>
-        <header className="border-border flex min-h-12 items-center gap-3 border-b px-4"><span className="min-w-0 flex-1 truncate text-sm">{attachmentPreview?.name ?? doc.note?.name ?? t("选择或新建一篇笔记")}</span>{attachmentPreview ? <Button variant="ghost" size="sm" onClick={closePreview}>{doc.note ? t("返回笔记") : t("关闭")}</Button> : <><span className="text-muted-foreground text-xs">{status}</span>
-          <Button variant="ghost" size="icon-sm" aria-label={t("本地与远端版本对比")} disabled={!doc.note || busy} onClick={() => void run(async () => { await doc.flush(); const n = doc.getNote(); if (n) setDiff(await noteApi.diff(n.vaultId, n.id)); })}><GitCompareArrows /></Button>
-          <Button variant="ghost" size="icon-sm" aria-label={t("添加附件")} disabled={!doc.note || busy || mode === "read" || doc.note.deleted} onClick={() => picker.current?.click()}><Paperclip /></Button>
-          <ToggleGroup type="single" value={mode} onValueChange={(value) => { if (value) setMode(value); }}><ToggleGroupItem value="live" aria-label={t("实时预览")}>{t("实时预览")}</ToggleGroupItem><ToggleGroupItem value="source" aria-label={t("源码")}>{t("源码")}</ToggleGroupItem><ToggleGroupItem value="read" aria-label={t("阅读")}>{t("阅读")}</ToggleGroupItem></ToggleGroup></>}
-        </header>
+        {attachmentPreview
+          ? <header className="border-border flex min-h-12 items-center gap-3 border-b px-4"><span className="min-w-0 flex-1 truncate text-sm">{attachmentPreview.name}</span><Button variant="ghost" size="sm" onClick={closePreview}>{doc.note ? t("返回笔记") : t("关闭")}</Button></header>
+          : doc.note && <NoteHeader note={doc.note} dirty={doc.dirty} mode={mode} busy={busy} focusTitle={created === doc.note.id} onMode={setMode}
+            onRename={(value) => { const note = doc.getNote(); if (note) void rename(note, value); }}
+            onAttach={() => picker.current?.click()} onDiff={compare}
+            onTrash={() => { setSelected(doc.note); setAction("trash"); }} />}
         {vault?.error && <p className="text-destructive px-4 py-2 text-sm">{t("同步未完成，本地内容仍保留")}: {vault.error}</p>}
         {doc.error && <div className="text-destructive flex items-center gap-3 px-4 py-2 text-sm"><span>{doc.error}</span><Button variant="outline" size="sm" onClick={() => void run(doc.recover)}>{t("将当前编辑另存为恢复笔记")}</Button></div>}
         {attachmentPreview && <div className="min-h-0 flex-1"><NoteAttachmentPane item={attachmentPreview} onExternal={() => void run(async () => { if (attachmentPreview.src) BrowserOpenURL(attachmentPreview.src); else await noteApi.openLink(attachmentPreview.vaultId, attachmentPreview.noteId, attachmentPreview.path); })} /></div>}
@@ -239,13 +332,18 @@ export function NotesShell({ active }: { active: boolean }) {
           if (image) { event.preventDefault(); event.stopPropagation(); if (!busy) void previewImage(image); return; }
           const link = target.closest<HTMLAnchorElement>("a[data-note-link]");
           if (link) { event.preventDefault(); event.stopPropagation(); void follow(link.dataset.noteLink ?? ""); }
-        }} className={attachmentPreview ? "hidden" : "min-h-0 flex-1"}><NoteDocumentTools text={doc.text}>{doc.note ? mode === "read" ? <NotePreview vaultId={doc.note.vaultId} noteId={doc.note.id} text={doc.text} onLink={(href) => void follow(href)} /> : <NoteEditor vaultId={doc.note.vaultId} noteId={doc.note.id} value={doc.text} source={mode === "source"} readOnly={doc.note.deleted} onChange={doc.edit} onFiles={(files, at) => void attachFiles(files, at)} onReady={(at) => { insert.current = at; }} /> : <div className="text-muted-foreground flex h-full items-center justify-center text-sm">{t("选择或新建一篇笔记")}</div>}</NoteDocumentTools></div>
+        }} className={attachmentPreview ? "hidden" : "min-h-0 flex-1"}><NoteDocumentTools text={doc.text} note={doc.note}>{body}</NoteDocumentTools></div>
       </>}
     </section>
     </ResizablePanel>
     </ResizablePanelGroup>
     <input ref={picker} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (insert.current) void attachFiles(files, insert.current); }} />
-    <Dialog open={!!action} onOpenChange={(open) => { if (!open && !busy) setAction(null); }}><DialogContent><DialogHeader><DialogTitle>{action === "trash" ? t("移入回收站") : action === "rename" ? t("重命名") : action === "folder" ? t("新建文件夹") : t("新建笔记")}</DialogTitle><DialogDescription>{action === "trash" ? t("保留附件，可以从回收站恢复。") : t("使用普通文件名保存，不会改写正文标题。")}</DialogDescription></DialogHeader>{action !== "trash" && <Input autoFocus value={name} onChange={(event) => setName(event.target.value)} aria-label={t("名称")} onKeyDown={(event) => { if (event.key === "Enter" && name.trim() && !busy) void submit(); }} />}<DialogFooter><Button variant="outline" disabled={busy} onClick={() => setAction(null)}>{t("取消")}</Button><Button disabled={busy || action !== "trash" && !name.trim()} onClick={() => void submit()}>{t("确定")}</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={!!action} onOpenChange={(open) => { if (!open && !busy) setAction(null); }}><DialogContent><DialogHeader><DialogTitle>{action === "trash" ? t("移入回收站") : action === "rename" ? t("重命名") : t("新建文件夹")}</DialogTitle><DialogDescription>{action === "trash" ? t("保留附件，可以从回收站恢复。") : t("使用普通文件名保存，不会改写正文标题。")}</DialogDescription></DialogHeader>{action !== "trash" && <Input autoFocus value={name} onChange={(event) => setName(event.target.value)} aria-label={t("名称")} onKeyDown={(event) => { if (event.key === "Enter" && name.trim() && !busy) void submit(); }} />}<DialogFooter><Button variant="outline" disabled={busy} onClick={() => setAction(null)}>{t("取消")}</Button><Button disabled={busy || action !== "trash" && !name.trim()} onClick={() => void submit()}>{t("确定")}</Button></DialogFooter></DialogContent></Dialog>
     <NoteDiffDialog diff={diff} busy={busy} onClose={() => setDiff(null)} onResolve={(strategy) => void run(async () => { if (!diff) return; const saved = await noteApi.resolve(diff.local.vaultId, diff.local.id, diff.local.revision, diff.remoteVersion, strategy, ""); setDiff(null); await doc.open(saved.vaultId, saved.id); })} />
   </div>;
+}
+
+/** Icon-only toolbar button with a hover/focus label; the span keeps tooltips working while disabled. */
+function iconButton(label: string, disabled: boolean, onClick: () => void, icon: React.ReactNode) {
+  return <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Button variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={onClick}>{icon}</Button></span></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>;
 }

@@ -33,7 +33,8 @@ function load(relative) {
 /** SSR renders the actual shared Markdown components without opening a mailbox or loading images. */
 function render(text, range) {
   const { NoteMarkdown } = load("components/notes/note-markdown.tsx");
-  return renderToStaticMarkup(React.createElement(NoteMarkdown, { vaultId: "v", noteId: "n", text, range, onLink: () => {} }));
+  // Source offsets are asserted separately; strip them so markup assertions stay readable.
+  return renderToStaticMarkup(React.createElement(NoteMarkdown, { vaultId: "v", noteId: "n", text, range, onLink: () => {} })).replace(/ data-note-(?:from|to)="\d+"/g, "");
 }
 
 test("reader and live table blocks share GFM rendering, emphasis and BR conversion", () => {
@@ -41,7 +42,7 @@ test("reader and live table blocks share GFM rendering, emphasis and BR conversi
   const from = text.indexOf("| Command"); const to = text.indexOf("Last paragraph");
   const live = render(text, { from, to });
   const { NotePreview } = load("components/notes/note-preview.tsx");
-  const reading = renderToStaticMarkup(React.createElement(NotePreview, { vaultId: "v", noteId: "n", text, onLink: () => {} }));
+  const reading = renderToStaticMarkup(React.createElement(NotePreview, { vaultId: "v", noteId: "n", text, onLink: () => {} })).replace(/ data-note-(?:from|to)="\d+"/g, "");
   assert.match(live, /<table>/); assert.match(live, /<strong>Stop<\/strong><br\/>\s*停止/);
   assert.ok(reading.includes(live)); assert.doesNotMatch(live, /Intro|Last paragraph/);
 });
@@ -100,4 +101,19 @@ test("range conversion preserves wiki embeds following frontmatter without dupli
   const html = render(text, { from: text.indexOf("![["), to: text.indexOf("Tail") });
   assert.match(html, /<img/); assert.doesNotMatch(html, /<h1>|<summary>|Tail/);
   assert.match(html, /data-note-path=/);
+});
+
+test("elements carry source offsets that survive frontmatter and wiki rewrites", () => {
+  const { NoteMarkdown } = load("components/notes/note-markdown.tsx");
+  const text = "---\ntitle: x\n---\n[[Target]] and **bold** tail\n\n- [ ] task\n";
+  const html = renderToStaticMarkup(React.createElement(NoteMarkdown, { vaultId: "v", noteId: "n", text, onLink: () => {}, onTask: () => {} }));
+  assert.match(html, new RegExp(`<strong data-note-from="${text.indexOf("**bold")}" data-note-to="${text.indexOf(" tail")}"`));
+  assert.match(html, new RegExp(`<li class="task-list-item" data-note-from="${text.indexOf("- [ ]")}"`));
+  assert.doesNotMatch(html, /<input[^>]* disabled=/);
+});
+
+test("the same note is parsed once for every live block", () => {
+  const { parseNote } = load("lib/notes/parse-note.ts");
+  const text = "# A\n\nB\n\nC\n";
+  const first = parseNote(text); assert.ok(first === parseNote(text));
 });

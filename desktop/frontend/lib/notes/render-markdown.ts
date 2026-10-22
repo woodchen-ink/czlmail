@@ -1,4 +1,4 @@
-interface MarkdownNode {
+export interface MarkdownNode {
   type: string;
   value?: string;
   children?: MarkdownNode[];
@@ -52,14 +52,11 @@ export function rehypeNoteAnchors() {
   };
 }
 
-/** Filter HAST, after global link definitions and footnote numbering/IDs have all been resolved. */
-export function rehypeNoteRange(options?: MarkdownRange) {
-  return (tree: MarkdownNode) => {
-    if (!options || !tree.children) return;
-    tree.children = tree.children.filter((node) => {
-      const footnotes = node.tagName === "section" && node.properties?.dataFootnotes !== undefined;
-      if (options.footnotesOnly) return footnotes;
-      return !footnotes && (node.position?.start.offset ?? -1) < options.to && (node.position?.end.offset ?? -1) > options.from;
-    });
-  };
+/** Top-level HAST children overlapping a rendered range; the footnote section renders once, on its own. */
+export function rangeChildren<T extends MarkdownNode>(children: T[], range: MarkdownRange): T[] {
+  return children.filter((node) => {
+    const footnotes = node.tagName === "section" && node.properties?.dataFootnotes !== undefined;
+    if (range.footnotesOnly) return footnotes;
+    return !footnotes && (node.position?.start.offset ?? -1) < range.to && (node.position?.end.offset ?? -1) > range.from;
+  });
 }

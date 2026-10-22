@@ -57,7 +57,7 @@ func (s *Syncer) FileSnapshot(ctx context.Context, account string) (notes.Snapsh
 		if err != nil {
 			return notes.Snapshot{}, notes.ErrUnavailable
 		}
-		result.Nodes = append(result.Nodes, notes.Node{ID: n.ID, ParentID: n.ParentID, Name: n.Name, Directory: n.IsDirectory, BlobID: n.BlobID, Type: n.ContentType, Size: n.Size})
+		result.Nodes = append(result.Nodes, notes.Node{ID: n.ID, ParentID: n.ParentID, Name: n.Name, Directory: n.IsDirectory, BlobID: n.BlobID, Type: n.ContentType, Size: n.Size, Created: n.Created * 1000, Modified: n.Modified * 1000})
 	}
 	after, err := s.fileState(ctx, account)
 	if err != nil {

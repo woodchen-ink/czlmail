@@ -5,9 +5,10 @@ import { toast } from "sonner";
 import { useI18n } from "@/components/locale-provider";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, Row, SectionTitle } from "@/components/settings/ui";
 import { errorMessage } from "@/lib/api";
-import { flushNotes, noteApi, type NoteConfig } from "@/lib/notes/api";
+import { flushNotes, noteApi, type JournalConfig, type NoteConfig } from "@/lib/notes/api";
 import { t } from "@/lib/i18n";
 
 /** Local module and MCP permissions are independent of mail settings and cross-device preferences. */
@@ -16,7 +17,18 @@ export function NotesSection({ active }: { active: boolean }) {
   const [config, setConfig] = useState<NoteConfig | null>(null);
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
-  useEffect(() => { if (active) void noteApi.config().then(setConfig).catch((err) => toast.error(errorMessage(err))); }, [active]);
+  const [journal, setJournal] = useState<JournalConfig | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    void noteApi.config().then(setConfig).catch((err) => toast.error(errorMessage(err)));
+    void noteApi.journalConfig().then(setJournal).catch((err) => toast.error(errorMessage(err)));
+  }, [active]);
+  /** Journal fields save when they lose focus; the backend validates and fills defaults. */
+  async function saveJournal() {
+    if (!journal) return;
+    try { setJournal(await noteApi.setJournalConfig(journal)); }
+    catch (err) { toast.error(errorMessage(err)); }
+  }
   /** Persist before changing visible navigation; a failed editor flush aborts disabling. */
   async function save(patch: Partial<NoteConfig>) {
     if (!config || locked.current) return;
@@ -57,6 +69,18 @@ export function NotesSection({ active }: { active: boolean }) {
       </Row>
       <Row title={t("允许 MCP 修改笔记")} desc={t("允许 AI 新建、编辑、导入和软删除笔记。默认关闭，所有更新仍需版本校验。")}>
         <Switch aria-label={t("允许 MCP 修改笔记")} checked={config?.allowWrite ?? false} disabled={!config?.enabled || !config.allowRead || busy} onCheckedChange={(allowWrite) => void save({ allowWrite })} />
+      </Row>
+    </Card>
+    <SectionTitle small title={t("日记")} desc={t("笔记页「今日日记」一键打开当天日记，没有就按模板新建。位置和文件名支持 YYYY、MM、DD、dddd（星期）等日期写法，与 Obsidian 相同；这些设置会同步到其他设备。")} />
+    <Card>
+      <Row title={t("日记目录")} desc={t("例如 dailynote/YYYY/MM，留空则放在笔记根目录。")}>
+        <Input className="w-56" aria-label={t("日记目录")} value={journal?.folder ?? ""} disabled={!journal || !config?.enabled} onChange={(event) => journal && setJournal({ ...journal, folder: event.target.value })} onBlur={() => void saveJournal()} />
+      </Row>
+      <Row title={t("日记文件名")} desc={t("例如 YYYY-MM-DD-dddd 得到 2025-03-21-星期五。")}>
+        <Input className="w-56" aria-label={t("日记文件名")} value={journal?.name ?? ""} disabled={!journal || !config?.enabled} onChange={(event) => journal && setJournal({ ...journal, name: event.target.value })} onBlur={() => void saveJournal()} />
+      </Row>
+      <Row title={t("日记模板")} desc={t("笔记库里一篇笔记的路径，例如 模板/日记.md；留空用内置模板。模板可用 {{date}}、{{time}}、{{title}}、{{date:YYYY年M月D日}}。")}>
+        <Input className="w-56" aria-label={t("日记模板")} placeholder={t("内置模板")} value={journal?.template ?? ""} disabled={!journal || !config?.enabled} onChange={(event) => journal && setJournal({ ...journal, template: event.target.value })} onBlur={() => void saveJournal()} />
       </Row>
     </Card>
     <Card>

@@ -30,6 +30,16 @@
 - 回归入口：前端 `pnpm test:notes` 与 `pnpm test:notes-browser`（使用系统 Chromium，可设 `CHROME_BIN`）；Go 为 `go test ./internal/notes ./internal/mcpbridge`。Wails 绑定不提交，新检出须先 `wails generate module` 再做前端类型检查；CI 平台构建会生成绑定。
 - 本机 Go1.27 与已安装 Wails CLI 的旧资源分析依赖不兼容；本次以前端构建后 `go build -tags desktop,production` 生成隔离 exe 验证，未修改全局 CLI 或项目依赖。
 
+## 编辑体验、时间与日记（2026-10-22）
+
+- 实时预览改为每个文档版本只解析一次（`lib/notes/parse-note.ts`，unified + remark-gfm，等同 react-markdown 的 skipHtml 与 URL 清洗），各区块只切自己那段 HAST。区块组件以「本区块源码」为键比较，输入时其他区块的 React 根、图片与高度原样保留；含脚注或引用式定义的文档以全文为键，仍整体更新。CodeMirror 的 `estimatedHeight` 用量过的高度，长文滚动条不跳。
+- 渲染元素带 `data-note-from/to` 源码偏移：点击渲染区块时按点击处文字把光标放进源码对应位置（`caretOffset` 按序匹配字符、跳过 Markdown 记号），任务框在实时预览与阅读模式都能直接勾选并改写 `[ ]`/`[x]`。区块被复用时偏移可能过期，事件处理一律用 `posAtDOM` 现算差值。
+- 实时预览的源码标题按渲染字号显示，进入区块编辑时不跳动；切换实时预览/源码用 Compartment 重配，不重建编辑器，撤销与滚动保留。快捷键：Mod-B/I/E/K、Mod-Shift-X、Tab 缩进。
+- 新建笔记不再弹窗：直接建「未命名」（`Edit.unique` 由后端加序号），打开后聚焦标题栏改名。标题栏显示所在目录、可直接改名、同步状态（冲突时是打开对比的按钮），对比与移入回收站收进「更多」菜单。重新打开模块时恢复上次打开的笔记。
+- 搜索结果按修改时间倒序，带所在目录与命中片段（后端 `Entry.path`/`Entry.snippet`，只出现在返回值里，不落库）。
+- 创建与修改时间：`Entry.created` 本地新建时记录，同步来的笔记取服务端 FileNode 的 `created`，旧数据在下次同步时补齐；拉取远端版本时修改时间取服务端 `modified`（只用于显示，不参与同步判断）。正文 front matter 里的 `created`/`date` 优先显示，保留从 Obsidian 迁移前的原始时间。正文右侧「信息」卡片显示创建、修改与字数。
+- 日记：笔记顶栏「今日日记」打开当天日记，没有就建。目录与文件名用 Obsidian 日期写法（`YYYY MM DD dddd ddd HH mm`，`[...]` 原样），默认 `日记/YYYY/MM` + `YYYY-MM-DD-dddd`；模板是库内任一笔记的路径，支持 `{{date}}`、`{{time}}`、`{{title}}`、`{{date:格式}}`，留空用内置模板。已存在的日记原样打开，不会被模板覆盖。设置在 设置 → 笔记，随 `ai-settings.json` 跨设备同步。
+
 ## 1. 产品目标与范围
 
 在 CZL Mail 内增加独立「笔记」模块，以普通 Markdown 文件和相对路径附件为数据格式，以现有文件存储为远端载体。提供接近 Obsidian 基础使用方式的目录树、编辑、自动附件、离线保存、后台同步和全文搜索，不实现其知识图谱体系。

@@ -115,6 +115,14 @@ func (s *Service) syncVault(ctx context.Context, r Remote, v Vault) error {
 				}
 			}
 		}
+		// Entries synced before creation times were kept learn theirs from the server once.
+		if n, ok := remote[e.RemoteID]; ok && e.Created == 0 && n.Created > 0 {
+			e.Created = n.Created
+			if err = s.saveEntry(e); err != nil {
+				s.mu.Unlock()
+				return err
+			}
+		}
 		if s.effectivelyDeleted(e) && !e.Deleted {
 			continue
 		}
@@ -286,7 +294,14 @@ func (s *Service) pull(ctx context.Context, r Remote, v Vault, n Node, parent st
 	e.RemoteContent = ""
 	e.Status = "synced"
 	e.Deleted = deleted
+	if e.Created == 0 {
+		e.Created = n.Created
+	}
 	stamp(&e)
+	// The installed version was written elsewhere; show when it was written, not when it arrived.
+	if n.Modified > 0 {
+		e.Modified = n.Modified
+	}
 	return s.saveEntry(e)
 }
 

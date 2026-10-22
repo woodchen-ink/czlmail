@@ -16,7 +16,7 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
-// AI 设置与 MCP 设置跨设备同步, 做法与邮件模板一样: 存成个人网盘里的
+// AI 设置、MCP 设置与日记设置跨设备同步, 做法与邮件模板一样: 存成个人网盘里的
 // CZL Mail/ai-settings.json, 逐项"最后修改者胜", 时间取 app_settings.updated_at。
 //
 // API Key 也一并同步, 否则换台设备还得重新粘贴一遍; 本地仍只存系统钥匙串,
@@ -40,6 +40,7 @@ const (
 var aiSyncedSettings = []string{
 	"aiEnabled", "aiBaseUrl", "aiModel", "aiTranslateLang", "aiReasoningTranslate", "aiReasoningWrite",
 	store.SettingMCPEnabled, store.SettingMCPAllowSend, store.SettingMCPAllowModify,
+	settingJournalFolder, settingJournalName, settingJournalTemplate,
 }
 
 var aiMCPSettings = []string{store.SettingMCPEnabled, store.SettingMCPAllowSend, store.SettingMCPAllowModify}

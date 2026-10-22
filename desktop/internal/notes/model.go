@@ -56,6 +56,7 @@ type Entry struct {
 	Size           int64  `json:"size"`
 	Revision       int64  `json:"revision"`
 	Modified       int64  `json:"modified"`
+	Created        int64  `json:"created,omitempty"`
 	Status         string `json:"status"`
 	RemoteID       string `json:"remoteId"`
 	Base           *Node  `json:"base,omitempty"`
@@ -66,6 +67,9 @@ type Entry struct {
 	OriginalParent string `json:"originalParent,omitempty"`
 	Uncertain      bool   `json:"uncertain"`
 	Intent         *Node  `json:"intent,omitempty"`
+	// Path and Snippet are filled on returned copies only; they are never persisted.
+	Path    string `json:"path,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
 }
 
 // Node is remote metadata; content versions are immutable blob identifiers.
@@ -77,6 +81,9 @@ type Node struct {
 	BlobID    string `json:"blobId"`
 	Type      string `json:"type"`
 	Size      int64  `json:"size"`
+	// Server timestamps (Unix ms) are display metadata only; they never decide a sync.
+	Created  int64 `json:"created,omitempty"`
+	Modified int64 `json:"modified,omitempty"`
 }
 
 // Snapshot is a consistent account-level FileNode state.
@@ -111,6 +118,8 @@ type Edit struct {
 	Content          string `json:"content"`
 	ExpectedRevision int64  `json:"expectedRevision"`
 	IdempotencyKey   string `json:"idempotencyKey"`
+	// Unique lets Create append " 2", " 3"… instead of rejecting a taken name.
+	Unique bool `json:"unique,omitempty"`
 }
 
 // validName rejects platform-specific names before they become cross-device paths.
@@ -137,4 +146,11 @@ func validName(name string) bool {
 }
 
 // stamp timestamps local metadata; timestamps never arbitrate synchronization.
-func stamp(e *Entry) { e.Modified = time.Now().UnixMilli(); e.Revision++ }
+// A brand-new entry also takes its creation time here unless the server already supplied one.
+func stamp(e *Entry) {
+	e.Modified = time.Now().UnixMilli()
+	if e.Revision == 0 && e.Created == 0 {
+		e.Created = e.Modified
+	}
+	e.Revision++
+}

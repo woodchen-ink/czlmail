@@ -55,3 +55,38 @@ func TestListIncludesAttachments(t *testing.T) {
 		t.Fatalf("attachment search: %v, %d", err, len(matches))
 	}
 }
+
+// TestSearchSnippetAndUniqueName covers search context, folder paths and automatic naming.
+func TestSearchSnippetAndUniqueName(t *testing.T) {
+	s := testService(t, newRemote())
+	vault := vaultID(t, s)
+	folder, err := s.Create(Edit{VaultID: vault, Name: "工作"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.Create(Edit{VaultID: vault, ParentID: folder.ID, Name: "未命名", Unique: true, Content: "开头\n\n这里记录 HMRC 参考税号 1234"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.Create(Edit{VaultID: vault, ParentID: folder.ID, Name: "未命名", Unique: true}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Name != "未命名.md" || second.Name != "未命名 2.md" {
+		t.Fatalf("names: %q %q", first.Name, second.Name)
+	}
+	if _, err = s.Create(Edit{VaultID: vault, ParentID: folder.ID, Name: "未命名"}, false); err == nil {
+		t.Fatal("non-unique create must still reject a taken name")
+	}
+	matches, err := s.List(vault, "", "hmrc", false)
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("search: %v %d", err, len(matches))
+	}
+	if matches[0].Path != "工作" || matches[0].Snippet != "开头 这里记录 HMRC 参考税号 1234" {
+		t.Fatalf("path %q snippet %q", matches[0].Path, matches[0].Snippet)
+	}
+	read, err := s.Read(vault, first.ID)
+	if err != nil || read.Path != "工作" {
+		t.Fatalf("read path: %v %q", err, read.Path)
+	}
+}

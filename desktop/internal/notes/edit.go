@@ -99,12 +99,24 @@ func (s *Service) List(vault, parent, query string, trash bool) ([]Entry, error)
 		if query != "" && !strings.Contains(strings.ToLower(e.Name+"\n"+e.Content), query) {
 			continue
 		}
+		snippet := ""
+		if query != "" {
+			snippet = matchSnippet(e.Content, query)
+		}
 		e = clone(e)
 		e.Content = ""
 		e.RemoteContent = ""
+		e.Snippet = snippet
+		if query != "" || trash {
+			e.Path = s.folderPath(e)
+		}
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool {
+		// Search results read like mail search: the most recently edited match first.
+		if query != "" {
+			return out[i].Modified > out[j].Modified
+		}
 		if out[i].Directory != out[j].Directory {
 			return out[i].Directory
 		}
@@ -120,6 +132,7 @@ func (s *Service) Read(vault, id string) (Entry, error) {
 	e, err := s.entry(vault, id)
 	if err == nil {
 		e.Deleted = s.effectivelyDeleted(e)
+		e.Path = s.folderPath(e)
 	}
 	return e, err
 }
@@ -187,6 +200,9 @@ func (s *Service) Create(in Edit, directory bool) (Entry, error) {
 	}
 	if err := s.parent(in.VaultID, in.ParentID, ""); err != nil {
 		return Entry{}, err
+	}
+	if in.Unique {
+		name = s.freeName(in.VaultID, in.ParentID, name, directory)
 	}
 	if err := s.unique(in.VaultID, in.ParentID, name, ""); err != nil {
 		return Entry{}, err

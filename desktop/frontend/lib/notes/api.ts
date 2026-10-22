@@ -1,10 +1,11 @@
 import * as App from "@/wailsjs/go/main/App";
-import { notes } from "@/wailsjs/go/models";
+import { main, notes } from "@/wailsjs/go/models";
 
 export type NoteEntry = notes.Entry;
 export type NoteVault = notes.Vault;
 export type NoteConfig = notes.Config;
 export type NoteDiff = notes.Diff;
+export type JournalConfig = main.JournalConfig;
 
 /** Every caller uses generated Wails bindings; no second note transport or browser database. */
 export const noteApi = {
@@ -27,7 +28,16 @@ export const noteApi = {
   previewLink: App.PreviewNoteLink,
   importFolder: App.ImportNoteFolder,
   exportVault: App.ExportNoteVault,
+  openJournal: App.OpenJournal,
+  journalConfig: App.GetJournalConfig,
+  setJournalConfig: (value: JournalConfig) => App.SetJournalConfig(main.JournalConfig.createFrom(value)),
 };
+
+/** The local calendar day as YYYY-MM-DD; toISOString would give the UTC day. */
+export function localDay(date = new Date()) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
 export const noteEvents = { changed: "notes:changed", config: "notes:config-changed" };
 const flushers = new Set<() => Promise<void>>();

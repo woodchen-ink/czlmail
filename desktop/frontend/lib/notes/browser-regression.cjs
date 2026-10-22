@@ -71,7 +71,35 @@ async function main() {
     const result = await evaluate('({errors:window.errors,unchanged:window.getView().state.doc.toString()===window.fixtureText,table:!!document.querySelector("table")})');
     if (result.errors.length || !result.unchanged || !result.table) throw new Error(JSON.stringify(result));
     fs.writeFileSync(path.join(base, "preview.png"), Buffer.from((await call("Page.captureScreenshot", { format: "png" })).data, "base64"));
-    console.log(JSON.stringify({ status: "passed", checks: ["real editor GFM table", "long-document footnote jump", "back-reference jump", "source unchanged", "no browser exceptions"], artifacts: base }));
+    const click = async ({ x, y }) => {
+      for (const type of ["mousePressed", "mouseReleased"]) await call("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
+    };
+    // A long note without cross-block syntax: other blocks must be reused, not re-rendered, while typing.
+    await evaluate(`(()=>{window.plainText="# Plain heading\\n\\n- [ ] task one\\n\\n"+Array.from({length:300},(_,i)=>"Paragraph "+i+" with **bold** word.\\n\\n").join("");
+      const v=window.getView(); v.dispatch({changes:{from:0,to:v.state.doc.length,insert:window.plainText},selection:{anchor:window.plainText.length}}); v.scrollDOM.scrollTop=0;})()`);
+    await waitFor(() => evaluate('!!document.querySelector(".cm-content input[type=checkbox]") && document.querySelectorAll(".cm-content strong").length > 3'), "plain document rendered");
+    const typing = await evaluate(`(async()=>{const v=window.getView(); const marked=document.querySelectorAll(".cm-content strong")[3]; let at=v.state.doc.toString().indexOf("Paragraph 1 ");
+      v.dispatch({selection:{anchor:at}}); await new Promise(r=>setTimeout(r,50)); const start=performance.now();
+      for(let i=0;i<40;i++){v.dispatch(v.state.replaceSelection("x")); await new Promise(r=>setTimeout(r,0));}
+      return {ms:performance.now()-start, reused:marked.isConnected};})()`);
+    if (!typing.reused || typing.ms > 2000) throw new Error(`typing re-rendered other blocks: ${JSON.stringify(typing)}`);
+    // Measured heights replace estimates over a few frames; click only once the word stops moving.
+    const word = await evaluate(`(async()=>{const at=()=>{const p=[...document.querySelectorAll(".cm-content p")].find(e=>e.textContent.startsWith("Paragraph 3 ")); const s=p.querySelector("strong").firstChild; const r=document.createRange(); r.setStart(s,2); r.setEnd(s,3); const b=r.getBoundingClientRect(); return {x:b.left+1,y:b.top+b.height/2};};
+      let last=at(), still=0; for(let i=0;i<120&&still<5;i++){await new Promise(r=>requestAnimationFrame(r)); const next=at(); still=next.x===last.x&&next.y===last.y?still+1:0; last=next;} return last;})()`);
+    await click(word);
+    const caret = await evaluate(`(()=>{const v=window.getView(); const text=v.state.doc.toString(); const at=text.indexOf("**bold**",text.indexOf("Paragraph 3 ")); return {head:v.state.selection.main.head, at};})()`);
+    if (caret.head < caret.at + 3 || caret.head > caret.at + 5) throw new Error(`click caret ${JSON.stringify(caret)}`);
+    await evaluate('window.getView().dispatch({selection:{anchor:window.getView().state.doc.length}})');
+    await waitFor(() => evaluate('!!document.querySelector(".cm-content input[type=checkbox]")'), "task rendered");
+    const box = await evaluate('(()=>{const b=document.querySelector(".cm-content input[type=checkbox]").getBoundingClientRect(); return {x:b.left+b.width/2,y:b.top+b.height/2};})()');
+    await click(box);
+    await waitFor(() => evaluate('window.getView().state.doc.toString().includes("- [x] task one")'), "task toggled in source");
+    await evaluate('window.getView().dispatch({selection:{anchor:3}})');
+    const heading = await evaluate('(()=>{const line=document.querySelector(".cm-line"); const span=line.querySelector("span:last-child")||line; return parseFloat(getComputedStyle(span).fontSize);})()');
+    if (heading < 28) throw new Error(`source heading font ${heading}px does not match rendered h1`);
+    const errors = await evaluate("window.errors");
+    if (errors.length) throw new Error(JSON.stringify(errors));
+    console.log(JSON.stringify({ status: "passed", checks: ["real editor GFM table", "long-document footnote jump", "back-reference jump", "source unchanged", `40 keystrokes in ${Math.round(typing.ms)}ms without re-rendering other blocks`, "click places caret in source", "task box toggles source", "source heading matches rendered size", "no browser exceptions"], artifacts: base }));
   } finally {
     socket?.close(); child.kill(); await new Promise((resolve) => server.close(resolve));
   }
