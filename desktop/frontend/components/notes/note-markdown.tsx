@@ -10,9 +10,6 @@ import { parseNote, sliceNote } from "@/lib/notes/parse-note";
 import type { MarkdownRange } from "@/lib/notes/render-markdown";
 import { NoteImagePreview } from "@/components/notes/note-image-preview";
 
-/** Both reading and live blocks use this typography; no second set of Markdown styles. */
-export const noteMarkdownClassName = "text-base leading-8 whitespace-normal [&_h1]:my-6 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:my-5 [&_h2]:text-2xl [&_h2]:font-semibold [&_h3]:my-4 [&_h3]:text-xl [&_h3]:font-semibold [&_h4]:my-3 [&_h4]:font-semibold [&_h5]:my-3 [&_h5]:font-semibold [&_h6]:my-3 [&_h6]:font-semibold [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li.task-list-item]:list-none [&_li.task-list-item]:-ml-6 [&_li_input]:mr-2 [&_li_input]:align-middle [&_blockquote]:border-border [&_blockquote]:border-l-2 [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground [&_a]:text-primary [&_a]:underline [&_table]:w-full [&_table]:border-collapse [&_td]:border-border [&_td]:border [&_td]:px-3 [&_td]:py-1 [&_th]:border-border [&_th]:border [&_th]:px-3 [&_th]:py-1 [&_th]:bg-muted [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_code]:font-mono [&_code]:text-sm [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:rounded [&_:not(pre)>code]:px-1 [&_hr]:my-4 [&_hr]:border-border";
-
 /**
  * Shared, safe Markdown renderer. The document is parsed once per version (`parseNote`) and live
  * blocks render only their slice, so typing never re-parses the note once per visible block.

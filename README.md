@@ -46,6 +46,9 @@ anniversaries, categories) · groups · address books · vCard import
 
 **Files** — Stalwart file storage with list / grid views, favorites, cut / copy / paste, drag-and-drop upload
 
+**Notes** — plain Markdown files kept in your file storage, editable offline and synced across devices, with daily notes ·
+read them on your phone with the [web reader](web-phone-note/README.md) (hosted at https://mail-notes.czl.net, or deploy your own)
+
 **Server-side settings** — identities and HTML signatures, vacation auto-reply, Sieve filters
 (rule builder compatible with Bulwark's rules, plus a raw Sieve editor)
 

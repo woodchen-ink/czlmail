@@ -1,6 +1,7 @@
 "use client";
 
-import { NoteMarkdown, noteMarkdownClassName } from "@/components/notes/note-markdown";
+import { NoteMarkdown } from "@/components/notes/note-markdown";
+import { noteMarkdownClassName } from "@/lib/notes/markdown-style";
 
 /** Reading and live preview share the exact Markdown components and typography. */
 export function NotePreview({ vaultId, noteId, text, onLink, onTask }: {

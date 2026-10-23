@@ -1,0 +1,134 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+/* 正文排版类名与桌面端共用, 让 Tailwind 扫到那个文件。 */
+@source "../../desktop/frontend/lib/notes/markdown-style.ts";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    /* 只用设备本地字体, 不引网络字体。 */
+    --font-sans: -apple-system, "Noto Sans SC", system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", "Cascadia Code", Consolas, "Liberation Mono", Menlo, monospace;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* 配色与桌面端 desktop/frontend/app/globals.css 一致 (CZL 冷感中性色板), 改色两边一起改。 */
+:root {
+    --background: #F6F7F8;
+    --foreground: #10131A;
+    --card: #FCFCFD;
+    --card-foreground: #10131A;
+    --popover: #FCFCFD;
+    --popover-foreground: #10131A;
+    --primary: #1B2152;
+    --primary-foreground: #F6F7F8;
+    --secondary: #E9EEF5;
+    --secondary-foreground: #2A313A;
+    --muted: #D9E1EC;
+    --muted-foreground: #687280;
+    --accent: #4B669A;
+    --accent-foreground: #F6F7F8;
+    --destructive: #9D6877;
+    --border: #D5DCE5;
+    --input: #D5DCE5;
+    --ring: #4B669A;
+    --chart-1: #4B669A;
+    --chart-2: #687280;
+    --chart-3: #5E7E80;
+    --chart-4: #756B80;
+    --chart-5: #D9E6F5;
+    --radius: 0.5rem;
+    --sidebar: #E7ECF2;
+    --sidebar-foreground: #2A313A;
+    --sidebar-primary: #1B2152;
+    --sidebar-primary-foreground: #F6F7F8;
+    --sidebar-accent: #D9E1EC;
+    --sidebar-accent-foreground: #10131A;
+    --sidebar-border: #D5DCE5;
+    --sidebar-ring: #4B669A;
+}
+
+.dark {
+    --background: #10141C;
+    --foreground: #EEF3F8;
+    --card: #171C25;
+    --card-foreground: #EEF3F8;
+    --popover: #171C25;
+    --popover-foreground: #EEF3F8;
+    --primary: #2A367A;
+    --primary-foreground: #EEF3F8;
+    --secondary: #1D2430;
+    --secondary-foreground: #D5DCE5;
+    --muted: #253042;
+    --muted-foreground: #95A0AE;
+    --accent: #7B90BF;
+    --accent-foreground: #10141C;
+    --destructive: #C08998;
+    --border: #253042;
+    --input: #253042;
+    --ring: #7B90BF;
+    --chart-1: #7B90BF;
+    --chart-2: #95A0AE;
+    --chart-3: #7E9FA1;
+    --chart-4: #908095;
+    --chart-5: #2B3B57;
+    --sidebar: #171C25;
+    --sidebar-foreground: #D5DCE5;
+    --sidebar-primary: #2A367A;
+    --sidebar-primary-foreground: #EEF3F8;
+    --sidebar-accent: #253042;
+    --sidebar-accent-foreground: #EEF3F8;
+    --sidebar-border: #253042;
+    --sidebar-ring: #7B90BF;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}

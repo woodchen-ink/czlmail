@@ -41,6 +41,9 @@
 
 **网盘** —— Stalwart 文件存储，列表 / 网格视图、收藏、剪切 / 复制 / 粘贴、拖入窗口上传
 
+**笔记** —— 普通 Markdown 文件存在你的网盘里，可离线编辑、多设备同步，支持日记 ·
+手机上用[网页阅读器](web-phone-note/README.zh-CN.md)查看（公开实例 https://mail-notes.czl.net，也可自己部署）
+
 **服务端设置** —— 发件身份与 HTML 签名、假期自动回复、Sieve 过滤规则（规则编辑器与 Bulwark 互通，另有原始 Sieve 编辑器）
 
 **桌面集成** —— 托盘 / 菜单栏、开机自启、设为默认的 `mailto:` / `.ics` / `webcal:` 应用、基于 GitHub Releases 的自动更新（SHA-256 校验）

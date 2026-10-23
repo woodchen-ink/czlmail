@@ -1,0 +1,10 @@
+// 纯静态资源部署 (Workers static assets)。有这个文件 wrangler 才不会把目录当 Next.js 套 OpenNext 自动配置。
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "czl-notes",
+  "compatibility_date": "2026-10-19",
+  "assets": {
+    "directory": "out"
+  },
+  "routes": [{ "pattern": "mail-notes.czl.net", "custom_domain": true }]
+}
