@@ -6,8 +6,9 @@ A read-only web page for reading your CZL Mail notes on a phone. It is a static 
 to your JMAP server straight from the browser, and the notes it shows are the same Markdown files the desktop app
 syncs to `Notes/` in your file storage.
 
-A hosted copy runs at **https://mail-notes.czl.net**. It works with any server that meets the requirements below,
-because your credentials go only to the server you enter. Or deploy your own copy.
+A hosted copy runs at **https://mail-notes.czl.net**. It works with any server that meets the requirements below.
+The site serves only static files: the browser talks to the server you enter directly, and the site never receives
+or stores your password or notes. Or deploy your own copy.
 
 ## Features
 
