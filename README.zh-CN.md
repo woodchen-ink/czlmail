@@ -97,6 +97,9 @@ claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp 
 
 - Windows：`czlmail-amd64-installer.exe`（按用户安装，无需管理员权限）
 - macOS：`czlmail-darwin-universal.dmg`（Intel 与 Apple 芯片通用，macOS 10.15+）
+- 手机（只读看笔记）：打开 **https://mail-notes.czl.net**，填服务器、邮箱和应用专用密码登录；
+  添加到主屏幕后可以像 App 一样用。凭据只发给你自己的邮件服务器，页面没有后端。
+  需要服务器支持 JMAP 文件存储并允许跨域（[详情](web-phone-note/README.zh-CN.md#服务器要求)）。
 
 每个版本改了什么，见论坛的[更新日志](https://www.sunai.net/t/topic/1495)。
 
