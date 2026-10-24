@@ -31,6 +31,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { UnreadBadge } from "@/components/unread-badge";
 import { cn } from "@/lib/utils";
 import type { Mailbox } from "@/lib/api";
 
@@ -78,6 +79,11 @@ export function mailboxLabel(m: Pick<Mailbox, "kind" | "name">): string {
 }
 
 /** 文件夹类别对应的图标, 自建文件夹为普通文件夹图标。 */
+/** 账号收件箱的未读数, 供折叠起来的账号与分组显示。 */
+export function inboxUnread(mailboxes: Mailbox[] | undefined): number {
+  return mailboxes?.find((m) => m.kind === "inbox")?.unreadEmails ?? 0;
+}
+
 export function mailboxIcon(kind: string): typeof Inbox {
   return getKindMeta()[kind]?.icon ?? Folder;
 }
@@ -148,7 +154,10 @@ function MailboxRow({
       <span className="min-w-0 flex-1 truncate" title={node.name}>
         {label}
       </span>
-      {node.unreadEmails > 0 && (
+      {/* 收件箱用醒目的角标; 其它文件夹(垃圾邮件、归档等)的未读多是不必处理的, 保持灰字。 */}
+      {node.kind === "inbox" ? (
+        <UnreadBadge count={node.unreadEmails} />
+      ) : node.unreadEmails > 0 && (
         <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
           {node.unreadEmails}
         </span>

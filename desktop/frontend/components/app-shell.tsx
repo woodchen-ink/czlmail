@@ -16,6 +16,7 @@ import { Integration } from "@/components/integration";
 import { MailShell } from "@/components/mail-shell";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { UnreadBadge } from "@/components/unread-badge";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -44,6 +45,8 @@ const getNav: () => ({ id: Module; label: string; icon: typeof Mail; shortcut: s
 export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
   useI18n();
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  // 各账号收件箱未读总数(不含静音账号), 与托盘角标同源: 在别的模块里也要看得到有新信。
+  const [unread, setUnread] = useState(0);
   const [module, setModule] = useState<Module>("mail");
   const currentModule = useRef<Module>("mail");
   const notesGate = useRef(false);
@@ -76,6 +79,11 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
     }).catch((err) => toast.error(errorMessage(err)));
     return onEvent(noteEvents.config, apply);
   }, [go]);
+
+  useEffect(() => {
+    api.getUnreadTotal().then(setUnread).catch(() => {});
+    return onEvent(Events.unread, (n: number) => setUnread(n));
+  }, []);
 
   useEffect(() => {
     try {
@@ -150,7 +158,13 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="CZL Mail" className="mb-3 size-8" />
         {getNav().filter((item) => item.id !== "notes" || notesEnabled).map((item) => (
-          <RailButton key={item.id} item={item} active={module === item.id} onClick={() => go(item.id)} />
+          <RailButton
+            key={item.id}
+            item={item}
+            active={module === item.id}
+            onClick={() => go(item.id)}
+            count={item.id === "mail" ? unread : 0}
+          />
         ))}
         <div className="flex-1" />
         <RailButton item={{ label: t("AI 助手"), icon: Bot, shortcut: `${MOD}5` }} active={module === "assistant"} onClick={() => void go("assistant")} />
@@ -210,11 +224,14 @@ function RailButton({
   active,
   onClick,
   badge,
+  count = 0,
 }: {
   item: { label: string; icon: typeof Mail; shortcut: string };
   active: boolean;
   onClick: () => void;
   badge?: boolean;
+  /** 数字角标, 比 badge 的红点优先。 */
+  count?: number;
 }) {
   useI18n();
   const Icon = item.icon;
@@ -224,7 +241,7 @@ function RailButton({
         <button
           type="button"
           onClick={onClick}
-          aria-label={item.label}
+          aria-label={count > 0 ? t("{0}（{1} 封未读）", item.label, count) : item.label}
           aria-current={active ? "page" : undefined}
           className={cn(
             "text-muted-foreground relative flex size-10 items-center justify-center rounded-md transition-colors",
@@ -237,7 +254,9 @@ function RailButton({
             <span className="from-brand-from to-brand-to absolute top-2 bottom-2 -left-2 w-0.5 rounded-full bg-linear-to-b" />
           )}
           <Icon className="size-5" />
-          {badge && <span className="bg-destructive ring-sidebar absolute top-1.5 right-1.5 size-2 rounded-full ring-2" />}
+          {count > 0 ? (
+            <UnreadBadge count={count} className="ring-sidebar absolute top-0.5 right-0.5 ring-2" />
+          ) : badge && <span className="bg-destructive ring-sidebar absolute top-1.5 right-1.5 size-2 rounded-full ring-2" />}
         </button>
       </TooltipTrigger>
       <TooltipContent side="right">

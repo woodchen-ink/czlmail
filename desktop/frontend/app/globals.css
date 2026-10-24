@@ -6,6 +6,8 @@
 
 @theme inline {
   --color-paper: var(--paper);
+  --color-unread: var(--unread);
+  --color-unread-foreground: var(--unread-foreground);
   --color-folder-inbox: var(--folder-inbox);
   --color-folder-drafts: var(--folder-drafts);
   --color-folder-scheduled: var(--folder-scheduled);
@@ -90,6 +92,9 @@
   --brand-to: #2EA7E0;
   /* 亮色邮件正文的纸面色。两个主题下都是白色: 多数邮件按白底设计。 */
   --paper: #FFFFFF;
+  /* 未读角标。整体低饱和, 只有这里用醒目的红: 它的作用就是在别的模块里也能一眼看到。 */
+  --unread: #D2453B;
+  --unread-foreground: #FFFFFF;
   /* 文件夹类别色。只用于侧栏的小图标，面积小，不违背整体低饱和的基调。 */
   --folder-inbox: #3F6FB5;
   --folder-drafts: #7B67B5;
@@ -143,6 +148,8 @@
   --brand-from: #1D2088;
   --brand-to: #2EA7E0;
   --paper: #FFFFFF;
+  --unread: #D9534A;
+  --unread-foreground: #FFFFFF;
   --folder-inbox: #7FA3DA;
   --folder-drafts: #A898D6;
   --folder-scheduled: #74B3D0;

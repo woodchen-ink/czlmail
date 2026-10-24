@@ -9,7 +9,8 @@ import { ChevronDown, Plus, UserRound } from "lucide-react";
 
 import { FolderDialog, type FolderAction } from "@/components/folder-dialog";
 
-import { MailboxTree, type FolderMenuAction } from "@/components/mailbox-tree";
+import { MailboxTree, inboxUnread, type FolderMenuAction } from "@/components/mailbox-tree";
+import { UnreadBadge } from "@/components/unread-badge";
 import { cn } from "@/lib/utils";
 import { Events, api, errorMessage, onEvent, type Account, type Mailbox, type PullStatus } from "@/lib/api";
 
@@ -107,6 +108,7 @@ export function MailSidebar({
 
   const personal = accounts.filter((a) => a.isPersonal);
   const shared = accounts.filter((a) => !a.isPersonal);
+  const sumInbox = (list: Account[]) => list.reduce((n, a) => n + inboxUnread(mailboxesByAccount[a.id]), 0);
 
   return (
     <div className="flex flex-col gap-3">
@@ -115,6 +117,7 @@ export function MailSidebar({
           title={t("文件夹")}
           open={!collapsed.personal}
           onToggle={() => toggle("personal")}
+          unread={sumInbox(personal)}
           onAdd={() => setFolderAction({ kind: "create", accountId: personal[0].id })}
         >
           {personal.map((acc) => (
@@ -130,7 +133,7 @@ export function MailSidebar({
       )}
 
       {shared.length > 0 && (
-        <Section title={t("共享")} open={!collapsed.shared} onToggle={() => toggle("shared")}>
+        <Section title={t("共享")} open={!collapsed.shared} onToggle={() => toggle("shared")} unread={sumInbox(shared)}>
           {shared.map((acc) => {
             const key = `acc:${acc.id}`;
             const open = !collapsed[key];
@@ -146,7 +149,9 @@ export function MailSidebar({
                     className={cn("size-3 shrink-0 transition-transform", !open && "-rotate-90")}
                   />
                   <UserRound className="size-3.5 shrink-0" />
-                  <span className="truncate">{acc.name}</span>
+                  <span className="min-w-0 flex-1 truncate">{acc.name}</span>
+                  {/* 展开时收件箱行自己有角标, 折叠时才在账号名上显示, 否则看不出是哪个共享邮箱来了信。 */}
+                  {!open && <UnreadBadge count={inboxUnread(mailboxesByAccount[acc.id])} />}
                 </button>
                 {open && (
                   <MailboxTree
@@ -178,12 +183,15 @@ function Section({
   open,
   onToggle,
   onAdd,
+  unread = 0,
   children,
 }: {
   title: string;
   open: boolean;
   onToggle: () => void;
   onAdd?: () => void;
+  /** 折叠时显示的收件箱未读数。 */
+  unread?: number;
   children: React.ReactNode;
 }) {
   useI18n();
@@ -197,7 +205,8 @@ function Section({
           className="hover:bg-secondary flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-2 py-1 text-left text-sm font-semibold"
         >
           <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", !open && "-rotate-90")} />
-          {title}
+          <span className="min-w-0 flex-1 truncate">{title}</span>
+          {!open && <UnreadBadge count={unread} />}
         </button>
         {onAdd && (
           <button

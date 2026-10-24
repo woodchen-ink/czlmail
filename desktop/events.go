@@ -25,6 +25,8 @@ const (
 	EventOpenEmail = "mail:open"
 	// EventNewMail 到达新邮件, 负载为摘要列表。
 	EventNewMail = "mail:new"
+	// EventUnread 各账号收件箱未读总数变了(不含静音账号), 负载为总数。
+	EventUnread = "mail:unread"
 	// EventPIMChanged 日历/通讯录/文件有变动, 负载为 PIMChange。
 	EventPIMChanged = "pim:changed"
 )

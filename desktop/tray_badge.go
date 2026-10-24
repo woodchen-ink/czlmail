@@ -168,7 +168,15 @@ var trayUnread struct {
 	last  int
 }
 
-// refreshTrayUnreadSoon 合并短时间内的多次变化(同步一轮会触发多个账号的变更)后更新托盘。
+// GetUnreadTotal 返回托盘角标上的未读数, 界面左侧导航的邮件图标用同一个数。
+// 之后的变化经 EventUnread 推送。
+func (a *App) GetUnreadTotal() int {
+	trayUnread.Lock()
+	defer trayUnread.Unlock()
+	return trayUnread.last
+}
+
+// refreshTrayUnreadSoon 合并短时间内的多次变化(同步一轮会触发多个账号的变更)后更新托盘与界面角标。
 func (a *App) refreshTrayUnreadSoon() {
 	trayUnread.Lock()
 	defer trayUnread.Unlock()
@@ -183,6 +191,7 @@ func (a *App) refreshTrayUnreadSoon() {
 		trayUnread.Unlock()
 		if changed {
 			a.setTrayUnread(n)
+			a.emit(EventUnread, n)
 		}
 	})
 }
