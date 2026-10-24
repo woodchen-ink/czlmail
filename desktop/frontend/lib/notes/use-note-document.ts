@@ -14,6 +14,7 @@ export function useNoteDocument() {
   const current = useRef<NoteEntry | null>(null);
   const draft = useRef("");
   const changed = useRef(false);
+  const edits = useRef(0);
   const queue = useRef<Promise<void>>(Promise.resolve());
 
   /** Flush reads the latest draft at execution time, not when a stale timer was scheduled. */
@@ -46,14 +47,21 @@ export function useNoteDocument() {
 
   /** Network refresh never swaps over a locally dirty or in-flight editor buffer. */
   const refresh = useCallback(async () => {
-    const previous = current.current;
-    if (!previous || changed.current) return;
+    if (!current.current || changed.current) return;
     await queue.current.catch(() => {});
-    const value = await noteApi.read(previous.vaultId, previous.id);
-    if (current.current?.id !== value.id || changed.current) return;
+    const target = current.current;
+    // Any keystroke during the read makes the result stale, even if a save has since cleared the dirty flag.
+    const seen = edits.current;
+    if (!target || changed.current) return;
+    const value = await noteApi.read(target.vaultId, target.id);
+    if (current.current?.id !== value.id || changed.current || edits.current !== seen) return;
+    const previous = current.current;
     if (value.revision !== previous.revision || value.status !== previous.status) {
       current.current = value; setNote(value);
-      draft.current = value.content ?? ""; setText(draft.current);
+      // Status-only changes (pending -> synced) leave the editor text alone.
+      if (value.revision !== previous.revision && (value.content ?? "") !== draft.current) {
+        draft.current = value.content ?? ""; setText(draft.current);
+      }
     }
   }, []);
 
@@ -67,7 +75,7 @@ export function useNoteDocument() {
 
   /** Input never changes revision; only a confirmed backend save advances the revision token. */
   const edit = useCallback((value: string) => {
-    draft.current = value; changed.current = value !== (current.current?.content ?? "");
+    edits.current++; draft.current = value; changed.current = value !== (current.current?.content ?? "");
     setText(value); setDirty(changed.current);
   }, []);
 

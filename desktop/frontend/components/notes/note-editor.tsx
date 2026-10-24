@@ -19,6 +19,12 @@ const theme = EditorView.theme({
   ".cm-content:focus, .cm-content:focus-visible, .cm-scroller:focus-visible": { outline: "none", boxShadow: "none" },
   ".cm-cursor": { borderLeftColor: "var(--foreground)" },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "var(--accent)" },
+ ".cm-note-code": { backgroundColor: "var(--muted)", fontFamily: "var(--font-mono, ui-monospace, monospace)", fontSize: "0.875rem", paddingLeft: "12px", paddingRight: "12px" },
+  ".cm-note-inline-code": { backgroundColor: "var(--muted)", borderRadius: "4px", padding: "1px 4px", fontFamily: "var(--font-mono, ui-monospace, monospace)", fontSize: "0.875rem" },
+  ".cm-note-quote": { borderLeft: "3px solid var(--border)", paddingLeft: "12px", color: "var(--muted-foreground)" },
+  ".cm-note-done": { color: "var(--muted-foreground)", textDecoration: "line-through" },
+  ".cm-note-code-first": { borderTopLeftRadius: "8px", borderTopRightRadius: "8px" },
+  ".cm-note-code-last": { borderBottomLeftRadius: "8px", borderBottomRightRadius: "8px" },
   ".cm-panels": { backgroundColor: "var(--card)", color: "var(--foreground)" },
 });
 

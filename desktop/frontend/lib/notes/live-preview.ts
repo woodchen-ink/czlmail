@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { EditorState, StateField, type Range } from "@codemirror/state";
+import { EditorState, StateEffect, StateField, type Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { frontmatter } from "@/lib/notes/markdown";
@@ -74,6 +74,37 @@ class MarkdownWidget extends WidgetType {
   }
 }
 
+/** Bullet and horizontal-rule stand-ins for list markers and `---` lines in the block being edited. */
+class SymbolWidget extends WidgetType {
+  constructor(readonly kind: "bullet" | "rule") { super(); }
+  eq(other: SymbolWidget) { return this.kind === other.kind; }
+  toDOM() {
+    const el = document.createElement(this.kind === "rule" ? "div" : "span");
+    if (this.kind === "bullet") { el.textContent = "•"; el.className = "text-muted-foreground"; }
+    else el.className = "border-border my-3 border-t";
+    return el;
+  }
+}
+
+/** A task box that flips its `[ ]` / `[x]` source on click without moving the caret. */
+class TaskBoxWidget extends WidgetType {
+  constructor(readonly checked: boolean) { super(); }
+  eq(other: TaskBoxWidget) { return this.checked === other.checked; }
+  toDOM(view: EditorView) {
+    const box = document.createElement("input");
+    box.type = "checkbox"; box.checked = this.checked; box.disabled = view.state.readOnly; box.className = "mr-1 align-middle";
+    box.onmousedown = (event) => event.preventDefault();
+    box.onclick = (event) => {
+      event.preventDefault();
+      const line = view.state.doc.lineAt(view.posAtDOM(box));
+      const change = toggleTask(view.state.doc.toString(), line.from);
+      if (change) view.dispatch({ changes: change });
+    };
+    return box;
+  }
+  ignoreEvent() { return true; }
+}
+
 function edit(view: EditorView, anchor: number) {
   view.dispatch({ selection: { anchor } }); view.focus();
 }
@@ -105,6 +136,20 @@ function digest(text: string) {
   return `${text.length}.${(a >>> 0).toString(36)}.${(b >>> 0).toString(36)}`;
 }
 
+const hidden: Record<string, string[]> = {
+  InlineCode: ["CodeMark"], Emphasis: ["EmphasisMark"], StrongEmphasis: ["EmphasisMark"], Strikethrough: ["StrikethroughMark"],
+  Link: ["LinkMark", "URL", "LinkTitle"],
+  ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [`ATXHeading${n}`, ["HeaderMark"]])),
+};
+
+export const setFocus = StateEffect.define<boolean>();
+/** Tracks editor focus in state so the decorations rebuild when it is lost or gained. */
+const focused = StateField.define<boolean>({
+  create: () => false,
+  update: (value, transaction) => transaction.effects.reduce((acc, effect) => effect.is(setFocus) ? effect.value : acc, value),
+  provide: () => EditorView.focusChangeEffect.of((_state, focusing) => setFocus.of(focusing)),
+});
+
 /** Top-level blocks render like reading mode; only the block under the caret exposes source. */
 export function livePreview(vaultId: string, noteId: string) {
   /** Replacing whole blocks preserves tables, list nesting, quotes and fenced code as one unit. */
@@ -115,24 +160,77 @@ export function livePreview(vaultId: string, noteId: string) {
     const shared = crossBlockSyntax.test(text) ? digest(text) : "";
     const tree = ensureSyntaxTree(state, state.doc.length, 100) ?? syntaxTree(state);
     /** Keep every selection's active block in source, without ever mutating the document. */
-    const block = (from: number, to: number) => {
-      const active = state.selection.ranges.some((range) => range.empty ? range.from >= from && (range.from < to || to === state.doc.length && range.from === to) : range.from < to && range.to > from);
-      if (active || to <= from) return;
+    const block = (from: number, to: number): boolean => {
+      // An editor without focus renders every block: the caret no longer says where the user is writing.
+      const active = state.field(focused) && state.selection.ranges.some((range) => range.empty ? range.from >= from && (range.from < to || to === state.doc.length && range.from === to) : range.from < to && range.to > from);
+      if (active || to <= from) return false;
       const key = shared ? `${from}:${to}:${shared}` : text.slice(from, to);
       ranges.push(Decoration.replace({ widget: new MarkdownWidget(text, from, to, key, vaultId, noteId), block: true }).range(from, to));
+      return true;
+    };
+    /** A fence being edited stays source but looks like a code box, including while it is still unclosed. */
+    const codeBox = (from: number, to: number) => {
+      const first = state.doc.lineAt(from).number, last = state.doc.lineAt(Math.max(from, to - 1)).number;
+      for (let n = first; n <= last; n++) {
+        const edge = (n === first ? " cm-note-code-first" : "") + (n === last ? " cm-note-code-last" : "");
+        ranges.push(Decoration.line({ class: `cm-note-code${edge}` }).range(state.doc.line(n).from));
+      }
+    };
+    /** Inline code, emphasis and strikethrough in the block being edited: markers hide until the caret touches the span. */
+    const inline = (from: number, to: number) => {
+      const touches = (a: number, b: number) => state.selection.ranges.some((range) => range.from <= b && range.to >= a);
+      /** Hide a marker and the single space that follows it ("# ", "> "). */
+      const hide = (a: number, b: number, space = false) => {
+        if (space && state.sliceDoc(b, b + 1) === " ") b++;
+        if (b > a) ranges.push(Decoration.replace({}).range(a, b));
+      };
+      tree.iterate({ from, to, enter(node) {
+        if (node.name === "InlineCode") ranges.push(Decoration.mark({ class: "cm-note-inline-code" }).range(node.from, node.to));
+        if (node.name === "Blockquote") {
+          for (let n = state.doc.lineAt(node.from).number, last = state.doc.lineAt(node.to).number; n <= last; n++) ranges.push(Decoration.line({ class: "cm-note-quote" }).range(state.doc.line(n).from));
+          return;
+        }
+        if (node.name === "QuoteMark") {
+          const line = state.doc.lineAt(node.from);
+          if (!touches(line.from, line.to)) hide(node.from, node.to, true);
+          return;
+        }
+        const line = () => state.doc.lineAt(node.from);
+        if (node.name === "ListMark" && node.node.parent?.parent?.name === "BulletList" && !touches(line().from, line().to)) {
+          ranges.push(Decoration.replace({ widget: new SymbolWidget("bullet") }).range(node.from, node.to));
+          return;
+        }
+        if (node.name === "TaskMarker" && !touches(line().from, line().to)) {
+          const checked = /x/i.test(state.sliceDoc(node.from, node.to));
+          ranges.push(Decoration.replace({ widget: new TaskBoxWidget(checked) }).range(node.from, node.to));
+          if (checked) ranges.push(Decoration.line({ class: "cm-note-done" }).range(line().from));
+          return;
+        }
+        if (node.name === "HorizontalRule" && !touches(node.from, node.to)) {
+          ranges.push(Decoration.replace({ widget: new SymbolWidget("rule") }).range(node.from, node.to));
+          return;
+        }
+        const names = hidden[node.name];
+        if (!names || touches(node.from, node.to)) return;
+        const cursor = node.node.cursor();
+        if (!cursor.firstChild()) return;
+        do { if (names.includes(cursor.name)) hide(cursor.from, cursor.to, cursor.name === "HeaderMark"); } while (cursor.nextSibling());
+      } });
     };
     if (metadata) block(0, metadata.to);
     for (let node = tree.topNode.firstChild; node; node = node.nextSibling) {
       if (metadata && node.from < metadata.to) continue;
-      block(node.from, node.nextSibling?.from ?? state.doc.length);
+      if (block(node.from, node.nextSibling?.from ?? state.doc.length)) continue;
+      if (node.name === "FencedCode") codeBox(node.from, node.to);
+      else inline(node.from, node.to);
     }
     if (/\[\^[^\]]+\]/.test(text)) ranges.push(Decoration.widget({ widget: new MarkdownWidget(text, text.length, text.length, `footnotes:${shared || digest(text)}`, vaultId, noteId), block: true, side: 1 }).range(text.length));
     return Decoration.set(ranges, true);
   };
   return StateField.define<DecorationSet>({
     create: build,
-    update: (value, transaction) => transaction.docChanged || transaction.selection || syntaxTree(transaction.startState) !== syntaxTree(transaction.state) ? build(transaction.state) : value,
+    update: (value, transaction) => transaction.docChanged || transaction.selection || transaction.effects.some((effect) => effect.is(setFocus)) || syntaxTree(transaction.startState) !== syntaxTree(transaction.state) ? build(transaction.state) : value,
     // Rendered prose must never be atomic: Backspace/Delete must edit characters, not whole blocks.
-    provide: (field) => EditorView.decorations.from(field),
+    provide: (field) => [focused, EditorView.decorations.from(field)],
   });
 }

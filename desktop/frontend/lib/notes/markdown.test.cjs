@@ -69,7 +69,8 @@ test("code blocks preserve Markdown-looking content and expose an editable origi
   const { EditorState } = require("@codemirror/state");
   const { markdown } = require("@codemirror/lang-markdown");
   const text = "Intro\n\n```md\n![[asset.png]]\n# literal heading\n```\n\n~~~go\nfmt.Println(1)\n~~~\n";
-  const field = load("live-preview").livePreview("v", "n");
+  const preview = load("live-preview");
+  const field = preview.livePreview("v", "n");
   const state = EditorState.create({ doc: text, extensions: [markdown(), field] });
   const blocks = load("code-blocks").noteCodeBlocks(state);
   assert.equal(blocks.length, 2);
@@ -80,13 +81,19 @@ test("code blocks preserve Markdown-looking content and expose an editable origi
     if (decoration.spec.widget?.constructor.name === "MarkdownWidget" && /^(?:```|~~~)/.test(text.slice(decoration.spec.widget.from, decoration.spec.widget.to))) widgets++;
   });
   assert.equal(widgets, 2);
-  const edited = state.update({ selection: { anchor: blocks[0].from + 6 } }).state;
+  const edited = state.update({ selection: { anchor: blocks[0].from + 6 }, effects: preview.setFocus.of(true) }).state;
   let remaining = 0;
   edited.field(field).between(0, text.length, (_a, _b, decoration) => {
     if (decoration.spec.widget?.constructor.name === "MarkdownWidget" && /^(?:```|~~~)/.test(text.slice(decoration.spec.widget.from, decoration.spec.widget.to))) remaining++;
   });
   assert.equal(remaining, 1);
   assert.equal(edited.doc.toString(), text);
+  // Losing focus renders every block again, even the one holding the caret.
+  let blurred = 0;
+  edited.update({ effects: preview.setFocus.of(false) }).state.field(field).between(0, text.length, (_a, _b, decoration) => {
+    if (decoration.spec.widget?.constructor.name === "MarkdownWidget" && /^(?:```|~~~)/.test(text.slice(decoration.spec.widget.from, decoration.spec.widget.to))) blurred++;
+  });
+  assert.equal(blurred, 2);
 });
 
 test("Backspace and Delete at rendered block boundaries never remove neighboring prose", () => {
@@ -127,4 +134,24 @@ test("reading wiki compatibility never rewrites code", () => {
   assert.ok(result.includes("```md\n![[literal.png]]\n```"));
   assert.ok(result.includes("![actual.png](actual.png)"));
   assert.ok(result.includes("[file.pdf#page=2](file.pdf#page=2)"));
+});
+
+test("the block being edited renders list bullets, task boxes, headings and inline code from their symbols", () => {
+  const { EditorState } = require("@codemirror/state");
+  const { markdown, markdownLanguage } = require("@codemirror/lang-markdown");
+  const preview = load("live-preview");
+  const field = preview.livePreview("v", "n");
+  const text = "# Title\n\n- [x] done\n- item with `code`\n\n> quote\n\n---\n";
+  // The caret sits on a later, separate block so none of these lines is touched by it.
+  const base = EditorState.create({ doc: text + "tail", extensions: [markdown({ base: markdownLanguage }), field] });
+  const state = base.update({ selection: { anchor: base.doc.length }, effects: preview.setFocus.of(true) }).state;
+  const classes = [], widgets = [];
+  state.field(field).between(0, state.doc.length, (_a, _b, d) => { if (d.spec.class) classes.push(d.spec.class); if (d.spec.widget) widgets.push(d.spec.widget.constructor.name); });
+  // Focused with the caret in "tail": every earlier block stays a rendered widget, nothing is hidden by hand.
+  assert.ok(widgets.filter((w) => w === "MarkdownWidget").length >= 4);
+  // Caret inside the list block: it is source, bullets/boxes/code are decorated.
+  const inList = state.update({ selection: { anchor: text.indexOf("item") } }).state;
+  const kinds = [];
+  inList.field(field).between(0, inList.doc.length, (_a, _b, d) => { if (d.spec.class) kinds.push(d.spec.class); if (d.spec.widget) kinds.push(d.spec.widget.constructor.name); });
+  assert.ok(kinds.includes("TaskBoxWidget")); assert.ok(kinds.includes("cm-note-inline-code"));
 });
