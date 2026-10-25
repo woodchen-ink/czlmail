@@ -54,9 +54,19 @@ export function rehypeNoteAnchors() {
 
 /** Top-level HAST children overlapping a rendered range; the footnote section renders once, on its own. */
 export function rangeChildren<T extends MarkdownNode>(children: T[], range: MarkdownRange): T[] {
-  return children.filter((node) => {
+  return children.flatMap((node) => {
     const footnotes = node.tagName === "section" && node.properties?.dataFootnotes !== undefined;
-    if (range.footnotesOnly) return footnotes;
-    return !footnotes && (node.position?.start.offset ?? -1) < range.to && (node.position?.end.offset ?? -1) > range.from;
+    if (range.footnotesOnly) return footnotes ? [node] : [];
+    if (footnotes || (node.position?.start.offset ?? -1) >= range.to || (node.position?.end.offset ?? -1) <= range.from) return [];
+    // Keep semantic ancestors but prune sibling items/paragraphs outside a partial container.
+    if ((node.position?.start.offset ?? 0) >= range.from && (node.position?.end.offset ?? 0) <= range.to) return [node];
+    if (["ul", "ol", "li", "blockquote"].includes(node.tagName ?? "") && node.children) {
+      const positioned = node.children.filter((child) => child.position);
+      const kept = rangeChildren(positioned, range);
+      const properties = { ...node.properties };
+      if (node.tagName === "ol" && kept.length) properties.start = Number(properties.start ?? 1) + positioned.findIndex((child) => child.position === kept[0].position);
+      return [{ ...node, properties, children: kept }];
+    }
+    return [node];
   });
 }

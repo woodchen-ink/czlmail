@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { EditorView } from "@codemirror/view";
 import { ListTree, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,19 @@ import { noteHeadings } from "@/lib/notes/headings";
 import { noteInfo } from "@/lib/notes/note-info";
 import type { NoteEntry } from "@/lib/notes/api";
 
+const toolsKey = "czlmail.notes.toolsOpen";
+let sessionOpen: boolean | undefined;
+/** Hydration-safe preference, with an in-memory fallback when browser storage is unavailable. */
+function getToolsOpen() {
+  if (sessionOpen !== undefined) return sessionOpen;
+  try { return localStorage.getItem(toolsKey) !== "false"; } catch { return true; }
+}
+/** Notify every mounted tool panel without coupling it to a document or editor instance. */
+function subscribeTools(listener: () => void) {
+  window.addEventListener(toolsKey, listener);
+  return () => window.removeEventListener(toolsKey, listener);
+}
+
 /** Floating document tools share one local scroll scope in source, live and reading modes. */
 export function NoteDocumentTools({ text, note, children }: { text: string; note: NoteEntry | null; children: ReactNode }) {
   useI18n();
@@ -19,8 +32,31 @@ export function NoteDocumentTools({ text, note, children }: { text: string; note
   const deferred = useDeferredValue(text);
   const headings = useMemo(() => noteHeadings(deferred), [deferred]);
   const info = useMemo(() => note ? noteInfo(deferred, note.created, note.modified) : null, [deferred, note]);
-  const [open, setOpen] = useState(false);
+  const preferredOpen = useSyncExternalStore(subscribeTools, getToolsOpen, () => true);
+  const [wide, setWide] = useState(false);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const open = wide ? preferredOpen : overlayOpen;
   const [active, setActive] = useState(-1);
+  useEffect(() => {
+    const host = root.current;
+    if (!host) return;
+    let last: boolean | undefined;
+    // Only crossing the breakpoint closes the temporary overlay; ordinary resizes leave it alone.
+    const observer = new ResizeObserver(([entry]) => {
+      const next = entry.contentRect.width >= 960;
+      if (next === last) return;
+      last = next; setWide(next); setOverlayOpen(false);
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+  /** Wide panes remember the user's choice; narrow panes open a temporary overlay without squeezing prose. */
+  function toggleTools() {
+    if (!wide) { setOverlayOpen((value) => !value); return; }
+    sessionOpen = !preferredOpen;
+    try { localStorage.setItem(toolsKey, String(sessionOpen)); } catch { /* Keep the session preference. */ }
+    window.dispatchEvent(new Event(toolsKey));
+  }
   useEffect(() => {
     const host = root.current;
     if (!host) return;
@@ -57,10 +93,10 @@ export function NoteDocumentTools({ text, note, children }: { text: string; note
   }
 
   return <div ref={root} className="relative h-full min-h-0">
-    <div className="h-full min-h-0 xl:[&_.cm-content]:!mr-64 xl:[&_.cm-content]:!max-w-[calc(100%-16rem)] xl:[&_article]:mr-64 xl:[&_article]:max-w-[calc(100%-16rem)]">{children}</div>
+    <div className={cn("h-full min-h-0", wide && open && "[&_.cm-content]:!mr-64 [&_.cm-content]:!max-w-[min(896px,calc(100%-16rem))] [&_article]:mr-64 [&_article]:max-w-[min(896px,calc(100%-16rem))]")}>{children}</div>
     <aside aria-label={t("正文工具栏")} className="pointer-events-none absolute top-3 right-3 bottom-4 flex max-w-52 flex-col items-end gap-2">
-      <Button variant="outline" size="icon-sm" className="pointer-events-auto xl:hidden" aria-label={t("文档目录")} aria-expanded={open} onClick={() => setOpen((value) => !value)}>{open ? <X /> : <ListTree />}</Button>
-      <nav aria-label={t("文档目录")} className={cn("pointer-events-auto max-h-full w-52 overflow-y-auto xl:block", !open && "hidden")}>
+      <Button variant="outline" size="icon-sm" className="pointer-events-auto" title={t("正文工具栏")} aria-label={t("正文工具栏")} aria-expanded={open} onClick={toggleTools}>{open ? <X /> : <ListTree />}</Button>
+      <nav aria-label={t("文档目录")} className={cn("pointer-events-auto min-h-0 w-52 overflow-y-auto", !open && "hidden")}>
         <details open className="bg-card border-border rounded-lg border p-2 shadow-sm">
         <summary className="text-muted-foreground cursor-pointer px-2 py-1 text-sm font-medium">{t("文档目录")}</summary>
         {!headings.length && <p className="text-muted-foreground px-2 py-3 text-sm">{t("暂无标题")}</p>}

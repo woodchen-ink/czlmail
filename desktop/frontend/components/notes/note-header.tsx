@@ -13,8 +13,8 @@ import { t } from "@/lib/i18n";
 export type NoteMode = "live" | "source" | "read";
 
 /** Note title row: folder path, editable file name, sync state and the per-note actions. */
-export function NoteHeader({ note, dirty, mode, busy, focusTitle, onMode, onRename, onAttach, onDiff, onTrash }: {
-  note: NoteEntry; dirty: boolean; mode: NoteMode; busy: boolean;
+export function NoteHeader({ note, dirty, failed, mode, busy, focusTitle, onMode, onRename, onAttach, onDiff, onTrash }: {
+  note: NoteEntry; dirty: boolean; failed: boolean; mode: NoteMode; busy: boolean;
   /** Focus and select the title once, right after the note was created. */
   focusTitle: boolean;
   onMode: (mode: NoteMode) => void; onRename: (name: string) => void;
@@ -45,7 +45,7 @@ export function NoteHeader({ note, dirty, mode, busy, focusTitle, onMode, onRena
         }}
         className="hover:bg-secondary focus-visible:bg-secondary min-w-0 flex-1 truncate rounded-md bg-transparent px-1.5 py-1 font-medium outline-none disabled:hover:bg-transparent" />
     </div>
-    <NoteSyncState note={note} dirty={dirty} onDiff={onDiff} />
+    <NoteSyncState note={note} dirty={dirty} failed={failed} onDiff={onDiff} />
     <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Button variant="ghost" size="icon-sm" aria-label={t("添加附件")} disabled={busy || mode === "read" || note.deleted} onClick={onAttach}><Paperclip /></Button></span></TooltipTrigger><TooltipContent>{t("添加附件")}</TooltipContent></Tooltip>
     <ToggleGroup type="single" size="sm" value={mode} onValueChange={(value) => { if (value) onMode(value as NoteMode); }}>
       <ToggleGroupItem value="live" aria-label={t("实时预览")}>{t("实时预览")}</ToggleGroupItem>
@@ -64,11 +64,14 @@ export function NoteHeader({ note, dirty, mode, busy, focusTitle, onMode, onRena
 }
 
 /** One short word for the sync state; a conflict becomes the button that opens the comparison. */
-function NoteSyncState({ note, dirty, onDiff }: { note: NoteEntry; dirty: boolean; onDiff: () => void }) {
+function NoteSyncState({ note, dirty, failed, onDiff }: { note: NoteEntry; dirty: boolean; failed: boolean; onDiff: () => void }) {
   if (note.status === "conflict") return <Button variant="ghost" size="sm" className="text-destructive" onClick={onDiff}><AlertTriangle />{t("存在版本冲突")}</Button>;
   if (note.status === "remote_deleted") return <span className="text-muted-foreground text-xs">{t("远端文件已删除，本地副本仍保留")}</span>;
+  if (failed) return <span className="text-destructive inline-flex shrink-0 items-center gap-1 text-xs"><AlertTriangle className="size-3.5" />{t("保存失败")}</span>;
   const synced = note.status === "synced" && !dirty;
+  const label = dirty ? t("未保存") : synced ? t("已同步") : t("待同步");
+  const description = dirty ? t("更改尚未保存到本机") : synced ? t("已与服务器一致") : t("本地已保存，等待同步");
   return <Tooltip><TooltipTrigger asChild><span tabIndex={0} className="text-muted-foreground inline-flex shrink-0 items-center gap-1 text-xs">
-    {synced ? <Check className="size-3.5" /> : <CloudUpload className="size-3.5" />}{synced ? t("已同步") : t("待同步")}
-  </span></TooltipTrigger><TooltipContent>{synced ? t("已与服务器一致") : t("本地已保存，等待同步")}</TooltipContent></Tooltip>;
+    {synced ? <Check className="size-3.5" /> : <CloudUpload className="size-3.5" />}{label}
+  </span></TooltipTrigger><TooltipContent>{description}</TooltipContent></Tooltip>;
 }

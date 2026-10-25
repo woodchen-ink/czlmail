@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Compartment, EditorSelection, EditorState, Transaction } from "@codemirror/state";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { Compartment, EditorSelection, EditorState, StateEffect, Transaction, type Extension } from "@codemirror/state";
 import { EditorView, keymap, type Command } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
@@ -10,6 +10,7 @@ import { tags } from "@lezer/highlight";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { livePreview } from "@/lib/notes/live-preview";
 import { frontmatter } from "@/lib/notes/markdown";
+import { editorViewport, noteSession, restoreEditorViewport, retainEditorState } from "@/lib/notes/view-session";
 
 const theme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "transparent", color: "var(--foreground)" },
@@ -85,10 +86,10 @@ export function NoteEditor({ vaultId, noteId, value, source, readOnly, onChange,
   const mode = useRef(new Compartment());
   const applied = useRef(source);
   const callbacks = useRef({ onChange, onFiles, onReady });
-  useEffect(() => { callbacks.current = { onChange, onFiles, onReady }; }, [onChange, onFiles, onReady]);
+  useLayoutEffect(() => { callbacks.current = { onChange, onFiles, onReady }; }, [onChange, onFiles, onReady]);
   const latest = useRef({ value, source });
-  useEffect(() => { latest.current = { value, source }; }, [value, source]);
-  useEffect(() => {
+  useLayoutEffect(() => { latest.current = { value, source }; }, [value, source]);
+  useLayoutEffect(() => {
     if (!host.current) return;
     const insert = (text: string) => {
       const view = editor.current;
@@ -96,10 +97,8 @@ export function NoteEditor({ vaultId, noteId, value, source, readOnly, onChange,
     };
     const { value: initial, source: initialSource } = latest.current;
     applied.current = initialSource;
-    const view = new EditorView({ parent: host.current, state: EditorState.create({
-      doc: initial,
-      selection: { anchor: initialSource ? 0 : (frontmatter(initial)?.to ?? 0) },
-      extensions: [theme, EditorView.lineWrapping, history(), markdown({ base: markdownLanguage }), syntaxHighlighting(defaultHighlightStyle), highlightSelectionMatches(),
+    const session = noteSession(vaultId, noteId);
+    const extensions: Extension[] = [theme, EditorView.lineWrapping, history(), markdown({ base: markdownLanguage }), syntaxHighlighting(defaultHighlightStyle), highlightSelectionMatches(),
         keymap.of([...formatKeymap, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), EditorState.readOnly.of(readOnly),
         mode.current.of(initialSource ? [] : [liveHeadings, livePreview(vaultId, noteId)]),
         EditorView.updateListener.of((update) => { if (update.docChanged && !update.transactions.some((tr) => tr.annotation(Transaction.addToHistory) === false)) callbacks.current.onChange(update.state.doc.toString()); }),
@@ -108,15 +107,29 @@ export function NoteEditor({ vaultId, noteId, value, source, readOnly, onChange,
           if (!files.length || readOnly) return false;
           event.preventDefault(); callbacks.current.onFiles(files, insert); return true;
         } }),
-      ],
-    }) });
+      ];
+    const saved = session.state;
+    // A different server revision must never restore old content or its undo stack over the new text.
+    const state = saved?.doc.toString() === initial
+      ? saved.update({ effects: StateEffect.reconfigure.of(extensions) }).state
+      : EditorState.create({ doc: initial, selection: { anchor: Math.min(saved?.selection.main.anchor ?? (initialSource ? 0 : (frontmatter(initial)?.to ?? 0)), initial.length) }, extensions });
+    const view = new EditorView({ parent: host.current, state });
+    const cancelRestore = restoreEditorViewport(view, session.viewport, initialSource ? "source" : "live");
     editor.current = view; callbacks.current.onReady(insert);
-    return () => { callbacks.current.onReady(null); editor.current = null; view.destroy(); };
+    return () => {
+      cancelRestore();
+      session.viewport = editorViewport(view, applied.current ? "source" : "live");
+      session.state = retainEditorState(view.state);
+      callbacks.current.onReady(null); editor.current = null; view.destroy();
+    };
   }, [vaultId, noteId, readOnly]);
-  useEffect(() => {
-    if (applied.current === source) return;
+  useLayoutEffect(() => {
+    const view = editor.current;
+    if (applied.current === source || !view) return;
+    const viewport = editorViewport(view, applied.current ? "source" : "live");
     applied.current = source;
-    editor.current?.dispatch({ effects: mode.current.reconfigure(source ? [] : [liveHeadings, livePreview(vaultId, noteId)]) });
+    view.dispatch({ effects: mode.current.reconfigure(source ? [] : [liveHeadings, livePreview(vaultId, noteId)]) });
+    return restoreEditorViewport(view, viewport, source ? "source" : "live");
   }, [source, vaultId, noteId]);
   useEffect(() => {
     const view = editor.current;

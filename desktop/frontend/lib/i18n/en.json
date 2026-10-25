@@ -1,5 +1,8 @@
 {
   "导出": "Export",
+  "未保存": "Unsaved",
+  "保存失败": "Save failed",
+  "更改尚未保存到本机": "Changes have not been saved locally yet",
   "笔记根目录": "Notes root",
   "拖到此处移至根目录": "Drop here to move to the root",
   "返回笔记": "Back to note",

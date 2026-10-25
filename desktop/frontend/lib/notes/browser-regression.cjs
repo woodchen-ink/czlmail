@@ -94,7 +94,8 @@ async function main() {
     const box = await evaluate('(()=>{const b=document.querySelector(".cm-content input[type=checkbox]").getBoundingClientRect(); return {x:b.left+b.width/2,y:b.top+b.height/2};})()');
     await click(box);
     await waitFor(() => evaluate('window.getView().state.doc.toString().includes("- [x] task one")'), "task toggled in source");
-    await evaluate('window.getView().dispatch({selection:{anchor:3}})');
+    // Clicking the rendered task box moves focus off the editor, and an unfocused editor renders every block.
+    await evaluate('(()=>{const v=window.getView(); v.focus(); v.dispatch({selection:{anchor:3}});})()');
     const heading = await evaluate('(()=>{const line=document.querySelector(".cm-line"); const span=line.querySelector("span:last-child")||line; return parseFloat(getComputedStyle(span).fontSize);})()');
     if (heading < 28) throw new Error(`source heading font ${heading}px does not match rendered h1`);
     const errors = await evaluate("window.errors");

@@ -117,3 +117,22 @@ test("the same note is parsed once for every live block", () => {
   const text = "# A\n\nB\n\nC\n";
   const first = parseNote(text); assert.ok(first === parseNote(text));
 });
+
+test("partial lists preserve numbering, tasks and nesting without repeating siblings", () => {
+  const text = "3. first\n4. **second**\n   - nested\n5. third\n";
+  const html = render(text, { from: text.indexOf("4."), to: text.indexOf("5.") });
+  assert.match(html, /<ol start="4"/);
+  assert.match(html, /<strong>second<\/strong>/);
+  assert.match(html, /nested/);
+  assert.doesNotMatch(html, /first|third/);
+  const tasks = "- [x] done\n- [ ] next\n";
+  const task = render(tasks, { from: 0, to: tasks.indexOf("- [ ]") });
+  assert.match(task, /checked/); assert.doesNotMatch(task, /next/);
+});
+
+test("partial quotes keep their wrapper and only the requested paragraph", () => {
+  const text = "> first\n>\n> **second**\n>\n> last\n";
+  const html = render(text, { from: text.indexOf("> **"), to: text.indexOf("> last") });
+  assert.match(html, /<blockquote/); assert.match(html, /<strong>second<\/strong>/);
+  assert.doesNotMatch(html, /first|last/);
+});

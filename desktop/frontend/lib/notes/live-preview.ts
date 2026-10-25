@@ -36,7 +36,13 @@ class MarkdownWidget extends WidgetType {
     button.className = "bg-background text-muted-foreground absolute top-0 right-0 rounded-md px-2 text-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100";
     button.hidden = view.state.readOnly || this.from === this.to;
     button.onclick = () => edit(view, view.posAtDOM(container));
+    let pointer: { x: number; y: number } | null = null;
+    content.onpointerdown = (event) => { pointer = { x: event.clientX, y: event.clientY }; };
     content.onclick = (event) => {
+      const start = pointer; pointer = null;
+      const selection = window.getSelection();
+      const selected = selection && !selection.isCollapsed && (content.contains(selection.anchorNode) || content.contains(selection.focusNode));
+      if (selected || event.detail > 1 || start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return;
       if (view.state.readOnly || (event.target as HTMLElement).closest("a,button,img,input,summary,details,pre")) return;
       edit(view, caretAt(container, view, event));
     };
@@ -160,11 +166,11 @@ export function livePreview(vaultId: string, noteId: string) {
     const shared = crossBlockSyntax.test(text) ? digest(text) : "";
     const tree = ensureSyntaxTree(state, state.doc.length, 100) ?? syntaxTree(state);
     /** Keep every selection's active block in source, without ever mutating the document. */
-    const block = (from: number, to: number): boolean => {
+    const block = (from: number, to: number, context = ""): boolean => {
       // An editor without focus renders every block: the caret no longer says where the user is writing.
       const active = state.field(focused) && state.selection.ranges.some((range) => range.empty ? range.from >= from && (range.from < to || to === state.doc.length && range.from === to) : range.from < to && range.to > from);
       if (active || to <= from) return false;
-      const key = shared ? `${from}:${to}:${shared}` : text.slice(from, to);
+      const key = shared ? `${from}:${to}:${shared}` : `${context}${text.slice(from, to)}`;
       ranges.push(Decoration.replace({ widget: new MarkdownWidget(text, from, to, key, vaultId, noteId), block: true }).range(from, to));
       return true;
     };
@@ -217,12 +223,33 @@ export function livePreview(vaultId: string, noteId: string) {
         do { if (names.includes(cursor.name)) hide(cursor.from, cursor.to, cursor.name === "HeaderMark"); } while (cursor.nextSibling());
       } });
     };
+    type SyntaxNode = typeof tree.topNode;
+    /** Split an active list into items and an active quote into paragraphs; untouched containers stay whole. */
+    const renderBlock = (node: SyntaxNode, from: number, to: number, context = "") => {
+      if (block(from, to, context)) return;
+      if (["BulletList", "OrderedList", "Blockquote"].includes(node.name)) {
+        const children: SyntaxNode[] = [];
+        for (let child = node.firstChild; child; child = child.nextSibling) {
+          if (child.name !== "QuoteMark") children.push(child);
+        }
+        if (children.length > 1) {
+          // Container-dependent numbering/nesting belongs in the cache key, but not unrelated prose.
+          const key = `${node.name}:${digest(text.slice(node.from, node.to))}:`;
+          children.forEach((child, index) => {
+            const start = index === 0 ? from : state.doc.lineAt(child.from).from;
+            const end = index + 1 < children.length ? state.doc.lineAt(children[index + 1].from).from : to;
+            renderBlock(child, start, end, key);
+          });
+          return;
+        }
+      }
+      if (node.name === "FencedCode") codeBox(from, node.to);
+      else inline(from, node.to);
+    };
     if (metadata) block(0, metadata.to);
     for (let node = tree.topNode.firstChild; node; node = node.nextSibling) {
       if (metadata && node.from < metadata.to) continue;
-      if (block(node.from, node.nextSibling?.from ?? state.doc.length)) continue;
-      if (node.name === "FencedCode") codeBox(node.from, node.to);
-      else inline(node.from, node.to);
+      renderBlock(node, node.from, node.nextSibling?.from ?? state.doc.length);
     }
     if (/\[\^[^\]]+\]/.test(text)) ranges.push(Decoration.widget({ widget: new MarkdownWidget(text, text.length, text.length, `footnotes:${shared || digest(text)}`, vaultId, noteId), block: true, side: 1 }).range(text.length));
     return Decoration.set(ranges, true);

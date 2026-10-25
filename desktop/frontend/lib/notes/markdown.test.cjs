@@ -153,5 +153,8 @@ test("the block being edited renders list bullets, task boxes, headings and inli
   const inList = state.update({ selection: { anchor: text.indexOf("item") } }).state;
   const kinds = [];
   inList.field(field).between(0, inList.doc.length, (_a, _b, d) => { if (d.spec.class) kinds.push(d.spec.class); if (d.spec.widget) kinds.push(d.spec.widget.constructor.name); });
-  assert.ok(kinds.includes("TaskBoxWidget")); assert.ok(kinds.includes("cm-note-inline-code"));
+  assert.ok(kinds.includes("MarkdownWidget")); assert.ok(kinds.includes("cm-note-inline-code"));
+  const rendered = [];
+  inList.field(field).between(0, inList.doc.length, (from, to, d) => { if (d.spec.widget?.constructor.name === "MarkdownWidget") rendered.push(text.slice(from, to)); });
+  assert.ok(rendered.some((value) => value.includes("[x] done") && !value.includes("item with")));
 });

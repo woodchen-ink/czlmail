@@ -337,7 +337,7 @@ export function NotesShell({ active }: { active: boolean }) {
       {!vaultId ? <div className="m-auto flex max-w-md flex-col gap-4 p-8"><h2 className="text-xl font-semibold">{t("笔记")}</h2><p className="text-muted-foreground text-sm">{t("笔记保存在个人账号的 Notes 目录中。")}</p><Button disabled={busy} onClick={() => void run(async () => { const accounts = await api.listAccounts(); const account = accounts.find((item) => item.isPersonal); if (!account) return; const v = await noteApi.bind(account.id, ""); setVaults([v]); setVaultId(v.id); void sync(); })}>{t("开始使用笔记")}</Button></div> : <>
         {attachmentPreview
           ? <header className="border-border flex min-h-12 items-center gap-3 border-b px-4"><span className="min-w-0 flex-1 truncate text-sm">{attachmentPreview.name}</span><Button variant="ghost" size="sm" onClick={closePreview}>{doc.note ? t("返回笔记") : t("关闭")}</Button></header>
-          : doc.note && <NoteHeader note={doc.note} dirty={doc.dirty} mode={mode} busy={busy} focusTitle={created === doc.note.id} onMode={setMode}
+          : doc.note && <NoteHeader note={doc.note} dirty={doc.dirty} failed={!!doc.error} mode={mode} busy={busy} focusTitle={created === doc.note.id} onMode={setMode}
             onRename={(value) => { const note = doc.getNote(); if (note) void rename(note, value); }}
             onAttach={() => picker.current?.click()} onDiff={compare}
             onTrash={() => { setSelected(doc.note); setAction("trash"); }} />}
