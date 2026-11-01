@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 env:
-  WAILS_VERSION: v2.12.0
+  WAILS_VERSION: v2.17.0
 
 jobs:
   notes-regression:
