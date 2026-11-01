@@ -90,9 +90,14 @@ export function MailSidebar({
     }
   }, []);
 
+  // 有统一视图时它是日常入口, 「文件夹」「共享」默认收起; 用户展开、收起过的按记下的来。
+  const hasUnified = accounts.length > 1;
+  const defaultCollapsed = (key: string) => hasUnified && (key === "personal" || key === "shared");
+  const isCollapsed = (key: string) => collapsed[key] ?? defaultCollapsed(key);
+
   function toggle(key: string) {
     setCollapsed((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
+      const next = { ...prev, [key]: !(prev[key] ?? defaultCollapsed(key)) };
       try {
         localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
       } catch {
@@ -158,10 +163,10 @@ export function MailSidebar({
   return (
     <div className="flex flex-col gap-3">
       {/* 只有一个账号时统一视图与「文件夹」完全重复, 不显示。 */}
-      {accounts.length > 1 && unifiedRows.length > 0 && (
+      {hasUnified && unifiedRows.length > 0 && (
         <Section
           title={t("全部账号")}
-          open={!collapsed.unified}
+          open={!isCollapsed("unified")}
           onToggle={() => toggle("unified")}
           unread={sumInbox(accounts)}
         >
@@ -185,7 +190,7 @@ export function MailSidebar({
       {personal.length > 0 && (
         <Section
           title={t("文件夹")}
-          open={!collapsed.personal}
+          open={!isCollapsed("personal")}
           onToggle={() => toggle("personal")}
           unread={sumInbox(personal)}
           onAdd={() => setFolderAction({ kind: "create", accountId: personal[0].id })}
@@ -203,10 +208,10 @@ export function MailSidebar({
       )}
 
       {shared.length > 0 && (
-        <Section title={t("共享")} open={!collapsed.shared} onToggle={() => toggle("shared")} unread={sumInbox(shared)}>
+        <Section title={t("共享")} open={!isCollapsed("shared")} onToggle={() => toggle("shared")} unread={sumInbox(shared)}>
           {shared.map((acc) => {
             const key = `acc:${acc.id}`;
-            const open = !collapsed[key];
+            const open = !isCollapsed(key);
             return (
               <div key={acc.id} className="flex flex-col">
                 <button
