@@ -29,7 +29,6 @@ export type ContactSummary = store.ContactSummary;
 export type FileNode = store.FileNode;
 export type Recipient = store.Recipient;
 export type Template = store.Template;
-export type EmailWithAccount = store.EmailWithAccount;
 export type HeaderInfo = syncer.HeaderInfo;
 export type AuthResult = syncer.AuthResult;
 export type EventOccurrence = main.EventOccurrence;
@@ -137,10 +136,13 @@ export const api = {
   listAccounts: guard(App.ListAccounts),
   listMailboxes: guard(App.ListMailboxes),
   listEmails: guard(App.ListEmails),
+  listUnified: guard(App.ListUnified),
   getEmail: guard(App.GetEmail),
   fetchBody: guard(App.FetchBody),
   searchEmails: guard(App.SearchEmails),
   searchEmailsOnServer: guard(App.SearchEmailsOnServer),
+  searchAllEmails: guard(App.SearchAllEmails),
+  searchAllEmailsOnServer: guard(App.SearchAllEmailsOnServer),
   locateEmail: guard(App.LocateEmail),
   syncNow: guard(App.SyncNow),
   pullMailbox: guard(App.PullMailbox),

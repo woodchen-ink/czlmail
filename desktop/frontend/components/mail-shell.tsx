@@ -39,7 +39,7 @@ import { ComposePane, type ComposeDraft } from "@/components/compose/compose-pan
 import { EmailContextMenu, type EmailMenuActions } from "@/components/email-context-menu";
 import { EmailList } from "@/components/email-list";
 import { EmailView } from "@/components/email-view";
-import { MailSidebar } from "@/components/mail-sidebar";
+import { MailSidebar, UNIFIED_UNREAD } from "@/components/mail-sidebar";
 import { mailboxLabel } from "@/components/mailbox-tree";
 import { PaneLayout } from "@/components/pane-layout";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
@@ -61,6 +61,7 @@ import { printEmail } from "@/lib/print";
 import { useAppearance } from "@/lib/theme";
 import { listen } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
+import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
 
 const PAGE_SIZE = 50;
 // 定位一封邮件时最多加载多少封。再深就不值得了: 每 200 封一次查询,
@@ -81,10 +82,14 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   const [mailboxesByAccount, setMailboxesByAccount] = useState<Record<string, Mailbox[]>>({});
   const [accountId, setAccountId] = useState("");
   const [mailboxId, setMailboxId] = useState("");
-  const [labels, setLabels] = useState<string[]>([]);
+  // 统一视图: 所有账号的同类文件夹(或全部未读)合成一个列表。值是文件夹类别或 "unread",
+  // 空串表示在看 accountId/mailboxId 这个文件夹。
+  const [unified, setUnified] = useState("");
+  const [labelsByAccount, setLabelsByAccount] = useState<Record<string, string[]>>({});
 
   const [emails, setEmails] = useState<EmailSummary[]>([]);
-  const [emailId, setEmailId] = useState("");
+  // 选中的邮件与多选一律用「账号/id」键(lib/email-key): 统一视图里各账号的邮件 id 可能重复。
+  const [selectedKey, setSelectedKey] = useState("");
   // 多选的邮件; 切换文件夹或搜索时清空。
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const lastChecked = useRef("");
@@ -123,7 +128,27 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   const loadToken = useRef(0);
 
   const mailboxes = useMemo(() => mailboxesByAccount[accountId] ?? [], [mailboxesByAccount, accountId]);
-  const currentKind = mailboxes.find((m) => m.id === mailboxId)?.kind ?? "";
+  const currentKind = unified
+    ? unified === UNIFIED_UNREAD
+      ? ""
+      : unified
+    : (mailboxes.find((m) => m.id === mailboxId)?.kind ?? "");
+  const selected = parseEmailKey(selectedKey);
+  // 新写的信从哪个账号发: 在看某个账号的文件夹时用它, 统一视图里用个人账号。
+  const composeAccount = unified ? (accounts.find((a) => a.isPersonal)?.id ?? accountId) : accountId;
+
+  /**
+   * 列表里某个账号的邮件所在的文件夹: 文件夹视图是当前文件夹, 统一视图是该账号同类别的文件夹,
+   * 未读视图没有单一的文件夹(返回空串)。用于调整侧栏未读数、「移动到」里排除当前文件夹。
+   */
+  const listBoxOf = useCallback(
+    (acc: string) => {
+      if (!unified) return acc === accountId ? mailboxId : "";
+      if (unified === UNIFIED_UNREAD) return "";
+      return mailboxesByAccount[acc]?.find((m) => m.kind === unified)?.id ?? "";
+    },
+    [unified, accountId, mailboxId, mailboxesByAccount],
+  );
 
   /* ---------- 账号与邮箱 ---------- */
 
@@ -170,19 +195,24 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       .catch(() => {});
   }, [loadAccounts]);
 
+  // 标签按账号各自一套; 统一视图里每封邮件用它所属账号的标签。
   useEffect(() => {
-    if (!accountId) return;
-    api
-      .listLabels(accountId)
-      .then((l) => setLabels(l ?? []))
-      .catch(() => setLabels([]));
-  }, [accountId, revision]);
+    let cancelled = false;
+    Promise.all(accounts.map(async (a) => [a.id, (await api.listLabels(a.id).catch(() => [])) ?? []] as const)).then(
+      (entries) => {
+        if (!cancelled) setLabelsByAccount(Object.fromEntries(entries));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [accounts, revision]);
 
   /* ---------- 邮件列表 ---------- */
 
   // 乐观更新的覆盖层。删除、移动、标记等操作发出后界面立刻显示预期结果, 请求在后台完成;
   // 完成前任何一次重新加载(同步推送、翻页、搜索)的结果都要套上这层, 否则刚删掉的邮件会闪回来。
-  // 条目记下操作序号, 同一封邮件连续操作时只由最后一次操作撤掉。
+  // 条目按「账号/id」键记下操作序号, 同一封邮件连续操作时只由最后一次操作撤掉。
   const hiddenIds = useRef(new Map<string, number>());
   const patchedIds = useRef(new Map<string, { patch: Partial<EmailSummary>; seq: number }>());
   const mutationSeq = useRef(0);
@@ -194,32 +224,39 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     const patched = patchedIds.current;
     if (hidden.size === 0 && patched.size === 0) return list;
     return list
-      .filter((e) => !hidden.has(e.id))
+      .filter((e) => !hidden.has(emailKey(e)))
       .map((e) => {
-        const p = patched.get(e.id);
+        const p = patched.get(emailKey(e));
         return p ? ({ ...e, ...p.patch } as EmailSummary) : e;
       });
   }, []);
 
+  // 当前视图的一页: 某个账号的文件夹, 或统一视图。
+  const fetchPage = useCallback(
+    (limit: number, offset: number) =>
+      unified ? api.listUnified(unified, limit, offset) : api.listEmails(accountId, mailboxId, limit, offset),
+    [unified, accountId, mailboxId],
+  );
+
   const loadPage = useCallback(
     async (offset: number, token: number) => {
-      if (!accountId || !mailboxId) return;
-      if (emptying.current.has(`${accountId}/${mailboxId}`)) {
+      if (!unified && (!accountId || !mailboxId)) return;
+      if (!unified && emptying.current.has(`${accountId}/${mailboxId}`)) {
         setEmails([]);
         setHasMore(false);
         return;
       }
       setLoading(true);
       try {
-        const page = await api.listEmails(accountId, mailboxId, PAGE_SIZE, offset);
+        const page = await fetchPage(PAGE_SIZE, offset);
         if (token !== loadToken.current) return;
         const list = page ?? [];
         const shown = overlay(list);
         setEmails((prev) => {
           if (offset === 0) return shown;
           // 乐观移除的邮件让 offset 比服务端少算几封, 下一页开头可能与已有的重叠。
-          const have = new Set(prev.map((e) => e.id));
-          return [...prev, ...shown.filter((e) => !have.has(e.id))];
+          const have = new Set(prev.map(emailKey));
+          return [...prev, ...shown.filter((e) => !have.has(emailKey(e)))];
         });
         setHasMore(list.length === PAGE_SIZE);
       } catch (err) {
@@ -228,7 +265,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         if (token === loadToken.current) setLoading(false);
       }
     },
-    [accountId, mailboxId, overlay],
+    [unified, accountId, mailboxId, fetchPage, overlay],
   );
 
   // 列表的最新值, 供乐观更新与静默刷新在回调里读取, 不必把 emails 列进依赖。
@@ -243,8 +280,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   // 也不显示加载骨架, 数据到了一次性替换。
   const loadPrefix = useCallback(
     async (token: number, want: number) => {
-      if (!accountId || !mailboxId) return;
-      if (emptying.current.has(`${accountId}/${mailboxId}`)) {
+      if (!unified && (!accountId || !mailboxId)) return;
+      if (!unified && emptying.current.has(`${accountId}/${mailboxId}`)) {
         setEmails([]);
         setHasMore(false);
         return;
@@ -254,7 +291,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         // 后端单次最多 200 封。
         for (let off = 0; off < want; off += 200) {
           const n = Math.min(200, want - off);
-          const page = (await api.listEmails(accountId, mailboxId, n, off)) ?? [];
+          const page = (await fetchPage(n, off)) ?? [];
           if (token !== loadToken.current) return;
           out.push(...page);
           if (page.length < n) break;
@@ -268,7 +305,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         if (token === loadToken.current) setLoading(false);
       }
     },
-    [accountId, mailboxId, overlay],
+    [unified, accountId, mailboxId, fetchPage, overlay],
   );
 
   // 定位到某封邮件后列表至少要加载这么深(切换文件夹时归零)。
@@ -283,7 +320,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
   // 从通知、链接或其它模块打开某封邮件时, 切换账号/文件夹会触发下面的列表重置;
   // 先记下要打开的邮件与它在列表里的位置, 重置时选中它并加载到那一页。
-  const pendingEmail = useRef<{ id: string; index: number } | null>(null);
+  const pendingEmail = useRef<{ key: string; index: number } | null>(null);
 
   /**
    * 打开某封邮件, 并让列表停在能看见它的位置。
@@ -294,44 +331,52 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
    */
   const openEmailIn = useCallback(
     async (acc: string, id: string) => {
+      const key = emailKey({ accountId: acc, id });
+      // 统一视图里已经列出这封邮件时不切走。
+      if (unified && !searching && emailsRef.current.some((e) => emailKey(e) === key)) {
+        setSelectedKey(key);
+        return;
+      }
+      const inFolder = !unified && acc === accountId;
       const loc = await api
-        .locateEmail(acc, id, acc === accountId ? mailboxId : "")
+        .locateEmail(acc, id, inFolder ? mailboxId : "")
         .catch(() => null);
       const index = loc?.index ?? 0;
 
-      if (acc === accountId && (!loc || loc.mailboxId === mailboxId)) {
+      if (inFolder && (!loc || loc.mailboxId === mailboxId)) {
         // 搜索结果不是文件夹列表, 要先退出搜索; 由下面的搜索 effect 接着加载并选中。
         if (searching) {
-          pendingEmail.current = { id, index };
+          pendingEmail.current = { key, index };
           setQuery("");
           return;
         }
-        if (!emailsRef.current.some((e) => e.id === id) && index >= emailsRef.current.length) {
+        if (!emailsRef.current.some((e) => emailKey(e) === key) && index >= emailsRef.current.length) {
           loadToken.current += 1;
           minDepth.current = locateDepth(index);
           loadPrefix(loadToken.current, minDepth.current);
         }
-        setEmailId(id);
+        setSelectedKey(key);
         return;
       }
 
-      pendingEmail.current = { id, index };
+      pendingEmail.current = { key, index };
       const boxes = mailboxesByAccount[acc] ?? [];
       const target =
         (loc && boxes.find((m) => m.id === loc.mailboxId)) ?? boxes.find((m) => m.kind === "inbox");
+      setUnified("");
       setAccountId(acc);
       if (target) setMailboxId(target.id);
     },
-    [accountId, mailboxId, mailboxesByAccount, searching, loadPrefix],
+    [unified, accountId, mailboxId, mailboxesByAccount, searching, loadPrefix],
   );
 
   useEffect(() => {
-    if (!mailboxId) return;
+    if (!unified && !mailboxId) return;
     loadToken.current += 1;
     const pending = pendingEmail.current;
     pendingEmail.current = null;
     setEmails([]);
-    setEmailId(pending?.id ?? "");
+    setSelectedKey(pending?.key ?? "");
     setHasMore(true);
     setQuery("");
     setChecked(new Set());
@@ -343,23 +388,35 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     } else {
       loadPage(0, loadToken.current);
     }
-  }, [mailboxId, accountId, loadPage, loadPrefix]);
+  }, [unified, mailboxId, accountId, loadPage, loadPrefix]);
+
+  // 操作(标记已读、移动、立即同步、导入)完成后才调用 reload, 那时用户可能已切到别的文件夹。
+  // 经 ref 取最新的 refreshLoaded, 重新加载的总是正在看的列表; 用发起时的闭包会把旧文件夹
+  // 加载回来, 而且令牌是新的, 覆盖掉刚切过去的列表。
+  const refreshLoadedRef = useRef(refreshLoaded);
+  useEffect(() => {
+    refreshLoadedRef.current = refreshLoaded;
+  }, [refreshLoaded]);
 
   const reload = useCallback(() => {
     loadToken.current += 1;
-    refreshLoaded(loadToken.current);
-  }, [refreshLoaded]);
+    refreshLoadedRef.current(loadToken.current);
+  }, []);
 
   // 预取当前邮件后面几封的正文, 按 j/↓ 翻下一封时不用等网络。
+  // 统一视图里只预取与当前邮件同一账号的。
   useEffect(() => {
-    if (!emailId || !accountId) return;
-    const idx = emails.findIndex((e) => e.id === emailId);
+    if (!selectedKey) return;
+    const idx = emails.findIndex((e) => emailKey(e) === selectedKey);
     if (idx < 0) return;
-    const ids = emails.slice(idx + 1, idx + 4).map((e) => e.id);
-    if (idx > 0) ids.push(emails[idx - 1].id);
-    const t = setTimeout(() => api.prefetchBodies(accountId, ids).catch(() => {}), 400);
+    const acc = emails[idx].accountId;
+    const near = emails.slice(idx + 1, idx + 4);
+    if (idx > 0) near.push(emails[idx - 1]);
+    const ids = near.filter((e) => e.accountId === acc).map((e) => e.id);
+    if (ids.length === 0) return;
+    const t = setTimeout(() => api.prefetchBodies(acc, ids).catch(() => {}), 400);
     return () => clearTimeout(t);
-  }, [emailId, accountId, emails]);
+  }, [selectedKey, emails]);
 
   /* ---------- 后台同步事件 ---------- */
 
@@ -371,13 +428,13 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
     const offChanged = onEvent(Events.mailChanged, (changed: string) => {
       // 登录后第一轮同步到达时可能还没有选中任何文件夹。
-      if (!mailboxId) {
+      if (!unified && !mailboxId) {
         loadAccounts();
         return;
       }
-      // 其它账号只刷新文件夹（未读数），不打断正在看的列表。
+      // 其它账号只刷新文件夹（未读数），不打断正在看的列表; 统一视图包含所有账号。
       loadMailboxes(changed);
-      if (changed === accountId) reload();
+      if (unified || changed === accountId) reload();
     });
 
     const offOpen = onEvent(Events.openEmail, (ref: string) => {
@@ -397,7 +454,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       offBusOpen();
       offCompose();
     };
-  }, [accountId, mailboxId, reload, loadAccounts, loadMailboxes, openEmailIn, setDraft]);
+  }, [unified, accountId, mailboxId, reload, loadAccounts, loadMailboxes, openEmailIn, setDraft]);
 
   /* ---------- 搜索 ---------- */
 
@@ -411,7 +468,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         pendingEmail.current = null;
         if (pending) {
           loadToken.current += 1;
-          setEmailId(pending.id);
+          setSelectedKey(pending.key);
           setLoading(true);
           minDepth.current = locateDepth(pending.index);
           loadPrefix(loadToken.current, minDepth.current);
@@ -430,7 +487,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       setSearching(true);
       setLoading(true);
       try {
-        const found = await api.searchEmails(accountId, q, 100);
+        // 统一视图里搜全部账号。
+        const found = unified ? await api.searchAllEmails(q, 100) : await api.searchEmails(accountId, q, 100);
         if (token !== loadToken.current) return;
         setEmails(overlay(found ?? []));
         setHasMore(false);
@@ -442,7 +500,9 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       if (token !== loadToken.current) return;
       setSearchingServer(true);
       try {
-        const merged = await api.searchEmailsOnServer(accountId, q, 100);
+        const merged = unified
+          ? await api.searchAllEmailsOnServer(q, 100)
+          : await api.searchEmailsOnServer(accountId, q, 100);
         if (token === loadToken.current) setEmails(overlay(merged ?? []));
       } catch {
         // 服务端检索只是补充，失败时保留本地结果。
@@ -454,7 +514,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     return () => clearTimeout(timer);
     // searching 由本 effect 自己设置，列进依赖会造成循环。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, accountId, reload, loadPrefix, overlay]);
+  }, [query, unified, accountId, reload, loadPrefix, overlay]);
 
   /* ---------- 操作 ---------- */
 
@@ -482,195 +542,213 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
   /**
    * 乐观执行一个邮件操作: 立刻按预期结果更新界面, 请求在后台提交。
+   * keys 是「账号/id」键, 统一视图里可能跨账号, 按账号分组逐个提交 op。
    * remove 表示邮件会离开当前列表(删除、移动、归档、垃圾邮件), 选中的邮件随之跳到下一封;
    * patch 是对摘要字段的预期修改(已读、星标、固定)。
    * 失败时提示并重新加载, 界面回到服务器的真实状态。
    */
   const mutate = useCallback(
-    (m: { ids: string[]; op: () => Promise<unknown>; remove?: boolean; patch?: Partial<EmailSummary>; done?: string }) => {
-      const ids = m.ids;
-      if (ids.length === 0) return;
-      const idSet = new Set(ids);
+    (m: {
+      keys: string[];
+      op: (accountId: string, ids: string[]) => Promise<unknown>;
+      remove?: boolean;
+      patch?: Partial<EmailSummary>;
+      done?: string;
+    }) => {
+      const keys = m.keys;
+      if (keys.length === 0) return;
+      const keySet = new Set(keys);
+      const groups = groupByAccount(keys);
       const seq = ++mutationSeq.current;
-      const acc = accountId;
-      const box = mailboxId;
       const list = emailsRef.current;
+      const inSet = (e: EmailSummary) => keySet.has(emailKey(e));
+      // 侧栏未读数按账号各调各的文件夹; 未读视图没有单一文件夹, 等操作完成后重读。
+      const adjust = (count: (e: EmailSummary) => number) => {
+        for (const acc of groups.keys()) {
+          const box = listBoxOf(acc);
+          if (!box) continue;
+          adjustUnread(acc, box, list.filter((e) => e.accountId === acc && inSet(e)).reduce((n, e) => n + count(e), 0));
+        }
+      };
 
       if (m.remove) {
-        for (const id of ids) hiddenIds.current.set(id, seq);
-        adjustUnread(acc, box, -list.filter((e) => idSet.has(e.id) && e.isUnread).length);
+        for (const key of keys) hiddenIds.current.set(key, seq);
+        adjust((e) => (e.isUnread ? -1 : 0));
         // 阅读栏不突然变空: 选中的邮件被移走时, 跳到它后面(没有则前面)第一封没被移走的。
-        setEmailId((cur) => {
-          if (!idSet.has(cur)) return cur;
-          const idx = list.findIndex((e) => e.id === cur);
-          const after = list.slice(idx + 1).find((e) => !idSet.has(e.id));
+        setSelectedKey((cur) => {
+          if (!keySet.has(cur)) return cur;
+          const idx = list.findIndex((e) => emailKey(e) === cur);
+          const after = list.slice(idx + 1).find((e) => !inSet(e));
           const before = list
             .slice(0, Math.max(0, idx))
             .reverse()
-            .find((e) => !idSet.has(e.id));
-          return (after ?? before)?.id ?? "";
+            .find((e) => !inSet(e));
+          const next = after ?? before;
+          return next ? emailKey(next) : "";
         });
-        setEmails((prev) => prev.filter((e) => !idSet.has(e.id)));
+        setEmails((prev) => prev.filter((e) => !inSet(e)));
         setChecked((prev) => {
-          if (![...prev].some((id) => idSet.has(id))) return prev;
-          return new Set([...prev].filter((id) => !idSet.has(id)));
+          if (![...prev].some((key) => keySet.has(key))) return prev;
+          return new Set([...prev].filter((key) => !keySet.has(key)));
         });
       }
       if (m.patch) {
         const patch = m.patch;
         if (patch.isUnread !== undefined) {
-          const changed = list.filter((e) => idSet.has(e.id) && e.isUnread !== patch.isUnread).length;
-          adjustUnread(acc, box, patch.isUnread ? changed : -changed);
+          adjust((e) => (e.isUnread === patch.isUnread ? 0 : patch.isUnread ? 1 : -1));
         }
-        for (const id of ids) {
-          patchedIds.current.set(id, { patch: { ...patchedIds.current.get(id)?.patch, ...patch }, seq });
+        for (const key of keys) {
+          patchedIds.current.set(key, { patch: { ...patchedIds.current.get(key)?.patch, ...patch }, seq });
         }
-        setEmails((prev) => prev.map((e) => (idSet.has(e.id) ? ({ ...e, ...patch } as EmailSummary) : e)));
+        setEmails((prev) => prev.map((e) => (inSet(e) ? ({ ...e, ...patch } as EmailSummary) : e)));
       }
       if (m.done) toast.success(m.done);
 
-      m.op()
+      Promise.all([...groups].map(([acc, ids]) => m.op(acc, ids)))
         .catch((err) => toast.error(errorMessage(err)))
         .finally(() => {
-          for (const id of ids) {
-            if (hiddenIds.current.get(id) === seq) hiddenIds.current.delete(id);
-            if (patchedIds.current.get(id)?.seq === seq) patchedIds.current.delete(id);
+          for (const key of keys) {
+            if (hiddenIds.current.get(key) === seq) hiddenIds.current.delete(key);
+            if (patchedIds.current.get(key)?.seq === seq) patchedIds.current.delete(key);
           }
           // 成功时后端已同步完, 重新加载读到的就是结果; 失败时重新加载把界面恢复原样。
-          loadMailboxes(acc);
+          for (const acc of groups.keys()) loadMailboxes(acc);
           // 阅读栏只显示星标; 已读、固定变化不重载正文, 否则打开未读邮件时正文会闪一下。
           if (m.patch?.isFlagged !== undefined) refreshCurrent();
           else reload();
         });
     },
-    [accountId, mailboxId, adjustUnread, loadMailboxes, reload, refreshCurrent],
+    [listBoxOf, adjustUnread, loadMailboxes, reload, refreshCurrent],
   );
 
   const trashIds = useCallback(
-    (ids: string[]) => {
+    (keys: string[]) => {
       if (currentKind === "trash") {
-        const what = ids.length > 1 ? t("选中的 {0} 封邮件", ids.length) : t("这封邮件");
+        const what = keys.length > 1 ? t("选中的 {0} 封邮件", keys.length) : t("这封邮件");
         if (!window.confirm(t("彻底删除{0}？此操作无法撤销。", what))) return;
-        mutate({ ids, remove: true, op: () => api.deleteEmails(accountId, ids), done: t("已彻底删除") });
+        mutate({ keys, remove: true, op: (acc, ids) => api.deleteEmails(acc, ids), done: t("已彻底删除") });
         return;
       }
-      mutate({ ids, remove: true, op: () => api.trashEmails(accountId, ids), done: t("已删除") });
+      mutate({ keys, remove: true, op: (acc, ids) => api.trashEmails(acc, ids), done: t("已删除") });
     },
-    [accountId, currentKind, mutate],
+    [currentKind, mutate],
   );
 
   const archiveIds = useCallback(
-    (ids: string[]) => mutate({ ids, remove: true, op: () => api.archiveEmails(accountId, ids), done: t("已归档") }),
-    [accountId, mutate],
+    (keys: string[]) =>
+      mutate({ keys, remove: true, op: (acc, ids) => api.archiveEmails(acc, ids), done: t("已归档") }),
+    [mutate],
   );
 
+  /** 移动到某账号的文件夹。文件夹属于各自的账号, 只移动 keys 里属于该账号的邮件。 */
   const moveIds = useCallback(
-    (ids: string[], target: string) => {
-      const box = mailboxes.find((m) => m.id === target);
+    (keys: string[], acc: string, target: string) => {
+      const box = mailboxesByAccount[acc]?.find((m) => m.id === target);
       mutate({
-        ids,
+        keys: keys.filter((key) => parseEmailKey(key).accountId === acc),
         remove: true,
-        op: () => api.moveEmails(accountId, ids, target),
+        op: (a, ids) => api.moveEmails(a, ids, target),
         done: box ? t("已移动到「{0}」", mailboxLabel(box)) : t("已移动"),
       });
     },
-    [accountId, mailboxes, mutate],
+    [mailboxesByAccount, mutate],
   );
 
   const junkIds = useCallback(
-    (ids: string[], junk: boolean) =>
+    (keys: string[], junk: boolean) =>
       mutate({
-        ids,
+        keys,
         remove: true,
-        op: () => api.markJunk(accountId, ids, junk),
+        op: (acc, ids) => api.markJunk(acc, ids, junk),
         done: junk ? t("已标记为垃圾邮件") : t("已移回收件箱"),
       }),
-    [accountId, mutate],
+    [mutate],
   );
 
   const markReadIds = useCallback(
-    (ids: string[], read: boolean) =>
-      mutate({ ids, patch: { isUnread: !read }, op: () => api.markRead(accountId, ids, read) }),
-    [accountId, mutate],
+    (keys: string[], read: boolean) =>
+      mutate({ keys, patch: { isUnread: !read }, op: (acc, ids) => api.markRead(acc, ids, read) }),
+    [mutate],
   );
 
   const flagIds = useCallback(
-    (ids: string[], flagged: boolean) =>
-      mutate({ ids, patch: { isFlagged: flagged }, op: () => api.markFlagged(accountId, ids, flagged) }),
-    [accountId, mutate],
+    (keys: string[], flagged: boolean) =>
+      mutate({ keys, patch: { isFlagged: flagged }, op: (acc, ids) => api.markFlagged(acc, ids, flagged) }),
+    [mutate],
   );
 
   const toggleFlag = useCallback(
-    (email: EmailSummary | EmailDetail) => flagIds([email.id], !email.isFlagged),
+    (email: EmailSummary | EmailDetail) => flagIds([emailKey(email)], !email.isFlagged),
     [flagIds],
   );
 
   const togglePin = useCallback(
     (email: EmailSummary) =>
       mutate({
-        ids: [email.id],
+        keys: [emailKey(email)],
         patch: { isPinned: !email.isPinned },
-        op: () => api.setPinned(accountId, [email.id], !email.isPinned),
+        op: (acc, ids) => api.setPinned(acc, ids, !email.isPinned),
       }),
-    [accountId, mutate],
+    [mutate],
   );
 
   const setLabelIds = useCallback(
-    (ids: string[], label: string, set: boolean) => {
-      api
-        .setLabel(accountId, ids, label, set)
+    (keys: string[], label: string, set: boolean) => {
+      Promise.all([...groupByAccount(keys)].map(([acc, ids]) => api.setLabel(acc, ids, label, set)))
         .then(refreshCurrent)
         .catch((err) => toast.error(errorMessage(err)));
     },
-    [accountId, refreshCurrent],
+    [refreshCurrent],
   );
 
   /** 列表里点选邮件。草稿直接进入编辑。 */
   const selectEmail = useCallback(
-    async (id: string) => {
-      const summary = emails.find((e) => e.id === id);
+    async (key: string) => {
+      const summary = emails.find((e) => emailKey(e) === key);
       if (currentKind !== "drafts" && !summary?.isDraft) {
         setDraft(null);
-        setEmailId(id);
+        setSelectedKey(key);
         return;
       }
+      const { accountId: acc, id } = parseEmailKey(key);
       try {
-        const email = await api.getEmail(accountId, id);
-        setEmailId(id);
-        setDraft(draftFromEmail(email));
+        const email = await api.getEmail(acc, id);
+        setSelectedKey(key);
+        setDraft(draftFromEmail(email, acc));
       } catch (err) {
         toast.error(errorMessage(err));
       }
     },
-    [emails, currentKind, accountId, setDraft],
+    [emails, currentKind, setDraft],
   );
 
   const checkEmail = useCallback(
-    (id: string, range: boolean) => {
+    (key: string, range: boolean) => {
       setChecked((prev) => {
         const next = new Set(prev);
         if (range && lastChecked.current) {
-          const a = emails.findIndex((e) => e.id === lastChecked.current);
-          const b = emails.findIndex((e) => e.id === id);
+          const a = emails.findIndex((e) => emailKey(e) === lastChecked.current);
+          const b = emails.findIndex((e) => emailKey(e) === key);
           if (a >= 0 && b >= 0) {
-            for (let i = Math.min(a, b); i <= Math.max(a, b); i++) next.add(emails[i].id);
+            for (let i = Math.min(a, b); i <= Math.max(a, b); i++) next.add(emailKey(emails[i]));
             return next;
           }
         }
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
         return next;
       });
-      lastChecked.current = id;
+      lastChecked.current = key;
     },
     [emails],
   );
 
   async function sync() {
-    if (!accountId || syncing) return;
+    if (syncing || (!unified && !accountId)) return;
     setSyncing(true);
     try {
-      await api.syncNow(accountId);
+      // 统一视图里同步全部账号。
+      await Promise.all((unified ? accounts.map((a) => a.id) : [accountId]).map((acc) => api.syncNow(acc)));
       reload();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -678,6 +756,12 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       setSyncing(false);
     }
   }
+
+  /** 文件夹 acc/box 的变化是否会出现在当前列表里。 */
+  const showsMailbox = useCallback(
+    (acc: string, box: string) => (unified ? unified === UNIFIED_UNREAD || listBoxOf(acc) === box : acc === accountId && box === mailboxId),
+    [unified, listBoxOf, accountId, mailboxId],
+  );
 
   const importInto = useCallback(
     async (acc: string, box: string) => {
@@ -690,27 +774,30 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
           toast.success(t("已导入 {0} 封", res.imported));
         }
         loadMailboxes(acc);
-        if (acc === accountId && box === mailboxId) reload();
+        if (showsMailbox(acc, box)) reload();
       } catch (err) {
         toast.error(errorMessage(err));
       }
     },
-    [accountId, mailboxId, loadMailboxes, reload],
+    [showsMailbox, loadMailboxes, reload],
   );
 
   const importEmails = useCallback(() => {
-    if (!accountId || !mailboxId) {
+    // 统一视图不是一个文件夹, 不知道导入到哪个账号。
+    if (unified || !accountId || !mailboxId) {
       toast.error(t("请先选择一个文件夹"));
       return;
     }
     importInto(accountId, mailboxId);
-  }, [accountId, mailboxId, importInto]);
+  }, [unified, accountId, mailboxId, importInto]);
 
   /** 侧栏文件夹右键菜单里涉及邮件的操作。标记已读与清空同样先显示结果, 后台逐批处理。 */
   const folderAction = useCallback(
     async (acc: string, action: "markRead" | "import" | "empty" | "refresh", box: Mailbox) => {
       const name = mailboxLabel(box);
-      const isCurrent = acc === accountId && box.id === mailboxId;
+      const isCurrent = showsMailbox(acc, box.id);
+      // 列表里属于这个文件夹的邮件; 未读视图分不出, 等重新加载。
+      const inBox = (e: EmailSummary) => e.accountId === acc && unified !== UNIFIED_UNREAD;
       const toastId = `folder:${action}:${acc}/${box.id}`;
       switch (action) {
         case "import":
@@ -727,7 +814,9 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         case "markRead":
           adjustUnread(acc, box.id, "zero");
           if (isCurrent) {
-            setEmails((prev) => prev.map((e) => (e.isUnread ? ({ ...e, isUnread: false } as EmailSummary) : e)));
+            setEmails((prev) =>
+              prev.map((e) => (e.isUnread && inBox(e) ? ({ ...e, isUnread: false } as EmailSummary) : e)),
+            );
           }
           toast.loading(t("正在将「{0}」标记为已读…", name), { id: toastId });
           try {
@@ -745,10 +834,14 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
           emptying.current.add(key);
           adjustUnread(acc, box.id, "zero");
           if (isCurrent) {
-            setEmails([]);
-            setEmailId("");
-            setChecked(new Set());
-            setHasMore(false);
+            if (unified) {
+              setEmails((prev) => prev.filter((e) => !inBox(e)));
+            } else {
+              setEmails([]);
+              setSelectedKey("");
+              setChecked(new Set());
+              setHasMore(false);
+            }
           }
           toast.loading(t("正在清空「{0}」…", name), { id: toastId });
           try {
@@ -765,28 +858,27 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         }
       }
     },
-    [accountId, mailboxId, importInto, loadMailboxes, reload, adjustUnread],
+    [unified, showsMailbox, importInto, loadMailboxes, reload, adjustUnread],
   );
 
   /** 列表右键的回复、转发要用完整邮件(正文、附件): 先读缓存, 没有正文时再拉。 */
-  const withDetail = useCallback(
-    async (id: string, fn: (email: EmailDetail) => void) => {
-      try {
-        let email = await api.getEmail(accountId, id);
-        if (!email.bodyFetched) email = await api.fetchBody(accountId, id);
-        fn(email);
-      } catch (err) {
-        toast.error(errorMessage(err));
-      }
-    },
-    [accountId],
-  );
+  const withDetail = useCallback(async (e: EmailSummary, fn: (email: EmailDetail) => void) => {
+    try {
+      let email = await api.getEmail(e.accountId, e.id);
+      if (!email.bodyFetched) email = await api.fetchBody(e.accountId, e.id);
+      fn(email);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  }, []);
 
   const menuActions = useMemo<EmailMenuActions>(
     () => ({
-      reply: (email, all) => withDetail(email.id, (d) => setDraft(replyDraft(accountId, d, all))),
+      reply: (email, all) => withDetail(email, (d) => setDraft(replyDraft(email.accountId, d, all))),
       forward: (email, asAttachment) =>
-        withDetail(email.id, (d) => setDraft(asAttachment ? forwardAsAttachmentDraft(d) : forwardDraft(d))),
+        withDetail(email, (d) =>
+          setDraft(asAttachment ? forwardAsAttachmentDraft(d, email.accountId) : forwardDraft(d, email.accountId)),
+        ),
       archive: archiveIds,
       trash: trashIds,
       move: moveIds,
@@ -796,42 +888,47 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       togglePin,
       setLabel: setLabelIds,
     }),
-    [accountId, withDetail, setDraft, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, togglePin, setLabelIds],
+    [withDetail, setDraft, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, togglePin, setLabelIds],
   );
 
+  // 阅读栏打开的邮件; 统一视图里它的账号不一定是 accountId。
   const actionsFor = useCallback(
-    (email: EmailDetail): ToolbarActions => ({
-      reply: () => setDraft(replyDraft(accountId, email, false)),
-      replyAll: () => setDraft(replyDraft(accountId, email, true)),
-      forward: () => setDraft(forwardDraft(email)),
-      forwardAsAttachment: () => setDraft(forwardAsAttachmentDraft(email)),
-      archive: () => archiveIds([email.id]),
-      trash: () => trashIds([email.id]),
-      move: (target) => moveIds([email.id], target),
-      setLabel: (label, set) => setLabelIds([email.id], label, set),
-      junk: (junk) => junkIds([email.id], junk),
-      markUnread: () => {
-        markReadIds([email.id], false);
-        // 标为未读后关闭阅读栏，否则停留在这封上会被再次自动标记已读。
-        setEmailId("");
-      },
-      toggleFlag: () => toggleFlag(email),
-      print: () => printEmail(email, false),
-      viewSource: () => setSourceTarget({ accountId, emailId: email.id }),
-      exportEml: async () => {
-        try {
-          const path = await api.exportEmail(accountId, email.id);
-          if (path) toast.success(t("已导出到 {0}", path));
-        } catch (err) {
-          toast.error(errorMessage(err));
-        }
-      },
-      importEml: importEmails,
-      showShortcuts: () => setShowShortcuts(true),
-      toggleFocus: () => setFocusMode((f) => !f),
-      toggleBodyLight: () => setBodyAppearance(bodyAppearance === "light" ? "follow" : "light"),
-    }),
-    [accountId, archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft],
+    (email: EmailDetail): ToolbarActions => {
+      const acc = email.accountId;
+      const key = emailKey(email);
+      return {
+        reply: () => setDraft(replyDraft(acc, email, false)),
+        replyAll: () => setDraft(replyDraft(acc, email, true)),
+        forward: () => setDraft(forwardDraft(email, acc)),
+        forwardAsAttachment: () => setDraft(forwardAsAttachmentDraft(email, acc)),
+        archive: () => archiveIds([key]),
+        trash: () => trashIds([key]),
+        move: (target) => moveIds([key], acc, target),
+        setLabel: (label, set) => setLabelIds([key], label, set),
+        junk: (junk) => junkIds([key], junk),
+        markUnread: () => {
+          markReadIds([key], false);
+          // 标为未读后关闭阅读栏，否则停留在这封上会被再次自动标记已读。
+          setSelectedKey("");
+        },
+        toggleFlag: () => toggleFlag(email),
+        print: () => printEmail(email, false),
+        viewSource: () => setSourceTarget({ accountId: acc, emailId: email.id }),
+        exportEml: async () => {
+          try {
+            const path = await api.exportEmail(acc, email.id);
+            if (path) toast.success(t("已导出到 {0}", path));
+          } catch (err) {
+            toast.error(errorMessage(err));
+          }
+        },
+        importEml: importEmails,
+        showShortcuts: () => setShowShortcuts(true),
+        toggleFocus: () => setFocusMode((f) => !f),
+        toggleBodyLight: () => setBodyAppearance(bodyAppearance === "light" ? "follow" : "light"),
+      };
+    },
+    [archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft],
   );
 
   /* ---------- 键盘快捷键 ---------- */
@@ -850,9 +947,9 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       }
 
       const step = (delta: number) => {
-        const idx = emails.findIndex((m) => m.id === emailId);
+        const idx = emails.findIndex((m) => emailKey(m) === selectedKey);
         const next = emails[idx < 0 ? 0 : idx + delta];
-        if (next) setEmailId(next.id);
+        if (next) setSelectedKey(emailKey(next));
       };
 
       switch (e.key) {
@@ -877,7 +974,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       }
 
       const email = currentEmail.current;
-      if (!email || email.id !== emailId) return;
+      if (!email || emailKey(email) !== selectedKey) return;
       const a = actionsFor(email);
       const map: Record<string, () => void> = {
         r: a.reply,
@@ -899,8 +996,31 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [emails, emailId, focusMode, currentKind, actionsFor, setDraft]);
+  }, [emails, selectedKey, focusMode, currentKind, actionsFor, setDraft]);
 
+
+  // 多选都属于同一个账号时的账号 id, 否则为空(跨账号没有共同的目标文件夹)。
+  const checkedAccounts = new Set([...checked].map((key) => parseEmailKey(key).accountId));
+  const checkedAccount = checkedAccounts.size === 1 ? [...checkedAccounts][0] : "";
+
+  /** 列表行的来源: 统一视图标出账号, 搜索结果标出所在文件夹。 */
+  function whereOf(email: EmailSummary): string {
+    const parts: string[] = [];
+    if (unified) {
+      const name = accounts.find((a) => a.id === email.accountId)?.name ?? "";
+      // 账号名是邮箱地址, 列表里只放 @ 前面一段, 完整地址在悬停提示里。
+      if (name) parts.push(name.split("@")[0]);
+    }
+    if (searching) {
+      const boxes = mailboxesByAccount[email.accountId] ?? [];
+      const names = (email.mailboxIds ?? [])
+        .map((id) => boxes.find((m) => m.id === id))
+        .filter((m): m is Mailbox => !!m)
+        .map(mailboxLabel);
+      if (names.length > 0) parts.push(names.join("、"));
+    }
+    return parts.join(" · ");
+  }
 
   return (
     <div className="h-full">
@@ -932,9 +1052,12 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 accountId={accountId}
                 mailboxId={mailboxId}
                 onSelect={(acc, box) => {
+                  setUnified("");
                   setAccountId(acc);
                   setMailboxId(box);
                 }}
+                unified={unified}
+                onSelectUnified={setUnified}
                 onMailboxesChanged={loadMailboxes}
                 onFolderAction={folderAction}
               />
@@ -949,7 +1072,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 title={t("全选")}
                 disabled={emails.length === 0}
                 checked={checked.size === 0 ? false : checked.size === emails.length ? true : "indeterminate"}
-                onCheckedChange={(v) => setChecked(v === true ? new Set(emails.map((e) => e.id)) : new Set())}
+                onCheckedChange={(v) => setChecked(v === true ? new Set(emails.map(emailKey)) : new Set())}
               />
               <div className="relative min-w-0 flex-1">
                 <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
@@ -963,7 +1086,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                       e.currentTarget.blur();
                     }
                   }}
-                  placeholder={t("搜索全部文件夹（/）")}
+                  placeholder={unified ? t("搜索全部账号（/）") : t("搜索全部文件夹（/）")}
                   className="h-8 pr-8 pl-8"
                   aria-label={t("搜索邮件")}
                 />
@@ -1043,20 +1166,25 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                       <ShieldAlert className="size-4" />
                       {currentKind === "junk" ? t("不是垃圾邮件") : t("标记为垃圾邮件")}
                     </DropdownMenuItem>
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <FolderInput className="size-4" />
-                        {t("移动到")}</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
-                        {mailboxes
-                          .filter((m) => m.id !== mailboxId && m.kind !== "drafts" && m.kind !== "scheduled")
-                          .map((m) => (
-                            <DropdownMenuItem key={m.id} onSelect={() => moveIds([...checked], m.id)}>
-                              <span className="truncate">{mailboxLabel(m)}</span>
-                            </DropdownMenuItem>
-                          ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
+                    {/* 文件夹属于各自的账号, 多选跨账号时没有共同的目标文件夹。 */}
+                    {checkedAccount && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <FolderInput className="size-4" />
+                          {t("移动到")}</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-80 w-52 overflow-y-auto">
+                          {(mailboxesByAccount[checkedAccount] ?? [])
+                            .filter(
+                              (m) => m.id !== listBoxOf(checkedAccount) && m.kind !== "drafts" && m.kind !== "scheduled",
+                            )
+                            .map((m) => (
+                              <DropdownMenuItem key={m.id} onSelect={() => moveIds([...checked], checkedAccount, m.id)}>
+                                <span className="truncate">{mailboxLabel(m)}</span>
+                              </DropdownMenuItem>
+                            ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <BulkBtn label={t("取消选择")} onClick={() => setChecked(new Set())}>
@@ -1067,29 +1195,27 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
             <div className="min-h-0 flex-1">
               <EmailList
-                accountId={accountId}
                 onScrollContainer={setListScrollEl}
                 onScrolledAway={setScrolledAway}
-                mailboxes={searching ? mailboxes : undefined}
+                whereOf={searching || unified ? whereOf : undefined}
                 checked={checked}
                 onCheck={checkEmail}
                 emails={emails}
-                selectedId={emailId}
+                selectedKey={selectedKey}
                 loading={loading}
                 hasMore={hasMore && !searching}
                 onSelect={selectEmail}
                 onLoadMore={() => loadPage(emails.length, loadToken.current)}
                 onToggleFlag={toggleFlag}
-                onDelete={(email) => trashIds([email.id])}
+                onDelete={(email) => trashIds([emailKey(email)])}
                 rowMenu={(email, row) => (
                   <EmailContextMenu
-                    accountId={accountId}
                     email={email}
                     checked={checked}
-                    mailboxes={mailboxes}
-                    mailboxId={mailboxId}
+                    mailboxes={mailboxesByAccount[email.accountId] ?? []}
+                    mailboxId={listBoxOf(email.accountId)}
                     currentKind={currentKind}
-                    knownLabels={labels}
+                    knownLabels={labelsByAccount[email.accountId] ?? []}
                     actions={menuActions}
                   >
                     {row}
@@ -1104,19 +1230,19 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
             {draft ? (
               <ComposePane
                 key={draftKey}
-                accountId={accountId}
+                accountId={draft.accountId ?? composeAccount}
                 draft={draft}
                 onClose={() => setDraft(null)}
                 onSent={reload}
               />
-            ) : emailId ? (
+            ) : selectedKey ? (
               <EmailView
-                key={`${accountId}/${emailId}`}
-                accountId={accountId}
-                emailId={emailId}
-                mailboxes={mailboxes}
+                key={selectedKey}
+                accountId={selected.accountId}
+                emailId={selected.id}
+                mailboxes={mailboxesByAccount[selected.accountId] ?? []}
                 currentKind={currentKind}
-                labels={labels}
+                labels={labelsByAccount[selected.accountId] ?? []}
                 focusMode={focusMode}
                 bodyMode={bodyMode}
                 bodyAlwaysLight={bodyAppearance === "light"}
@@ -1125,8 +1251,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                   currentEmail.current = e;
                 }}
                 revision={revision}
-                onOpenEmail={(id) => setEmailId(id)}
-                onMarkRead={(id) => markReadIds([id], true)}
+                onOpenEmail={(id) => setSelectedKey(emailKey({ accountId: selected.accountId, id }))}
+                onMarkRead={(id) => markReadIds([emailKey({ accountId: selected.accountId, id })], true)}
               />
             ) : (
               <div className="text-muted-foreground flex h-full items-center justify-center text-sm">{t("选择一封邮件")}</div>
@@ -1192,10 +1318,11 @@ function replyDraft(accountId: string, email: EmailDetail, all: boolean): Compos
     references: refs,
     replyTo: { accountId, emailId: email.id },
     inlineParts: inlinePartsOf(email),
+    accountId,
   };
 }
 
-function forwardDraft(email: EmailDetail): ComposeDraft {
+function forwardDraft(email: EmailDetail, accountId: string): ComposeDraft {
   const header = [
     t("-------- 转发的邮件 --------"),
     t("发件人：{0}", displayAddressList(email.from)),
@@ -1216,12 +1343,14 @@ function forwardDraft(email: EmailDetail): ComposeDraft {
     attachments: (email.attachments ?? [])
       .filter((a) => !a.inline)
       .map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, size: a.size })),
+    accountId,
   };
 }
 
 /** 作为附件转发: 原邮件的 blob 就是完整的 RFC 5322 原文，直接引用，无需下载再上传。 */
-function forwardAsAttachmentDraft(email: EmailDetail): ComposeDraft {
+function forwardAsAttachmentDraft(email: EmailDetail, accountId: string): ComposeDraft {
   return {
+    accountId,
     to: "",
     cc: "",
     subject: withPrefix("Fwd:", email.subject),
@@ -1231,7 +1360,7 @@ function forwardAsAttachmentDraft(email: EmailDetail): ComposeDraft {
 }
 
 /** 打开已有草稿继续编辑。 */
-function draftFromEmail(email: EmailDetail): ComposeDraft {
+function draftFromEmail(email: EmailDetail, accountId: string): ComposeDraft {
   const { body, quote } = email.bodyHtml ? splitDraftHtml(email.bodyHtml) : { body: textToHtml(email.bodyText || ""), quote: "" };
   return {
     to: addressesOf(email.to),
@@ -1246,5 +1375,6 @@ function draftFromEmail(email: EmailDetail): ComposeDraft {
       .map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, size: a.size })),
     draftId: email.id,
     inlineParts: inlinePartsOf(email),
+    accountId,
   };
 }

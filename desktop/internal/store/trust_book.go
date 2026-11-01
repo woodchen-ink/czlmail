@@ -2,9 +2,7 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
-	"time"
 )
 
 // TrustedSendersBook 是 Bulwark 存放信任发件人的通讯录名。
@@ -83,14 +81,8 @@ func (s *Store) AddressBookByName(ctx context.Context, accountID, name string) (
 	return nil, ErrNotFound
 }
 
-// EmailWithAccount 是跨账号查询的邮件摘要。
-type EmailWithAccount struct {
-	AccountID string `json:"accountId"`
-	EmailSummary
-}
-
-// RecentEmailsWith 返回与某地址往来的最近邮件(发件人或收件人含该地址)。
-func (s *Store) RecentEmailsWith(ctx context.Context, address string, limit int) ([]EmailWithAccount, error) {
+// RecentEmailsWith 返回与某地址往来的最近邮件(发件人或收件人含该地址), 跨全部账号。
+func (s *Store) RecentEmailsWith(ctx context.Context, address string, limit int) ([]EmailSummary, error) {
 	addr := NormalizeAddress(address)
 	if addr == "" {
 		return nil, nil
@@ -98,34 +90,16 @@ func (s *Store) RecentEmailsWith(ctx context.Context, address string, limit int)
 	// 地址在 JSON 里以 "email":"x" 出现, 带上引号避免子串误中。
 	like := `%"email":"` + escapeLike(addr) + `"%`
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.account_id, e.id, e.thread_id, e.subject, e.from_json, e.received_at,
-		       e.preview, e.has_attachment, e.size,`+keywordFlags+`
+		SELECT `+summaryColumns+`
 		FROM emails e
-		WHERE LOWER(e.from_json) LIKE ? ESCAPE '\' OR LOWER(e.to_json) LIKE ? ESCAPE '\' OR LOWER(e.cc_json) LIKE ? ESCAPE '\'
+		WHERE LOWER(e.from_json) LIKE ? ESCAPE '' OR LOWER(e.to_json) LIKE ? ESCAPE '' OR LOWER(e.cc_json) LIKE ? ESCAPE ''
 		ORDER BY e.received_at DESC
 		LIMIT ?`, like, like, like, limit)
 	if err != nil {
 		return nil, wrap(CodeQuery, "recent emails with", err)
 	}
 	defer rows.Close()
-
-	var out []EmailWithAccount
-	for rows.Next() {
-		var r EmailWithAccount
-		var fromJSON string
-		var receivedAt int64
-		var hasAttachment, unread, flagged, draft, pinned int
-		if err := rows.Scan(&r.AccountID, &r.ID, &r.ThreadID, &r.Subject, &fromJSON, &receivedAt,
-			&r.Preview, &hasAttachment, &r.Size, &unread, &flagged, &draft, &pinned); err != nil {
-			return nil, wrap(CodeQuery, "scan recent email", err)
-		}
-		_ = json.Unmarshal([]byte(fromJSON), &r.From)
-		r.ReceivedAt = time.Unix(receivedAt, 0)
-		r.HasAttachment, r.IsUnread, r.IsFlagged, r.IsDraft = hasAttachment != 0, unread != 0, flagged != 0, draft != 0
-		r.IsPinned = pinned != 0
-		out = append(out, r)
-	}
-	return out, wrap(CodeQuery, "iterate recent emails", rows.Err())
+	return scanSummaries(rows)
 }
 
 // SearchFileNodes 按名称检索文件。

@@ -1111,5 +1111,7 @@
   "例如 YYYY-MM-DD-dddd 得到 2025-03-21-星期五。": "For example YYYY-MM-DD-dddd gives 2025-03-21-Friday.",
   "笔记库里一篇笔记的路径，例如 模板/日记.md；留空用内置模板。模板可用 {{date}}、{{time}}、{{title}}、{{date:YYYY年M月D日}}。": "Path of a note in your library, e.g. Templates/Journal.md. Leave empty for the built-in template. Templates may use {{date}}, {{time}}, {{title}} and {{date:YYYY-MM-DD}}.",
   "当天日记": "Journal for this day",
-  "当天笔记 {0} 篇": "{0} notes on this day"
+  "当天笔记 {0} 篇": "{0} notes on this day",
+  "全部账号": "All accounts",
+  "搜索全部账号（/）": "Search all accounts (/)"
 }

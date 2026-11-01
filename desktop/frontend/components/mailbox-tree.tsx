@@ -88,7 +88,7 @@ export function mailboxIcon(kind: string): typeof Inbox {
   return getKindMeta()[kind]?.icon ?? Folder;
 }
 
-const KIND_ORDER = ["inbox", "drafts", "scheduled", "sent", "archive", "junk", "trash"];
+export const KIND_ORDER = ["inbox", "drafts", "scheduled", "sent", "archive", "junk", "trash"];
 
 interface Node extends Mailbox {
   children: Node[];
@@ -139,30 +139,18 @@ function MailboxRow({
   const label = meta?.label ?? node.name;
 
   const row = (
-    <button
-      type="button"
+    <FolderButton
+      icon={Icon}
+      color={meta?.color}
+      label={label}
+      title={node.name}
+      selected={selected}
       onClick={() => onSelect(node.id)}
-      aria-current={selected ? "page" : undefined}
-      className={cn(
-        "group flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors",
-        "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-        selected && "bg-muted font-medium",
-      )}
-      style={{ paddingLeft: `${(node.depth + indent) * 12 + 8}px` }}
-    >
-      <Icon className={cn("size-4 shrink-0", meta?.color ?? "text-muted-foreground")} />
-      <span className="min-w-0 flex-1 truncate" title={node.name}>
-        {label}
-      </span>
-      {/* 收件箱用醒目的角标; 其它文件夹(垃圾邮件、归档等)的未读多是不必处理的, 保持灰字。 */}
-      {node.kind === "inbox" ? (
-        <UnreadBadge count={node.unreadEmails} />
-      ) : node.unreadEmails > 0 && (
-        <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-          {node.unreadEmails}
-        </span>
-      )}
-    </button>
+      depth={node.depth + indent}
+      unread={node.unreadEmails}
+      // 收件箱用醒目的角标; 其它文件夹(垃圾邮件、归档等)的未读多是不必处理的, 保持灰字。
+      badge={node.kind === "inbox"}
+    />
   );
 
   if (!onAction) return row;
@@ -217,6 +205,62 @@ function MailboxRow({
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+/** 侧栏里的一行文件夹, 账号文件夹与统一视图共用。 */
+export function FolderButton({
+  icon: Icon,
+  color,
+  label,
+  title,
+  selected,
+  onClick,
+  depth = 0,
+  unread,
+  badge,
+  ...rest
+}: {
+  icon: typeof Inbox;
+  /** 图标颜色类名(完整字面量), 不给时为灰色。 */
+  color?: string;
+  label: string;
+  title?: string;
+  selected: boolean;
+  onClick: () => void;
+  depth?: number;
+  unread: number;
+  /** 未读数用红色角标(需要处理的)还是灰字。 */
+  badge: boolean;
+} & Omit<React.ComponentProps<"button">, "onClick" | "title">) {
+  return (
+    <button
+      type="button"
+      {...rest}
+      onClick={onClick}
+      aria-current={selected ? "page" : undefined}
+      className={cn(
+        "group flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors",
+        "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+        selected && "bg-muted font-medium",
+      )}
+      style={{ paddingLeft: `${depth * 12 + 8}px` }}
+    >
+      <Icon className={cn("size-4 shrink-0", color ?? "text-muted-foreground")} />
+      <span className="min-w-0 flex-1 truncate" title={title ?? label}>
+        {label}
+      </span>
+      {badge ? (
+        <UnreadBadge count={unread} />
+      ) : unread > 0 && (
+        <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{unread}</span>
+      )}
+    </button>
+  );
+}
+
+/** 文件夹类别的图标颜色类名, 自建文件夹没有。 */
+export function mailboxColor(kind: string): string | undefined {
+  return getKindMeta()[kind]?.color;
 }
 
 /**

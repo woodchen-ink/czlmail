@@ -190,6 +190,11 @@ func (a *App) SearchEmailsOnServer(accountID, query string, limit int) ([]store.
 	if query == "" {
 		return nil, nil
 	}
+	return a.searchAccountOnServer(st, accountID, query, limit)
+}
+
+// searchAccountOnServer 合并某账号的服务端与本地检索结果, 按时间倒序取前 limit 封。
+func (a *App) searchAccountOnServer(st *store.Store, accountID, query string, limit int) ([]store.EmailSummary, error) {
 	var remote []string
 	if s, err := a.currentSyncer(); err == nil {
 		ctx, cancel := context.WithTimeout(a.ctx, fillPageTimeout)

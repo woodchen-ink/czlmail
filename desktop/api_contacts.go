@@ -907,7 +907,7 @@ func (a *App) DeleteAddressBook(accountID, id string) error {
 }
 
 // RecentEmailsWith 返回与联系人最近的往来邮件。
-func (a *App) RecentEmailsWith(address string) ([]store.EmailWithAccount, error) {
+func (a *App) RecentEmailsWith(address string) ([]store.EmailSummary, error) {
 	st, err := a.currentStore()
 	if err != nil {
 		return nil, err

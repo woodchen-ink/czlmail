@@ -11,6 +11,8 @@ import (
 // EmailSummary 是列表视图的一行。刻意不含正文与收件人列表 ——
 // 列表只渲染这些字段, 多取的每一列都要乘以一屏的行数。
 type EmailSummary struct {
+	// AccountID 是邮件所属账号。统一视图里各账号的邮件混在一个列表, id 只在账号内唯一。
+	AccountID     string    `json:"accountId"`
 	ID            string    `json:"id"`
 	ThreadID      string    `json:"threadId"`
 	Subject       string    `json:"subject"`
@@ -77,6 +79,10 @@ const keywordFlags = `
 	    EXISTS (SELECT 1 FROM email_keywords k
 	            WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$pinned')  AS is_pinned`
 
+// summaryColumns 是邮件摘要的列, 顺序与 scanSummaries 一致。
+const summaryColumns = `e.account_id, e.id, e.thread_id, e.subject, e.from_json, e.received_at,
+	       e.preview, e.has_attachment, e.size,` + keywordFlags
+
 // EmailsByMailbox 分页取某邮箱的邮件: 置顶的在最前, 其余按收件时间倒序。
 //
 // 不在一条 SQL 里 ORDER BY is_pinned: 那样要对整个邮箱逐封算关键字再排序, 用不上
@@ -101,8 +107,7 @@ func (s *Store) EmailsByMailbox(
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
-		       e.preview, e.has_attachment, e.size,`+keywordFlags+threadCountColumn+`
+		SELECT `+summaryColumns+threadCountColumn+`
 		FROM emails e
 		JOIN email_mailboxes m
 		  ON m.account_id = e.account_id AND m.email_id = e.id
@@ -127,8 +132,7 @@ func (s *Store) EmailsByMailbox(
 // pinnedInMailbox 列出邮箱里置顶的邮件, 按收件时间倒序。
 func (s *Store) pinnedInMailbox(ctx context.Context, accountID, mailboxID string) ([]EmailSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
-		       e.preview, e.has_attachment, e.size,`+keywordFlags+threadCountColumn+`
+		SELECT `+summaryColumns+threadCountColumn+`
 		FROM email_keywords p
 		JOIN email_mailboxes m
 		  ON m.account_id = p.account_id AND m.email_id = p.email_id
@@ -151,7 +155,7 @@ const threadCountColumn = `,
 func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 	var out []EmailSummary
 	cols, _ := rows.Columns()
-	withThread := len(cols) > 12
+	withThread := len(cols) > 13
 	for rows.Next() {
 		var e EmailSummary
 		var fromJSON string
@@ -159,7 +163,7 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 		var hasAttachment, unread, flagged, draft, pinned int
 
 		dest := []any{
-			&e.ID, &e.ThreadID, &e.Subject, &fromJSON, &receivedAt,
+			&e.AccountID, &e.ID, &e.ThreadID, &e.Subject, &fromJSON, &receivedAt,
 			&e.Preview, &hasAttachment, &e.Size,
 			&unread, &flagged, &draft, &pinned,
 		}
@@ -188,8 +192,7 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 // ThreadEmails 按时间正序列出同一会话的邮件(跨文件夹), 最多 limit 封。
 func (s *Store) ThreadEmails(ctx context.Context, accountID, threadID string, limit int) ([]EmailSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
-		       e.preview, e.has_attachment, e.size,`+keywordFlags+`
+		SELECT `+summaryColumns+`
 		FROM emails e
 		WHERE e.account_id = ? AND e.thread_id = ?
 		ORDER BY e.received_at ASC
@@ -252,6 +255,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 		}
 	}
 
+	d.AccountID = accountID
 	d.ReceivedAt = time.Unix(receivedAt, 0)
 	d.HasAttachment = hasAttachment != 0
 	d.IsUnread = unread != 0

@@ -41,27 +41,33 @@ import {
 import { Input } from "@/components/ui/input";
 import { mailboxIcon, mailboxLabel, mailboxTreeOrder } from "@/components/mailbox-tree";
 import { api, type EmailSummary, type Mailbox } from "@/lib/api";
+import { emailKey, parseEmailKey } from "@/lib/email-key";
 
-/** 右键菜单里的操作, ids 为单封或当前多选。由外壳实现, 删除、移动等都是乐观更新。 */
+/**
+ * 右键菜单里的操作, keys 为单封或当前多选的「账号/id」键(统一视图里可能跨账号)。
+ * 由外壳实现, 删除、移动等都是乐观更新。
+ */
 export interface EmailMenuActions {
   reply: (email: EmailSummary, all: boolean) => void;
   forward: (email: EmailSummary, asAttachment: boolean) => void;
-  archive: (ids: string[]) => void;
-  trash: (ids: string[]) => void;
-  move: (ids: string[], mailboxId: string) => void;
-  junk: (ids: string[], junk: boolean) => void;
-  markRead: (ids: string[], read: boolean) => void;
+  archive: (keys: string[]) => void;
+  trash: (keys: string[]) => void;
+  /** 移动到 accountId 账号的 mailboxId 文件夹; keys 必须都属于这个账号。 */
+  move: (keys: string[], accountId: string, mailboxId: string) => void;
+  junk: (keys: string[], junk: boolean) => void;
+  markRead: (keys: string[], read: boolean) => void;
   toggleFlag: (email: EmailSummary) => void;
   togglePin: (email: EmailSummary) => void;
-  setLabel: (ids: string[], label: string, set: boolean) => void;
+  setLabel: (keys: string[], label: string, set: boolean) => void;
 }
 
 interface Props {
-  accountId: string;
   email: EmailSummary;
   /** 右键的邮件在多选里且多选超过一封时, 操作作用于整个多选。 */
   checked: Set<string>;
+  /** 这封邮件所属账号的文件夹, 供「移动到」。 */
   mailboxes: Mailbox[];
+  /** 邮件当前所在、不必出现在「移动到」里的文件夹。 */
   mailboxId: string;
   currentKind: string;
   knownLabels: string[];
@@ -85,7 +91,6 @@ async function copyLink(link: string) {
 
 /** 邮件列表行的右键菜单, 条目与顺序同 Bulwark。 */
 export function EmailContextMenu({
-  accountId,
   email,
   checked,
   mailboxes,
@@ -96,8 +101,12 @@ export function EmailContextMenu({
   children,
 }: Props) {
   useI18n();
-  const batch = checked.has(email.id) && checked.size > 1;
-  const ids = batch ? [...checked] : [email.id];
+  const accountId = email.accountId;
+  const key = emailKey(email);
+  const batch = checked.has(key) && checked.size > 1;
+  const keys = batch ? [...checked] : [key];
+  // 文件夹属于各自的账号, 多选跨账号时没有共同的目标文件夹。
+  const oneAccount = keys.every((k) => parseEmailKey(k).accountId === accountId);
   // 列表摘要里没有标签, 打开菜单时从本地缓存读。
   const [labels, setLabels] = useState<string[] | null>(null);
   const [draft, setDraft] = useState("");
@@ -106,7 +115,7 @@ export function EmailContextMenu({
 
   const spamApplicable = !["sent", "drafts", "scheduled"].includes(currentKind);
   const inJunk = currentKind === "junk";
-  const targets = open
+  const targets = open && oneAccount
     ? mailboxTreeOrder(mailboxes).filter((m) => m.id !== mailboxId && m.kind !== "drafts" && m.kind !== "scheduled")
     : [];
   const allLabels = Array.from(new Set([...knownLabels, ...(labels ?? [])])).sort();
@@ -130,7 +139,7 @@ export function EmailContextMenu({
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-56">
         {batch ? (
-          <ContextMenuLabel>{t("已选{0}封", ids.length)}</ContextMenuLabel>
+          <ContextMenuLabel>{t("已选{0}封", keys.length)}</ContextMenuLabel>
         ) : (
           <>
             <ContextMenuItem onSelect={() => actions.reply(email, false)}>
@@ -158,10 +167,10 @@ export function EmailContextMenu({
         )}
         <ContextMenuSeparator />
 
-        <ContextMenuItem onSelect={() => actions.archive(ids)} disabled={currentKind === "archive"}>
+        <ContextMenuItem onSelect={() => actions.archive(keys)} disabled={currentKind === "archive"}>
           <Archive />
           {t("归档")}</ContextMenuItem>
-        <ContextMenuItem variant="destructive" onSelect={() => actions.trash(ids)}>
+        <ContextMenuItem variant="destructive" onSelect={() => actions.trash(keys)}>
           <Trash2 />
           {currentKind === "trash" ? t("彻底删除") : t("删除")}
         </ContextMenuItem>
@@ -178,7 +187,7 @@ export function EmailContextMenu({
                 return (
                   <ContextMenuItem
                     key={m.id}
-                    onSelect={() => actions.move(ids, m.id)}
+                    onSelect={() => actions.move(keys, accountId, m.id)}
                     style={{ paddingLeft: `${m.depth * 12 + 6}px` }}
                   >
                     <Icon />
@@ -214,7 +223,7 @@ export function EmailContextMenu({
                       disabled={labels === null}
                       onCheckedChange={(v) => {
                         setLabels((prev) => (v ? [...(prev ?? []), label] : (prev ?? []).filter((l) => l !== label)));
-                        actions.setLabel(ids, label, v);
+                        actions.setLabel(keys, label, v);
                       }}
                       // 勾选后不关闭菜单，方便一次打多个标签。
                       onSelect={(e) => e.preventDefault()}
@@ -231,7 +240,7 @@ export function EmailContextMenu({
                     const v = draft.trim();
                     if (!v) return;
                     setLabels((prev) => [...(prev ?? []), v]);
-                    actions.setLabel(ids, v, true);
+                    actions.setLabel(keys, v, true);
                     setDraft("");
                   }}
                 >
@@ -252,7 +261,7 @@ export function EmailContextMenu({
         {spamApplicable && (
           <>
             <ContextMenuSeparator />
-            <ContextMenuItem variant={inJunk ? "default" : "destructive"} onSelect={() => actions.junk(ids, !inJunk)}>
+            <ContextMenuItem variant={inJunk ? "default" : "destructive"} onSelect={() => actions.junk(keys, !inJunk)}>
               {inJunk ? <ShieldCheck /> : <ShieldAlert />}
               {inJunk ? t("不是垃圾邮件") : t("举报垃圾邮件")}
             </ContextMenuItem>
@@ -260,7 +269,7 @@ export function EmailContextMenu({
         )}
         <ContextMenuSeparator />
 
-        <ContextMenuItem onSelect={() => actions.markRead(ids, email.isUnread)}>
+        <ContextMenuItem onSelect={() => actions.markRead(keys, email.isUnread)}>
           {email.isUnread ? <MailOpen /> : <Mail />}
           {email.isUnread ? t("标记为已读") : t("标记为未读")}
         </ContextMenuItem>

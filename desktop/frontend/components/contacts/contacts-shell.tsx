@@ -72,7 +72,7 @@ import {
   type AddressBook,
   type ContactForm,
   type ContactSummary,
-  type EmailWithAccount,
+  type EmailSummary,
   type EventOccurrence,
   type PIMChange,
 } from "@/lib/api";
@@ -778,7 +778,7 @@ function ContactDetailPane({
 }) {
   useI18n();
   const [detail, setDetail] = useState<ContactForm | null>(null);
-  const [emails, setEmails] = useState<EmailWithAccount[]>([]);
+  const [emails, setEmails] = useState<EmailSummary[]>([]);
   const [events, setEvents] = useState<EventOccurrence[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 

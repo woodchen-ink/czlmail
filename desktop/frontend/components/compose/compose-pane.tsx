@@ -82,6 +82,11 @@ export interface ComposeDraft {
   draftId?: string;
   /** 回复的原邮件, 供 AI 起草回复使用。 */
   replyTo?: { accountId: string; emailId: string };
+  /**
+   * 写信用的账号。回复、转发、续编草稿时是原邮件所在账号(引用的附件 blob 只在该账号可用,
+   * 发件身份也取自它); 新写的信不填, 由外壳按当前视图决定。
+   */
+  accountId?: string;
 }
 
 export interface InlinePart {

@@ -22,42 +22,40 @@ import {
 } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { mailboxLabel } from "@/components/mailbox-tree";
 import { SenderAvatar } from "@/components/sender-avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { displayAddressList, listDate } from "@/lib/format";
-import { api, type EmailSummary, type Mailbox } from "@/lib/api";
+import { api, type EmailSummary } from "@/lib/api";
+import { emailKey } from "@/lib/email-key";
 
 interface Props {
-  /** 会话展开时按这个账号读取会话里的全部邮件。 */
-  accountId: string;
   emails: EmailSummary[];
-  selectedId: string;
+  /** 选中邮件的「账号/id」键(见 lib/email-key)。 */
+  selectedKey: string;
   loading: boolean;
   hasMore: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (key: string) => void;
   onLoadMore: () => void;
   onToggleFlag: (email: EmailSummary) => void;
   onDelete?: (email: EmailSummary) => void;
-  /** 多选。checked 非空时点击行切换勾选而不是打开。 */
+  /** 多选的邮件键。checked 非空时点击行切换勾选而不是打开。 */
   checked?: Set<string>;
-  onCheck?: (id: string, range: boolean) => void;
+  onCheck?: (key: string, range: boolean) => void;
   /** 给行套上右键菜单。 */
   rowMenu?: (email: EmailSummary, row: React.ReactElement) => React.ReactElement;
   /** 滚动容器挂载/卸载时回调, 供外部回到顶部。 */
   onScrollContainer?: (el: HTMLDivElement | null) => void;
   /** 滚动超过一屏(或回到一屏以内)时回调。 */
   onScrolledAway?: (away: boolean) => void;
-  /** 给出时每行标出所在文件夹(搜索结果跨文件夹)。 */
-  mailboxes?: Mailbox[];
+  /** 给出时每行标出来源(搜索结果所在文件夹、统一视图里的账号), 返回空串不标。 */
+  whereOf?: (email: EmailSummary) => string;
 }
 
 export function EmailList({
-  accountId,
   emails,
-  selectedId,
+  selectedKey,
   loading,
   hasMore,
   onSelect,
@@ -69,7 +67,7 @@ export function EmailList({
   rowMenu,
   onScrollContainer,
   onScrolledAway,
-  mailboxes,
+  whereOf,
 }: Props) {
   useI18n();
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -81,8 +79,6 @@ export function EmailList({
     },
     [onScrollContainer],
   );
-
-  const folderNames = mailboxes ? new Map(mailboxes.map((m) => [m.id, mailboxLabel(m)])) : null;
 
   // 骨架屏与空列表时没有滚动容器, 切换文件夹后容器重新挂载在顶部; 列表每次变化都重新报一次。
   const reportScroll = useCallback(() => {
@@ -99,7 +95,7 @@ export function EmailList({
     const byThread = new Map<string, { head: EmailSummary; unread: boolean }>();
     const out: { head: EmailSummary; unread: boolean }[] = [];
     for (const e of emails) {
-      const key = e.threadId || e.id;
+      const key = threadKey(e);
       const existing = byThread.get(key);
       if (existing) {
         existing.unread ||= e.isUnread;
@@ -114,18 +110,17 @@ export function EmailList({
     return out;
   }, [emails]);
 
+  // 展开的会话与读到的会话成员按「账号/会话 id」记: 统一视图里不同账号的会话 id 可能相同。
   // 列表刷新(新邮件到达、标记已读)后, 已展开的会话重新读取。
   useEffect(() => {
     if (expanded.size === 0) return;
     let cancelled = false;
     Promise.all(
-      [...expanded].map(
-        async (tid) =>
-          [
-            tid,
-            (await api.threadEmails(accountId, tid).catch(() => [])) ?? [],
-          ] as const,
-      ),
+      [...expanded].map(async (key) => {
+        const i = key.indexOf("/");
+        const list = (await api.threadEmails(key.slice(0, i), key.slice(i + 1)).catch(() => [])) ?? [];
+        return [key, list] as const;
+      }),
     ).then((entries) => {
       if (!cancelled) setThreads(Object.fromEntries(entries));
     });
@@ -134,42 +129,43 @@ export function EmailList({
     };
     // expanded 变化由 toggleThread 自己读取, 这里只跟随列表刷新。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emails, accountId]);
+  }, [emails]);
 
-  async function toggleThread(threadId: string) {
+  async function toggleThread(email: EmailSummary) {
+    const key = threadKey(email);
     const next = new Set(expanded);
-    if (next.has(threadId)) {
-      next.delete(threadId);
+    if (next.has(key)) {
+      next.delete(key);
       setExpanded(next);
       return;
     }
-    next.add(threadId);
+    next.add(key);
     setExpanded(next);
-    if (!threads[threadId]) {
+    if (!threads[key]) {
       const list =
-        (await api.threadEmails(accountId, threadId).catch(() => [])) ?? [];
-      setThreads((prev) => ({ ...prev, [threadId]: list }));
+        (await api.threadEmails(email.accountId, email.threadId).catch(() => [])) ?? [];
+      setThreads((prev) => ({ ...prev, [key]: list }));
     }
   }
 
   // 从通讯录、通知或链接打开的邮件可能在屏幕外, 选中变化后把那一行滚进视野。
   // block: "nearest" 在行已经可见时什么都不做, 所以点击行本身不会引起跳动;
-  // 记下滚过的 id, 列表刷新(新邮件、标记已读)时不把用户滚回去。
+  // 记下滚过的键, 列表刷新(新邮件、标记已读)时不把用户滚回去。
   const scrolledTo = useRef("");
   useEffect(() => {
-    if (!selectedId || scrolledTo.current === selectedId) return;
+    if (!selectedKey || scrolledTo.current === selectedKey) return;
     const root = scrollRef.current;
     if (!root) return;
-    const find = (id: string) => root.querySelector(`[data-email-id="${CSS.escape(id)}"]`);
+    const find = (key: string) => root.querySelector(`[data-email-key="${CSS.escape(key)}"]`);
     // 选中的是会话里较早的一封时, 列表上只有代表整个会话的那一行, 滚到它。
-    const target = emails.find((e) => e.id === selectedId);
-    const key = target ? target.threadId || target.id : "";
-    const head = key ? rows.find(({ head: h }) => (h.threadId || h.id) === key)?.head.id : "";
-    const row = find(selectedId) ?? (head ? find(head) : null);
+    const target = emails.find((e) => emailKey(e) === selectedKey);
+    const tk = target ? threadKey(target) : "";
+    const head = tk ? rows.find(({ head: h }) => threadKey(h) === tk)?.head : undefined;
+    const row = find(selectedKey) ?? (head ? find(emailKey(head)) : null);
     if (!row) return; // 还没加载到那一页, 等列表到了再滚。
-    scrolledTo.current = selectedId;
+    scrolledTo.current = selectedKey;
     row.scrollIntoView({ block: "nearest" });
-  }, [selectedId, emails, rows, threads]);
+  }, [selectedKey, emails, rows, threads]);
 
   // 触底加载。用 IntersectionObserver 而不是监听 scroll 事件：
   // scroll 在快速滚动时每帧都触发，而这里只需要知道「哨兵进入视口」这一个事实。
@@ -195,7 +191,7 @@ export function EmailList({
       e.preventDefault();
       const next = e.key === "ArrowDown" ? index + 1 : index - 1;
       const target = rows[next]?.head;
-      if (target) onSelect(target.id);
+      if (target) onSelect(emailKey(target));
     },
     [rows, onSelect],
   );
@@ -211,25 +207,25 @@ export function EmailList({
     <ScrollArea ref={setScrollEl} onScroll={reportScroll} className="h-full overflow-x-hidden">
       <ul className="flex flex-col">
         {rows.map(({ head: email, unread }, index) => {
-          const tid = email.threadId;
+          const key = emailKey(email);
+          const tk = threadKey(email);
           const count = email.threadCount ?? 0;
-          const isOpen = !!tid && expanded.has(tid);
-          const members = isOpen ? [...(threads[tid] ?? [])].reverse() : [];
-          const where = folderNames
-            ? (email.mailboxIds ?? []).map((id) => folderNames.get(id) ?? "").filter(Boolean).join("、")
-            : "";
+          const isOpen = !!email.threadId && expanded.has(tk);
+          const members = isOpen ? [...(threads[tk] ?? [])].reverse() : [];
+          const where = whereOf?.(email) ?? "";
+          const isChecked = checked?.has(key) ?? false;
           const childSelected = members.some(
-            (m) => m.id === selectedId && m.id !== email.id,
+            (m) => emailKey(m) === selectedKey && m.id !== email.id,
           );
           return (
-            <li key={email.id}>
+            <li key={key}>
               {wrapRow(
                 email,
                 <div
                   role="button"
                   tabIndex={0}
-                  data-email-id={email.id}
-                  aria-current={email.id === selectedId ? "true" : undefined}
+                  data-email-key={key}
+                  aria-current={key === selectedKey ? "true" : undefined}
                   onClick={(e) => {
                     if (
                       onCheck &&
@@ -238,23 +234,22 @@ export function EmailList({
                         e.shiftKey ||
                         (checked?.size ?? 0) > 0)
                     ) {
-                      onCheck(email.id, e.shiftKey);
+                      onCheck(key, e.shiftKey);
                       return;
                     }
-                    onSelect(email.id);
+                    onSelect(key);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      onSelect(email.id);
+                      onSelect(key);
                     }
                     handleKey(e, index);
                   }}
                   className={cn(
                     "group border-border flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
                     "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-                    (email.id === selectedId || checked?.has(email.id)) &&
-                      "bg-muted",
+                    (key === selectedKey || isChecked) && "bg-muted",
                     childSelected && "bg-secondary",
                   )}
                 >
@@ -265,11 +260,11 @@ export function EmailList({
                       className="mt-2.5 -ml-1 shrink-0"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onCheck(email.id, e.shiftKey);
+                        onCheck(key, e.shiftKey);
                       }}
                     >
                       <Checkbox
-                        checked={checked?.has(email.id) ?? false}
+                        checked={isChecked}
                         aria-label={t("选择邮件")}
                         tabIndex={-1}
                       />
@@ -282,11 +277,11 @@ export function EmailList({
                       type="button"
                       title={onCheck ? t("选择") : undefined}
                       aria-label={t("选择邮件")}
-                      aria-pressed={checked?.has(email.id) ?? false}
+                      aria-pressed={isChecked}
                       disabled={!onCheck}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onCheck?.(email.id, e.shiftKey);
+                        onCheck?.(key, e.shiftKey);
                       }}
                       className="group/avatar relative block size-9 rounded-full"
                     >
@@ -299,7 +294,7 @@ export function EmailList({
                         <span
                           className={cn(
                             "bg-accent text-accent-foreground absolute inset-0 flex items-center justify-center rounded-full transition-opacity",
-                            checked?.has(email.id)
+                            isChecked
                               ? "opacity-100"
                               : "opacity-0 group-hover/avatar:opacity-100",
                           )}
@@ -338,7 +333,7 @@ export function EmailList({
                           }
                           onClick={(e) => {
                             e.stopPropagation();
-                            toggleThread(tid);
+                            toggleThread(email);
                           }}
                           className={cn(
                             "flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-xs tabular-nums transition-colors",
@@ -372,7 +367,10 @@ export function EmailList({
                         {email.subject || t("(无主题)")}
                       </span>
                       {where && (
-                        <span className="bg-secondary text-muted-foreground max-w-24 shrink-0 truncate rounded-sm px-1.5 text-xs">
+                        <span
+                          className="bg-secondary text-muted-foreground max-w-32 shrink-0 truncate rounded-sm px-1.5 text-xs"
+                          title={where}
+                        >
                           {where}
                         </span>
                       )}
@@ -429,18 +427,18 @@ export function EmailList({
                       {t("载入中…")}</li>
                   )}
                   {members.map((m) => (
-                    <Fragment key={m.id}>
+                    <Fragment key={emailKey(m)}>
                       <li>
                         <button
                           type="button"
-                          data-email-id={m.id}
-                          onClick={() => onSelect(m.id)}
+                          data-email-key={emailKey(m)}
+                          onClick={() => onSelect(emailKey(m))}
                           aria-current={
-                            m.id === selectedId ? "true" : undefined
+                            emailKey(m) === selectedKey ? "true" : undefined
                           }
                           className={cn(
                             "flex w-full items-center gap-2 py-1.5 pr-3 pl-12 text-left text-sm",
-                            m.id === selectedId
+                            emailKey(m) === selectedKey
                               ? "bg-muted"
                               : "hover:bg-secondary",
                           )}
@@ -494,4 +492,9 @@ export function EmailList({
       <div ref={sentinelRef} className="h-1" />
     </ScrollArea>
   );
+}
+
+/** 会话分组的键。没有会话 id 的邮件自成一组。 */
+function threadKey(e: EmailSummary): string {
+  return `${e.accountId}/${e.threadId || e.id}`;
 }
