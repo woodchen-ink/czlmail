@@ -138,7 +138,8 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 	a.log.Info("oauth token received", "refreshToken", tok.RefreshToken != "", "expiry", tok.Expiry)
 
 	// 先连通再落盘, 避免把一组用不了的凭据写进密钥库。
-	if err := a.connect(cfg, a.oauthClient(cfg, meta, tok)); err != nil {
+	httpClient, src := a.oauthClient(cfg, meta, tok)
+	if err := a.connect(cfg, httpClient, src); err != nil {
 		a.log.Warn("oauth session connect failed", "err", err)
 		return err
 	}
@@ -223,7 +224,7 @@ func (a *App) SignInWithPassword(mailHost, username, password string) error {
 	}
 
 	// 先连通再落盘, 避免把错的密码写进密钥库。
-	if err := a.connect(cfg, basicAuthClient(username, password)); err != nil {
+	if err := a.connect(cfg, basicAuthClient(username, password), nil); err != nil {
 		return err
 	}
 

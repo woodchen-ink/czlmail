@@ -132,6 +132,7 @@ export const api = {
   signInWithPassword: guard(App.SignInWithPassword),
   cancelSignIn: guard(App.CancelSignIn),
   signOut: guard(App.SignOut),
+  retrySession: guard(App.RetrySession),
 
   listAccounts: guard(App.ListAccounts),
   listMailboxes: guard(App.ListMailboxes),

@@ -1113,5 +1113,18 @@
   "当天日记": "Journal for this day",
   "当天笔记 {0} 篇": "{0} notes on this day",
   "全部账号": "All accounts",
-  "搜索全部账号（/）": "Search all accounts (/)"
+  "搜索全部账号（/）": "Search all accounts (/)",
+  "登录已失效": "Sign-in expired",
+  "登录已失效，同步已暂停": "Sign-in expired. Sync is paused",
+  "查看": "View",
+  "已重新连接": "Reconnected",
+  "邮件服务器不再接受本机保存的登录凭据，同步已暂停。已缓存的邮件仍可查看，重新登录后继续同步，无需重新下载。": "The mail server no longer accepts the credentials saved on this device, so sync is paused. Cached mail is still available; sign in again to resume without re-downloading.",
+  "原因：{0}": "Reason: {0}",
+  "重试失败：{0}": "Retry failed: {0}",
+  "重试连接": "Retry",
+  "重新登录": "Sign in again",
+  "登录已失效，请重新登录以继续同步": "Your sign-in expired. Sign in again to resume sync",
+  "暂不登录，返回查看已缓存的邮件": "Not now, go back to cached mail",
+  "本机没有找到保存的登录凭据。": "No saved credentials were found on this device.",
+  "登录已过期，保存的令牌无法再续期。": "Your sign-in expired and the saved token can no longer be renewed."
 }

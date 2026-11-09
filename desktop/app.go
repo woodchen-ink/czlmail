@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
@@ -45,6 +46,12 @@ type App struct {
 	cfg    config.Config
 
 	notifier notify.Notifier
+
+	// signInReason 非空表示服务器已明确拒绝保存的凭据, 同步已停, 等用户重新登录。
+	// 内容是带错误码的原因, 会话重新建立时清空。
+	signInReason string
+	// verifying 保证同一时刻只有一次"凭据是否真的失效"的核实在跑。
+	verifying atomic.Bool
 
 	// cancelSync 停掉后台同步循环, 用于重新登录时重建会话。
 	cancelSync context.CancelFunc
@@ -125,14 +132,9 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 
-	// 已有刷新令牌就静默恢复会话。放后台是因为它要打网络,
+	// 已有凭据就静默恢复会话。放后台是因为它要打网络,
 	// 挡在这里会让窗口迟迟不出现。
-	go func() {
-		if err := a.restoreSession(cfg); err != nil {
-			a.log.Warn("restore session failed, sign-in required", "err", err)
-			a.emit(EventSignInRequired, err.Error())
-		}
-	}()
+	go a.restoreWithRetry(cfg)
 }
 
 // processStart 记进程启动时刻, 启动各阶段的日志带上距此的耗时, 排查白屏用。
@@ -172,9 +174,9 @@ func (a *App) restoreSession(cfg config.Config) error {
 			return err
 		}
 		if pass == "" {
-			return fmt.Errorf("2020 no stored credential")
+			return errNoStoredCredential
 		}
-		return a.connect(cfg, basicAuthClient(cfg.Username, pass))
+		return a.connect(cfg, basicAuthClient(cfg.Username, pass), nil)
 	}
 	return a.restoreOAuthSession(cfg)
 }
@@ -185,7 +187,7 @@ func (a *App) restoreOAuthSession(cfg config.Config) error {
 		return err
 	}
 	if tok == nil {
-		return fmt.Errorf("2020 no stored credential")
+		return errNoStoredCredential
 	}
 
 	// 重新发现一次端点: 服务器升级后地址可能变化。失败时不中断 ——
@@ -202,11 +204,12 @@ func (a *App) restoreOAuthSession(cfg config.Config) error {
 		a.log.Warn("rediscover authorization server, using cached endpoints", "err", err)
 		meta = cachedMetadata(cfg)
 	}
-	return a.connect(cfg, a.oauthClient(cfg, meta, tok))
+	httpClient, src := a.oauthClient(cfg, meta, tok)
+	return a.connect(cfg, httpClient, src)
 }
 
-// oauthClient 构造自动续期的 Bearer 客户端。
-func (a *App) oauthClient(cfg config.Config, meta *auth.Metadata, tok *oauth2.Token) *http.Client {
+// oauthClient 构造自动续期的 Bearer 客户端。一并返回令牌源, 供服务器拒绝令牌时强制续期。
+func (a *App) oauthClient(cfg config.Config, meta *auth.Metadata, tok *oauth2.Token) (*http.Client, *auth.TokenSource) {
 	authCfg := &auth.Config{
 		Metadata:    meta,
 		ClientID:    cfg.ClientID,
@@ -222,7 +225,8 @@ func (a *App) oauthClient(cfg config.Config, meta *auth.Metadata, tok *oauth2.To
 		}
 		return nil
 	}
-	return authCfg.HTTPClient(a.ctx, tok, save)
+	src := authCfg.TokenSource(a.ctx, tok, save)
+	return auth.HTTPClient(a.ctx, src), src
 }
 
 // basicAuthClient 构造带 Basic 认证的客户端。
@@ -232,7 +236,6 @@ func basicAuthClient(username, password string) *http.Client {
 	return c.HttpClient
 }
 
-// connect 用已认证的 HTTP 客户端建立 JMAP 会话并启动后台同步。
 func (a *App) markReady() {
 	a.readyOnce.Do(func() { close(a.ready) })
 }
@@ -245,15 +248,19 @@ func (a *App) waitReady(timeout time.Duration) {
 	}
 }
 
-func (a *App) connect(cfg config.Config, httpClient *http.Client) error {
+// connect 用已认证的 HTTP 客户端建立 JMAP 会话并启动后台同步。
+// tokens 是 OAuth 的令牌源, 密码登录传 nil。
+func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.TokenSource) error {
 	a.waitReady(30 * time.Second)
 	if _, err := a.currentStore(); err != nil {
 		return err
 	}
-	client := &jmap.Client{
-		SessionEndpoint: cfg.SessionEndpoint,
-		HttpClient:      httpClient,
-	}
+	client := &jmap.Client{SessionEndpoint: cfg.SessionEndpoint}
+	// 会话建立后的每个请求(同步、推送、附件)都经过这层: 凭据中途失效时没有哪一处会主动报告,
+	// 同步循环只会当成断线一直重连。
+	client.HttpClient = auth.Watch(httpClient, func() {
+		a.suspectCredentials(client, cfg, httpClient, tokens)
+	})
 	// go-jmap 的 Authenticate 不接受 context, 客户端又不能设全局超时(推送连接是长连接),
 	// 在这里单独限时, 服务器无响应时报错而不是让登录界面一直转圈。
 	authErr := make(chan error, 1)
@@ -276,6 +283,7 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client) error {
 	}
 	a.client = client
 	a.cfg = cfg
+	a.signInReason = ""
 	s := syncer.New(client, st, a.log)
 	s.OnNewMail = a.onNewMail
 	s.OnChanged = func(accountID string) {
@@ -325,31 +333,10 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client) error {
 // 地址错, 还是服务器不可达。这三种情况用户的补救动作完全不同, 因此失败后
 // 再发一次请求拿到真实状态码。最常见的是账号走 SSO 却填了 SSO 密码。
 func (a *App) classifyAuthFailure(cfg config.Config, httpClient *http.Client, cause error) error {
-	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.SessionEndpoint, nil)
-	if err != nil {
-		return fmt.Errorf("2062 invalid server address: %w", err)
+	if err := a.probeSession(cfg, httpClient); err != nil {
+		return err
 	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("2062 cannot reach mail server: %w", err)
-	}
-	resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
-		if cfg.AuthMethod == config.AuthOAuth {
-			// 邮件服务器把认证委托给外部 IdP 时只认 IdP 的令牌, 自己签发的令牌会被拒。
-			return fmt.Errorf("2064 the mail server rejected the OAuth token (HTTP %d); sign in with an app password instead", resp.StatusCode)
-		}
-		return fmt.Errorf("2060 authentication failed: check the email address and app password (an SSO password will not work here)")
-	case http.StatusNotFound:
-		return fmt.Errorf("2061 no JMAP service found at this server address")
-	default:
-		return fmt.Errorf("2063 mail server returned status %d: %w", resp.StatusCode, cause)
-	}
+	return fmt.Errorf("2063 mail server session could not be read: %w", cause)
 }
 
 // persistAccounts 把会话里发现的账号写进缓存, 供界面在离线时也能列出账号。

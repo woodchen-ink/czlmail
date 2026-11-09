@@ -25,6 +25,10 @@ func (a *App) initNotifier() {
 		// actionID 形如 "accountID/emailID", 交给前端去定位并展开那封邮件。
 		// 窗口可能正缩在托盘里。
 		a.showWindow()
+		if actionID == signInActionID {
+			// 窗口出来就够了: 重新登录的提示已经在界面上。
+			return
+		}
 		if actionID == "update:" {
 			a.emit(EventOpenUpdate, "")
 			return

@@ -16,7 +16,7 @@ import (
 const (
 	// EventConnected 会话建立, 负载为用户名。
 	EventConnected = "session:connected"
-	// EventSignInRequired 令牌失效或从未登录, 负载为原因。
+	// EventSignInRequired 服务器拒绝了保存的凭据, 同步已停, 负载为带错误码的原因。
 	EventSignInRequired = "session:sign-in-required"
 	// EventMailChanged 某账号的邮件有变动, 负载为 accountID。
 	// 前端据此重新拉取当前列表, 而不是全量刷新界面。

@@ -40,6 +40,12 @@ type SessionStatus struct {
 	Connected bool   `json:"connected"`
 	Username  string `json:"username"`
 	Server    string `json:"server"`
+	// AuthMethod 是登录方式(password / oauth), 重新登录时界面据此预选。
+	AuthMethod string `json:"authMethod"`
+	// SignInRequired 表示服务器已拒绝保存的凭据, 必须重新登录; 断网不会置位。
+	// SignInReason 是带错误码的原因。
+	SignInRequired bool   `json:"signInRequired"`
+	SignInReason   string `json:"signInReason"`
 }
 
 func (a *App) GetSessionStatus() SessionStatus {
@@ -54,6 +60,10 @@ func (a *App) GetSessionStatus() SessionStatus {
 		Connected:  a.client != nil,
 		Username:   a.cfg.Username,
 		Server:     a.cfg.ServerHost,
+		AuthMethod: a.cfg.AuthMethod,
+
+		SignInRequired: a.signInReason != "",
+		SignInReason:   a.signInReason,
 	}
 }
 
@@ -70,6 +80,7 @@ func (a *App) SignOut() error {
 	}
 	a.client = nil
 	a.sync = nil
+	a.signInReason = ""
 	a.mu.Unlock()
 
 	var err error

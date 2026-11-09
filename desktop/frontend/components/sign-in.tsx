@@ -10,19 +10,23 @@ import { LanguageSelect } from "@/components/language-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { api, errorMessage, type SignInHint } from "@/lib/api";
+import { api, errorMessage, type SessionStatus, type SignInHint } from "@/lib/api";
 
 interface Props {
   onSignedIn: () => void;
+  /** 登录失效后重新登录: 预填原来的服务器、邮箱与登录方式。 */
+  reauth?: SessionStatus;
+  /** 重新登录时可以不登录、退回去看已缓存的邮件。 */
+  onBack?: () => void;
 }
 
 type Mode = "password" | "oauth";
 
-export function SignIn({ onSignedIn }: Props) {
+export function SignIn({ onSignedIn, reauth, onBack }: Props) {
   useI18n();
-  const [mode, setMode] = useState<Mode>("password");
-  const [server, setServer] = useState("");
-  const [email, setEmail] = useState("");
+  const [mode, setMode] = useState<Mode>(reauth?.authMethod === "oauth" ? "oauth" : "password");
+  const [server, setServer] = useState(reauth?.server ?? "");
+  const [email, setEmail] = useState(reauth?.username ?? "");
   const [password, setPassword] = useState("");
   // 外部身份提供商不是秘密, 记在本机方便下次登录。
   const [idp, setIdp] = useState(() => readPref("idp"));
@@ -119,7 +123,7 @@ export function SignIn({ onSignedIn }: Props) {
           CZL Mail
         </h1>
         <p className="text-muted-foreground mt-2 text-center text-sm">
-          {t("连接你的 JMAP 邮箱服务器")}</p>
+          {reauth ? t("登录已失效，请重新登录以继续同步") : t("连接你的 JMAP 邮箱服务器")}</p>
 
         <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
           <Field label={t("服务器")} htmlFor="server">
@@ -129,7 +133,7 @@ export function SignIn({ onSignedIn }: Props) {
               onChange={(e) => setServer(e.target.value)}
               placeholder="mail.example.net"
               autoComplete="url"
-              autoFocus
+              autoFocus={!reauth}
               disabled={busy}
             />
           </Field>
@@ -180,6 +184,7 @@ export function SignIn({ onSignedIn }: Props) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
+                  autoFocus={!!reauth}
                   disabled={busy}
                 />
               </Field>
@@ -251,6 +256,16 @@ export function SignIn({ onSignedIn }: Props) {
           >
             {mode === "password" ? t("改用浏览器授权登录（OAuth）") : t("改用应用专用密码登录")}
           </button>
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={busy}
+              className="text-muted-foreground hover:text-foreground mt-3 block w-full text-xs underline-offset-4 hover:underline"
+            >
+              {t("暂不登录，返回查看已缓存的邮件")}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -281,9 +296,11 @@ function Field({
 }
 
 /** 把登录流程的错误码转成用户能照着处理的说明; 未收录的原样显示, 方便反馈时对照日志。 */
-function signInError(msg: string): string {
+export function signInError(msg: string): string {
   const code = msg.slice(0, 4);
   const map: Record<string, string> = {
+    "2020": t("本机没有找到保存的登录凭据。"),
+    "2065": t("登录已过期，保存的令牌无法再续期。"),
     "2060": t("认证失败：请检查邮箱地址与应用专用密码（单点登录的密码在这里不能用）。"),
     "2061": t("这个地址上没有找到 JMAP 服务，请确认服务器地址。"),
     "2062": t("连不上邮件服务器，请检查网络与服务器地址。"),

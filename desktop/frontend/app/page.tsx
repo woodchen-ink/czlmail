@@ -8,13 +8,16 @@ import { Loader2 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { SignIn } from "@/components/sign-in";
-import { Events, api, hasRuntime, onEvent } from "@/lib/api";
+import { SignInExpired } from "@/components/sign-in-expired";
+import { Events, api, hasRuntime, onEvent, type SessionStatus } from "@/lib/api";
 
 type Phase = "loading" | "signed-out" | "signed-in" | "no-runtime";
 
 export default function Page()  {
   useI18n();
   const [phase, setPhase] = useState<Phase>("loading");
+  // 登录失效后去登录页重新登录时带上原来的服务器与邮箱; 配置和缓存都还在, 可以随时返回。
+  const [reauth, setReauth] = useState<SessionStatus | null>(null);
 
   const refresh = useCallback(async () => {
     if (!hasRuntime()) {
@@ -26,6 +29,7 @@ export default function Page()  {
       // configured 而非 connected: 配置还在但网络暂时不通时，
       // 应当进入邮件界面读本地缓存，而不是把用户赶回登录页。
       setPhase(status.configured ? "signed-in" : "signed-out");
+      setReauth(null);
     } catch {
       setPhase("signed-out");
     }
@@ -58,8 +62,29 @@ export default function Page()  {
   }
 
   if (phase === "signed-out") {
-    return <SignIn onSignedIn={refresh} />;
+    return (
+      <SignIn
+        onSignedIn={refresh}
+        reauth={reauth ?? undefined}
+        onBack={reauth ? () => setPhase("signed-in") : undefined}
+      />
+    );
   }
 
-  return <AppShell onSignedOut={() => setPhase("signed-out")} />;
+  return (
+    <>
+      <AppShell
+        onSignedOut={() => {
+          setReauth(null);
+          setPhase("signed-out");
+        }}
+      />
+      <SignInExpired
+        onReauth={(status) => {
+          setReauth(status);
+          setPhase("signed-out");
+        }}
+      />
+    </>
+  );
 }
