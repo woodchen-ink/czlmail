@@ -1,0 +1,84 @@
+apply plugin: 'com.android.application'
+
+// 版本号取 VERSION 环境变量 (vX.Y.Z, CI 传 tag 名), 否则取最近的 git tag; versionCode = X*1000000 + Y*1000 + Z,
+// 系统据此判断是否为更新。带 "-" 的预发布版本与正式版同号。
+def appVersion = System.getenv("VERSION") ?: providers.exec {
+    commandLine "git", "describe", "--tags", "--abbrev=0"
+    ignoreExitValue = true
+}.standardOutput.asText.get().trim()
+def versionParts = (appVersion =~ /^v?(\d+)\.(\d+)\.(\d+)/)
+def appVersionCode = versionParts.find() ? versionParts.group(1).toInteger() * 1000000 + versionParts.group(2).toInteger() * 1000 + versionParts.group(3).toInteger() : 1
+def appVersionName = appVersion ? appVersion.replaceFirst(/^v/, "") : "0.0.0-dev"
+
+// 发版签名: 密钥库与密码只从环境变量读 (CI 的 secrets), 不入库。没配时 release 包不签名。
+def releaseKeystore = System.getenv("CZL_ANDROID_KEYSTORE")
+
+android {
+    namespace = "net.czl.mail"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "net.czl.mail"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode appVersionCode
+        versionName appVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        if (releaseKeystore) {
+            release {
+                storeFile file(releaseKeystore)
+                storePassword System.getenv("CZL_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("CZL_ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("CZL_ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    packaging {
+        // .so 压缩存放: 内核约 17MB/ABI, 不压缩时 APK 超过 40MB, 下载与在线更新都慢一倍多; 代价是安装时解压一份。
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+    buildTypes {
+        release {
+            if (releaseKeystore) signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

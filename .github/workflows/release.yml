@@ -1,5 +1,5 @@
-# 打 v* tag 时构建 Windows 安装包与 macOS 应用(DMG), 生成 SHA256SUMS 并发布 GitHub Release。
-# 桌面端的在线更新读取这里发布的 Release, 并用 SHA256SUMS 校验下载的安装包。
+# 打 v* tag 时构建 Windows 安装包、macOS 应用(DMG) 与 Android APK, 生成 SHA256SUMS 并发布 GitHub Release。
+# 桌面端与 Android 的在线更新读取这里发布的 Release, 并用 SHA256SUMS 校验下载的安装包。
 name: release
 
 on:
@@ -107,8 +107,15 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: release-windows
           path: desktop/build/bin/czlmail-amd64-installer.exe
+          if-no-files-found: error
+
+      # Android 用同一份界面: 静态导出依赖 Wails 生成的绑定 (wailsjs), 这里已经生成好, 直接交给 android 任务。
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-out
+          path: desktop/frontend/out
           if-no-files-found: error
 
   macos:
@@ -161,14 +168,74 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: macos
+          name: release-macos
           path: |
             desktop/build/bin/czlmail-darwin-universal.dmg
             desktop/build/bin/czlmail-darwin-universal.zip
           if-no-files-found: error
 
+  android:
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: android/package-lock.json
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-out
+          path: desktop/frontend/out
+
+      - name: Build Go core
+        working-directory: android
+        env:
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" bash scripts/build-core.sh
+
+      # 签名密钥只在 secrets 里 (base64 的 .jks)。发版必须签名: 未签名或换了密钥的 APK 无法覆盖安装已有版本。
+      - name: Build signed APK
+        working-directory: android
+        env:
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+          KEYSTORE_BASE64: ${{ secrets.CZL_ANDROID_KEYSTORE_BASE64 }}
+          CZL_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.CZL_ANDROID_KEYSTORE_PASSWORD }}
+          CZL_ANDROID_KEY_ALIAS: ${{ secrets.CZL_ANDROID_KEY_ALIAS }}
+          CZL_ANDROID_KEY_PASSWORD: ${{ secrets.CZL_ANDROID_KEY_PASSWORD }}
+        run: |
+          [ -n "$KEYSTORE_BASE64" ] || { echo "::error::missing secret CZL_ANDROID_KEYSTORE_BASE64"; exit 1; }
+          export CZL_ANDROID_KEYSTORE="$RUNNER_TEMP/release.jks"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$CZL_ANDROID_KEYSTORE"
+          npm ci
+          npx cap sync android
+          (cd native && chmod +x gradlew && ./gradlew assembleRelease --no-daemon --console=plain)
+          apk=native/app/build/outputs/apk/release/app-release.apk
+          "$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)/apksigner" verify --print-certs "$apk"
+          cp "$apk" czlmail-android.apk
+          rm -f "$CZL_ANDROID_KEYSTORE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: android/czlmail-android.apk
+          if-no-files-found: error
+
   publish:
-    needs: [windows, macos]
+    needs: [windows, macos, android]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -197,6 +264,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: release-*
           merge-multiple: true
 
       - name: Checksums

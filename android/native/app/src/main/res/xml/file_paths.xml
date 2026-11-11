@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 交给其它程序打开/分享的文件位置: 附件与网盘文件、更新包 (缓存目录), 保存到「下载/CZL Mail」的文件。 -->
+<paths>
+    <cache-path name="cache" path="." />
+    <files-path name="files" path="." />
+    <external-path name="external" path="." />
+    <external-files-path name="external_files" path="." />
+</paths>

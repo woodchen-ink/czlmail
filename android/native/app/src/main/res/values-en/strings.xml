@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="channel_mail">New mail and reminders</string>
+    <string name="channel_mail_desc">New messages in the inbox and event reminders</string>
+    <string name="channel_sync">Background sync</string>
+    <string name="channel_sync_desc">Keeps the connection to the mail server open so new mail arrives promptly. You can turn this notification off without affecting new-mail notifications.</string>
+    <string name="sync_title">CZL Mail is receiving mail in the background</string>
+    <string name="sync_text">Tap to open CZL Mail</string>
+</resources>

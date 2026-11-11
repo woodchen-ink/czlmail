@@ -1,0 +1,18 @@
+{
+  "name": "czlmail-android",
+  "private": true,
+  "description": "CZL Mail Android app (Capacitor). UI is desktop/frontend's static export, core is the desktop Go package built as a JNI shared library.",
+  "scripts": {
+    "build:web": "pnpm --dir ../desktop/frontend build",
+    "build:core": "bash scripts/build-core.sh",
+    "sync": "cap sync android",
+    "build": "npm run build:web && npm run build:core && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/core": "8.6.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0"
+  }
+}

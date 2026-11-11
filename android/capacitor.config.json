@@ -1,0 +1,17 @@
+{
+  "appId": "net.czl.mail",
+  "appName": "CZL Mail",
+  "webDir": "../desktop/frontend/out",
+  "android": {
+    "path": "native"
+  },
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost"
+  },
+  "plugins": {
+    "SystemBars": {
+      "initialViewportFitValueHint": "cover"
+    }
+  }
+}
