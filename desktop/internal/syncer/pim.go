@@ -370,17 +370,19 @@ func applyFileNodes(ctx context.Context, tx *sql.Tx, accountID string, list []js
 // FileNodeFrom 解析文件节点。
 func FileNodeFrom(raw []byte) (store.FileNode, error) {
 	var n struct {
-		ID       string          `json:"id"`
-		ParentID *string         `json:"parentId"`
-		NodeType string          `json:"nodeType"`
-		BlobID   *string         `json:"blobId"`
-		Size     int64           `json:"size"`
-		Name     string          `json:"name"`
-		Type     *string         `json:"type"`
-		Created  string          `json:"created"`
-		Modified string          `json:"modified"`
-		Role     *string         `json:"role"`
-		MyRights map[string]bool `json:"myRights"`
+		ID        string          `json:"id"`
+		ParentID  *string         `json:"parentId"`
+		NodeType  string          `json:"nodeType"`
+		AtType    string          `json:"@type"`
+		BlobID    *string         `json:"blobId"`
+		Size      int64           `json:"size"`
+		Name      string          `json:"name"`
+		Type      *string         `json:"type"`
+		MediaType *string         `json:"mediaType"`
+		Created   string          `json:"created"`
+		Modified  string          `json:"modified"`
+		Role      *string         `json:"role"`
+		MyRights  map[string]bool `json:"myRights"`
 	}
 	if err := json.Unmarshal(raw, &n); err != nil {
 		return store.FileNode{}, err
@@ -388,8 +390,13 @@ func FileNodeFrom(raw []byte) (store.FileNode, error) {
 	if n.ID == "" {
 		return store.FileNode{}, errors.New("file node without id")
 	}
-	// 有的实现不给 nodeType, 以"没有 blob"判定目录。
-	isDir := n.NodeType == "directory" || n.NodeType == "folder" || (n.NodeType == "" && deref(n.BlobID) == "")
+	// 新草案 (Stalwart 1.x) 用 @type 与 mediaType, 旧草案用 nodeType 与 type, 见 filenode_schema.go;
+	// 有的实现两者都不给, 以"没有 blob"判定目录。
+	isDir := n.AtType == "Directory" || n.NodeType == "directory" || n.NodeType == "folder" ||
+		(n.AtType == "" && n.NodeType == "" && deref(n.BlobID) == "")
+	if n.Type == nil {
+		n.Type = n.MediaType
+	}
 	return store.FileNode{
 		ID: n.ID, ParentID: deref(n.ParentID), Name: n.Name, IsDirectory: isDir,
 		ContentType: deref(n.Type), BlobID: deref(n.BlobID), Size: n.Size,

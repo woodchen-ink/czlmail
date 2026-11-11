@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"git.sr.ht/~rockorager/go-jmap"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
@@ -136,6 +137,14 @@ func (s *Syncer) InspectFile(ctx context.Context, account, id string) (notes.Sna
 	return out, nil
 }
 
+// setFileOnce 发一次带 ifInState 的 FileNode/set, 对象按 typed 指定的写法改写。
+func (s *Syncer) setFileOnce(ctx context.Context, account, state string, typed bool, create map[string]any, update map[string]map[string]any) (*jmap.Response, error) {
+	c, u := adaptFileNodeWrite(typed, create, update)
+	req := &jmap.Request{Context: ctx}
+	req.Invoke(jmapx.Set(jmapx.FileNode, account, c, u, nil, map[string]any{"ifInState": state}))
+	return s.do(req)
+}
+
 // SetFileConditional never silently falls back when ifInState is unsupported or rejected.
 func (s *Syncer) SetFileConditional(ctx context.Context, account, state, id string, n notes.Node) (notes.Node, error) {
 	if err := s.verifyFileConditions(ctx, account); err != nil {
@@ -159,9 +168,21 @@ func (s *Syncer) SetFileConditional(ctx context.Context, account, state, id stri
 	} else {
 		update = map[string]map[string]any{id: obj}
 	}
-	req := &jmap.Request{Context: ctx}
-	req.Invoke(jmapx.Set(jmapx.FileNode, account, create, update, nil, map[string]any{"ifInState": state}))
-	resp, err := s.do(req)
+	typed := s.fileSchemaTyped(ctx, account)
+	resp, err := s.setFileOnce(ctx, account, state, typed, create, update)
+	if err == nil && len(resp.Responses) == 1 {
+		// 写法猜错被拒时换另一种重试一次; 被拒的写入不改变 state, ifInState 仍然成立。
+		if set, ok := resp.Responses[0].Args.(*jmapx.SetResponse); ok && rejectsFileSchema(set.FirstError()) {
+			if retry, retryErr := s.setFileOnce(ctx, account, state, !typed, create, update); retryErr == nil {
+				resp, err = retry, nil
+				if len(retry.Responses) == 1 {
+					if rs, ok := retry.Responses[0].Args.(*jmapx.SetResponse); ok && rs.FirstError() == nil {
+						s.fileSchema.Store(account, !typed)
+					}
+				}
+			}
+		}
+	}
 	if err != nil {
 		if methodErrorType(err) == "stateMismatch" {
 			return notes.Node{}, notes.ErrConflict
@@ -179,8 +200,9 @@ func (s *Syncer) SetFileConditional(ctx context.Context, account, state, id stri
 	if !ok {
 		return notes.Node{}, notes.ErrUncertain
 	}
-	if set.FirstError() != nil {
-		return notes.Node{}, notes.ErrForbidden
+	if setErr := set.FirstError(); setErr != nil {
+		// 带上服务器给的原因 (类型与描述), 否则日志里只有一句 forbidden, 无从排查。
+		return notes.Node{}, fmt.Errorf("%w: %v", notes.ErrForbidden, setErr)
 	}
 	if id == "" {
 		var created struct {

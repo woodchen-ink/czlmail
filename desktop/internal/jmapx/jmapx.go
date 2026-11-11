@@ -10,6 +10,7 @@ package jmapx
 
 import (
 	"encoding/json"
+	"strings"
 
 	"git.sr.ht/~rockorager/go-jmap"
 )
@@ -151,10 +152,14 @@ type SetError struct {
 }
 
 func (e *SetError) Error() string {
+	msg := e.Type
 	if e.Description != "" {
-		return e.Type + ": " + e.Description
+		msg += ": " + e.Description
 	}
-	return e.Type
+	if len(e.Properties) > 0 {
+		msg += " (" + strings.Join(e.Properties, ", ") + ")"
+	}
+	return msg
 }
 
 type SetResponse struct {

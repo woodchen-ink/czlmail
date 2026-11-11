@@ -61,6 +61,8 @@ type Syncer struct {
 	mu sync.Mutex
 	// fileCAS records successful non-mutating conditional-write probes by account.
 	fileCAS sync.Map
+	// fileSchema 记各账号服务器的 FileNode 属性写法 (account → 是否新写法), 见 filenode_schema.go。
+	fileSchema sync.Map
 }
 
 // New 构造 Syncer。client 必须已完成 Authenticate, 因为 Core 限制取自 Session。

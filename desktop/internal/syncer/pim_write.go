@@ -17,15 +17,37 @@ func (s *Syncer) SetPIM(
 	ctx context.Context, accountID, typeName string,
 	create map[string]any, update map[string]map[string]any, destroy []string, extra map[string]any,
 ) (map[string]string, error) {
-	req := &jmap.Request{Context: ctx}
-	req.Invoke(jmapx.Set(typeName, accountID, create, update, destroy, extra))
-	resp, err := s.do(req)
+	send := func(create map[string]any, update map[string]map[string]any) (*jmapx.SetResponse, error) {
+		req := &jmap.Request{Context: ctx}
+		req.Invoke(jmapx.Set(typeName, accountID, create, update, destroy, extra))
+		resp, err := s.do(req)
+		if err != nil {
+			return nil, err
+		}
+		set, ok := resp.Responses[0].Args.(*jmapx.SetResponse)
+		if !ok {
+			return nil, &Error{Code: CodeUnhandled, Msg: "unexpected response to " + typeName + "/set"}
+		}
+		return set, nil
+	}
+	var set *jmapx.SetResponse
+	var err error
+	if typeName == jmapx.FileNode {
+		// 调用方按旧写法组织对象, 这里按服务器改写; 写法猜错被拒时换另一种重试一次 (被拒的写入不改变服务器状态)。
+		typed := s.fileSchemaTyped(ctx, accountID)
+		c, u := adaptFileNodeWrite(typed, create, update)
+		if set, err = send(c, u); err == nil && rejectsFileSchema(set.FirstError()) {
+			c, u = adaptFileNodeWrite(!typed, create, update)
+			if retry, retryErr := send(c, u); retryErr == nil && retry.FirstError() == nil {
+				s.fileSchema.Store(accountID, !typed)
+				set = retry
+			}
+		}
+	} else {
+		set, err = send(create, update)
+	}
 	if err != nil {
 		return nil, err
-	}
-	set, ok := resp.Responses[0].Args.(*jmapx.SetResponse)
-	if !ok {
-		return nil, &Error{Code: CodeUnhandled, Msg: "unexpected response to " + typeName + "/set"}
 	}
 	if err := set.FirstError(); err != nil {
 		return nil, &Error{Code: CodeMethod, Msg: typeName + "/set rejected", Err: err}
