@@ -56,7 +56,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { isNative } from "@/lib/native-bridge";
+import { canSelfUpdate, isNative, nativePlatform } from "@/lib/native-bridge";
 import { useCompact } from "@/lib/use-compact";
 import { useEdgeSwipe } from "@/lib/use-edge-swipe";
 import { fileSize } from "@/lib/format";
@@ -781,8 +781,8 @@ function AboutSection({ active }: { active: boolean }) {
             <p className="font-semibold">CZL Mail</p>
             <p className="text-muted-foreground text-sm">{t("版本")} {version || "—"}</p>
           </div>
-          {/* 手机上经 App Store / TestFlight 更新。 */}
-          {!isNative() && (
+          {/* iOS 经 App Store / TestFlight 更新。 */}
+          {canSelfUpdate() && (
           <Button variant="outline" size="sm" onClick={check} disabled={checking || installing}>
             {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             {t("检查更新")}</Button>
@@ -809,7 +809,11 @@ function AboutSection({ active }: { active: boolean }) {
                 )}
                 {!info.release.assetUrl && <span className="text-muted-foreground text-xs">{t("此版本没有适用于本系统的安装包")}</span>}
               </div>
-              <p className="text-muted-foreground text-xs">{t("下载后会校验安装包的 SHA-256，安装完成后自动重新打开。")}</p>
+              <p className="text-muted-foreground text-xs">
+                {nativePlatform() === "android"
+                  ? t("下载后会校验安装包的 SHA-256，再交给系统安装。首次更新需要允许 CZL Mail 安装应用。")
+                  : t("下载后会校验安装包的 SHA-256，安装完成后自动重新打开。")}
+              </p>
             </div>
           </>
         )}

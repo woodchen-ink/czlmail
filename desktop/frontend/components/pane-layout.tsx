@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { t } from "@/lib/i18n";
 import { useCompact } from "@/lib/use-compact";
+import { useBackAction } from "@/lib/native-back";
 import { useEdgeSwipe } from "@/lib/use-edge-swipe";
 import { cn } from "@/lib/utils";
 
@@ -161,6 +162,8 @@ function CompactPanes({ sidebar, list, detail, mobilePane, onMobilePaneChange, o
 
   const listSwipe = useEdgeSwipe(list ? openSidebar : null, false);
   const detailSwipe = useEdgeSwipe(back ?? (list ? null : openSidebar), !!back);
+  const [drawerEl, setDrawerEl] = useState<HTMLDivElement | null>(null);
+  useBackAction(drawerOpen ? () => go(base) : null, drawerEl);
 
   const showBar = !ownMobileNav && (back || openSidebar || (!controlled && shown === "list"));
 
@@ -211,6 +214,7 @@ function CompactPanes({ sidebar, list, detail, mobilePane, onMobilePaneChange, o
               aria-hidden
             />
             <div
+              ref={setDrawerEl}
               className={cn(
                 "bg-sidebar border-border absolute inset-y-0 left-0 z-40 flex w-[85%] max-w-80 flex-col border-r shadow-xl transition-transform duration-200",
                 drawerOpen ? "translate-x-0" : "-translate-x-full",

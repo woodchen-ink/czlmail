@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useBackAction } from "@/lib/native-back";
+
 /**
  * 从屏幕左边缘向右拖的手势, 对应 iOS 的"侧滑返回"。
  *
@@ -13,6 +15,8 @@ import { useEffect, useRef, useState } from "react";
  * 竖向滑动先于横向超过阈值时让给页面滚动。
  *
  * 邮件正文在沙箱 iframe 里, iframe 内的触摸不会传到这里: 起手点要落在正文以外 (左边缘留白、工具栏)。
+ *
+ * follow 为 true 的手势是"返回", 同时登记为 Android 返回键的动作 (见 native-back.ts)。
  */
 const EDGE = 24;
 const DECIDE = 10;
@@ -24,6 +28,7 @@ export function useEdgeSwipe(onSwipe: (() => void) | null, follow = true) {
     latest.current = onSwipe;
   });
   const enabled = !!onSwipe;
+  useBackAction(follow ? onSwipe : null, el);
 
   useEffect(() => {
     if (!el || !enabled) return;

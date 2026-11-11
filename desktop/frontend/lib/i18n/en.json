@@ -864,6 +864,7 @@
   "下载并安装": "Download and install",
   "此版本没有适用于本系统的安装包": "No installer is available for this system",
   "下载后会校验安装包的 SHA-256，安装完成后自动重新打开。": "The download is verified using SHA-256. The app reopens automatically after installation.",
+  "下载后会校验安装包的 SHA-256，再交给系统安装。首次更新需要允许 CZL Mail 安装应用。": "The download is verified using SHA-256, then handed to the system installer. The first update requires allowing CZL Mail to install apps.",
   "更新日志": "Changelog",
   "每个版本新增了什么、修了什么": "What's new and fixed in each release",
   "查看更新日志": "View changelog",

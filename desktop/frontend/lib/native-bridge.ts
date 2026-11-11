@@ -4,7 +4,7 @@
  * 界面代码一律经 `wailsjs/go/main/App` 与 `wailsjs/runtime/runtime` 调后端,
  * 这两个生成文件最终读的是 `window.go.main.App` 与 `window.runtime`。
  * 在 Capacitor 里没有 Wails, 由这段首帧前的内联脚本把这两个对象装上,
- * 转给 iOS 原生壳的插件 `CzlCore`, 原生插件再调 Go 内核 —— 界面代码两端不用分支。
+ * 转给原生壳 (iOS / Android) 的插件 `CzlCore`, 原生插件再调 Go 内核 —— 界面代码两端不用分支。
  *
  * 约定与 Wails 一致: 方法参数按位置传数组, 失败时 Promise 以错误文本 reject;
  * 事件参数是数组, 按位置展开交给回调。
@@ -72,6 +72,7 @@ export const nativeBootScript = `(function () {
  * 本地路径 (/czl-*) 的访问地址。
  *
  * 桌面端由 Wails AssetServer 在同源下处理, 用相对路径即可。
+ * Android 的页面源是 https://localhost, 原生壳在 WebView 的请求拦截里把 /czl-* 交给 Go (同源, 相对路径照用)。
  * iOS 的页面由 Capacitor 自己的 scheme 提供, 无法挂额外的路径处理器,
  * 原生壳另注册了 `czl-local://` 交给 Go 处理 (CzlServe)。
  */
@@ -81,12 +82,28 @@ export function isNative(): boolean {
   return typeof document !== "undefined" && document.documentElement.classList.contains("native");
 }
 
-/** 本地处理器的源: 桌面端为页面自身的源。 */
-export function localOrigin(): string {
-  return isNative() ? LOCAL_SCHEME_ORIGIN : window.location.origin;
+/** 所在的原生壳平台; 桌面端为 null。 */
+export function nativePlatform(): "ios" | "android" | null {
+  if (!isNative()) return null;
+  return document.documentElement.classList.contains("platform-ios") ? "ios" : "android";
 }
 
-/** 把 "/czl-..." 换成当前平台能访问的地址。桌面端原样返回相对路径。 */
+/** 能自己下载安装新版本: 桌面端与 Android (GitHub Releases 的 APK); iOS 只能经 App Store。 */
+export function canSelfUpdate(): boolean {
+  return nativePlatform() !== "ios";
+}
+
+/** 本地路径要走 czl-local:// 的平台 (iOS)。 */
+function usesLocalScheme(): boolean {
+  return nativePlatform() === "ios";
+}
+
+/** 本地处理器的源: 桌面端与 Android 为页面自身的源。 */
+export function localOrigin(): string {
+  return usesLocalScheme() ? LOCAL_SCHEME_ORIGIN : window.location.origin;
+}
+
+/** 把 "/czl-..." 换成当前平台能访问的地址。桌面端与 Android 原样返回相对路径。 */
 export function localUrl(path: string): string {
-  return isNative() ? LOCAL_SCHEME_ORIGIN + path : path;
+  return usesLocalScheme() ? LOCAL_SCHEME_ORIGIN + path : path;
 }
