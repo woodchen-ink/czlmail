@@ -3,8 +3,8 @@
 <h1 align="center">CZL Mail</h1>
 
 <p align="center">
-A native desktop client for <a href="https://stalw.art">Stalwart</a> over <a href="https://jmap.io">JMAP</a> —
-mail, calendar, contacts and files, with a built-in <b>MCP server</b> and <b>AI assistant</b>.
+A native client for <a href="https://stalw.art">Stalwart</a> over <a href="https://jmap.io">JMAP</a>, on desktop and Android —
+mail, calendar, contacts, files and notes, with a built-in <b>MCP server</b> and <b>AI assistant</b>.
 </p>
 
 <p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
@@ -23,7 +23,8 @@ app** is the whole setup:
 - **Opens mail instantly.** Everything is cached in a local SQLite database and kept current over a single
   JMAP push (EventSource) connection. Reading, searching and switching folders hit the disk, not the network.
 - **System-level notifications.** New mail and calendar reminders arrive through the OS notification center,
-  and keep arriving with the window closed (tray / menu bar) or at login (autostart).
+  and keep arriving with the window closed (tray / menu bar) or at login (autostart). On Android they keep
+  arriving with the app in the background, and tapping one opens that message.
 - **Agents can use your mailbox.** A local MCP server lets Claude, Codex and other agents read, search and
   send mail, check your calendar and look up contacts — with your consent and a local token.
 - **AI where you need it.** Plug in any OpenAI-compatible Responses API: translate a message in place,
@@ -54,6 +55,11 @@ read them on your phone with the [web reader](web-phone-note/README.md) (hosted 
 
 **Desktop integration** — tray / menu bar, autostart, default `mailto:` / `.ics` / `webcal:` handler, signed
 auto-update from GitHub Releases (SHA-256 verified)
+
+**Android** — the same app with a single-column phone layout: mail, calendar, contacts, files, notes, search,
+translation and AI summaries · new-mail notifications in the background · system back gesture · credentials
+encrypted with Android Keystore · online updates from GitHub Releases (SHA-256 verified). MCP and folder picking
+are desktop-only. Source and build notes: [android/](android/README.md)
 
 ## Screenshots
 
@@ -107,6 +113,11 @@ Download the latest release from [Releases](https://github.com/woodchen-ink/czlm
 
 - Windows: `czlmail-amd64-installer.exe` (per-user install, no admin rights needed)
 - macOS: `czlmail-darwin-universal.dmg` (Intel and Apple silicon, macOS 10.15+)
+- Android: [`czlmail-android.apk`](https://github.com/woodchen-ink/czlmail/releases/latest/download/czlmail-android.apk) (Android 8.0+, 64-bit ARM and x86_64), or scan the QR code with your phone.
+  Allow the install when prompted; later updates are offered inside the app
+  (**Settings → About & updates**), and the first one asks you to allow CZL Mail to install apps.
+
+  <img src="screenshots/android-qr.png" width="160" alt="QR code: download CZL Mail for Android">
 - Phone (read notes only): open **https://mail-notes.czl.net** and sign in with your server, email and an app password;
   add it to the home screen to use it like an app. It is only static files: your browser talks to your own mail server directly,
   and we never receive or store your password or notes.
@@ -180,7 +191,7 @@ The file is only fetched over HTTPS, so its origin is guaranteed by the domain's
 
 ## Build from source
 
-Requires Go 1.26+, Node 22+, pnpm and the [Wails v2 CLI](https://wails.io/docs/gettingstarted/installation) (v2.12).
+Requires Go 1.26+, Node 22+, pnpm and the [Wails v2 CLI](https://wails.io/docs/gettingstarted/installation) (v2.17).
 
 ```bash
 cd desktop
@@ -190,6 +201,7 @@ go test ./...  # unit tests
 ```
 
 On Windows, `build.bat v0.1.0` builds the executable and the NSIS installer.
+The Android app also needs JDK 21 and the Android SDK + NDK; see [android/README.md](android/README.md).
 
 Integration tests run against a live server and are skipped unless credentials come from the environment
 (`CZLMAIL_TEST_SESSION`, `CZLMAIL_TEST_USER`, `CZLMAIL_TEST_PASS`).
@@ -206,7 +218,8 @@ Integration tests run against a live server and are skipped unless credentials c
 
 - Mail bodies are sanitized (DOMPurify), rendered in a sandboxed iframe without same-origin, under a strict CSP.
 - Remote images are blocked unless the sender is trusted; trust is per address, never per domain.
-- Credentials and API keys live only in the OS keychain; there is no plaintext fallback.
+- Credentials and API keys live only in the OS keychain (on Android, encrypted with a non-exportable Android Keystore key);
+  there is no plaintext fallback.
 - Updates are only installed when the download matches the release's `SHA256SUMS`.
 
 ## Feedback

@@ -3,8 +3,8 @@
 <h1 align="center">CZL Mail</h1>
 
 <p align="center">
-为 <a href="https://stalw.art">Stalwart</a> 打造的 <a href="https://jmap.io">JMAP</a> 原生桌面客户端 ——
-邮件、日历、通讯录、网盘，内置 <b>MCP 服务</b> 与 <b>AI 助手</b>。
+为 <a href="https://stalw.art">Stalwart</a> 打造的 <a href="https://jmap.io">JMAP</a> 原生客户端，桌面与 Android ——
+邮件、日历、通讯录、网盘、笔记，内置 <b>MCP 服务</b> 与 <b>AI 助手</b>。
 </p>
 
 <p align="center"><a href="README.md">English</a> · <b>简体中文</b></p>
@@ -22,6 +22,7 @@
 - **邮件缓存，打开即看。** 所有邮件缓存在本地 SQLite，通过一条 JMAP 推送（EventSource）连接实时保持同步；
   阅读、搜索、切换文件夹读的是本地磁盘，而不是等网络。
 - **系统级通知。** 新邮件和日程提醒走操作系统通知中心；关掉窗口驻留托盘（macOS 为菜单栏）、开机自启后都能及时收到。
+  Android 上退到后台照常收到，点通知直接打开那封邮件。
 - **让 Agent 使用你的邮箱。** 内置本地 MCP 服务，Claude、Codex 等 Agent 可以读取、搜索、发送邮件，查看日程、查找联系人 ——
   需要你在软件里开启，并使用本地令牌。
 - **AI 就在手边。** 接入任意兼容 OpenAI Responses API 的模型：一键原地翻译邮件、润色或翻译草稿、
@@ -47,6 +48,10 @@
 **服务端设置** —— 发件身份与 HTML 签名、假期自动回复、Sieve 过滤规则（规则编辑器与 Bulwark 互通，另有原始 Sieve 编辑器）
 
 **桌面集成** —— 托盘 / 菜单栏、开机自启、设为默认的 `mailto:` / `.ics` / `webcal:` 应用、基于 GitHub Releases 的自动更新（SHA-256 校验）
+
+**Android** —— 同一套程序，按手机单栏排布：邮件、日历、通讯录、网盘、笔记、搜索、翻译与 AI 总结 · 后台收信并弹通知 ·
+系统返回手势 · 凭据用 Android Keystore 加密 · 从 GitHub Releases 在线更新（SHA-256 校验）。MCP 与选择文件夹只在桌面端提供。
+源码与构建说明见 [android/](android/README.md)
 
 ## 截图
 
@@ -97,6 +102,10 @@ claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp 
 
 - Windows：`czlmail-amd64-installer.exe`（按用户安装，无需管理员权限）
 - macOS：`czlmail-darwin-universal.dmg`（Intel 与 Apple 芯片通用，macOS 10.15+）
+- Android：[`czlmail-android.apk`](https://github.com/woodchen-ink/czlmail/releases/latest/download/czlmail-android.apk)（Android 8.0+，64 位 ARM 与 x86_64），也可以用手机扫码下载。
+  安装时按提示允许；之后的新版本在程序里（**设置 → 关于与更新**）更新，第一次更新需要允许 CZL Mail 安装应用。
+
+  <img src="screenshots/android-qr.png" width="160" alt="二维码：下载 CZL Mail Android 版">
 - 手机（只读看笔记）：打开 **https://mail-notes.czl.net**，填服务器、邮箱和应用专用密码登录；
   添加到主屏幕后可以像 App 一样用。它只是一组静态文件，浏览器直接连你自己的邮件服务器，
   我们收不到、也不保存你的密码和笔记。
@@ -165,7 +174,7 @@ Stalwart 可以把用户认证交给外部身份提供商（OIDC 目录，例如
 
 ## 从源码构建
 
-需要 Go 1.26+、Node 22+、pnpm 与 [Wails v2 CLI](https://wails.io/docs/gettingstarted/installation)（v2.12）。
+需要 Go 1.26+、Node 22+、pnpm 与 [Wails v2 CLI](https://wails.io/docs/gettingstarted/installation)（v2.17）。
 
 ```bash
 cd desktop
@@ -175,6 +184,7 @@ go test ./...  # 单元测试
 ```
 
 Windows 上可以用 `build.bat v0.1.0` 一次生成程序与 NSIS 安装包。
+Android 版另外需要 JDK 21 与 Android SDK + NDK，见 [android/README.md](android/README.md)。
 
 集成测试连接真实服务器，凭据只从环境变量读取（`CZLMAIL_TEST_SESSION`、`CZLMAIL_TEST_USER`、`CZLMAIL_TEST_PASS`），未提供时自动跳过。
 
@@ -188,7 +198,7 @@ Windows 上可以用 `build.bat v0.1.0` 一次生成程序与 NSIS 安装包。
 
 - 邮件正文经 DOMPurify 清洗，在不同源的沙箱 iframe 中渲染，并有严格的 CSP。
 - 远程图片默认拦截，只对信任的发件人放行；信任按完整地址，从不按域名。
-- 凭据与 API Key 只保存在系统钥匙串，没有明文回落。
+- 凭据与 API Key 只保存在系统钥匙串（Android 上用不可导出的 Android Keystore 密钥加密），没有明文回落。
 - 在线更新只安装与发布版 `SHA256SUMS` 一致的安装包。
 
 ## 反馈
