@@ -23,6 +23,7 @@ import { toast } from "sonner";
 
 import { Events, api, errorMessage, onEvent, type UpdateInfo } from "@/lib/api";
 import { listen, send, type Module } from "@/lib/app-bus";
+import { nativePlatform } from "@/lib/native-bridge";
 
 const MODULE_KEY = "czlmail.module";
 
@@ -106,17 +107,24 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
       // 设置模块可能刚挂载, 等它订阅后再发。
       setTimeout(() => send("openSettings", { section: "about" }), 0);
     };
+    const android = nativePlatform() === "android";
     const announce = (info: UpdateInfo) => {
       setUpdate(info);
       toast.info(t("CZL Mail {0} 已发布", info.release?.version ?? ""), {
         id: "update-available",
         duration: Infinity,
-        description: t("更新会自动下载、校验并重新打开程序。"),
+        description: android
+          ? t("更新会自动下载并校验，再交给系统安装。")
+          : t("更新会自动下载、校验并重新打开程序。"),
         action: {
           label: t("立即更新"),
           onClick: () => {
             toast.loading(t("正在下载更新…"), { id: "update-install" });
-            api.installUpdate().catch((err) => toast.error(errorMessage(err), { id: "update-install" }));
+            api
+              .installUpdate()
+              // 桌面端装完会退出并重新打开; Android 交给系统安装器后就返回, 由用户在安装器里确认。
+              .then(() => android && toast.success(t("已交给系统安装器，按提示完成更新。"), { id: "update-install" }))
+              .catch((err) => toast.error(errorMessage(err), { id: "update-install" }));
           },
         },
         cancel: { label: t("稍后"), onClick: () => {} },

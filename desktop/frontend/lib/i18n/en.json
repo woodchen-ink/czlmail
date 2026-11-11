@@ -19,6 +19,8 @@
   "文件": "Files",
   "AI 助手": "AI assistant",
   "更新会自动下载、校验并重新打开程序。": "The update will be downloaded and verified, then the app will reopen automatically.",
+  "更新会自动下载并校验，再交给系统安装。": "The update will be downloaded and verified, then handed to the system installer.",
+  "已交给系统安装器，按提示完成更新。": "Handed to the system installer. Follow its prompts to finish updating.",
   "立即更新": "Update now",
   "正在下载更新…": "Downloading update…",
   "稍后": "Later",
