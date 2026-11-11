@@ -1,18 +1,29 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 import { LocaleProvider } from "@/components/locale-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { nativeBootScript } from "@/lib/native-bridge";
 import { themeBootScript } from "@/lib/theme";
 
 import "./globals.css";
+
+// 移动端壳: 铺满刘海与 Home 指示条区域 (安全区由各处 env(safe-area-inset-*) 让出);
+// 禁止缩放, 否则 iOS 聚焦 16px 以下的输入框时会自动放大整页。
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   title: "CZL Mail",
   description: "Stalwart 邮箱桌面客户端",
 };
 
-const macBootScript = `if (/Mac/.test(navigator.platform)) document.documentElement.classList.add("mac");`;
+// iPad 的 navigator.platform 也是 MacIntel, 要排除原生壳 (native 类由 nativeBootScript 先挂上)。
+const macBootScript = `if (/Mac/.test(navigator.platform) && !document.documentElement.classList.contains("native")) document.documentElement.classList.add("mac");`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
@@ -24,6 +35,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <head>
         {/* 同步执行，赶在首帧绘制前把 dark class 挂上，避免暗色用户启动时闪白。 */}
+        {/* 移动端壳里装上 window.go / window.runtime, 必须先于一切绑定调用。 */}
+        <script dangerouslySetInnerHTML={{ __html: nativeBootScript }} />
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         {/* macOS 窗口隐藏了标题栏, 红绿灯浮在网页左上角; 同样赶在首帧前打上标记, 好让下面的标题条占位。 */}
         <script dangerouslySetInnerHTML={{ __html: macBootScript }} />
@@ -33,7 +46,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="h-full overflow-hidden">
         <LocaleProvider>
           <TooltipProvider delayDuration={300}>
-            <div className="flex h-full flex-col">
+            <div className="flex h-full flex-col pt-[env(safe-area-inset-top)]">
               {/* 仅 macOS 显示(见 globals.css 的 html.mac): 给红绿灯让出位置, 同时充当拖动窗口的把手。 */}
               <div
                 className="mac-titlebar bg-sidebar border-border text-muted-foreground h-9 shrink-0 items-center justify-center border-b text-xs font-medium select-none"

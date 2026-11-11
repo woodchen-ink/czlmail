@@ -2,6 +2,7 @@
 
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
+import { MobileNavButton } from "@/components/pane-layout";
 
 import { useState } from "react";
 import {
@@ -88,6 +89,7 @@ export function EmailToolbar({
 
   return (
     <div className="border-border flex shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2 py-1.5">
+      <MobileNavButton kind="back" />
       <Action icon={Reply} label={t("回复")} shortcut="R" onClick={actions.reply} showLabel />
       <Action icon={ReplyAll} label={t("全部回复")} shortcut="A" onClick={actions.replyAll} />
       <Action icon={Forward} label={t("转发")} shortcut="F" onClick={actions.forward} showLabel />

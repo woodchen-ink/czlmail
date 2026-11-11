@@ -17,6 +17,7 @@ import { MailShell } from "@/components/mail-shell";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UnreadBadge } from "@/components/unread-badge";
+import { useCompact } from "@/lib/use-compact";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -53,6 +54,7 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
   const [notesEnabled, setNotesEnabled] = useState(false);
   // 未打开过的模块不挂载，避免启动时一次性拉取全部数据。
   const [visited, setVisited] = useState<Set<Module>>(() => new Set(["mail"]));
+  const compact = useCompact();
 
   // Navigation must not unmount or hide a failed save without letting the user recover it.
   const go = useCallback(async (m: Module) => {
@@ -152,12 +154,14 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
     };
   }, [go]);
 
+  const nav = getNav().filter((item) => item.id !== "notes" || notesEnabled);
+
   return (
-    <div className="flex h-full">
-      <nav className="border-border bg-sidebar flex w-14 shrink-0 flex-col items-center gap-1 border-r py-3" aria-label={t("模块")}>
+    <div className="flex h-full flex-col md:flex-row">
+      <nav className="border-border bg-sidebar hidden w-14 shrink-0 flex-col items-center gap-1 border-r py-3 md:flex" aria-label={t("模块")}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="CZL Mail" className="mb-3 size-8" />
-        {getNav().filter((item) => item.id !== "notes" || notesEnabled).map((item) => (
+        {nav.map((item) => (
           <RailButton
             key={item.id}
             item={item}
@@ -209,6 +213,15 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
           </Pane>
         )}
       </main>
+      {compact && (
+        <BottomNav
+          items={nav}
+          module={module}
+          unread={unread}
+          updateBadge={!!update?.available}
+          onSelect={(m) => void go(m)}
+        />
+      )}
       <Integration />
     </div>
   );
@@ -264,5 +277,62 @@ function RailButton({
         {item.shortcut && <span className="text-muted-foreground ml-2 text-xs">{item.shortcut}</span>}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * 窄屏的底部模块栏, 替代左侧竖栏; 底部留出 Home 指示条的安全区。
+ * 不放 AI 助手: 它管的是 MCP, 要本机 AI 客户端连进来, 手机上没有意义。
+ */
+function BottomNav({
+  items,
+  module,
+  unread,
+  updateBadge,
+  onSelect,
+}: {
+  items: { id: Module; label: string; icon: typeof Mail }[];
+  module: Module;
+  unread: number;
+  updateBadge: boolean;
+  onSelect: (m: Module) => void;
+}) {
+  useI18n();
+  const all: { id: Module; label: string; icon: typeof Mail; count?: number; dot?: boolean }[] = [
+    ...items.map((i) => ({ ...i, count: i.id === "mail" ? unread : 0 })),
+    { id: "settings", label: t("设置"), icon: Settings, dot: updateBadge },
+  ];
+  return (
+    <nav
+      className="border-border bg-sidebar flex shrink-0 border-t pb-[env(safe-area-inset-bottom)]"
+      aria-label={t("模块")}
+    >
+      {all.map((item) => {
+        const Icon = item.icon;
+        const active = module === item.id;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSelect(item.id)}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "text-muted-foreground relative flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[11px]",
+              active && "text-foreground",
+            )}
+          >
+            <span className="relative">
+              <Icon className="size-5" />
+              {item.count ? (
+                <UnreadBadge count={item.count} className="ring-sidebar absolute -top-1.5 -right-3 ring-2" />
+              ) : item.dot ? (
+                <span className="bg-destructive ring-sidebar absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2" />
+              ) : null}
+            </span>
+            <span className="max-w-full truncate px-0.5">{item.label}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }

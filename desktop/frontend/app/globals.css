@@ -20,7 +20,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   /* 只用设备本地字体, 不引网络字体; 末尾保留通用族, 防止整栈落空时退回衬线体。 */
-  --font-sans: -apple-system, "Noto Sans SC", system-ui, sans-serif;
+  --font-sans: -apple-system, "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", "Cascadia Code", Consolas, "Liberation Mono", Menlo, monospace;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);

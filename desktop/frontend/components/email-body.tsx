@@ -1,5 +1,6 @@
 "use client";
 
+import { localOrigin } from "@/lib/native-bridge";
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
@@ -397,7 +398,7 @@ function bridgeScript(nonce: string): string {
  */
 function contentSecurityPolicy(nonce: string, allowImages: boolean): string {
   // 沙箱 iframe 是不透明源，'self' 匹配不到应用本身，内嵌图片的本地路径要写明源。
-  const local = typeof window === "undefined" ? "" : ` ${window.location.origin}`;
+  const local = typeof window === "undefined" ? "" : ` ${localOrigin()}`;
   const img = allowImages ? `img-src https: data:${local};` : `img-src data:${local};`;
   return [
     "default-src 'none';",

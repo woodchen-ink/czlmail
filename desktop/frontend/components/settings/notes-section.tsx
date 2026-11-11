@@ -10,6 +10,7 @@ import { Card, Row, SectionTitle } from "@/components/settings/ui";
 import { errorMessage } from "@/lib/api";
 import { flushNotes, noteApi, type JournalConfig, type NoteConfig } from "@/lib/notes/api";
 import { t } from "@/lib/i18n";
+import { isNative } from "@/lib/native-bridge";
 
 /** Local module and MCP permissions are independent of mail settings and cross-device preferences. */
 export function NotesSection({ active }: { active: boolean }) {
@@ -73,12 +74,15 @@ export function NotesSection({ active }: { active: boolean }) {
       <Row title={t("启用笔记")} desc={t("默认开启。关闭后隐藏入口并暂停笔记同步，保留全部本地和远端文件。此开关只影响当前设备。")}>
         <Switch aria-label={t("启用笔记")} checked={config?.enabled ?? true} disabled={!config || busy} onCheckedChange={(enabled) => void save({ enabled })} />
       </Row>
+      {/* MCP 是桌面端给本机 AI 客户端的接口, 手机上没有。 */}
+      {!isNative() && (<>
       <Row title={t("允许 MCP 读取笔记")} desc={t("需要同时开启 MCP 服务。关闭笔记工具不会撤销通用网盘工具原有的文件访问权限。")}>
         <Switch aria-label={t("允许 MCP 读取笔记")} checked={config?.allowRead ?? false} disabled={!config?.enabled || busy} onCheckedChange={(allowRead) => void save({ allowRead })} />
       </Row>
       <Row title={t("允许 MCP 修改笔记")} desc={t("允许 AI 新建、编辑、导入和软删除笔记。默认关闭，所有更新仍需版本校验。")}>
         <Switch aria-label={t("允许 MCP 修改笔记")} checked={config?.allowWrite ?? false} disabled={!config?.enabled || !config.allowRead || busy} onCheckedChange={(allowWrite) => void save({ allowWrite })} />
       </Row>
+      </>)}
     </Card>
     <SectionTitle small title={t("日记")} desc={t("笔记页「今日日记」一键打开当天日记，没有就按模板新建。位置和文件名支持 YYYY、MM、DD、dddd（星期）等日期写法，与 Obsidian 相同；这些设置会同步到其他设备。")} />
     <Card>

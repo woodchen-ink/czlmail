@@ -11,6 +11,7 @@ import { t } from "@/lib/i18n";
 import * as App from "@/wailsjs/go/main/App";
 import { EventsOn } from "@/wailsjs/runtime/runtime";
 import type { main, store, syncer } from "@/wailsjs/go/models";
+import { localUrl } from "@/lib/native-bridge";
 
 export type Account = store.Account;
 export type Mailbox = store.Mailbox;
@@ -77,7 +78,7 @@ export function isPreviewable(type: string): boolean {
 /** 附件的本地预览地址，由 Go 代理下载。 */
 export function blobUrl(accountId: string, a: { blobId: string; type: string; name?: string }): string {
   const q = new URLSearchParams({ account: accountId, blob: a.blobId, type: a.type });
-  return `/czl-blob?${q.toString()}`;
+  return localUrl(`/czl-blob?${q.toString()}`);
 }
 
 /** 后端事件名，与 Go 侧的常量一一对应。 */

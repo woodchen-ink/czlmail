@@ -15,6 +15,7 @@ import { OptionSelect } from "@/components/option-select";
 import { Card, Divider, Row, SectionTitle, useSettings } from "@/components/settings/ui";
 import { api, errorMessage, type Account, type IntegrationStatus } from "@/lib/api";
 import { useAppearance, type ThemePreference } from "@/lib/theme";
+import { isNative } from "@/lib/native-bridge";
 
 export function AppearanceSection({ active }: { active: boolean }) {
   useI18n();
@@ -73,7 +74,10 @@ export function NotificationsSection({ active }: { active: boolean }) {
 
   return (
     <>
-      <SectionTitle title={t("通知")} desc={t("使用系统通知中心。关闭主窗口后程序驻留托盘，仍会收到通知。")} />
+      <SectionTitle
+        title={t("通知")}
+        desc={isNative() ? t("使用系统通知。程序在前台或刚切到后台时同步到的新邮件会弹出通知。") : t("使用系统通知中心。关闭主窗口后程序驻留托盘，仍会收到通知。")}
+      />
       <Card>
         <Row title={t("新邮件通知")} desc={t("只通知收件箱里的来信；自己发出的邮件（任一发件身份）不通知。点击通知直接打开这封邮件")}>
           <Switch checked={mailOn} disabled={!settings} onCheckedChange={(on) => save({ notifyMail: on })} />

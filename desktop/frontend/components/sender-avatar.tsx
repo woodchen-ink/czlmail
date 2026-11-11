@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { hasRuntime } from "@/lib/api";
 import { initials } from "@/lib/format";
+import { localUrl } from "@/lib/native-bridge";
 
 /**
  * 本会话内已确认没有头像的地址。
@@ -48,7 +49,7 @@ export function SenderAvatar({ email, name, className }: Props) {
       {!failed && hasRuntime() && (
         // 图片叠在首字母上方：加载完成前首字母已经可见，不会出现空白圆圈。
         <img
-          src={`/czl-avatar?email=${encodeURIComponent(key)}`}
+          src={localUrl(`/czl-avatar?email=${encodeURIComponent(key)}`)}
           alt=""
           loading="lazy"
           decoding="async"

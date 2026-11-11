@@ -6,6 +6,7 @@ import { useI18n } from "@/components/locale-provider";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -18,6 +19,7 @@ import {
 import { toast } from "sonner";
 
 import { AgendaView } from "@/components/calendar/agenda-view";
+import { CompactMonth } from "@/components/calendar/compact-month";
 import {
   calendarColor,
   calendarKey,
@@ -58,7 +60,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PaneLayout } from "@/components/pane-layout";
+import { MobileNavButton, PaneLayout } from "@/components/pane-layout";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -66,6 +68,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -86,6 +91,7 @@ import {
   dayTitle,
   monthGrid,
   monthTitle,
+  sameDay,
   shortDate,
   startOfDay,
   startOfWeek,
@@ -93,6 +99,7 @@ import {
   toLocalDateTime,
   toRFC3339,
 } from "@/lib/date";
+import { useCompact } from "@/lib/use-compact";
 
 const HIDDEN_KEY = "czlmail.calendar.hidden";
 const VIEW_KEY = "czlmail.calendar.view";
@@ -119,7 +126,11 @@ export function CalendarShell({ active }: { active: boolean }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const [view, setView] = useState<CalendarView>("month");
+  const compact = useCompact();
+  const [savedView, setView] = useState<CalendarView>("month");
+  // 窄屏放不下 7 列时间轴, 记住的周视图按天显示。
+  const view: CalendarView = compact && savedView === "week" ? "day" : savedView;
+  const [drawer, setDrawer] = useState(false);
   const [cursor, setCursor] = useState(() => startOfDay(new Date()));
   const [events, setEvents] = useState<EventOccurrence[]>([]);
   const [loading, setLoading] = useState(false);
@@ -387,7 +398,10 @@ export function CalendarShell({ active }: { active: boolean }) {
         <Button
           className="w-full"
           size="sm"
-          onClick={() => createAt(nextHalfHour(), false)}
+          onClick={() => {
+            setDrawer(false);
+            createAt(nextHalfHour(), false);
+          }}
         >
           <Plus className="size-4" />
           {t("新建日程")}</Button>
@@ -396,7 +410,10 @@ export function CalendarShell({ active }: { active: boolean }) {
         <MiniMonth
           selected={cursor}
           busyDays={busyDays}
-          onSelect={(d) => setCursor(startOfDay(d))}
+          onSelect={(d) => {
+            setCursor(startOfDay(d));
+            setDrawer(false);
+          }}
         />
         <div className="mt-3 flex flex-col gap-3 px-2">
           {grouped.map(([accountId, list]) => (
@@ -411,7 +428,7 @@ export function CalendarShell({ active }: { active: boolean }) {
                   aria-label={t("新建日历")}
                   title={t("新建日历")}
                   onClick={() => setCalDialog({ accountId })}
-                  className="text-muted-foreground hover:bg-secondary hover:text-foreground rounded-sm p-1 opacity-0 group-hover/acc:opacity-100 focus-visible:opacity-100"
+                  className="text-muted-foreground hover:bg-secondary hover:text-foreground rounded-sm p-1 opacity-0 group-hover/acc:opacity-100 focus-visible:opacity-100 max-md:opacity-100"
                 >
                   <Plus className="size-3.5" />
                 </button>
@@ -472,9 +489,83 @@ export function CalendarShell({ active }: { active: boolean }) {
     </div>
   );
 
+  const viewNames: { value: CalendarView; label: string }[] = [
+    { value: "month", label: t("月") },
+    { value: "week", label: t("周") },
+    { value: "day", label: t("天") },
+    { value: "agenda", label: t("议程") },
+    { value: "tasks", label: t("任务") },
+  ];
+
+  const importItems = writable.map((c) => (
+    <DropdownMenuItem
+      key={calendarKey(c.accountId, c.id)}
+      onSelect={() => importTo(c)}
+    >
+      <span
+        className="size-2.5 rounded-full"
+        style={{
+          background: calendarColor(calendars, c.accountId, c.id),
+        }}
+      />
+      <span className="min-w-0 flex-1 truncate">{c.name}</span>
+      <span className="text-muted-foreground max-w-28 shrink-0 truncate text-xs">
+        {accountName(c.accountId)}
+      </span>
+    </DropdownMenuItem>
+  ));
+
+  // 窄屏一行: 菜单 · 标题 · 翻页 · 今天 · 视图 (导入收进视图菜单)。
+  const compactToolbar = (
+    <div className="border-border flex h-11 shrink-0 items-center gap-0.5 border-b px-1">
+      <MobileNavButton kind="menu" />
+      <h2 className="min-w-0 truncate px-1 text-base font-semibold">{title}</h2>
+      {loading && (
+        <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" />
+      )}
+      <div className="ml-auto flex shrink-0 items-center">
+        {view !== "tasks" && (
+          <>
+            <Button variant="ghost" size="icon" className="size-8" aria-label={t("上一页")} onClick={() => step(-1)}>
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="size-8" aria-label={t("下一页")} onClick={() => step(1)}>
+              <ChevronRight className="size-4" />
+            </Button>
+            <Button variant="ghost" size="sm" className="px-2" onClick={() => setCursor(startOfDay(new Date()))}>
+              {t("今天")}
+            </Button>
+          </>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="ml-1 gap-0.5 px-2">
+              {viewNames.find((v) => v.value === view)?.label}
+              <ChevronDown className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuRadioGroup value={view} onValueChange={(v) => changeView(v as CalendarView)}>
+              {viewNames.filter((v) => v.value !== "week").map((v) => (
+                <DropdownMenuRadioItem key={v.value} value={v.value}>{v.label}</DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            {writable.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>{t("导入 .ics 到")}</DropdownMenuLabel>
+                {importItems}
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+
   const detail = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-border flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
+      {compact ? compactToolbar : <div className="border-border flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
         <Button
           variant="outline"
           size="sm"
@@ -512,11 +603,9 @@ export function CalendarShell({ active }: { active: boolean }) {
             value={view}
             onValueChange={(v) => v && changeView(v as CalendarView)}
           >
-            <ToggleGroupItem value="month">{t("月")}</ToggleGroupItem>
-            <ToggleGroupItem value="week">{t("周")}</ToggleGroupItem>
-            <ToggleGroupItem value="day">{t("天")}</ToggleGroupItem>
-            <ToggleGroupItem value="agenda">{t("议程")}</ToggleGroupItem>
-            <ToggleGroupItem value="tasks">{t("任务")}</ToggleGroupItem>
+            {viewNames.map((v) => (
+              <ToggleGroupItem key={v.value} value={v.value}>{v.label}</ToggleGroupItem>
+            ))}
           </ToggleGroup>
 
           <DropdownMenu>
@@ -527,31 +616,44 @@ export function CalendarShell({ active }: { active: boolean }) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
               <DropdownMenuLabel>{t("导入 .ics 到")}</DropdownMenuLabel>
-              {writable.map((c) => (
-                <DropdownMenuItem
-                  key={calendarKey(c.accountId, c.id)}
-                  onSelect={() => importTo(c)}
-                >
-                  <span
-                    className="size-2.5 rounded-full"
-                    style={{
-                      background: calendarColor(calendars, c.accountId, c.id),
-                    }}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                  <span className="text-muted-foreground max-w-28 shrink-0 truncate text-xs">
-                    {accountName(c.accountId)}
-                  </span>
-                </DropdownMenuItem>
-              ))}
+              {importItems}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </div>
+      </div>}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
+        {/* 窄屏没有侧栏里的「新建日程」, 浮在右下角; 建在选中的那天。 */}
+        {compact && view !== "tasks" && !target && (
+          <Button
+            size="icon"
+            className="absolute right-4 bottom-4 z-10 size-12 rounded-full shadow-lg"
+            aria-label={t("新建日程")}
+            onClick={() =>
+              createAt(
+                sameDay(cursor, new Date())
+                  ? nextHalfHour()
+                  : new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 9),
+                false,
+              )
+            }
+          >
+            <Plus className="size-5" />
+          </Button>
+        )}
         <div className="min-w-0 flex-1">
-          {view === "month" && (
+          {view === "month" && compact && (
+            <CompactMonth
+              cursor={cursor}
+              events={visibleEvents}
+              calendars={calendars}
+              notes={dayNotes}
+              onSelect={(d) => setCursor(startOfDay(d))}
+              onStep={step}
+              onOpen={openOccurrence}
+            />
+          )}
+          {view === "month" && !compact && (
             <MonthView
               cursor={cursor}
               events={visibleEvents}
@@ -606,7 +708,13 @@ export function CalendarShell({ active }: { active: boolean }) {
           )}
         </div>
         {target && (
-          <aside className="border-border bg-card w-[420px] max-w-[50%] shrink-0 border-l">
+          <aside
+            className={
+              compact
+                ? "bg-card absolute inset-0 z-20"
+                : "border-border bg-card w-[420px] max-w-[50%] shrink-0 border-l"
+            }
+          >
             <EventPanel
               key={panelKey(target)}
               target={target}
@@ -628,6 +736,9 @@ export function CalendarShell({ active }: { active: boolean }) {
         sidebar={sidebar}
         detail={detail}
         sidebarWidth={260}
+        mobilePane={drawer ? "sidebar" : "detail"}
+        onMobilePaneChange={(p) => setDrawer(p === "sidebar")}
+        ownMobileNav
       />
       <CalendarDialog
         target={calDialog}

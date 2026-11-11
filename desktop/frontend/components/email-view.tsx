@@ -2,6 +2,7 @@
 
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
+import { MobileNavButton } from "@/components/pane-layout";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Languages, Loader2, ShieldCheck, Sparkles, Undo2 } from "lucide-react";
@@ -394,7 +395,8 @@ export function EmailView({
     for (const a of email?.attachments ?? []) {
       if (a.cid && a.type.startsWith("image/")) {
         map[a.cid.toLowerCase()] =
-          `${window.location.origin}${blobUrl(accountId, a)}`;
+          // 桌面端 blobUrl 是相对路径, iOS 是 czl-local:// 的完整地址: 按页面源解析, 完整地址原样保留。
+          new URL(blobUrl(accountId, a), window.location.origin).href;
       }
     }
     return map;
@@ -402,9 +404,11 @@ export function EmailView({
 
   const listHeaders = useListHeaders(accountId, email);
 
+  // 正文没出来时工具栏也没有, 窄屏下单独留一个返回键, 不然只能靠侧滑。
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center p-6">
+      <div className="relative flex h-full items-center justify-center p-6">
+        <MobileNavButton kind="back" className="absolute top-1.5 left-2" />
         <p className="text-destructive text-sm">{error}</p>
       </div>
     );
@@ -412,7 +416,8 @@ export function EmailView({
 
   if (!email) {
     return (
-      <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
+      <div className="text-muted-foreground relative flex h-full items-center justify-center gap-2 text-sm">
+        <MobileNavButton kind="back" className="absolute top-1.5 left-2" />
         <Loader2 className="size-4 animate-spin" />
         {t("载入中")}</div>
     );

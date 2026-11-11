@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CalendarDays, FilePlus2, FolderPlus, RefreshCw, Pencil, Trash2, FolderOpen, NotebookPen } from "lucide-react";
+import { CalendarDays, ChevronLeft, FilePlus2, FolderPlus, RefreshCw, Pencil, Trash2, FolderOpen, NotebookPen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -27,6 +27,9 @@ import { useNoteDocument } from "@/lib/notes/use-note-document";
 import { useNoteSync } from "@/lib/notes/use-note-sync";
 import { BrowserOpenURL } from "@/wailsjs/runtime/runtime";
 import { getLocale, t } from "@/lib/i18n";
+import { useCompact } from "@/lib/use-compact";
+import { useEdgeSwipe } from "@/lib/use-edge-swipe";
+import { cn } from "@/lib/utils";
 
 type DialogAction = "folder" | "rename" | "trash";
 
@@ -58,6 +61,17 @@ export function NotesShell({ active }: { active: boolean }) {
   const insert = useRef<((text: string) => void) | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const treePanel = usePanelRef();
+  // 窄屏下目录与正文分两屏: 打开 (或新建、跳转到) 一篇笔记就进正文, 返回回目录。
+  // 用渲染期比较而不是 effect, 避免先闪一帧目录。
+  const compact = useCompact();
+  const [mobileDoc, setMobileDoc] = useState(false);
+  const swipeBack = useEdgeSwipe(compact && mobileDoc ? () => setMobileDoc(false) : null);
+  const noteKey = doc.note ? `${doc.note.vaultId}/${doc.note.id}` : "";
+  const [seenNote, setSeenNote] = useState(noteKey);
+  if (seenNote !== noteKey) {
+    setSeenNote(noteKey);
+    if (noteKey) setMobileDoc(true);
+  }
   useEffect(() => {
     try {
       const value = Number(localStorage.getItem("czlmail.notes.treeWidth"));
@@ -282,7 +296,7 @@ export function NotesShell({ active }: { active: boolean }) {
   }
 
   const compare = () => void run(async () => { await doc.flush(); const n = doc.getNote(); if (n) setDiff(await noteApi.diff(n.vaultId, n.id)); });
-  const openDocument = (entry: NoteEntry) => { if (!busy && !entry.directory) void run(() => open(entry)); };
+  const openDocument = (entry: NoteEntry) => { if (!busy && !entry.directory) { setMobileDoc(true); void run(() => open(entry)); } };
 
   const tree = <NoteTree vaultId={vaultId} tick={tick} selectedId={selected?.id ?? ""} disabled={busy}
     onRootAction={(kind) => { if (kind === "note") void createNote(""); else folderAt(""); }}
@@ -326,13 +340,7 @@ export function NotesShell({ active }: { active: boolean }) {
       <Button variant="outline" size="sm" disabled={busy || trash} onClick={() => void createNote("")}><FilePlus2 />{t("新建笔记")}</Button>
     </div>;
 
-  return <div className="flex h-full min-h-0" style={{ "--wails-drop-target": "drop" } as React.CSSProperties}>
-    <ResizablePanelGroup orientation="horizontal">
-    <ResizablePanel id="notes-tree" panelRef={treePanel} defaultSize={320} minSize={240} maxSize={560} onResize={(size, _id, previous) => { if (!previous) return; try { localStorage.setItem("czlmail.notes.treeWidth", String(size.inPixels)); } catch { /* Ignore unavailable preferences. */ } }}>
-      {sidebar}
-    </ResizablePanel>
-    <ResizableHandle aria-label={t("调整目录宽度")} />
-    <ResizablePanel id="notes-body" minSize={400}>
+  const main = <>
     <section className="flex h-full min-w-0 flex-col">
       {!vaultId ? <div className="m-auto flex max-w-md flex-col gap-4 p-8"><h2 className="text-xl font-semibold">{t("笔记")}</h2><p className="text-muted-foreground text-sm">{t("笔记保存在个人账号的 Notes 目录中。")}</p><Button disabled={busy} onClick={() => void run(async () => { const accounts = await api.listAccounts(); const account = accounts.find((item) => item.isPersonal); if (!account) return; const v = await noteApi.bind(account.id, ""); setVaults([v]); setVaultId(v.id); void sync(); })}>{t("开始使用笔记")}</Button></div> : <>
         {attachmentPreview
@@ -340,7 +348,8 @@ export function NotesShell({ active }: { active: boolean }) {
           : doc.note && <NoteHeader note={doc.note} dirty={doc.dirty} failed={!!doc.error} mode={mode} busy={busy} focusTitle={created === doc.note.id} onMode={setMode}
             onRename={(value) => { const note = doc.getNote(); if (note) void rename(note, value); }}
             onAttach={() => picker.current?.click()} onDiff={compare}
-            onTrash={() => { setSelected(doc.note); setAction("trash"); }} />}
+            onTrash={() => { setSelected(doc.note); setAction("trash"); }}
+            onBack={compact ? () => setMobileDoc(false) : undefined} />}
         {vault?.error && <p className="text-destructive px-4 py-2 text-sm">{t("同步未完成，本地内容仍保留")}: {vault.error}</p>}
         {doc.error && <div className="text-destructive flex items-center gap-3 px-4 py-2 text-sm"><span>{doc.error}</span><Button variant="outline" size="sm" onClick={() => void run(doc.recover)}>{t("将当前编辑另存为恢复笔记")}</Button></div>}
         {attachmentPreview && <div className="min-h-0 flex-1"><NoteAttachmentPane item={attachmentPreview} onExternal={() => void run(async () => { if (attachmentPreview.src) BrowserOpenURL(attachmentPreview.src); else await noteApi.openLink(attachmentPreview.vaultId, attachmentPreview.noteId, attachmentPreview.path); })} /></div>}
@@ -353,8 +362,27 @@ export function NotesShell({ active }: { active: boolean }) {
         }} className={attachmentPreview ? "hidden" : "min-h-0 flex-1"}><NoteDocumentTools text={doc.text} note={doc.note}>{body}</NoteDocumentTools></div>
       </>}
     </section>
+  </>;
+
+  return <div className="flex h-full min-h-0" style={{ "--wails-drop-target": "drop" } as React.CSSProperties}>
+    {compact ? <>
+      {/* 还没开始用笔记时只有正文区那张引导卡片, 目录没有内容可看。 */}
+      <div className={cn("h-full w-full min-w-0", (mobileDoc || !vaultId) && "hidden")}>{sidebar}</div>
+      <div ref={swipeBack} className={cn("bg-background flex h-full w-full min-w-0 flex-col", !mobileDoc && vaultId && "hidden")}>
+        {vaultId && (!doc.note || attachmentPreview) && <div className="border-border flex h-11 shrink-0 items-center border-b px-1">
+          <Button variant="ghost" size="sm" onClick={() => setMobileDoc(false)}><ChevronLeft className="size-5" />{t("笔记")}</Button>
+        </div>}
+        <div className="min-h-0 flex-1">{main}</div>
+      </div>
+    </> : <ResizablePanelGroup orientation="horizontal">
+    <ResizablePanel id="notes-tree" panelRef={treePanel} defaultSize={320} minSize={240} maxSize={560} onResize={(size, _id, previous) => { if (!previous) return; try { localStorage.setItem("czlmail.notes.treeWidth", String(size.inPixels)); } catch { /* Ignore unavailable preferences. */ } }}>
+      {sidebar}
     </ResizablePanel>
-    </ResizablePanelGroup>
+    <ResizableHandle aria-label={t("调整目录宽度")} />
+    <ResizablePanel id="notes-body" minSize={400}>
+      {main}
+    </ResizablePanel>
+    </ResizablePanelGroup>}
     <input ref={picker} type="file" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (insert.current) void attachFiles(files, insert.current); }} />
     <Dialog open={!!action} onOpenChange={(open) => { if (!open && !busy) setAction(null); }}><DialogContent><DialogHeader><DialogTitle>{action === "trash" ? t("移入回收站") : action === "rename" ? t("重命名") : t("新建文件夹")}</DialogTitle><DialogDescription>{action === "trash" ? t("保留附件，可以从回收站恢复。") : t("使用普通文件名保存，不会改写正文标题。")}</DialogDescription></DialogHeader>{action !== "trash" && <Input autoFocus value={name} onChange={(event) => setName(event.target.value)} aria-label={t("名称")} onKeyDown={(event) => { if (event.key === "Enter" && name.trim() && !busy) void submit(); }} />}<DialogFooter><Button variant="outline" disabled={busy} onClick={() => setAction(null)}>{t("取消")}</Button><Button disabled={busy || action !== "trash" && !name.trim()} onClick={() => void submit()}>{t("确定")}</Button></DialogFooter></DialogContent></Dialog>
     <NoteDiffDialog diff={diff} busy={busy} onClose={() => setDiff(null)} onResolve={(strategy) => void run(async () => { if (!diff) return; const saved = await noteApi.resolve(diff.local.vaultId, diff.local.id, diff.local.revision, diff.remoteVersion, strategy, ""); setDiff(null); await doc.open(saved.vaultId, saved.id); })} />

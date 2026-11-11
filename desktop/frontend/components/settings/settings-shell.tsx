@@ -6,6 +6,8 @@ import { useI18n } from "@/components/locale-provider";
 import { useCallback, useEffect, useState } from "react";
 import {
   AppWindow,
+  ChevronLeft,
+  ChevronRight,
   Bell,
   BookOpen,
   BookUser,
@@ -54,6 +56,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { isNative } from "@/lib/native-bridge";
+import { useCompact } from "@/lib/use-compact";
+import { useEdgeSwipe } from "@/lib/use-edge-swipe";
 import { fileSize } from "@/lib/format";
 import {
   Events,
@@ -102,7 +107,17 @@ type Section =
   | "addressbooks"
   | "about";
 
-const getGroups: () => ({ title: string; items: { id: Section; label: string; icon: typeof Palette }[] }[]) = () => ([
+/** 移动端壳里没有的能力: 开机自启与默认应用登记 (iOS 由系统设置管)。 */
+const DESKTOP_ONLY: Section[] = ["integration"];
+
+const getGroups: () => ({ title: string; items: { id: Section; label: string; icon: typeof Palette }[] }[]) = () => {
+  const native = isNative();
+  return allGroups()
+    .map((g) => ({ ...g, items: g.items.filter((i) => !native || !DESKTOP_ONLY.includes(i.id)) }))
+    .filter((g) => g.items.length > 0);
+};
+
+const allGroups: () => ({ title: string; items: { id: Section; label: string; icon: typeof Palette }[] }[]) = () => ([
   {
     title: t("通用"),
     items: [
@@ -148,8 +163,15 @@ export const CHANGELOG_URL = "https://www.sunai.net/t/topic/1495";
 
 export function SettingsShell({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
   useI18n();
-  const [section, setSection] = useState<Section>("account");
+  const [section, setSectionState] = useState<Section>("account");
   const [hasUpdate, setHasUpdate] = useState(false);
+  // 窄屏下先列分组, 点进去才显示具体设置。
+  const compact = useCompact();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const setSection = useCallback((s: Section) => {
+    setSectionState(s);
+    setMobileOpen(true);
+  }, []);
 
   useEffect(() => {
     const off = listen("openSettings", ({ section: s }) => setSection(s as Section));
@@ -162,12 +184,22 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
       off();
       offUpd();
     };
-  }, []);
+  }, [setSection]);
   const on = (id: Section) => active && section === id;
+  const swipeBack = useEdgeSwipe(compact && mobileOpen ? () => setMobileOpen(false) : null);
+  const showNav = !compact || !mobileOpen;
+  const showContent = !compact || mobileOpen;
 
   return (
     <div className="flex h-full">
-      <nav className="border-border bg-sidebar czl-scroll flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r p-2" aria-label={t("设置")}>
+      <nav
+        className={cn(
+          "bg-sidebar czl-scroll flex shrink-0 flex-col gap-0.5 overflow-y-auto p-2",
+          compact ? "w-full" : "border-border w-56 border-r",
+          !showNav && "hidden",
+        )}
+        aria-label={t("设置")}
+      >
         <h1 className="px-2 py-2 text-base font-semibold">{t("设置")}</h1>
         {getGroups().map((g) => (
           <div key={g.title} className="mb-2 flex flex-col gap-0.5">
@@ -188,14 +220,24 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
                 {s.id === "about" && hasUpdate && (
                   <span className="bg-destructive text-primary-foreground ml-auto rounded-sm px-1.5 text-[10px] leading-4">{t("新版本")}</span>
                 )}
+                {compact && <ChevronRight className="text-muted-foreground ml-auto size-4" />}
               </button>
             ))}
           </div>
         ))}
       </nav>
 
+      <div ref={swipeBack} className={cn("bg-background flex min-w-0 flex-1 flex-col", !showContent && "hidden")}>
+        {compact && (
+          <div className="border-border flex h-11 shrink-0 items-center gap-1 border-b px-1">
+            <Button variant="ghost" size="sm" onClick={() => setMobileOpen(false)}>
+              <ChevronLeft className="size-5" />
+              {t("设置")}
+            </Button>
+          </div>
+        )}
       <div className="czl-scroll min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6 p-8">
+        <div className={cn("mx-auto flex max-w-3xl flex-col gap-6", compact ? "p-4" : "p-8")}>
           {section === "account" && <AccountSection active={on("account")} onSignedOut={onSignedOut} />}
           {section === "appearance" && <AppearanceSection active={on("appearance")} />}
           {section === "notifications" && <NotificationsSection active={on("notifications")} />}
@@ -215,6 +257,7 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
           {section === "addressbooks" && <AddressBooksSection active={on("addressbooks")} />}
           {section === "about" && <AboutSection active={on("about")} />}
         </div>
+      </div>
       </div>
     </div>
   );
@@ -606,6 +649,7 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
 
       <ImageCacheCard active={active} />
 
+      {!isNative() && (<>
       <SectionTitle title={t("删除本机数据")} small />
       <Card className="border-destructive/40">
         <Row
@@ -625,6 +669,7 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
             {t("删除所有数据")}</Button>
         </Row>
       </Card>
+      </>)}
 
       <Dialog open={purgeOpen} onOpenChange={(o) => !purging && setPurgeOpen(o)}>
         <DialogContent className="sm:max-w-md">
@@ -736,9 +781,12 @@ function AboutSection({ active }: { active: boolean }) {
             <p className="font-semibold">CZL Mail</p>
             <p className="text-muted-foreground text-sm">{t("版本")} {version || "—"}</p>
           </div>
+          {/* 手机上经 App Store / TestFlight 更新。 */}
+          {!isNative() && (
           <Button variant="outline" size="sm" onClick={check} disabled={checking || installing}>
             {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             {t("检查更新")}</Button>
+          )}
         </div>
         {info?.available && info.release && (
           <>

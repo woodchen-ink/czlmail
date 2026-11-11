@@ -79,6 +79,7 @@ import {
 import { send } from "@/lib/app-bus";
 import { displayAddressList, listDate } from "@/lib/format";
 import { hm, shortDate } from "@/lib/date";
+import { localUrl } from "@/lib/native-bridge";
 
 /** 当前范围: 全部 / 某通讯录 / 某类别。 */
 type Scope =
@@ -712,7 +713,7 @@ function ContactAvatar({ c, className }: { c: ContactSummary; className?: string
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={`/czl-contact-photo?account=${encodeURIComponent(c.accountId)}&id=${encodeURIComponent(c.id)}`}
+        src={localUrl(`/czl-contact-photo?account=${encodeURIComponent(c.accountId)}&id=${encodeURIComponent(c.id)}`)}
         alt=""
         className={cn("rounded-full object-cover", className)}
       />

@@ -1,5 +1,7 @@
 import DOMPurify from "dompurify";
 
+import { localOrigin, localUrl } from "@/lib/native-bridge";
+
 /**
  * 邮件正文的消毒与改写。
  *
@@ -208,19 +210,19 @@ function stripRemoteImage(node: Element): boolean {
 function proxyRemoteImage(node: Element): boolean {
   const src = (node.getAttribute("src") ?? "").trim();
   if (!/^https:\/\//i.test(src)) return false;
-  node.setAttribute("src", `${window.location.origin}/czl-remote?url=${encodeURIComponent(src)}`);
+  node.setAttribute("src", `${localOrigin()}/czl-remote?url=${encodeURIComponent(src)}`);
   return true;
 }
 
 /** 本地路径的图片挪到 images 里，src 换成下标，由父页面取回后交给 iframe。 */
 function deferLocalImage(node: Element, images: string[]) {
   const src = (node.getAttribute("src") ?? "").trim();
-  const origin = window.location.origin;
+  const origin = localOrigin();
   const local = src.startsWith(origin + "/czl-") ? src.slice(origin.length) : src;
   if (!local.startsWith("/czl-")) return;
   node.removeAttribute("src");
   node.setAttribute("data-czl-img", String(images.length));
-  images.push(local);
+  images.push(localUrl(local));
 }
 
 function stripRemoteBackground(node: Element) {

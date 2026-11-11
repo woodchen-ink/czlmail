@@ -41,7 +41,8 @@ import { EmailList } from "@/components/email-list";
 import { EmailView } from "@/components/email-view";
 import { MailSidebar, UNIFIED_UNREAD } from "@/components/mail-sidebar";
 import { mailboxLabel } from "@/components/mailbox-tree";
-import { PaneLayout } from "@/components/pane-layout";
+import { MobileNavButton, PaneLayout, type MobilePane } from "@/components/pane-layout";
+import { useCompact } from "@/lib/use-compact";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { SourceDialog } from "@/components/source-dialog";
 import type { ToolbarActions } from "@/components/email-toolbar";
@@ -116,6 +117,16 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     if (d) setDraftKey((k) => k + 1);
   }, []);
   const [focusMode, setFocusMode] = useState(false);
+  // 窄屏下显示哪一栏。选中的邮件一变 (点了列表、通知或链接打开、删除后跳到下一封) 就进正文;
+  // 返回列表时保留选中, 回来还能看到刚才那一行。用渲染期比较而不是 effect, 避免先闪一帧列表。
+  const compact = useCompact();
+  const [mobileView, setMobileView] = useState<MobilePane>("list");
+  const [seenKey, setSeenKey] = useState(selectedKey);
+  if (seenKey !== selectedKey) {
+    setSeenKey(selectedKey);
+    if (selectedKey) setMobileView("detail");
+  }
+  const mobilePane: MobilePane = draft ? "detail" : mobileView === "detail" && !selectedKey ? "list" : mobileView;
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [sourceTarget, setSourceTarget] = useState<{ accountId: string; emailId: string } | null>(null);
 
@@ -708,6 +719,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       if (currentKind !== "drafts" && !summary?.isDraft) {
         setDraft(null);
         setSelectedKey(key);
+        setMobileView("detail");
         return;
       }
       const { accountId: acc, id } = parseEmailKey(key);
@@ -1027,6 +1039,13 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       <PaneLayout
         id="mail"
         collapsed={focusMode}
+        mobilePane={mobilePane}
+        ownMobileNav
+        onMobilePaneChange={(p) => {
+          // 写信面板占着正文栏: 返回即关闭 (草稿已自动保存)。
+          if (draft && p !== "detail") setDraft(null);
+          setMobileView(p);
+        }}
         sidebar={
           <>
             <UserMenu
@@ -1055,9 +1074,13 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                   setUnified("");
                   setAccountId(acc);
                   setMailboxId(box);
+                  setMobileView("list");
                 }}
                 unified={unified}
-                onSelectUnified={setUnified}
+                onSelectUnified={(v) => {
+                  setUnified(v);
+                  setMobileView("list");
+                }}
                 onMailboxesChanged={loadMailboxes}
                 onFolderAction={folderAction}
               />
@@ -1067,6 +1090,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         list={
           <>
             <div className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
+              <MobileNavButton kind="menu" className="-ml-1.5" />
               <Checkbox
                 aria-label={t("全选")}
                 title={t("全选")}
@@ -1193,7 +1217,18 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
               </div>
             )}
 
-            <div className="min-h-0 flex-1">
+            <div className="relative min-h-0 flex-1">
+              {/* 窄屏下侧栏收起, 「写邮件」浮在列表右下角。 */}
+              {compact && (
+                <Button
+                  size="icon"
+                  className="absolute right-4 bottom-4 z-10 size-12 rounded-full shadow-lg"
+                  onClick={() => setDraft({ to: "", cc: "", subject: "", html: "" })}
+                  aria-label={t("写邮件")}
+                >
+                  <PenSquare className="size-5" />
+                </Button>
+              )}
               <EmailList
                 onScrollContainer={setListScrollEl}
                 onScrolledAway={setScrolledAway}

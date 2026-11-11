@@ -1,6 +1,7 @@
 import * as App from "@/wailsjs/go/main/App";
 import { main, notes } from "@/wailsjs/go/models";
 import { send } from "@/lib/app-bus";
+import { localUrl } from "@/lib/native-bridge";
 
 export type NoteEntry = notes.Entry;
 export type NoteVault = notes.Vault;
@@ -75,7 +76,7 @@ export async function flushNotes() {
 
 /** Note resources resolve relative to a document; arbitrary filesystem URLs are never exposed. */
 export function noteResource(vaultId: string, noteId: string, path: string) {
-  return `/czl-note-resource?${new URLSearchParams({ vault: vaultId, note: noteId, path })}`;
+  return localUrl(`/czl-note-resource?${new URLSearchParams({ vault: vaultId, note: noteId, path })}`);
 }
 
 /** Clipboard files are encoded only after size validation by the caller. */

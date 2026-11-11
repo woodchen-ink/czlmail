@@ -61,6 +61,10 @@ function workspace() {
     "@/lib/notes/use-note-document": { useNoteDocument: () => doc },
     "@/lib/i18n": { t: (value) => value },
     "@/components/locale-provider": { useI18n: () => {} },
+    // Exercise the wide (desktop) layout; the compact split only changes which pane is visible.
+    "@/lib/use-compact": { useCompact: () => false },
+    "@/lib/use-edge-swipe": { useEdgeSwipe: () => () => {} },
+    "@/lib/utils": { cn: (...parts) => parts.filter(Boolean).join(" ") },
   };
   /** Transpile production sources and resolve only explicit dependencies against this harness. */
   function load(relative) {
