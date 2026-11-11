@@ -78,7 +78,8 @@ func (a *App) CheckForUpdate() (UpdateInfo, error) {
 }
 
 // InstallUpdate 下载并校验最新安装包, 安装后退出应用并自动重新打开 CZL Mail。
-// Windows 静默运行 NSIS 安装程序; macOS 解压 .app 的 zip 包原地替换。
+// Windows 静默运行 NSIS 安装程序; macOS 解压 .app 的 zip 包原地替换;
+// Android 把 APK 交给系统安装器 (用户确认后系统结束并替换本程序), 本进程不主动退出。
 func (a *App) InstallUpdate() error {
 	if !updateMu.TryLock() {
 		return errors.New("2151 an update is already in progress")
@@ -100,6 +101,12 @@ func (a *App) InstallUpdate() error {
 		return fmt.Errorf("2153 %w", err)
 	}
 
+	if runtime.GOOS == "android" {
+		if err := a.installPackage(path); err != nil {
+			return fmt.Errorf("2154 start installer: %w", err)
+		}
+		return nil
+	}
 	if runtime.GOOS == "darwin" {
 		// 解压新版 .app, 本进程退出后由后台脚本替换并重新打开。
 		if err := update.InstallApp(path); err != nil {
@@ -118,7 +125,7 @@ func (a *App) InstallUpdate() error {
 
 // runUpdateChecks 周期性检查更新。开发版本(version 为 dev)不检查。
 func (a *App) runUpdateChecks(ctx context.Context) {
-	// iOS 只能经 App Store / TestFlight 更新。
+	// iOS 只能经 App Store / TestFlight 更新; Android 与桌面端一样查 GitHub Releases。
 	if runtime.GOOS == "ios" {
 		return
 	}

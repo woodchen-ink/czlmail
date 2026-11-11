@@ -6,6 +6,7 @@ require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3
 	git.sr.ht/~rockorager/go-jmap v0.5.3
 	github.com/energye/systray v1.0.3
+	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/teambition/rrule-go v1.8.2

@@ -1,8 +1,9 @@
-//go:build ios
+//go:build ios || android
 
 package main
 
-// iOS 入口: 以 c-archive 编进 iOS 原生壳, 原生壳经这些导出函数驱动 Go 内核。
+// 移动端入口: iOS 以 c-archive 编进原生壳, Android 以 c-shared 编成 libczlcore.so (JNI 适配见 mobile_jni_android.c),
+// 原生壳经这些导出函数驱动 Go 内核。
 //
 //   - CzlStart     启动内核 (读配置、开缓存库、恢复会话), 在后台队列调用
 //   - CzlCall      调 App 的绑定方法, 语义与 Wails 绑定一致 (internal/rpc)
@@ -14,7 +15,7 @@ package main
 
 /*
 #include <stdlib.h>
-#include "mobile_ios.h"
+#include "mobile_core.h"
 */
 import "C"
 
@@ -25,6 +26,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"unsafe"
 
@@ -34,7 +36,7 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/notify"
 )
 
-// c-archive 需要 main 包有 main 函数, 原生壳不会调用它。
+// c-archive / c-shared 需要 main 包有 main 函数, 原生壳不会调用它。
 func main() {}
 
 var mobile struct {
@@ -48,6 +50,7 @@ var mobile struct {
 func CzlStart(ev C.CzlEventFn, host C.CzlHostFn) {
 	mobile.once.Do(func() {
 		setNativeCallbacks(ev, host)
+		platformInit()
 		a := NewApp()
 		mobile.app = a
 		mobile.rpc = rpc.New(a)
@@ -75,6 +78,14 @@ func CzlStart(ev C.CzlEventFn, host C.CzlHostFn) {
 		a.startup(context.Background())
 		a.domReady(context.Background())
 	})
+}
+
+// CzlSetenv 在 CzlStart 之前设置环境变量 (Android 的 HOME / TMPDIR / TZ 等)。
+// 原生壳在加载内核之后才 setenv 的话 Go 看不到: c-shared 的 Go 运行时取的是进程启动时的环境。
+//
+//export CzlSetenv
+func CzlSetenv(key, value *C.char) {
+	_ = os.Setenv(C.GoString(key), C.GoString(value))
 }
 
 //export CzlCall

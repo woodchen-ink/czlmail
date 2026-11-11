@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	_ "modernc.org/sqlite"
+	"github.com/woodchen-ink/czlmail/desktop/internal/sqlitedb"
 )
 
 // Service serializes local edits and synchronization; network work uses bounded contexts.
@@ -34,7 +34,7 @@ func Open(root string, changed func()) (*Service, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, ErrStorage
 	}
-	db, err := sql.Open("sqlite", filepath.Join(root, "notes.db")+"?_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_pragma=busy_timeout(5000)")
+	db, err := sqlitedb.Open(filepath.Join(root, "notes.db"), sqlitedb.Pragmas{JournalMode: "WAL", Synchronous: "FULL", BusyTimeoutMs: 5000})
 	if err != nil {
 		return nil, ErrStorage
 	}

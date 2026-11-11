@@ -1,8 +1,15 @@
-//go:build !ios
+//go:build !ios && !android
 
 package main
 
-import wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+import (
+	"errors"
+
+	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+// isMobile 区分桌面端与移动端 (iOS / Android) 的少数行为差异: MCP、附件落地目录。
+const isMobile = false
 
 func wailsFilters(fs []fileFilter) []wruntime.FileFilter {
 	out := make([]wruntime.FileFilter, 0, len(fs))
@@ -43,4 +50,9 @@ func (a *App) emit(name string, data ...any) {
 		return
 	}
 	wruntime.EventsEmit(a.ctx, name, data...)
+}
+
+// installPackage 只在 Android 上使用; 桌面端的安装逻辑在 InstallUpdate 里。
+func (a *App) installPackage(string) error {
+	return errors.New("2154 installPackage is only supported on Android")
 }

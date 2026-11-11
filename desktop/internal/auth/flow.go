@@ -32,6 +32,11 @@ var OpenBrowser = browser.OpenURL
 // CloseBrowser 在回环端口收到回调后关闭授权页。系统浏览器关不了, 桌面端为 nil。
 var CloseBrowser func()
 
+// ReturnURL 非空时, 回环端口收到回调后把浏览器重定向到这里 (而不是显示"可以关闭这个页面")。
+// Android 设为本程序的 scheme: 授权页在系统浏览器里, 后台的程序没法自己回到前台,
+// 由浏览器跟随这次跳转 (源自用户提交授权的导航, 浏览器放行) 把本程序带回来。
+var ReturnURL string
+
 // Config 描述一次已就绪的 OAuth 配置, 可直接用于取令牌。
 type Config struct {
 	Metadata *Metadata
@@ -119,7 +124,7 @@ func callbackHandler(wantState string, out chan<- authResult) http.Handler {
 
 		if e := q.Get("error"); e != "" {
 			desc := q.Get("error_description")
-			writePage(w, "授权未完成", desc)
+			writePage(w, r, "授权未完成", desc)
 			out <- authResult{err: fmt.Errorf("3023 authorization denied: %s %s", e, desc)}
 			return
 		}
@@ -127,19 +132,19 @@ func callbackHandler(wantState string, out chan<- authResult) http.Handler {
 		// 常数时间比较: state 是防 CSRF 的凭据, 按普通字符串比较会泄漏前缀信息。
 		got := q.Get("state")
 		if subtle.ConstantTimeCompare([]byte(got), []byte(wantState)) != 1 {
-			writePage(w, "授权未完成", "状态校验失败，请重试。")
+			writePage(w, r, "授权未完成", "状态校验失败，请重试。")
 			out <- authResult{err: fmt.Errorf("3024 state mismatch")}
 			return
 		}
 
 		code := q.Get("code")
 		if code == "" {
-			writePage(w, "授权未完成", "服务器未返回授权码。")
+			writePage(w, r, "授权未完成", "服务器未返回授权码。")
 			out <- authResult{err: fmt.Errorf("3025 no authorization code in callback")}
 			return
 		}
 
-		writePage(w, "登录成功", "可以关闭这个页面，回到 CZL Mail。")
+		writePage(w, r, "登录成功", "可以关闭这个页面，回到 CZL Mail。")
 		out <- authResult{code: code}
 	})
 	return mux
@@ -147,7 +152,11 @@ func callbackHandler(wantState string, out chan<- authResult) http.Handler {
 
 // writePage 回一个极简的结果页。样式内联, 因为这个页面由临时的回环服务器提供,
 // 取不到应用自身的任何静态资源。
-func writePage(w http.ResponseWriter, title, detail string) {
+func writePage(w http.ResponseWriter, r *http.Request, title, detail string) {
+	if ReturnURL != "" {
+		http.Redirect(w, r, ReturnURL, http.StatusFound)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <title>%s</title></head>

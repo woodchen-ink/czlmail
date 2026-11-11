@@ -1,4 +1,4 @@
-//go:build !windows && !ios
+//go:build !windows && !ios && !android
 
 package platform
 

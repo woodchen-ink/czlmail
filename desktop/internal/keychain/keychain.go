@@ -1,7 +1,8 @@
 // Package keychain 读写系统密钥库里的凭据。
 //
 // 桌面端走 go-keyring (Windows 凭据管理器 / macOS 钥匙串 / Secret Service);
-// iOS 上 go-keyring 会去执行 /usr/bin/security, 沙箱里没有这个程序, 改为直接调 Security 框架。
+// iOS 上 go-keyring 会去执行 /usr/bin/security, 沙箱里没有这个程序, 改为直接调 Security 框架;
+// Android 交给原生壳 (Android Keystore 加密存放), 见 keychain_android.go。
 // 调用方只依赖本包, 不直接 import go-keyring。
 package keychain
 

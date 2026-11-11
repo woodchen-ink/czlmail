@@ -1,6 +1,7 @@
-// iOS 原生壳与 Go 内核之间的回调类型。实现见 mobile_ios.go / mobile_native_ios.go。
-#ifndef CZL_MOBILE_IOS_H
-#define CZL_MOBILE_IOS_H
+// 移动端原生壳 (iOS / Android) 与 Go 内核之间的回调类型。实现见 mobile_core.go / mobile_callbacks.go。
+// Android 经 mobile_jni_android.c 把 JNI 调用转成这些 C 接口。
+#ifndef CZL_MOBILE_CORE_H
+#define CZL_MOBILE_CORE_H
 
 #include <stdint.h>
 

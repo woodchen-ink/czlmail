@@ -1,4 +1,4 @@
-//go:build ios
+//go:build ios || android
 
 package main
 
@@ -7,7 +7,7 @@ package main
 
 /*
 #include <stdlib.h>
-#include "mobile_ios.h"
+#include "mobile_core.h"
 
 static CzlEventFn czlEventCb;
 static CzlHostFn czlHostCb;

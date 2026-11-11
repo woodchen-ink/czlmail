@@ -7,7 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	_ "modernc.org/sqlite" // 纯 Go 驱动, 不引入 CGO, 见仓库 CLAUDE.md 的依赖约束
+	"github.com/woodchen-ink/czlmail/desktop/internal/sqlitedb"
 )
 
 // Store 持有单个 SQLite 连接池。SQLite 的写入是全库串行的, 因此写连接限制为 1,
@@ -24,14 +24,11 @@ type Store struct {
 //   - synchronous=NORMAL: WAL 下的推荐档位, 崩溃最多丢最后一个事务,
 //     缓存数据可从服务端重新拉取, 不需要 FULL 的代价
 //   - foreign_keys=ON: SQLite 默认关闭外键约束
-const pragmas = "?_pragma=journal_mode(WAL)" +
-	"&_pragma=busy_timeout(5000)" +
-	"&_pragma=synchronous(NORMAL)" +
-	"&_pragma=foreign_keys(ON)"
+var pragmas = sqlitedb.Pragmas{JournalMode: "WAL", BusyTimeoutMs: 5000, Synchronous: "NORMAL", ForeignKeys: true}
 
 // Open 打开或创建数据库并把 schema 升到当前版本。
 func Open(ctx context.Context, path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path+pragmas)
+	db, err := sqlitedb.Open(path, pragmas)
 	if err != nil {
 		return nil, wrap(CodeOpen, "open database", err)
 	}

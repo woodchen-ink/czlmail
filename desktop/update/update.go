@@ -29,6 +29,9 @@ const Repo = "woodchen-ink/czlmail"
 // ChecksumAsset 是 CI 生成的哈希清单文件名, 格式同 sha256sum 输出。
 const ChecksumAsset = "SHA256SUMS"
 
+// AndroidAsset 是 Android 安装包的文件名, 与 CI 的产物命名一致。
+const AndroidAsset = "czlmail-android.apk"
+
 // ErrNoRelease 表示仓库还没有可用的发布(或仓库不可访问)。
 var ErrNoRelease = errors.New("no published release")
 
@@ -110,6 +113,9 @@ func assetName() string {
 	case "darwin":
 		// macOS 用 .app 的 zip 包原地替换; DMG 只给首次安装的用户下载。
 		return "czlmail-darwin-universal.zip"
+	case "android":
+		// 一个 APK 内含 arm64 与 x86_64 两套内核, 系统按设备取用。
+		return AndroidAsset
 	}
 	return ""
 }
