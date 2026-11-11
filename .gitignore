@@ -41,3 +41,6 @@ AGENTS.md
 
 # Cloudflare wrangler 本地状态
 .wrangler/
+
+# 移动端原生壳不在本仓库
+/mobile/
