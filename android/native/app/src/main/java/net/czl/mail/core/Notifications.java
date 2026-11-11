@@ -23,6 +23,12 @@ public final class Notifications {
     /** 点通知打开程序时带上 Go 给的 ActionID (email:/event:/update: 前缀), 交回内核分派。 */
     public static final String EXTRA_ACTION_ID = "net.czl.mail.ACTION_ID";
     static final int SYNC_NOTIFICATION_ID = 1;
+    /**
+     * 两类通知各用一个分组。不指定分组时系统会把新邮件和常驻的同步通知自动折叠成一组 (ranker_group),
+     * 用户点折叠后的那一行只会打开程序 (系统生成的摘要不带 ActionID), 而不是打开那封邮件。
+     */
+    private static final String GROUP_MAIL = "net.czl.mail.MAIL";
+    private static final String GROUP_SYNC = "net.czl.mail.SYNC";
 
     private static final AtomicInteger nextId = new AtomicInteger(100);
 
@@ -51,6 +57,7 @@ public final class Notifications {
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
             .setCategory(actionId.startsWith("event:") ? NotificationCompat.CATEGORY_EVENT : NotificationCompat.CATEGORY_EMAIL)
             .setAutoCancel(true)
+            .setGroup(GROUP_MAIL)
             .setContentIntent(openIntent(ctx, id, actionId));
         try {
             NotificationManagerCompat.from(ctx).notify(id, b.build());
@@ -69,6 +76,7 @@ public final class Notifications {
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
             .setShowWhen(false)
+            .setGroup(GROUP_SYNC)
             .setContentIntent(openIntent(ctx, SYNC_NOTIFICATION_ID, ""))
             .build();
     }
