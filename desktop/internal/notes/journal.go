@@ -144,7 +144,7 @@ func (s *Service) EnsureNote(vault string, folders []string, name, content strin
 		existing.Path = s.folderPath(existing)
 		return existing, false, nil
 	}
-	e := Entry{ID: newID(), VaultID: vault, ParentID: parent, Name: name, Content: content, Status: "pending", Type: "text/markdown"}
+	e := Entry{ID: newID(), VaultID: vault, ParentID: parent, Name: name, Content: content, Status: "pending", Type: "text/markdown", Generated: true}
 	stamp(&e)
 	if err := s.commit(e, "", ""); err != nil {
 		return Entry{}, false, err

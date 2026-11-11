@@ -237,12 +237,15 @@ func (s *Service) pull(ctx context.Context, r Remote, v Vault, n Node, parent st
 		}
 		e = current
 	} else {
-		// Recover an acknowledged-but-lost create only when its persisted exact intent matches.
 		e = Entry{ID: newID(), VaultID: v.ID, RemoteID: n.ID, Status: "synced"}
 		for _, local := range s.entries {
-			if local.VaultID == v.ID && local.RemoteID == "" && local.ParentID == parent && strings.EqualFold(local.Name, n.Name) {
+			if local.VaultID != v.ID || local.RemoteID != "" || local.ParentID != parent || !strings.EqualFold(local.Name, n.Name) {
+				continue
+			}
+			if local.Uncertain {
+				// Recover an acknowledged-but-lost create only when its persisted exact intent matches.
 				intent := local.Intent
-				if !local.Uncertain || intent == nil || intent.ParentID != n.ParentID || intent.Name != n.Name || intent.BlobID != n.BlobID || intent.Directory != n.Directory {
+				if intent == nil || intent.ParentID != n.ParentID || intent.Name != n.Name || intent.BlobID != n.BlobID || intent.Directory != n.Directory {
 					return ErrUncertain
 				}
 				e = clone(local)
@@ -255,6 +258,33 @@ func (s *Service) pull(ctx context.Context, r Remote, v Vault, n Node, parent st
 				}
 				break
 			}
+			// Both sides created the same path before they ever met, e.g. a new device opened today's
+			// journal before its first sync. The local create was never sent, so nothing is uncertain.
+			switch {
+			case local.Directory && n.Directory:
+				// Folders carry no content: adopt the remote one, local children keep their parent ID.
+				e = clone(local)
+				e.Status = "synced"
+			case isText && !local.Directory && !local.Attachment:
+				e = clone(local)
+				if local.Content == content || local.Generated && local.Revision == 1 {
+					// Same text, or an untouched template: nothing of the user's is lost by taking the remote.
+					e.Status = "synced"
+				}
+				// Otherwise stays pending and becomes a conflict below; both sides remain readable.
+			default:
+				// Attachments cannot be merged and a folder cannot become a file: keep both, the local one renamed ("name 2").
+				aside := clone(local)
+				aside.Name = s.freeName(v.ID, parent, local.Name, local.Directory)
+				stamp(&aside)
+				if err := s.saveEntry(aside); err != nil {
+					return err
+				}
+				continue
+			}
+			e.RemoteID = n.ID
+			found = true
+			break
 		}
 	}
 	// The server may normalize an uploaded blob ID after it is attached to a FileNode.

@@ -67,6 +67,9 @@ type Entry struct {
 	OriginalParent string `json:"originalParent,omitempty"`
 	Uncertain      bool   `json:"uncertain"`
 	Intent         *Node  `json:"intent,omitempty"`
+	// Generated marks a note created from a template (today's journal). Together with Revision == 1
+	// it means the user never touched it, so a same-named note created elsewhere may replace it.
+	Generated bool `json:"generated,omitempty"`
 	// Path and Snippet are filled on returned copies only; they are never persisted.
 	Path    string `json:"path,omitempty"`
 	Snippet string `json:"snippet,omitempty"`
