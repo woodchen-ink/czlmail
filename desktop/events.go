@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
-
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -35,15 +33,6 @@ const (
 type PIMChange struct {
 	AccountID string `json:"accountId"`
 	Type      string `json:"type"`
-}
-
-// emit 向前端广播事件。启动早期 ctx 尚未就绪时静默丢弃 ——
-// 此时窗口还没有监听者, 事件本身也没有意义。
-func (a *App) emit(name string, data ...any) {
-	if a.ctx == nil {
-		return
-	}
-	runtime.EventsEmit(a.ctx, name, data...)
 }
 
 // onNewMail 由 syncer 在新邮件落库后回调。

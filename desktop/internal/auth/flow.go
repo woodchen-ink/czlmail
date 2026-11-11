@@ -25,6 +25,13 @@ const authorizeTimeout = 5 * time.Minute
 // 后续登录不必重新注册客户端。全部被占用时退回系统分配的临时端口。
 var loopbackPorts = []int{47821, 47822, 47823, 47824}
 
+// OpenBrowser 打开授权页。桌面端交给系统浏览器;
+// iOS 入口换成应用内的认证会话 —— 跳去 Safari 时本程序被挂起, 回环端口收不到回调。
+var OpenBrowser = browser.OpenURL
+
+// CloseBrowser 在回环端口收到回调后关闭授权页。系统浏览器关不了, 桌面端为 nil。
+var CloseBrowser func()
+
 // Config 描述一次已就绪的 OAuth 配置, 可直接用于取令牌。
 type Config struct {
 	Metadata *Metadata
@@ -75,8 +82,11 @@ func Authorize(ctx context.Context, cfg *Config, listener net.Listener) (*oauth2
 	go srv.Serve(listener)
 	defer srv.Close()
 
-	if err := browser.OpenURL(authURL); err != nil {
+	if err := OpenBrowser(authURL); err != nil {
 		return nil, fmt.Errorf("3020 open browser: %w", err)
+	}
+	if CloseBrowser != nil {
+		defer CloseBrowser()
 	}
 
 	select {

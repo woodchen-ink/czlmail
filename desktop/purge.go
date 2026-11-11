@@ -11,10 +11,9 @@ import (
 	"strconv"
 	"time"
 
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
+	"github.com/woodchen-ink/czlmail/desktop/internal/keychain"
 	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
-	"github.com/zalando/go-keyring"
 )
 
 // 删除本机的全部数据: 缓存库、配置、日志、界面偏好(WebView2 数据)、已打开的附件与网盘文件、
@@ -39,7 +38,7 @@ func (a *App) DeleteAllData() error {
 	_ = cmd.Process.Release()
 
 	a.log.Info("delete all data requested, quitting")
-	wruntime.Quit(a.ctx)
+	a.quit()
 	return nil
 }
 
@@ -70,13 +69,13 @@ func purgeAll() error {
 	// 凭据的条目名取决于配置里的登录方式, 必须先读配置再删目录。
 	if cfg, err := config.Load(); err == nil {
 		if cfg.Username != "" && cfg.SessionEndpoint != "" {
-			ignoreNotFound(&errs, keyring.Delete(config.KeyringService, config.PasswordKey(cfg.SessionEndpoint, cfg.Username)))
+			ignoreNotFound(&errs, keychain.Delete(config.KeyringService, config.PasswordKey(cfg.SessionEndpoint, cfg.Username)))
 		}
 		if cfg.Issuer != "" {
-			ignoreNotFound(&errs, keyring.Delete(config.KeyringService, config.TokenKey(cfg.Issuer)))
+			ignoreNotFound(&errs, keychain.Delete(config.KeyringService, config.TokenKey(cfg.Issuer)))
 		}
 	}
-	ignoreNotFound(&errs, keyring.Delete(config.KeyringService, aiKeyringKey))
+	ignoreNotFound(&errs, keychain.Delete(config.KeyringService, aiKeyringKey))
 
 	if err := platform.SetAutostart(false); err != nil && platform.IntegrationSupported {
 		errs = append(errs, err)
@@ -90,7 +89,7 @@ func purgeAll() error {
 }
 
 func ignoreNotFound(errs *[]error, err error) {
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		*errs = append(*errs, err)
 	}
 }

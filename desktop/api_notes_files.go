@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/notes"
 	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
@@ -57,7 +56,7 @@ func (a *App) OpenNoteLink(vault, id, relative string) (notes.Entry, error) {
 
 // ImportNoteFolder uses a native picker for explicit filesystem consent; MCP only accepts provided bytes.
 func (a *App) ImportNoteFolder(vault string) (notes.ImportResult, error) {
-	root, err := wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{Title: "导入 Markdown 笔记库"})
+	root, err := a.openDirectoryDialog(fileDialog{Title: "导入 Markdown 笔记库"})
 	if err != nil || root == "" {
 		return notes.ImportResult{}, err
 	}
@@ -110,7 +109,7 @@ func (a *App) ImportNoteFolder(vault string) (notes.ImportResult, error) {
 
 // ExportNoteVault writes to a new subdirectory, never overwriting the selected folder's files.
 func (a *App) ExportNoteVault(vault string) (string, error) {
-	root, err := wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{Title: "导出笔记库"})
+	root, err := a.openDirectoryDialog(fileDialog{Title: "导出笔记库"})
 	if err != nil || root == "" {
 		return "", err
 	}

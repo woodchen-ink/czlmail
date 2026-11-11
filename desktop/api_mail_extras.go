@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 	"github.com/woodchen-ink/czlmail/desktop/internal/pim"
@@ -67,7 +66,7 @@ func (a *App) Unsubscribe(accountID, emailID string) (string, error) {
 		}
 		return "sent", nil
 	}
-	wruntime.BrowserOpenURL(a.ctx, u.HTTP)
+	a.openURL(u.HTTP)
 	return "opened", nil
 }
 

@@ -9,8 +9,6 @@ import (
 	"os"
 	"time"
 
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
-
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -213,9 +211,9 @@ func (a *App) ImportTemplatesFile() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	path, err := wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{
+	path, err := a.openFileDialog(fileDialog{
 		Title:   "导入邮件模板",
-		Filters: []wruntime.FileFilter{{DisplayName: "模板文件 (*.json)", Pattern: "*.json"}},
+		Filters: []fileFilter{{Name: "模板文件 (*.json)", Pattern: "*.json"}},
 	})
 	if err != nil || path == "" {
 		return 0, err

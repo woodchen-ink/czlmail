@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
-
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
@@ -69,7 +67,7 @@ func (a *App) UploadFiles(accountID, parentID string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	paths, err := wruntime.OpenMultipleFilesDialog(a.ctx, wruntime.OpenDialogOptions{Title: "上传文件"})
+	paths, err := a.openFilesDialog(fileDialog{Title: "上传文件"})
 	if err != nil {
 		return 0, fmt.Errorf("2073 open file dialog: %w", err)
 	}
@@ -235,7 +233,7 @@ func (a *App) UploadPaths(accountID, parentID string, paths []string) (int, erro
 
 // UploadFolder 选择本地文件夹整个上传。
 func (a *App) UploadFolder(accountID, parentID string) (int, error) {
-	dir, err := wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{Title: "上传文件夹"})
+	dir, err := a.openDirectoryDialog(fileDialog{Title: "上传文件夹"})
 	if err != nil || dir == "" {
 		return 0, err
 	}

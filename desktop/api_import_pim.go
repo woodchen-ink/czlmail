@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"git.sr.ht/~rockorager/go-jmap"
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 )
@@ -35,9 +34,9 @@ func (a *App) ImportContactsFile(accountID, addressBookID string) (int, error) {
 }
 
 func (a *App) importPIMFile(accountID, typeName, title, pattern string, assign func(map[string]any)) (int, error) {
-	path, err := wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{
+	path, err := a.openFileDialog(fileDialog{
 		Title:   title,
-		Filters: []wruntime.FileFilter{{DisplayName: title, Pattern: pattern}},
+		Filters: []fileFilter{{Name: title, Pattern: pattern}},
 	})
 	if err != nil || path == "" {
 		return 0, err

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -45,6 +46,10 @@ type mcpState struct {
 
 // startMCP 启动本地 MCP 端点。已在运行时不重复启动。
 func (a *App) startMCP() error {
+	// 手机上没有本机 AI 客户端可连, 开关多半是从桌面端经设置同步过来的: 静默不启动, 不当错误。
+	if runtime.GOOS == "ios" {
+		return nil
+	}
 	a.mcp.mu.Lock()
 	defer a.mcp.mu.Unlock()
 	if a.mcp.server != nil {

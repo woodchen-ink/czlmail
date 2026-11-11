@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/zalando/go-keyring"
+	"github.com/woodchen-ink/czlmail/desktop/internal/keychain"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
@@ -130,8 +130,8 @@ func (a *App) localAISettings(ctx context.Context, st *store.Store) (map[string]
 	}
 	stamp, hasStamp := local[settingAIKeyUpdatedAt]
 	delete(local, settingAIKeyUpdatedAt)
-	key, err := keyring.Get(config.KeyringService, aiKeyringKey)
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+	key, err := keychain.Get(config.KeyringService, aiKeyringKey)
+	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		return nil, fmt.Errorf("2201 read api key: %w", err)
 	}
 	// 清除过的 Key 也要以空值参与合并, 删除才能传到别的设备。
@@ -145,10 +145,10 @@ func (a *App) localAISettings(ctx context.Context, st *store.Store) (map[string]
 func (a *App) applyAISettings(ctx context.Context, st *store.Store, changes map[string]store.TimedSetting) error {
 	if v, ok := changes[aiSyncAPIKey]; ok {
 		if v.Value == "" {
-			if err := keyring.Delete(config.KeyringService, aiKeyringKey); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			if err := keychain.Delete(config.KeyringService, aiKeyringKey); err != nil && !errors.Is(err, keychain.ErrNotFound) {
 				return fmt.Errorf("2201 delete api key: %w", err)
 			}
-		} else if err := keyring.Set(config.KeyringService, aiKeyringKey, v.Value); err != nil {
+		} else if err := keychain.Set(config.KeyringService, aiKeyringKey, v.Value); err != nil {
 			return fmt.Errorf("2201 save api key to system keychain: %w", err)
 		}
 	}

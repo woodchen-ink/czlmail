@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin && !ios
 
 // macOS 菜单栏图标与 Dock 行为, 由 tray_darwin.go 调用。
 // 所有 AppKit 操作都派发到主线程; Wails 的对象是手动引用计数(无 ARC)。

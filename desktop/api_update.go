@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
-
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/notify"
 	"github.com/woodchen-ink/czlmail/desktop/update"
@@ -114,12 +112,16 @@ func (a *App) InstallUpdate() error {
 		return fmt.Errorf("2154 start installer: %w", err)
 	}
 	// 留一点时间让界面收到响应。
-	time.AfterFunc(300*time.Millisecond, func() { wruntime.Quit(a.ctx) })
+	time.AfterFunc(300*time.Millisecond, func() { a.quit() })
 	return nil
 }
 
 // runUpdateChecks 周期性检查更新。开发版本(version 为 dev)不检查。
 func (a *App) runUpdateChecks(ctx context.Context) {
+	// iOS 只能经 App Store / TestFlight 更新。
+	if runtime.GOOS == "ios" {
+		return
+	}
 	if _, ok := parseVersion(version); !ok {
 		return
 	}

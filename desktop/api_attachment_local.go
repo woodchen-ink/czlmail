@@ -30,8 +30,8 @@ func attachmentsRoot() (string, error) {
 
 // localDataDir 返回安装目录下的子目录, 不可写时退回用户缓存目录。
 func localDataDir(name string) (string, error) {
-	// macOS 的程序目录在 .app 包内, 往里写文件会破坏包(以后签名校验也会失败), 直接用缓存目录。
-	if exe, err := os.Executable(); err == nil && runtime.GOOS != "darwin" {
+	// macOS / iOS 的程序目录在 .app 包内, 往里写文件会破坏包(签名校验也会失败), 直接用缓存目录。
+	if exe, err := os.Executable(); err == nil && runtime.GOOS != "darwin" && runtime.GOOS != "ios" {
 		dir := filepath.Join(filepath.Dir(exe), name)
 		if writableDir(dir) {
 			return dir, nil

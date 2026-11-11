@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/zalando/go-keyring"
+	"github.com/woodchen-ink/czlmail/desktop/internal/keychain"
 	"golang.org/x/oauth2"
 )
 
@@ -164,8 +164,8 @@ func TokenKey(issuer string) string {
 // 刻意不提供"存到配置文件"的回落路径: 有回落就一定会在密钥库不可用时被静默使用,
 // 而一个明文躺在磁盘上的长期刷新令牌, 比一次明确的登录失败危险得多。
 func LoadToken(issuer string) (*oauth2.Token, error) {
-	raw, err := keyring.Get(KeyringService, TokenKey(issuer))
-	if errors.Is(err, keyring.ErrNotFound) {
+	raw, err := keychain.Get(KeyringService, TokenKey(issuer))
+	if errors.Is(err, keychain.ErrNotFound) {
 		return nil, nil
 	}
 	if err != nil {
@@ -185,7 +185,7 @@ func SaveToken(issuer string, tok *oauth2.Token) error {
 	if err != nil {
 		return fmt.Errorf("2017 encode credential: %w", err)
 	}
-	if err := keyring.Set(KeyringService, TokenKey(issuer), string(raw)); err != nil {
+	if err := keychain.Set(KeyringService, TokenKey(issuer), string(raw)); err != nil {
 		return fmt.Errorf("2018 write credential to system keyring: %w", err)
 	}
 	return nil
@@ -193,8 +193,8 @@ func SaveToken(issuer string, tok *oauth2.Token) error {
 
 // DeleteToken 清除已保存的令牌, 用于退出登录。
 func DeleteToken(issuer string) error {
-	err := keyring.Delete(KeyringService, TokenKey(issuer))
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+	err := keychain.Delete(KeyringService, TokenKey(issuer))
+	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		return fmt.Errorf("2019 delete credential from system keyring: %w", err)
 	}
 	return nil
@@ -207,8 +207,8 @@ func PasswordKey(sessionEndpoint, username string) string {
 
 // LoadPassword 从系统密钥库取应用专用密码。不存在时返回空串且 err 为 nil。
 func LoadPassword(sessionEndpoint, username string) (string, error) {
-	v, err := keyring.Get(KeyringService, PasswordKey(sessionEndpoint, username))
-	if errors.Is(err, keyring.ErrNotFound) {
+	v, err := keychain.Get(KeyringService, PasswordKey(sessionEndpoint, username))
+	if errors.Is(err, keychain.ErrNotFound) {
 		return "", nil
 	}
 	if err != nil {
@@ -219,7 +219,7 @@ func LoadPassword(sessionEndpoint, username string) (string, error) {
 
 // SavePassword 把应用专用密码写入系统密钥库。与令牌一样没有明文回落路径。
 func SavePassword(sessionEndpoint, username, password string) error {
-	if err := keyring.Set(KeyringService, PasswordKey(sessionEndpoint, username), password); err != nil {
+	if err := keychain.Set(KeyringService, PasswordKey(sessionEndpoint, username), password); err != nil {
 		return fmt.Errorf("2018 write credential to system keyring: %w", err)
 	}
 	return nil
@@ -227,8 +227,8 @@ func SavePassword(sessionEndpoint, username, password string) error {
 
 // DeletePassword 清除已保存的应用专用密码。
 func DeletePassword(sessionEndpoint, username string) error {
-	err := keyring.Delete(KeyringService, PasswordKey(sessionEndpoint, username))
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+	err := keychain.Delete(KeyringService, PasswordKey(sessionEndpoint, username))
+	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		return fmt.Errorf("2019 delete credential from system keyring: %w", err)
 	}
 	return nil

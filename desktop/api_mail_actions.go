@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // 阅读栏工具条上的其余操作: 归档、垃圾邮件、标签、查看源码、导出 / 导入 .eml。
@@ -107,10 +105,10 @@ func (a *App) ExportEmail(accountID, emailID string) (string, error) {
 		return "", err
 	}
 
-	path, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
+	path, err := a.saveFileDialog(fileDialog{
 		Title:           "导出邮件",
 		DefaultFilename: safeFilename(detail.Subject) + ".eml",
-		Filters:         []wruntime.FileFilter{{DisplayName: "邮件 (*.eml)", Pattern: "*.eml"}},
+		Filters:         []fileFilter{{Name: "邮件 (*.eml)", Pattern: "*.eml"}},
 	})
 	if err != nil {
 		return "", fmt.Errorf("2036 open save dialog: %w", err)
@@ -148,10 +146,10 @@ func (a *App) ImportEmails(accountID, mailboxID string) (*ImportResult, error) {
 		return nil, fmt.Errorf("2038 no target mailbox selected")
 	}
 
-	paths, err := wruntime.OpenMultipleFilesDialog(a.ctx, wruntime.OpenDialogOptions{
+	paths, err := a.openFilesDialog(fileDialog{
 		Title: "导入邮件",
-		Filters: []wruntime.FileFilter{
-			{DisplayName: "邮件或压缩包 (*.eml, *.zip)", Pattern: "*.eml;*.zip"},
+		Filters: []fileFilter{
+			{Name: "邮件或压缩包 (*.eml, *.zip)", Pattern: "*.eml;*.zip"},
 		},
 	})
 	if err != nil {

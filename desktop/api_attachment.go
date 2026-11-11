@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // 附件: 预览、保存、上传。
@@ -112,7 +110,7 @@ func (a *App) SaveAttachment(accountID, blobID, name string) (string, error) {
 		return "", err
 	}
 
-	path, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
+	path, err := a.saveFileDialog(fileDialog{
 		Title:           "保存附件",
 		DefaultFilename: safeFilename(name),
 	})
@@ -164,7 +162,7 @@ type UploadedAttachment struct {
 // 超过服务器上传上限的文件在本地就拒绝, 不去撞服务器 —— 上传几十 MB
 // 之后才被告知超限, 等待时间全浪费了。
 func (a *App) AddAttachments(accountID string) ([]UploadedAttachment, error) {
-	paths, err := wruntime.OpenMultipleFilesDialog(a.ctx, wruntime.OpenDialogOptions{Title: "添加附件"})
+	paths, err := a.openFilesDialog(fileDialog{Title: "添加附件"})
 	if err != nil {
 		return nil, fmt.Errorf("2073 open file dialog: %w", err)
 	}
