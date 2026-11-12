@@ -27,6 +27,8 @@ const (
 	EventUnread = "mail:unread"
 	// EventPIMChanged 日历/通讯录/文件有变动, 负载为 PIMChange。
 	EventPIMChanged = "pim:changed"
+	// EventSettingsChanged 应用设置(AppSettings)保存了, 无负载; 侧栏据此重读静音账号。
+	EventSettingsChanged = "settings:changed"
 )
 
 // PIMChange 是 EventPIMChanged 的负载。Type 为空表示该账号全部类型都可能变了。

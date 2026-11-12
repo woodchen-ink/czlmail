@@ -82,6 +82,19 @@ export function MailSidebar({
     }
   };
 
+  // 关了新邮件通知的账号(多为共享邮箱): 未读不算进汇总的红色角标, 自己的收件箱改灰底。
+  // 与托盘角标(tray_badge.go 跳过静音账号)一致。
+  const [muted, setMuted] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const load = () =>
+      api
+        .getSettings()
+        .then((s) => setMuted(new Set(s.mutedMailAccounts ?? [])))
+        .catch(() => {});
+    load();
+    return onEvent(Events.settingsChanged, load);
+  }, []);
+
   useEffect(() => {
     try {
       setCollapsed(JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "{}"));
@@ -133,14 +146,17 @@ export function MailSidebar({
 
   const personal = accounts.filter((a) => a.isPersonal);
   const shared = accounts.filter((a) => !a.isPersonal);
-  const sumInbox = (list: Account[]) => list.reduce((n, a) => n + inboxUnread(mailboxesByAccount[a.id]), 0);
+  const sumInbox = (list: Account[]) =>
+    list.reduce((n, a) => n + (muted.has(a.id) ? 0 : inboxUnread(mailboxesByAccount[a.id])), 0);
   // 统一视图里在看的不是某个账号的文件夹, 账号文件夹都不高亮。
   const selectedIn = (acc: string) => (!unified && acc === accountId ? mailboxId : "");
 
   // 统一视图的条目: 至少一个账号有的系统文件夹, 按侧栏固定顺序, 「未读」跟在收件箱后面。
+  // 条目按全部账号列, 未读数只数没静音的账号。
   const allBoxes = accounts.flatMap((a) => mailboxesByAccount[a.id] ?? []);
+  const countedBoxes = accounts.flatMap((a) => (muted.has(a.id) ? [] : (mailboxesByAccount[a.id] ?? [])));
   const unreadOf = (kind: string) =>
-    allBoxes.filter((m) => m.kind === kind).reduce((n, m) => n + m.unreadEmails, 0);
+    countedBoxes.filter((m) => m.kind === kind).reduce((n, m) => n + m.unreadEmails, 0);
   const unifiedRows = KIND_ORDER.filter((kind) => allBoxes.some((m) => m.kind === kind)).map((kind) => ({
     view: kind,
     icon: mailboxIcon(kind),
@@ -155,7 +171,7 @@ export function MailSidebar({
       icon: MailWarning,
       color: "text-folder-inbox",
       label: t("未读"),
-      unread: allBoxes.filter((m) => !UNREAD_SKIP_KINDS.includes(m.kind)).reduce((n, m) => n + m.unreadEmails, 0),
+      unread: countedBoxes.filter((m) => !UNREAD_SKIP_KINDS.includes(m.kind)).reduce((n, m) => n + m.unreadEmails, 0),
       badge: true,
     });
   }
@@ -202,6 +218,7 @@ export function MailSidebar({
               selectedId={selectedIn(acc.id)}
               onSelect={(id) => onSelect(acc.id, id)}
               onAction={act(acc.id)}
+              quiet={muted.has(acc.id)}
             />
           ))}
         </Section>
@@ -226,7 +243,7 @@ export function MailSidebar({
                   <UserRound className="size-3.5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{acc.name}</span>
                   {/* 展开时收件箱行自己有角标, 折叠时才在账号名上显示, 否则看不出是哪个共享邮箱来了信。 */}
-                  {!open && <UnreadBadge count={inboxUnread(mailboxesByAccount[acc.id])} />}
+                  {!open && <UnreadBadge count={inboxUnread(mailboxesByAccount[acc.id])} quiet={muted.has(acc.id)} />}
                 </button>
                 {open && (
                   <MailboxTree
@@ -235,6 +252,7 @@ export function MailSidebar({
                     onSelect={(id) => onSelect(acc.id, id)}
                     onAction={act(acc.id)}
                     indent={1}
+                    quiet={muted.has(acc.id)}
                   />
                 )}
               </div>

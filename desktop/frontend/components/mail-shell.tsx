@@ -181,7 +181,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       setAccounts(list);
       const all = await Promise.all(list.map((a) => loadMailboxes(a.id)));
 
-      // 尚未选中文件夹时落到个人账号的收件箱。首次登录时缓存为空，
+      // 尚未选中文件夹时落到个人账号的收件箱; 有多个账号时打开的是统一视图的收件箱(侧栏的日常入口),
+      // 个人收件箱仍记为当前文件夹, 写信账号等按它取。首次登录时缓存为空，
       // 这里第一次拿不到收件箱；引导同步完成后的变更事件会再调一次。
       setAccountId((curAcc) => {
         if (curAcc && list.some((a) => a.id === curAcc)) return curAcc;
@@ -191,6 +192,9 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         );
         const inbox = all[idx]?.find((m) => m.kind === "inbox") ?? all[idx]?.[0];
         if (inbox) setMailboxId(inbox.id);
+        if (inbox && list.length > 1 && all.some((boxes) => boxes.some((m) => m.kind === "inbox"))) {
+          setUnified((cur) => cur || "inbox");
+        }
         return inbox ? list[idx].id : "";
       });
     } catch (err) {

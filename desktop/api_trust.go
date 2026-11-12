@@ -261,6 +261,7 @@ func (a *App) SaveSettings(s AppSettings) error {
 		return err
 	}
 	a.refreshTrayUnreadSoon()
+	a.emit(EventSettingsChanged)
 	return nil
 }
 

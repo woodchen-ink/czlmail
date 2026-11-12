@@ -55,6 +55,8 @@ interface Props {
   onAction?: (action: FolderMenuAction, mailbox: Mailbox, label: string) => void;
   /** 整棵树的额外缩进，供共享账号的文件夹挂在账号名下方。 */
   indent?: number;
+  /** 账号关了新邮件通知: 收件箱未读用灰底角标。 */
+  quiet?: boolean;
 }
 
 /**
@@ -100,7 +102,7 @@ export function mailboxTreeOrder(mailboxes: Mailbox[]): (Mailbox & { depth: numb
   return buildTree(mailboxes);
 }
 
-export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent = 0 }: Props) {
+export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent = 0, quiet }: Props) {
   useI18n();
   const nodes = useMemo(() => buildTree(mailboxes), [mailboxes]);
 
@@ -114,6 +116,7 @@ export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent 
           onSelect={onSelect}
           onAction={onAction}
           indent={indent}
+          quiet={quiet}
         />
       ))}
     </nav>
@@ -126,12 +129,14 @@ function MailboxRow({
   onSelect,
   onAction,
   indent,
+  quiet,
 }: {
   node: Node;
   selected: boolean;
   onSelect: (id: string) => void;
   onAction?: Props["onAction"];
   indent: number;
+  quiet?: boolean;
 }) {
   useI18n();
   const meta = getKindMeta()[node.kind];
@@ -150,6 +155,7 @@ function MailboxRow({
       unread={node.unreadEmails}
       // 收件箱用醒目的角标; 其它文件夹(垃圾邮件、归档等)的未读多是不必处理的, 保持灰字。
       badge={node.kind === "inbox"}
+      quiet={quiet}
     />
   );
 
@@ -218,6 +224,7 @@ export function FolderButton({
   depth = 0,
   unread,
   badge,
+  quiet,
   ...rest
 }: {
   icon: typeof Inbox;
@@ -231,6 +238,8 @@ export function FolderButton({
   unread: number;
   /** 未读数用红色角标(需要处理的)还是灰字。 */
   badge: boolean;
+  /** 角标用灰底(关了通知的账号)。 */
+  quiet?: boolean;
 } & Omit<React.ComponentProps<"button">, "onClick" | "title">) {
   return (
     <button
@@ -250,7 +259,7 @@ export function FolderButton({
         {label}
       </span>
       {badge ? (
-        <UnreadBadge count={unread} />
+        <UnreadBadge count={unread} quiet={quiet} />
       ) : unread > 0 && (
         <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{unread}</span>
       )}

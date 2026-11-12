@@ -91,6 +91,7 @@ export const Events = {
   pullProgress: "mail:pull-progress",
   unread: "mail:unread",
   pimChanged: "pim:changed",
+  settingsChanged: "settings:changed",
   openEvent: "calendar:open",
   updateAvailable: "update:available",
   openUpdate: "update:open",

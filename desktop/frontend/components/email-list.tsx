@@ -133,12 +133,20 @@ export function EmailList({
 
   async function toggleThread(email: EmailSummary) {
     const key = threadKey(email);
-    const next = new Set(expanded);
-    if (next.has(key)) {
+    if (expanded.has(key)) {
+      const next = new Set(expanded);
       next.delete(key);
       setExpanded(next);
       return;
     }
+    await expandThread(email);
+  }
+
+  // 点开会话行时顺带展开: 会话行只代表最新一封, 不展开就看不到(也不会去点)较早的未读。
+  async function expandThread(email: EmailSummary) {
+    const key = threadKey(email);
+    if (!email.threadId || (email.threadCount ?? 0) < 2 || expanded.has(key)) return;
+    const next = new Set(expanded);
     next.add(key);
     setExpanded(next);
     if (!threads[key]) {
@@ -238,11 +246,13 @@ export function EmailList({
                       return;
                     }
                     onSelect(key);
+                    expandThread(email);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       onSelect(key);
+                      expandThread(email);
                     }
                     handleKey(e, index);
                   }}
