@@ -51,6 +51,8 @@ interface Props {
   onScrolledAway?: (away: boolean) => void;
   /** 给出时每行标出来源(搜索结果所在文件夹、统一视图里的账号), 返回空串不标。 */
   whereOf?: (email: EmailSummary) => string;
+  /** 已发送、草稿等文件夹: 头像与名字显示收件人, 发件人都是自己。 */
+  showRecipients?: boolean;
 }
 
 export function EmailList({
@@ -68,6 +70,7 @@ export function EmailList({
   onScrollContainer,
   onScrolledAway,
   whereOf,
+  showRecipients,
 }: Props) {
   useI18n();
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -87,7 +90,8 @@ export function EmailList({
   }, [onScrolledAway]);
   useEffect(reportScroll, [reportScroll, emails, loading]);
   const wrapRow = rowMenu ?? ((_: EmailSummary, row: React.ReactElement) => row);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // 同一时间只展开一个会话, 键为「账号/会话 id」(统一视图里不同账号的会话 id 可能相同)。
+  const [expanded, setExpanded] = useState("");
   const [threads, setThreads] = useState<Record<string, EmailSummary[]>>({});
 
   // 同一会话在列表里只占一行(最新那封), 其余收进展开区。
@@ -110,48 +114,41 @@ export function EmailList({
     return out;
   }, [emails]);
 
-  // 展开的会话与读到的会话成员按「账号/会话 id」记: 统一视图里不同账号的会话 id 可能相同。
-  // 列表刷新(新邮件到达、标记已读)后, 已展开的会话重新读取。
+  // 列表刷新(新邮件到达、标记已读)后, 展开的会话重新读取。
   useEffect(() => {
-    if (expanded.size === 0) return;
+    if (!expanded) return;
     let cancelled = false;
-    Promise.all(
-      [...expanded].map(async (key) => {
-        const i = key.indexOf("/");
-        const list = (await api.threadEmails(key.slice(0, i), key.slice(i + 1)).catch(() => [])) ?? [];
-        return [key, list] as const;
-      }),
-    ).then((entries) => {
-      if (!cancelled) setThreads(Object.fromEntries(entries));
-    });
+    const i = expanded.indexOf("/");
+    api
+      .threadEmails(expanded.slice(0, i), expanded.slice(i + 1))
+      .catch(() => [])
+      .then((list) => {
+        if (!cancelled) setThreads({ [expanded]: list ?? [] });
+      });
     return () => {
       cancelled = true;
     };
-    // expanded 变化由 toggleThread 自己读取, 这里只跟随列表刷新。
+    // expanded 变化由 expandThread 自己读取, 这里只跟随列表刷新。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emails]);
 
-  async function toggleThread(email: EmailSummary) {
-    const key = threadKey(email);
-    if (expanded.has(key)) {
-      const next = new Set(expanded);
-      next.delete(key);
-      setExpanded(next);
-      return;
-    }
-    await expandThread(email);
+  function toggleThread(email: EmailSummary) {
+    if (expanded === threadKey(email)) setExpanded("");
+    else expandThread(email);
   }
 
-  // 点开会话行时顺带展开: 会话行只代表最新一封, 不展开就看不到(也不会去点)较早的未读。
+  // 打开一行时只留它自己的会话展开: 是多封的会话就展开(会话行只代表最新一封, 不展开就看不到
+  // 也不会去点较早的未读), 单封邮件则收起之前展开的会话。
   async function expandThread(email: EmailSummary) {
     const key = threadKey(email);
-    if (!email.threadId || (email.threadCount ?? 0) < 2 || expanded.has(key)) return;
-    const next = new Set(expanded);
-    next.add(key);
-    setExpanded(next);
+    if (expanded === key) return;
+    if (!email.threadId || (email.threadCount ?? 0) < 2) {
+      setExpanded("");
+      return;
+    }
+    setExpanded(key);
     if (!threads[key]) {
-      const list =
-        (await api.threadEmails(email.accountId, email.threadId).catch(() => [])) ?? [];
+      const list = (await api.threadEmails(email.accountId, email.threadId).catch(() => [])) ?? [];
       setThreads((prev) => ({ ...prev, [key]: list }));
     }
   }
@@ -218,10 +215,12 @@ export function EmailList({
           const key = emailKey(email);
           const tk = threadKey(email);
           const count = email.threadCount ?? 0;
-          const isOpen = !!email.threadId && expanded.has(tk);
+          const isOpen = !!email.threadId && expanded === tk;
           const members = isOpen ? [...(threads[tk] ?? [])].reverse() : [];
           const where = whereOf?.(email) ?? "";
           const isChecked = checked?.has(key) ?? false;
+          // 收件人为空的草稿退回显示发件人。
+          const party = showRecipients && email.to?.length ? email.to : email.from;
           const childSelected = members.some(
             (m) => emailKey(m) === selectedKey && m.id !== email.id,
           );
@@ -296,8 +295,8 @@ export function EmailList({
                       className="group/avatar relative block size-9 rounded-full"
                     >
                       <SenderAvatar
-                        email={email.from?.[0]?.email ?? ""}
-                        name={email.from?.[0]?.name}
+                        email={party?.[0]?.email ?? ""}
+                        name={party?.[0]?.name}
                         className="size-9"
                       />
                       {onCheck && (
@@ -329,7 +328,9 @@ export function EmailList({
                           unread && "font-medium",
                         )}
                       >
-                        {displayAddressList(email.from) || t("(无发件人)")}
+                        {showRecipients && email.to?.length
+                          ? t("致：{0}", displayAddressList(email.to))
+                          : displayAddressList(email.from) || t("(无发件人)")}
                       </span>
                       {count > 1 && (
                         <button

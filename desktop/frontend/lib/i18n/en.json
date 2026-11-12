@@ -951,6 +951,7 @@
   "{0}{1} 全天": "{0}{1} · All day",
   "会从你的邮箱向 {0} 发送一封退订邮件。": "An unsubscribe email will be sent from your mailbox to {0}.",
   "展开会话，共 {0} 封": "Expand conversation, {0} messages",
+  "致：{0}": "To: {0}",
   "展开会话（共 {0} 封）": "Expand conversation ({0} messages)",
   "翻译为{0}": "Translate into {0}",
   "正在翻译… {0}/{1}": "Translating… {0}/{1}",

@@ -12,11 +12,13 @@ import (
 // 列表只渲染这些字段, 多取的每一列都要乘以一屏的行数。
 type EmailSummary struct {
 	// AccountID 是邮件所属账号。统一视图里各账号的邮件混在一个列表, id 只在账号内唯一。
-	AccountID     string    `json:"accountId"`
-	ID            string    `json:"id"`
-	ThreadID      string    `json:"threadId"`
-	Subject       string    `json:"subject"`
-	From          []Address `json:"from"`
+	AccountID string    `json:"accountId"`
+	ID        string    `json:"id"`
+	ThreadID  string    `json:"threadId"`
+	Subject   string    `json:"subject"`
+	From      []Address `json:"from"`
+	// To 供已发送、草稿这类文件夹在列表里显示收件人(发件人都是自己)。
+	To            []Address `json:"to"`
 	ReceivedAt    time.Time `json:"receivedAt"`
 	Preview       string    `json:"preview"`
 	HasAttachment bool      `json:"hasAttachment"`
@@ -35,7 +37,6 @@ type EmailSummary struct {
 // EmailDetail 是阅读视图。Body 可能为空, 表示正文尚未拉取。
 type EmailDetail struct {
 	EmailSummary
-	To      []Address `json:"to"`
 	CC      []Address `json:"cc"`
 	BCC     []Address `json:"bcc"`
 	ReplyTo []Address `json:"replyTo"`
@@ -80,7 +81,7 @@ const keywordFlags = `
 	            WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$pinned')  AS is_pinned`
 
 // summaryColumns 是邮件摘要的列, 顺序与 scanSummaries 一致。
-const summaryColumns = `e.account_id, e.id, e.thread_id, e.subject, e.from_json, e.received_at,
+const summaryColumns = `e.account_id, e.id, e.thread_id, e.subject, e.from_json, e.to_json, e.received_at,
 	       e.preview, e.has_attachment, e.size,` + keywordFlags
 
 // EmailsByMailbox 分页取某邮箱的邮件: 置顶的在最前, 其余按收件时间倒序。
@@ -155,15 +156,15 @@ const threadCountColumn = `,
 func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 	var out []EmailSummary
 	cols, _ := rows.Columns()
-	withThread := len(cols) > 13
+	withThread := len(cols) > 14
 	for rows.Next() {
 		var e EmailSummary
-		var fromJSON string
+		var fromJSON, toJSON string
 		var receivedAt int64
 		var hasAttachment, unread, flagged, draft, pinned int
 
 		dest := []any{
-			&e.AccountID, &e.ID, &e.ThreadID, &e.Subject, &fromJSON, &receivedAt,
+			&e.AccountID, &e.ID, &e.ThreadID, &e.Subject, &fromJSON, &toJSON, &receivedAt,
 			&e.Preview, &hasAttachment, &e.Size,
 			&unread, &flagged, &draft, &pinned,
 		}
@@ -176,6 +177,9 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 
 		if err := json.Unmarshal([]byte(fromJSON), &e.From); err != nil {
 			return nil, wrap(CodeDecode, "decode from addresses", err)
+		}
+		if err := json.Unmarshal([]byte(toJSON), &e.To); err != nil {
+			return nil, wrap(CodeDecode, "decode to addresses", err)
 		}
 		e.ReceivedAt = time.Unix(receivedAt, 0)
 		e.HasAttachment = hasAttachment != 0

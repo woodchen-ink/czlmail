@@ -1237,6 +1237,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 onScrollContainer={setListScrollEl}
                 onScrolledAway={setScrolledAway}
                 whereOf={searching || unified ? whereOf : undefined}
+                showRecipients={!searching && ["sent", "drafts", "scheduled"].includes(currentKind)}
                 checked={checked}
                 onCheck={checkEmail}
                 emails={emails}
