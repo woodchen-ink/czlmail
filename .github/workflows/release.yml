@@ -219,9 +219,10 @@ jobs:
           codesign --force --timestamp --sign "$identity" "$dmg"
 
           # 公证 DMG(会连同里面的 .app 一起登记), 失败时打印公证日志。
+          # 新团队头几次提交 Apple 会排队较久(实测超过 30 分钟), 等待上限放宽到 2 小时。
           echo "$API_KEY_P8_BASE64" | base64 -d > "$RUNNER_TEMP/AuthKey.p8"
           notary=(--key "$RUNNER_TEMP/AuthKey.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER_ID")
-          xcrun notarytool submit "$dmg" "${notary[@]}" --wait --timeout 30m --output-format json | tee notary.json
+          xcrun notarytool submit "$dmg" "${notary[@]}" --wait --timeout 2h --output-format json | tee notary.json
           status=$(plutil -extract status raw notary.json)
           if [ "$status" != "Accepted" ]; then
             xcrun notarytool log "$(plutil -extract id raw notary.json)" "${notary[@]}" || true
