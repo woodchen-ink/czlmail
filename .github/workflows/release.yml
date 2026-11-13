@@ -153,18 +153,95 @@ jobs:
           sed -i '' -E "s/\"productVersion\": *\"[^\"]*\"/\"productVersion\": \"${PRODUCT_VERSION}\"/" wails.json
           "$(go env GOPATH)/bin/wails" build -platform darwin/universal -ldflags "-X main.version=${VERSION}"
 
-      # 没有 Apple 开发者证书: 整个包做 ad-hoc 签名(Apple Silicon 不运行无签名代码, lipo 合并与写入 Info.plist
-      # 会让链接器给的签名失效), 再打 DMG(首次安装, 拖进「应用程序」)与 zip(在线更新, 解压后原地替换 .app)。
+      # 有 Developer ID 证书与公证 Key (仓库 secrets CZL_MACOS_* / CZL_APPLE_*) 时: hardened runtime 由内向外签名 .app,
+      # 打 DMG 并签名, 提交公证后把票据钉到 DMG 与 .app 上, 再用公证过的 .app 打在线更新用的 zip。
+      # secrets 不全(fork 仓库等)时退回 ad-hoc 签名: Apple Silicon 不运行无签名代码, lipo 合并与写入 Info.plist
+      # 会让链接器给的签名失效; 这样的包首次打开要右键放行。
+      # DMG 给首次安装(拖进「应用程序」), zip 给在线更新(解压后原地替换 .app)。
       - name: Package
         working-directory: desktop/build/bin
+        env:
+          CERT_P12_BASE64: ${{ secrets.CZL_MACOS_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.CZL_MACOS_CERT_PASSWORD }}
+          API_KEY_P8_BASE64: ${{ secrets.CZL_APPLE_API_KEY_P8_BASE64 }}
+          API_KEY_ID: ${{ secrets.CZL_APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.CZL_APPLE_API_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.CZL_APPLE_TEAM_ID }}
         run: |
+          set -euo pipefail
           app=$(ls -d *.app | head -n1)
+          dmg=czlmail-darwin-universal.dmg
+          zip=czlmail-darwin-universal.zip
           plutil -lint "$app/Contents/Info.plist"
-          codesign --force --deep --sign - "$app"
-          codesign --verify --deep --strict "$app"
-          ditto -c -k --keepParent "$app" czlmail-darwin-universal.zip
-          mkdir dmg && ditto "$app" "dmg/$app" && ln -s /Applications dmg/Applications
-          hdiutil create -volname "CZL Mail" -srcfolder dmg -ov -format UDZO czlmail-darwin-universal.dmg
+
+          make_dmg() {
+            rm -rf dmg && mkdir dmg && ditto "$app" "dmg/$app" && ln -s /Applications dmg/Applications
+            hdiutil create -volname "CZL Mail" -srcfolder dmg -ov -format UDZO "$dmg"
+          }
+
+          if [ -z "$CERT_P12_BASE64" ] || [ -z "$CERT_PASSWORD" ] || [ -z "$API_KEY_P8_BASE64" ] \
+             || [ -z "$API_KEY_ID" ] || [ -z "$API_ISSUER_ID" ] || [ -z "$TEAM_ID" ]; then
+            echo "::warning::缺少 macOS 签名/公证 secrets, 改用 ad-hoc 签名, 用户首次打开需右键放行"
+            codesign --force --deep --sign - "$app"
+            codesign --verify --deep --strict "$app"
+            ditto -c -k --keepParent "$app" "$zip"
+            make_dmg
+            exit 0
+          fi
+
+          # 证书导入一次性钥匙串, 清理在下一步(always)里做。
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          kc_pass=$(openssl rand -hex 24)
+          security create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$kc_pass" "$keychain"
+          echo "$CERT_P12_BASE64" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -f pkcs12 -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$keychain" \
+            | grep "Developer ID Application" | grep "($TEAM_ID)" | head -n1 | awk '{print $2}')
+          [ -n "$identity" ] || { echo "::error::钥匙串里没有 Team $TEAM_ID 的 Developer ID Application 证书"; exit 1; }
+
+          # 由内向外: 先签包内其他 Mach-O(目前没有, 以后加 helper / dylib 时自动覆盖), 最后签 .app 本身。
+          entitlements="$GITHUB_WORKSPACE/desktop/build/darwin/entitlements.plist"
+          main_exe="$app/Contents/MacOS/$(plutil -extract CFBundleExecutable raw "$app/Contents/Info.plist")"
+          sign() { codesign --force --options runtime --timestamp --entitlements "$entitlements" --sign "$identity" "$@"; }
+          find "$app/Contents" -type f ! -path "$main_exe" -print0 | while IFS= read -r -d '' f; do
+            if file -b "$f" | grep -q 'Mach-O'; then sign "$f"; fi
+          done
+          sign "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -d --verbose=2 "$app" 2>&1 | grep -E 'Authority|TeamIdentifier|flags'
+
+          make_dmg
+          codesign --force --timestamp --sign "$identity" "$dmg"
+
+          # 公证 DMG(会连同里面的 .app 一起登记), 失败时打印公证日志。
+          echo "$API_KEY_P8_BASE64" | base64 -d > "$RUNNER_TEMP/AuthKey.p8"
+          notary=(--key "$RUNNER_TEMP/AuthKey.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER_ID")
+          xcrun notarytool submit "$dmg" "${notary[@]}" --wait --timeout 30m --output-format json | tee notary.json
+          status=$(plutil -extract status raw notary.json)
+          if [ "$status" != "Accepted" ]; then
+            xcrun notarytool log "$(plutil -extract id raw notary.json)" "${notary[@]}" || true
+            echo "::error::公证未通过: $status"; exit 1
+          fi
+          rm -f "$RUNNER_TEMP/AuthKey.p8" notary.json
+
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl -a -vvv -t install "$dmg"
+          # .app 的票据在公证 DMG 时已登记, 钉上后在线更新的 zip 离线也能过 Gatekeeper。
+          xcrun stapler staple "$app"
+          spctl -a -vvv -t exec "$app"
+          ditto -c -k --keepParent "$app" "$zip"
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/AuthKey.p8"
 
       - uses: actions/upload-artifact@v4
         with:

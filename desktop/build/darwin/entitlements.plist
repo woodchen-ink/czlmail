@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Developer ID 签名 (hardened runtime) 用的 entitlements, 由 .github/workflows/release.yml 引用。
+  刻意留空: Go 程序不需要 JIT / 未签名可执行内存, WKWebView 的 JIT 在系统的 WebContent 进程里,
+  本地通知、LaunchAgent、LaunchServices、本地 MCP 端口都不需要额外权限。
+  不走 App Sandbox (com.apple.security.app-sandbox), 否则托盘、开机自启、设默认应用都会失效。
+  以后真要加权限, 只加确实用到的那一项。
+-->
+<plist version="1.0">
+<dict/>
+</plist>
