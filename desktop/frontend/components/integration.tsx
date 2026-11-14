@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Events, api, errorMessage, onEvent, type Calendar, type IntegrationStatus, type OpenRequest } from "@/lib/api";
-import { send } from "@/lib/app-bus";
+import { requestOpenEmail, send } from "@/lib/app-bus";
 import { onFileDrop } from "@/lib/file-drop";
 
 const ONBOARD_KEY = "czlmail.onboarded.integration";
@@ -36,7 +36,7 @@ export function Integration() {
         } else if (r.kind === "ics" && r.path) {
           setIcsSource(r.path);
         } else if (r.kind === "email" || r.kind === "thread") {
-          // czlmail:// 链接。会话链接打开其中最新的一封; 本地没有缓存时提示而不是静默忽略。
+          // czlmail:// 链接与点系统通知。会话链接打开其中最新的一封; 本地没有缓存时提示而不是静默忽略。
           let emailId = r.id;
           if (r.kind === "thread") {
             const list = (await api.threadEmails(r.accountId, r.id).catch(() => [])) ?? [];
@@ -47,7 +47,7 @@ export function Integration() {
             continue;
           }
           send("navigate", { module: "mail" });
-          send("openEmail", { accountId: r.accountId, emailId });
+          requestOpenEmail({ accountId: r.accountId, emailId });
         }
       }
     } catch {

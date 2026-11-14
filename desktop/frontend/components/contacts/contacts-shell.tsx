@@ -76,7 +76,7 @@ import {
   type EventOccurrence,
   type PIMChange,
 } from "@/lib/api";
-import { send } from "@/lib/app-bus";
+import { requestOpenEmail, send } from "@/lib/app-bus";
 import { displayAddressList, listDate } from "@/lib/format";
 import { hm, shortDate } from "@/lib/date";
 import { localUrl } from "@/lib/native-bridge";
@@ -992,7 +992,7 @@ function ContactDetailPane({
                     type="button"
                     onClick={() => {
                       send("navigate", { module: "mail" });
-                      send("openEmail", { accountId: e.accountId, emailId: e.id });
+                      requestOpenEmail({ accountId: e.accountId, emailId: e.id });
                     }}
                     className="hover:bg-secondary -mx-2 flex flex-col rounded-md px-2 py-1.5 text-left"
                   >

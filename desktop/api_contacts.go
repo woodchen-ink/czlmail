@@ -4,6 +4,7 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -155,13 +156,16 @@ type ContactForm struct {
 	ReadOnly    bool   `json:"readOnly"`
 }
 
-// GetContact 读联系人。
+// GetContact 读联系人。本机没有时先增量同步通讯录再读一次。
 func (a *App) GetContact(accountID, id string) (*ContactForm, error) {
 	st, err := a.currentStore()
 	if err != nil {
 		return nil, err
 	}
 	raw, err := st.Contact(a.ctx, accountID, id)
+	if errors.Is(err, store.ErrNotFound) && a.resyncPIM(accountID, "ContactCard") {
+		raw, err = st.Contact(a.ctx, accountID, id)
+	}
 	if err != nil {
 		return nil, err
 	}

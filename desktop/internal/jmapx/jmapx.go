@@ -25,7 +25,13 @@ const (
 	PrincipalsURI     jmap.URI = "urn:ietf:params:jmap:principals"
 	CalendarsParseURI jmap.URI = "urn:ietf:params:jmap:calendars:parse"
 	ContactsParseURI  jmap.URI = "urn:ietf:params:jmap:contacts:parse"
+
+	// EmailPushURI 是新邮件推送扩展 (draft-ietf-jmap-emailpush): 推送里直接带邮件属性。
+	EmailPushURI jmap.URI = "urn:ietf:params:jmap:emailpush"
 )
+
+// PushSubscription 是核心规范的推送订阅 (RFC 8620 §7.2), 不属于任何账号。
+const PushSubscription = "PushSubscription"
 
 // 对象类型名, 也是推送 StateChange 里的 key。
 const (
@@ -67,6 +73,8 @@ func init() {
 	jmap.RegisterMethod("SieveScript/set", func() jmap.MethodResponse { return &SetResponse{} })
 	jmap.RegisterMethod("SieveScript/validate", func() jmap.MethodResponse { return &ValidateResponse{} })
 	jmap.RegisterMethod(ContactCard+"/parse", func() jmap.MethodResponse { return &ParseResponse{} })
+	jmap.RegisterMethod(PushSubscription+"/get", func() jmap.MethodResponse { return &GetResponse{} })
+	jmap.RegisterMethod(PushSubscription+"/set", func() jmap.MethodResponse { return &SetResponse{} })
 }
 
 // Call 是一次通用方法调用。Args 原样序列化为参数对象。
@@ -83,6 +91,9 @@ func (c *Call) Requires() []jmap.URI {
 		return []jmap.URI{CalendarsURI, CalendarsParseURI}
 	case ContactCard + "/parse":
 		return []jmap.URI{ContactsURI, ContactsParseURI}
+	case PushSubscription + "/get", PushSubscription + "/set":
+		// 订阅里带 emailPush 时必须声明该扩展; 调用方只在服务端公布了该扩展时才发这两个方法。
+		return []jmap.URI{"urn:ietf:params:jmap:mail", EmailPushURI}
 	}
 	for i := range c.Method {
 		if c.Method[i] == '/' {

@@ -52,6 +52,8 @@ type App struct {
 	signInReason string
 	// verifying 保证同一时刻只有一次"凭据是否真的失效"的核实在跑。
 	verifying atomic.Bool
+	// restoring 在启动时恢复会话的那次连接进行中为 true, 期间需要会话的调用等它连上 (见 currentSyncer)。
+	restoring atomic.Bool
 
 	// cancelSync 停掉后台同步循环, 用于重新登录时重建会话。
 	cancelSync context.CancelFunc
@@ -316,6 +318,9 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.T
 	go a.runReminders(syncCtx)
 	go a.runReconcile(syncCtx, s, st)
 	go a.runBodyTextBackfill(syncCtx, st)
+	// 先恢复「推送已生效」的标记, 第一轮同步据此不重复弹推送已经通知过的新信。
+	a.primePush(syncCtx, st)
+	go a.runPush(syncCtx, s, st)
 	go func() {
 		if err := s.Run(syncCtx); err != nil {
 			a.log.Error("sync loop exited", "err", err)

@@ -99,8 +99,7 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
 
   useEffect(() => {
     const offNav = listen("navigate", ({ module }) => go(module));
-    // 点系统通知时切到对应模块; 具体定位由模块自己监听同一事件完成。
-    const offMail = onEvent(Events.openEmail, () => go("mail"));
+    // 点系统通知时切到对应模块; 具体定位由模块自己监听同一事件完成 (邮件走打开请求队列, 见 integration.tsx)。
     const offEvent = onEvent(Events.openEvent, () => go("calendar"));
     const openAbout = () => {
       go("settings");
@@ -154,7 +153,6 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
     window.addEventListener("keydown", onKey);
     return () => {
       offNav();
-      offMail();
       offEvent();
       offUpdate();
       offOpenUpdate();

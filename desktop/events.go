@@ -19,8 +19,6 @@ const (
 	// EventMailChanged 某账号的邮件有变动, 负载为 accountID。
 	// 前端据此重新拉取当前列表, 而不是全量刷新界面。
 	EventMailChanged = "mail:changed"
-	// EventOpenEmail 用户点了系统通知, 负载为 "accountID/emailID"。
-	EventOpenEmail = "mail:open"
 	// EventNewMail 到达新邮件, 负载为摘要列表。
 	EventNewMail = "mail:new"
 	// EventUnread 各账号收件箱未读总数变了(不含静音账号), 负载为总数。
@@ -72,7 +70,8 @@ func (a *App) onNewMail(accountID string, emails []store.Email) {
 	}
 
 	a.emit(EventNewMail, summaries)
-	if a.settingOn("notifyMail", true) && !a.mailMuted(accountID) {
+	// iOS 上推送生效后由推送通知 (程序在后台时同步根本不跑), 这里再弹会在前台重复一条。
+	if a.settingOn("notifyMail", true) && !a.mailMuted(accountID) && !a.pushCovers(accountID) {
 		a.notifyNewMail(summaries)
 	}
 }

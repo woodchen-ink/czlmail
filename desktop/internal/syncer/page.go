@@ -113,3 +113,18 @@ func (s *Syncer) cacheMissing(ctx context.Context, accountID string, ids []jmap.
 	}
 	return len(emails), nil
 }
+
+// EnsureEmail 保证某封邮件的元数据在本地缓存里: 没有就按 id 向服务器取一次 (不写 state, 不拿同步锁)。
+// 用于从通知、链接、MCP 等入口按 id 打开邮件 —— 移动端程序挂起时同步不跑, 通知可能先于本地缓存到达;
+// 归档里的旧信也可能从没进过缓存。返回服务器上是否存在。
+func (s *Syncer) EnsureEmail(ctx context.Context, accountID, emailID string) (bool, error) {
+	missing, err := s.store.MissingEmailIDs(ctx, accountID, []string{emailID})
+	if err != nil {
+		return false, err
+	}
+	if len(missing) == 0 {
+		return true, nil
+	}
+	n, err := s.cacheMissing(ctx, accountID, []jmap.ID{jmap.ID(emailID)})
+	return n > 0, err
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -166,7 +167,11 @@ func (a *App) GetEmail(accountID, emailID string) (*store.EmailDetail, error) {
 	if err != nil {
 		return nil, err
 	}
-	return st.Email(a.ctx, accountID, emailID)
+	d, err := st.Email(a.ctx, accountID, emailID)
+	if errors.Is(err, store.ErrNotFound) && a.ensureEmail(accountID, emailID) {
+		return st.Email(a.ctx, accountID, emailID)
+	}
+	return d, err
 }
 
 // SearchEmails 在本地缓存里做全文检索。
@@ -248,7 +253,27 @@ func (a *App) LocateEmail(accountID, emailID, preferMailboxID string) (store.Ema
 	if err != nil {
 		return store.EmailLocation{}, err
 	}
-	return st.LocateEmail(a.ctx, accountID, emailID, preferMailboxID)
+	loc, err := st.LocateEmail(a.ctx, accountID, emailID, preferMailboxID)
+	if errors.Is(err, store.ErrNotFound) && a.ensureEmail(accountID, emailID) {
+		return st.LocateEmail(a.ctx, accountID, emailID, preferMailboxID)
+	}
+	return loc, err
+}
+
+// ensureEmail 在本机缓存没有某封邮件时向服务器取它的元数据, 返回取到没有。
+// 按 id 打开邮件的入口 (通知、czlmail:// 链接、通讯录往来) 都先查本地, 查不到再走这里, 不直接报"找不到"。
+func (a *App) ensureEmail(accountID, emailID string) bool {
+	s, err := a.currentSyncer()
+	if err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	defer cancel()
+	ok, err := s.EnsureEmail(ctx, accountID, emailID)
+	if err != nil {
+		a.log.Warn("fetch email not in cache", "account", accountID, "err", err)
+	}
+	return ok
 }
 
 // SyncNow 立即同步一个账号, 供界面上的手动刷新使用。
@@ -258,4 +283,16 @@ func (a *App) SyncNow(accountID string) error {
 		return err
 	}
 	return s.SyncAccount(a.ctx, accountID)
+}
+
+// resyncPIM 增量同步某账号的一类日历/通讯录/文件对象, 供按 id 读取时本机缺失的兜底; 返回是否已同步。
+func (a *App) resyncPIM(accountID, typeName string) bool {
+	s, err := a.currentSyncer()
+	if err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	defer cancel()
+	s.ResyncPIM(ctx, accountID, typeName)
+	return ctx.Err() == nil
 }

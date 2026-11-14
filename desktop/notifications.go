@@ -37,7 +37,16 @@ func (a *App) initNotifier() {
 			a.emit(EventOpenEvent, ref)
 			return
 		}
-		a.emit(EventOpenEmail, actionID)
+		// 邮件走与 czlmail:// 链接相同的打开队列: 移动端点通知常是冷启动, 这时界面还没加载,
+		// 直接发事件没人收, 会停在默认的收件箱; 队列里的请求由界面加载完后自己来取。
+		acc, id, ok := strings.Cut(actionID, "/")
+		if !ok || acc == "" || id == "" {
+			return
+		}
+		a.opens.mu.Lock()
+		a.opens.pending = append(a.opens.pending, OpenRequest{Kind: "email", AccountID: acc, ID: id})
+		a.opens.mu.Unlock()
+		a.emit(EventOpenRequest)
 	})
 
 	a.mu.Lock()

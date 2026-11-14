@@ -86,7 +86,6 @@ export const Events = {
   connected: "session:connected",
   signInRequired: "session:sign-in-required",
   mailChanged: "mail:changed",
-  openEmail: "mail:open",
   newMail: "mail:new",
   pullProgress: "mail:pull-progress",
   unread: "mail:unread",

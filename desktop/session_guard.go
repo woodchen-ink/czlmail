@@ -88,7 +88,9 @@ const (
 func (a *App) restoreWithRetry(cfg config.Config) {
 	delay := restoreMinDelay
 	for {
+		a.restoring.Store(true)
 		err := a.restoreSession(cfg)
+		a.restoring.Store(false)
 		if err == nil {
 			return
 		}

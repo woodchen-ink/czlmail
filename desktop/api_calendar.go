@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -122,13 +123,16 @@ type Participant struct {
 	Role   string `json:"role"`
 }
 
-// GetEvent 读事件详情。
+// GetEvent 读事件详情。本机没有时先增量同步日历再读一次 (从通知、邀请邮件打开刚建的日程)。
 func (a *App) GetEvent(accountID, eventID string) (*EventDetail, error) {
 	st, err := a.currentStore()
 	if err != nil {
 		return nil, err
 	}
 	raw, err := st.Event(a.ctx, accountID, eventID)
+	if errors.Is(err, store.ErrNotFound) && a.resyncPIM(accountID, "CalendarEvent") {
+		raw, err = st.Event(a.ctx, accountID, eventID)
+	}
 	if err != nil {
 		return nil, err
 	}

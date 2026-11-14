@@ -53,6 +53,11 @@ interface Props {
   whereOf?: (email: EmailSummary) => string;
   /** 已发送、草稿等文件夹: 头像与名字显示收件人, 发件人都是自己。 */
   showRecipients?: boolean;
+  /**
+   * 给选中行铺底色, 默认开。窄屏 (手机) 列表与正文一次只显示一栏, 返回列表后
+   * 选中行的底色看起来像点按后没褪掉, 由调用方关掉; 选中键照常用于滚动定位。
+   */
+  highlightSelected?: boolean;
 }
 
 export function EmailList({
@@ -60,6 +65,7 @@ export function EmailList({
   selectedKey,
   loading,
   hasMore,
+  highlightSelected = true,
   onSelect,
   onLoadMore,
   onToggleFlag,
@@ -221,9 +227,8 @@ export function EmailList({
           const isChecked = checked?.has(key) ?? false;
           // 收件人为空的草稿退回显示发件人。
           const party = showRecipients && email.to?.length ? email.to : email.from;
-          const childSelected = members.some(
-            (m) => emailKey(m) === selectedKey && m.id !== email.id,
-          );
+          const childSelected =
+            highlightSelected && members.some((m) => emailKey(m) === selectedKey && m.id !== email.id);
           return (
             <li key={key}>
               {wrapRow(
@@ -258,7 +263,7 @@ export function EmailList({
                   className={cn(
                     "group border-border flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
                     "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-                    (key === selectedKey || isChecked) && "bg-muted",
+                    ((highlightSelected && key === selectedKey) || isChecked) && "bg-muted",
                     childSelected && "bg-secondary",
                   )}
                 >
@@ -449,7 +454,7 @@ export function EmailList({
                           }
                           className={cn(
                             "flex w-full items-center gap-2 py-1.5 pr-3 pl-12 text-left text-sm",
-                            emailKey(m) === selectedKey
+                            highlightSelected && emailKey(m) === selectedKey
                               ? "bg-muted"
                               : "hover:bg-secondary",
                           )}

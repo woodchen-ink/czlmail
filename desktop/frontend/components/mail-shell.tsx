@@ -60,7 +60,7 @@ import {
 import { displayAddressList, fullDate } from "@/lib/format";
 import { printEmail } from "@/lib/print";
 import { useAppearance } from "@/lib/theme";
-import { listen } from "@/lib/app-bus";
+import { listen, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
 
@@ -452,12 +452,14 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       if (unified || changed === accountId) reload();
     });
 
-    const offOpen = onEvent(Events.openEmail, (ref: string) => {
-      const [acc, id] = String(ref).split("/");
-      if (acc && id) openEmailIn(acc, id);
+    // 其它模块(通讯录、系统通知、链接)发来的「打开这封邮件」「给这个人写信」。
+    // 订阅前就发出的请求留在 pending 里, 这里先取走。
+    const pending = takePendingOpenEmail();
+    if (pending) queueMicrotask(() => openEmailIn(pending.accountId, pending.emailId));
+    const offBusOpen = listen("openEmail", ({ accountId: acc, emailId: id }) => {
+      takePendingOpenEmail();
+      openEmailIn(acc, id);
     });
-    // 其它模块(通讯录)发来的「打开这封邮件」「给这个人写信」。
-    const offBusOpen = listen("openEmail", ({ accountId: acc, emailId: id }) => openEmailIn(acc, id));
     const offCompose = listen("compose", ({ to, cc, bcc, subject, body }) =>
       setDraft({ to, cc: cc ?? "", bcc: bcc ?? "", subject: subject ?? "", html: body ? textToHtml(body) : "" }),
     );
@@ -465,7 +467,6 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     return () => {
       offConnected();
       offChanged();
-      offOpen();
       offBusOpen();
       offCompose();
     };
@@ -1242,6 +1243,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 onCheck={checkEmail}
                 emails={emails}
                 selectedKey={selectedKey}
+                highlightSelected={!compact}
                 loading={loading}
                 hasMore={hasMore && !searching}
                 onSelect={selectEmail}

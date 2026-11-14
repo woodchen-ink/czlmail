@@ -23,6 +23,22 @@ export function send<K extends keyof AppMessages>(name: K, detail: AppMessages[K
   window.dispatchEvent(new CustomEvent(PREFIX + name, { detail }));
 }
 
+// 「打开这封邮件」可能早于邮件模块订阅发出 (冷启动时点通知 / 链接, 界面一加载就取打开请求),
+// 只发事件会丢; 同时记下来, 邮件模块订阅时取走。与 lib/notes/api 的 requestOpenNote 同一做法。
+let pendingOpenEmail: AppMessages["openEmail"] | null = null;
+
+export function requestOpenEmail(detail: AppMessages["openEmail"]) {
+  pendingOpenEmail = detail;
+  send("openEmail", detail);
+}
+
+/** 取走尚未处理的「打开邮件」请求, 只返回一次。 */
+export function takePendingOpenEmail(): AppMessages["openEmail"] | null {
+  const d = pendingOpenEmail;
+  pendingOpenEmail = null;
+  return d;
+}
+
 export function listen<K extends keyof AppMessages>(name: K, handler: (detail: AppMessages[K]) => void): () => void {
   const fn = (e: Event) => handler((e as CustomEvent<AppMessages[K]>).detail);
   window.addEventListener(PREFIX + name, fn);

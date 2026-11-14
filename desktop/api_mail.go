@@ -11,13 +11,25 @@ import (
 // 邮件的写操作。全部转交 syncer 走服务端 Email/set, 本地不先改 ——
 // 服务端接受后会推 StateChange, 增量同步把结果带回来, 只有一份真相。
 
+// currentSyncer 返回当前会话的同步器。
+//
+// 启动时会话在后台恢复 (要打网络, 几秒), 这期间界面已经能操作: 点通知冷启动后立刻打开邮件、
+// 刚启动就点同步, 都会先于会话到达。恢复正在进行时等它连上 (最多 20 秒), 而不是直接报未登录;
+// 离线退避的间隙里不等, 免得每个操作都卡住。
 func (a *App) currentSyncer() (*syncer.Syncer, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	if a.sync == nil {
-		return nil, errNotSignedIn
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		a.mu.RLock()
+		s := a.sync
+		a.mu.RUnlock()
+		if s != nil {
+			return s, nil
+		}
+		if !a.restoring.Load() || time.Now().After(deadline) {
+			return nil, errNotSignedIn
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
-	return a.sync, nil
 }
 
 // FetchBody 拉取并缓存单封邮件的正文, 返回带正文的完整邮件。
@@ -26,6 +38,8 @@ func (a *App) FetchBody(accountID, emailID string) (*store.EmailDetail, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 正文写进已有的那一行; 本机还没有这封信时先把元数据取下来。
+	a.ensureEmail(accountID, emailID)
 	if err := s.FetchBody(a.ctx, accountID, emailID); err != nil {
 		return nil, err
 	}
