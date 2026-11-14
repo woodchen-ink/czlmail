@@ -322,7 +322,22 @@ function bridgeScript(nonce: string): string {
   return `<script nonce="${nonce}">
 (function () {
   var lastH = 0, lastView = 0;
+  // 固定宽度的版式(600~800px 的 table)比阅读栏宽时整体按比例缩小, 不用拉宽窗口或横向滚动。
+  // 用 zoom 而不是 transform: zoom 参与排版, scrollHeight 直接是缩放后的高度。
+  // 每次先还原再量自然宽度, 阅读栏变宽后能缩回原大; 结果不变时 ResizeObserver 不会再触发, 不会循环。
+  // 缩到 0.5 以下字已经看不清, 到下限后保留横向滚动。
+  function fit() {
+    var root = document.documentElement;
+    if (!document.body) return;
+    document.body.style.zoom = "";
+    var view = root.clientWidth;
+    var w = Math.max(root.scrollWidth, document.body.scrollWidth);
+    if (view > 0 && w > view + 1) {
+      document.body.style.zoom = String(Math.max(view / w, 0.5));
+    }
+  }
   function report() {
+    fit();
     var h = Math.max(
       document.documentElement.scrollHeight,
       document.body ? document.body.scrollHeight : 0
