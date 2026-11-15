@@ -27,7 +27,7 @@ func identitySettings() []string {
 func (a *App) ensureCacheOwner(ctx context.Context, st *store.Store, cfg config.Config, client *jmap.Client) error {
 	owner := cfg.SessionEndpoint + "\x00" + strings.ToLower(cfg.Username)
 	cur, err := st.StringSetting(ctx, store.SettingCacheOwner)
-	if err != nil {
+	if err != nil && !errors.Is(err, store.ErrNotFound) { // 没有记录 = 旧缓存或新装, 按空处理
 		return err
 	}
 	if cur == owner {
