@@ -263,9 +263,9 @@ func (s *Store) SearchCorrespondents(ctx context.Context, query string, limit in
 		)
 		SELECT MAX(COALESCE(name, '')), email, COUNT(*) AS n
 		FROM addrs
-		WHERE email LIKE ? ESCAPE '' OR LOWER(COALESCE(name, '')) LIKE ? ESCAPE ''
+		WHERE email LIKE ? ESCAPE '\' OR LOWER(COALESCE(name, '')) LIKE ? ESCAPE '\'
 		GROUP BY email
-		ORDER BY CASE WHEN email LIKE ? ESCAPE '' THEN 0 ELSE 1 END, n DESC
+		ORDER BY CASE WHEN email LIKE ? ESCAPE '\' THEN 0 ELSE 1 END, n DESC
 		LIMIT ?`, like, like, escapeLike(q)+"%", limit)
 	if err != nil {
 		return nil, wrap(CodeQuery, "search correspondents", err)

@@ -92,7 +92,7 @@ func (s *Store) RecentEmailsWith(ctx context.Context, address string, limit int)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+summaryColumns+`
 		FROM emails e
-		WHERE LOWER(e.from_json) LIKE ? ESCAPE '' OR LOWER(e.to_json) LIKE ? ESCAPE '' OR LOWER(e.cc_json) LIKE ? ESCAPE ''
+		WHERE LOWER(e.from_json) LIKE ? ESCAPE '\' OR LOWER(e.to_json) LIKE ? ESCAPE '\' OR LOWER(e.cc_json) LIKE ? ESCAPE '\'
 		ORDER BY e.received_at DESC
 		LIMIT ?`, like, like, like, limit)
 	if err != nil {
