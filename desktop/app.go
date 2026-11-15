@@ -278,6 +278,13 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.T
 
 	cfg.Username = client.Session.Username
 
+	// 换了人登录就先清掉上一个人的缓存, 再开始同步 (见 identity.go)。
+	if st, err := a.currentStore(); err == nil {
+		if err := a.ensureCacheOwner(a.ctx, st, cfg, client); err != nil {
+			return fmt.Errorf("2003 reset local cache for new account: %w", err)
+		}
+	}
+
 	a.mu.Lock()
 	st := a.store
 	if a.cancelSync != nil {

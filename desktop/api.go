@@ -73,6 +73,9 @@ func (a *App) GetSessionStatus() SessionStatus {
 // 本地缓存保留: 重新登录后不必重新引导, 且清库是破坏性操作,
 // 应由界面上单独的入口触发而不是搭在退出登录里。
 func (a *App) SignOut() error {
+	// 先撤推送: 要用到还在的会话 (iOS; 其它平台为空)。
+	a.stopPush()
+
 	a.mu.Lock()
 	cfg := a.cfg
 	if a.cancelSync != nil {

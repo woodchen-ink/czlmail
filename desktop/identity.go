@@ -1,0 +1,67 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"strings"
+
+	"git.sr.ht/~rockorager/go-jmap"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
+	"github.com/woodchen-ink/czlmail/desktop/internal/keychain"
+	"github.com/woodchen-ink/czlmail/desktop/internal/store"
+)
+
+// identitySettings 是随登录身份走的设置: 跨设备同步的 AI / MCP / 日记设置 (会写回该身份的网盘)、
+// 静音与默认发件身份 (按账号 id 记)、推送订阅。界面偏好 (已读方式、提醒开关、头像开关等) 属于这台设备, 不清。
+func identitySettings() []string {
+	keys := append([]string{}, aiSyncedSettings...)
+	return append(keys, settingAIKeyUpdatedAt, "mutedMailAccounts", "defaultIdentities", "pushRelay")
+}
+
+// ensureCacheOwner 在会话建立后、同步开始前确认本机缓存属于这次登录的身份, 不是就清空。
+//
+// 退出登录保留缓存, 同一个人重新登录不必重新引导; 但换成另一个人 (或另一台服务器) 时,
+// 上一个人的邮件会混进新账号的列表, 本机的模板与 AI 设置 (含 API Key) 还会被同步写进新账号的网盘。
+// 旧版没有记录归属: 缓存里有本次会话看不到的账号时同样视为换人 (宁可多引导一次, 也不混用别人的缓存)。
+func (a *App) ensureCacheOwner(ctx context.Context, st *store.Store, cfg config.Config, client *jmap.Client) error {
+	owner := cfg.SessionEndpoint + "\x00" + strings.ToLower(cfg.Username)
+	cur, err := st.StringSetting(ctx, store.SettingCacheOwner)
+	if err != nil {
+		return err
+	}
+	if cur == owner {
+		return nil
+	}
+	if cur == "" && !a.cacheFromOtherIdentity(ctx, st, client) {
+		return st.SetStringSetting(ctx, store.SettingCacheOwner, owner)
+	}
+
+	a.log.Info("signed in as a different identity, clearing local cache")
+	a.forgetPush(ctx, st)
+	if err := st.ResetIdentityData(ctx, identitySettings()); err != nil {
+		return err
+	}
+	if err := keychain.Delete(config.KeyringService, aiKeyringKey); err != nil && !errors.Is(err, keychain.ErrNotFound) {
+		a.log.Warn("clear ai key", "err", err)
+	}
+	ownCache.Lock()
+	ownCache.addrs = nil
+	ownCache.Unlock()
+	return st.SetStringSetting(ctx, store.SettingCacheOwner, owner)
+}
+
+// cacheFromOtherIdentity 用于没有归属记录的旧缓存: 缓存里有本次会话没有的账号。
+// 已经混进新账号的旧缓存 (换人登录过一次) 也能认出来; 同一个人被收回某个共享邮箱时多引导一次, 无害。
+func (a *App) cacheFromOtherIdentity(ctx context.Context, st *store.Store, client *jmap.Client) bool {
+	cached, err := st.Accounts(ctx)
+	if err != nil || client.Session == nil {
+		return false
+	}
+	for _, acc := range cached {
+		if _, ok := client.Session.Accounts[jmap.ID(acc.ID)]; !ok {
+			return true
+		}
+	}
+	return false
+}

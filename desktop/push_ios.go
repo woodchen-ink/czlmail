@@ -403,3 +403,32 @@ func relayCall(ctx context.Context, method, path, secret string, in, out any) er
 	}
 	return nil
 }
+
+// stopPush 在退出登录时撤掉推送 (会话还在, 能删服务器上的订阅), 否则退出后这台手机仍会收到该账号的新邮件通知。
+func (a *App) stopPush() {
+	a.mu.RLock()
+	s, st := a.sync, a.store
+	a.mu.RUnlock()
+	if s == nil || st == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
+	defer cancel()
+	setPushCovered(nil)
+	if err := a.dropPush(ctx, s, st, loadPushReg(ctx, st)); err != nil {
+		a.log.Warn("drop push on sign-out", "err", err)
+	}
+}
+
+// forgetPush 在换人登录、清缓存前删掉上一个身份在中转的登记: 旧会话已经没了, 服务器上的订阅删不掉,
+// 但中转回 404 后服务器会自己停用那个推送地址, 上一个人的新邮件不再推到这台手机。
+func (a *App) forgetPush(ctx context.Context, st *store.Store) {
+	reg := loadPushReg(ctx, st)
+	setPushCovered(nil)
+	if reg.ID == "" {
+		return
+	}
+	if err := relayCall(ctx, http.MethodDelete, "/v1/subscriptions/"+reg.ID, reg.Secret, nil, nil); err != nil && !errors.Is(err, errRelayNotFound) {
+		a.log.Warn("forget previous push registration", "err", err)
+	}
+}

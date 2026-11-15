@@ -20,3 +20,7 @@ func (a *App) pushCovers(string) bool { return false }
 func (a *App) wakePush() {}
 
 func (a *App) pushSettingsChanged() {}
+
+func (a *App) stopPush() {}
+
+func (a *App) forgetPush(context.Context, *store.Store) {}
