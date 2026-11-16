@@ -3,7 +3,7 @@
 <h1 align="center">CZL Mail</h1>
 
 <p align="center">
-为 <a href="https://stalw.art">Stalwart</a> 打造的 <a href="https://jmap.io">JMAP</a> 原生客户端，桌面与 Android ——
+为 <a href="https://stalw.art">Stalwart</a> 打造的 <a href="https://jmap.io">JMAP</a> 原生客户端，桌面、Android 与 iPhone ——
 邮件、日历、通讯录、网盘、笔记，内置 <b>MCP 服务</b> 与 <b>AI 助手</b>。
 </p>
 
@@ -52,6 +52,8 @@
 **Android** —— 同一套程序，按手机单栏排布：邮件、日历、通讯录、网盘、笔记、搜索、翻译与 AI 总结 · 后台收信并弹通知 ·
 系统返回手势 · 凭据用 Android Keystore 加密 · 从 GitHub Releases 在线更新（SHA-256 校验）。MCP 与选择文件夹只在桌面端提供。
 源码与构建说明见 [android/](android/README.md)
+
+**iPhone** —— 界面与功能同 Android 版，在 [App Store](https://apps.apple.com/app/id6834485924) 上架（iOS 16+，买断制付费；中国大陆暂未上架），关掉 App 也能收到新邮件推送，内容用只存在手机上的密钥端到端加密；经 App Store 安装与更新。
 
 ## 截图
 
@@ -106,6 +108,7 @@ claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp 
   安装时按提示允许；之后的新版本在程序里（**设置 → 关于与更新**）更新，第一次更新需要允许 CZL Mail 安装应用。
 
   <img src="screenshots/android-qr.png" width="160" alt="二维码：下载 CZL Mail Android 版">
+- iPhone：[App Store](https://apps.apple.com/app/id6834485924)（iOS 16+，买断制付费，中国大陆暂未上架）。
 - 手机（只读看笔记）：打开 **https://mail-notes.czl.net**，填服务器、邮箱和应用专用密码登录；
   添加到主屏幕后可以像 App 一样用。它只是一组静态文件，浏览器直接连你自己的邮件服务器，
   我们收不到、也不保存你的密码和笔记。

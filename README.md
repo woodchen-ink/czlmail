@@ -3,7 +3,7 @@
 <h1 align="center">CZL Mail</h1>
 
 <p align="center">
-A native client for <a href="https://stalw.art">Stalwart</a> over <a href="https://jmap.io">JMAP</a>, on desktop and Android —
+A native client for <a href="https://stalw.art">Stalwart</a> over <a href="https://jmap.io">JMAP</a>, on desktop, Android and iPhone —
 mail, calendar, contacts, files and notes, with a built-in <b>MCP server</b> and <b>AI assistant</b>.
 </p>
 
@@ -60,6 +60,10 @@ auto-update from GitHub Releases (SHA-256 verified)
 translation and AI summaries · new-mail notifications in the background · system back gesture · credentials
 encrypted with Android Keystore · online updates from GitHub Releases (SHA-256 verified). MCP and folder picking
 are desktop-only. Source and build notes: [android/](android/README.md)
+
+**iPhone** — the same phone layout and features as Android, on the [App Store](https://apps.apple.com/app/id6834485924) (iOS 16+, one-time
+purchase; not yet available in mainland China). New mail arrives as push notifications even when the app is closed; the
+content is end-to-end encrypted with a key that stays on the phone. Installs and updates go through the App Store.
 
 ## Screenshots
 
@@ -118,6 +122,7 @@ Download the latest release from [Releases](https://github.com/woodchen-ink/czlm
   (**Settings → About & updates**), and the first one asks you to allow CZL Mail to install apps.
 
   <img src="screenshots/android-qr.png" width="160" alt="QR code: download CZL Mail for Android">
+- iPhone: [App Store](https://apps.apple.com/app/id6834485924) (iOS 16+, paid one-time purchase, not yet available in mainland China).
 - Phone (read notes only): open **https://mail-notes.czl.net** and sign in with your server, email and an app password;
   add it to the home screen to use it like an app. It is only static files: your browser talks to your own mail server directly,
   and we never receive or store your password or notes.
