@@ -149,6 +149,10 @@ JNIEXPORT void JNICALL Java_net_czl_mail_core_Native_openURL(JNIEnv *env, jclass
 	free(u);
 }
 
+JNIEXPORT void JNICALL Java_net_czl_mail_core_Native_resume(JNIEnv *env, jclass cls) {
+	CzlResume();
+}
+
 JNIEXPORT void JNICALL Java_net_czl_mail_core_Native_notificationActivated(JNIEnv *env, jclass cls, jbyteArray actionID) {
 	char *a = czlCString(env, actionID);
 	CzlNotificationActivated(a);

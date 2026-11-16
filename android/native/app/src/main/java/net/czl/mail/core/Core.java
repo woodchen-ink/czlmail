@@ -110,6 +110,14 @@ public final class Core {
         });
     }
 
+    /** 程序回到前台: 内核重新登记日程提醒等挂起期间可能过期的东西。 */
+    public static void resume() {
+        calls.execute(() -> {
+            awaitStarted();
+            Native.resume();
+        });
+    }
+
     static void emit(String name, String args) {
         CzlCorePlugin p = plugin;
         if (p != null) p.emit(name, args);

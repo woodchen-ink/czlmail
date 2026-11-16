@@ -39,6 +39,7 @@ native/app/src/main/java/net/czl/mail/
   core/LocalWebViewClient  同源 /czl-* 请求交给 Go 的本地路径处理器
   core/SyncService      后台同步前台服务; core/BootReceiver 开机与更新后拉起
   core/Notifications    通知渠道与通知
+  core/Reminders        日程提醒的系统闹钟 (整表替换、重启后恢复); core/ReminderReceiver 到点弹通知
 ```
 
 Go 侧的安卓专属代码：`desktop/host_android.go`（宿主能力、凭据、OAuth 回跳）、`desktop/mobile_jni_android.c`、
@@ -57,6 +58,11 @@ Go 侧的安卓专属代码：`desktop/host_android.go`（宿主能力、凭据�
 - **后台收信**：Stalwart 只有 EventSource 推送，没有能直达手机的通道。`SyncService`（`specialUse` 前台服务）让进程与长连接常驻，
   常驻通知走最低重要性的「后台同步」渠道，用户可单独关掉而不影响「新邮件与提醒」。系统省电策略严格的机型仍可能断开，需用户把程序设为不受电池优化限制
 - **通知**：Android 13+ 启动时请求通知权限；点击通知带 ActionID 回到 `MainActivity` 交给内核（与桌面端同一套 `email:`/`event:`/`update:` 分派）。启动器角标由系统按通知数决定
+- **日程提醒**：内核（`desktop/reminders_schedule.go`）把未来 30 天里最近的 60 条提醒经宿主请求 `scheduleReminders` 整表交来，`Reminders` 逐条设成 AlarmManager 闹钟，
+  到点由 `ReminderReceiver` 弹通知，进程被系统回收后照样会响。槽位号即 PendingIntent 的 requestCode，替换时覆盖前几个、取消其余；列表另存 SharedPreferences，
+  重启与程序更新会清掉闹钟，`BootReceiver` 按存下的列表重新登记。准点靠 `USE_EXACT_ALARM`（13+，安装即有；Google Play 只允许日历 / 闹钟类程序声明）与
+  `SCHEDULE_EXACT_ALARM`（12），拿不到时退回非精确闹钟。内核在会话连上、日历同步、保存设置、退出登录、回到前台（`MainActivity.onResume` → `CzlResume`）时重新登记，
+  登记成功后它自己的 30 秒轮询不再弹。用户在系统设置里「强行停止」后闹钟全部失效，下次打开才恢复
 - **OAuth**：授权页开在系统浏览器，回调仍走内核的回环端口；回环页 302 到 `czlmail://signin`（`auth.ReturnURL`）让浏览器把程序带回前台——后台进程自己无法启动界面
 - **返回键**：先交给界面 `window.__czlBack()`（`lib/native-back.ts`：关弹窗、详情回列表、收侧栏，登记方是 `useEdgeSwipe` 的返回手势与侧栏抽屉），界面不处理时 `moveTaskToBack` 退到后台，不结束进程
 - **文件**：选择文件复制进缓存目录再交给内核（Go 读不了 content://）；不支持选择文件夹（导入/导出笔记库、上传文件夹报 2270）。

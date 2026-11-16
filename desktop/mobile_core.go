@@ -117,6 +117,7 @@ func CzlHostReply(id C.int64_t, reply *C.char) {
 func CzlResume() {
 	if mobile.app != nil {
 		mobile.app.wakePush()
+		mobile.app.planRemindersSoon(true)
 	}
 }
 

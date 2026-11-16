@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,14 @@ import (
 // Android 壳的 Kotlin (android/) 处理一一对应, 改动各端一起改。平台各自的部分在 host_ios.go / host_android.go。
 
 const isMobile = true
+
+// 日程提醒交给系统定时 (reminders_schedule.go): 原生壳清掉上一批定时通知, 登记这一批。
+func init() {
+	reminderHost = func(ctx context.Context, list []scheduledReminder) error {
+		_, err := hostRequest(ctx, "scheduleReminders", map[string]any{"items": list})
+		return err
+	}
+}
 
 // hostOpenFiles 让原生壳弹文件选择器。原生壳把选中的文件复制进本程序沙箱后返回路径 ——
 // 选择器给的是安全作用域 URL, Go 这边直接读不了。

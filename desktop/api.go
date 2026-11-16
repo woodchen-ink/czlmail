@@ -102,6 +102,8 @@ func (a *App) SignOut() error {
 	a.mu.Lock()
 	a.cfg = config.Config{}
 	a.mu.Unlock()
+	// 系统里登记的日程提醒 (移动端) 跟着清掉: 退出后不该再替这个账号弹通知。
+	a.planRemindersSoon(true)
 	return config.Save(config.Config{})
 }
 

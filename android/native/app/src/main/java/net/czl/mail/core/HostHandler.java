@@ -33,7 +33,7 @@ import net.czl.mail.MainActivity;
  * 请求类型与 iOS 壳的 HostHandler.swift 一一对应, 另有 Android 专属的 saveDir / secret* / installPackage。
  * 每个请求都必须答复一次, 否则 Go 侧的调用会一直等。
  *
- * 凭据与保存目录在回调线程上直接答复 (内核启动恢复会话时就要读凭据, 不能等主线程);
+ * 凭据、保存目录与日程提醒在回调线程上直接答复 (内核启动恢复会话时就要读凭据, 不能等主线程);
  * 需要界面的请求切到主线程。
  */
 public final class HostHandler {
@@ -69,6 +69,9 @@ public final class HostHandler {
                 return;
             case "saveDir":
                 Core.reply(id, saveDir(ctx).getAbsolutePath(), null);
+                return;
+            case "scheduleReminders":
+                scheduleReminders(ctx, id, obj);
                 return;
             default:
                 JSONObject o = obj;
@@ -106,6 +109,20 @@ public final class HostHandler {
                 break;
             default:
                 Core.reply(id, null, "2266 unsupported host request: " + kind);
+        }
+    }
+
+    // ---- 日程提醒
+
+    /** 整表替换系统里登记的日程提醒。失败要如实答复: 内核据此退回自己轮询。 */
+    private static void scheduleReminders(Context ctx, long id, JSONObject obj) {
+        JSONArray items = obj.optJSONArray("items");
+        try {
+            Reminders.replace(ctx, items == null ? new JSONArray() : items);
+            Core.reply(id, null, null);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "schedule reminders", e);
+            Core.reply(id, null, "2272 schedule reminders: " + e.getMessage());
         }
     }
 

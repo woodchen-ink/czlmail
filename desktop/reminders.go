@@ -21,6 +21,7 @@ import (
 //   - 错过超过 10 分钟的提醒不补发(睡眠唤醒、应用刚启动时不会一口气弹出一堆旧提醒)
 //
 // 只在应用运行时生效(关窗后留在托盘即可)。已提醒记录只存内存。
+// 移动端程序会被系统挂起, 另把未来的提醒登记成系统的定时通知 (reminders_schedule.go), 登记成功后这里不再弹。
 
 const (
 	reminderTick = 30 * time.Second
@@ -40,14 +41,22 @@ type reminderState struct {
 
 func (a *App) runReminders(ctx context.Context) {
 	state := &reminderState{fired: map[string]time.Time{}}
+	a.planRemindersSoon(true)
+	planned := time.Now()
 	t := time.NewTicker(reminderTick)
 	defer t.Stop()
 	for {
-		a.checkReminders(state, time.Now())
+		if !a.reminders.hosted.Load() {
+			a.checkReminders(state, time.Now())
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			if time.Since(planned) >= reminderReplanEvery {
+				planned = time.Now()
+				a.planRemindersSoon(true)
+			}
 		}
 	}
 }
@@ -134,28 +143,32 @@ func (a *App) notifyEvent(o EventOccurrence) {
 		return
 	}
 
-	var when string
-	switch {
-	case o.AllDay:
-		when = o.Start.Format("1月2日") + " 全天"
-	case sameDay(o.Start, time.Now()):
-		when = "今天 " + o.Start.Local().Format("15:04")
-	default:
-		when = o.Start.Local().Format("1月2日 15:04")
-	}
-	body := when
-	if loc := strings.TrimSpace(o.Location); loc != "" {
-		body += " · " + loc
-	}
-	title := o.Title
-	if title == "" {
-		title = "(无标题日程)"
-	}
+	title, body := reminderText(o, time.Now())
 	_ = n.Notify(ctx, notify.Notification{
 		Title:    title,
 		Body:     body,
 		ActionID: "event:" + o.AccountID + "/" + o.EventID,
 	})
+}
+
+// reminderText 是提醒通知的标题与正文。shown 为通知弹出的时刻: 事件就在那一天时写「今天」。
+func reminderText(o EventOccurrence, shown time.Time) (title, body string) {
+	switch {
+	case o.AllDay:
+		body = o.Start.Format("1月2日") + " 全天"
+	case sameDay(o.Start, shown):
+		body = "今天 " + o.Start.Local().Format("15:04")
+	default:
+		body = o.Start.Local().Format("1月2日 15:04")
+	}
+	if loc := strings.TrimSpace(o.Location); loc != "" {
+		body += " · " + loc
+	}
+	title = o.Title
+	if title == "" {
+		title = "(无标题日程)"
+	}
+	return title, body
 }
 
 func sameDay(a, b time.Time) bool {

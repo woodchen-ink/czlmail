@@ -23,6 +23,9 @@ final class Native {
 
     static native void notificationActivated(byte[] actionId);
 
+    /** 程序回到前台。 */
+    static native void resume();
+
     // 以下由 Go 线程回调, 线程不固定。
 
     static void onEvent(byte[] name, byte[] args) {
