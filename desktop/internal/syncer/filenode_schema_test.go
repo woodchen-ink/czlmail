@@ -65,3 +65,23 @@ func TestRejectsFileSchema(t *testing.T) {
 		t.Fatal("non set error")
 	}
 }
+
+// 新写法的服务器拒收带参数或为空的媒体类型: 带参数的去掉参数, 取不出合法值的不发。
+func TestAdaptFileNodeWriteMediaType(t *testing.T) {
+	_, update := adaptFileNodeWrite(true, nil, map[string]map[string]any{
+		"a": {"name": "a.txt", "type": "Text/Plain; charset=utf-8"},
+		"b": {"name": "b.bin", "type": ""},
+		"c": {"name": "c", "type": "not a type"},
+	})
+	if got := update["a"]["mediaType"]; got != "text/plain" {
+		t.Errorf("parameters must be stripped, got %v", got)
+	}
+	for _, id := range []string{"b", "c"} {
+		if _, ok := update[id]["mediaType"]; ok {
+			t.Errorf("%s: invalid media type must be omitted", id)
+		}
+		if _, ok := update[id]["type"]; ok {
+			t.Errorf("%s: old property name must not be sent", id)
+		}
+	}
+}

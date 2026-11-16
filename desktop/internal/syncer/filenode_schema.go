@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 
 	"git.sr.ht/~rockorager/go-jmap"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
@@ -77,6 +78,15 @@ func adaptFileNodeWrite(typed bool, create map[string]any, update map[string]map
 		for k, v := range o {
 			if k == "type" {
 				k = "mediaType"
+				// 新写法的服务器只收不带参数的 type/subtype: 空串或 "text/plain; charset=utf-8" 整个写入都被拒。
+				// 取不出合法值就不发这一项, 由服务器保留原值或自行判断。
+				if str, ok := v.(string); ok {
+					essence := mediaTypeEssence(str)
+					if essence == "" {
+						continue
+					}
+					v = essence
+				}
 			}
 			out[k] = v
 		}
@@ -110,4 +120,31 @@ func adaptFileNodeWrite(typed bool, create map[string]any, update map[string]map
 		}
 	}
 	return c, u
+}
+
+// mediaTypeEssence 去掉参数并转小写, 返回 type/subtype; 不是合法的媒体类型时返回空串。
+// 规则与 Stalwart 的校验一致 (RFC 6838 restricted-name)。
+func mediaTypeEssence(v string) string {
+	essence, _, _ := strings.Cut(v, ";")
+	essence = strings.ToLower(strings.TrimSpace(essence))
+	top, sub, ok := strings.Cut(essence, "/")
+	if !ok || !restrictedName(top) || !restrictedName(sub) {
+		return ""
+	}
+	return essence
+}
+
+func restrictedName(s string) bool {
+	if s == "" || len(s) > 127 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		alnum := c >= 'a' && c <= 'z' || c >= '0' && c <= '9'
+		if alnum || (i > 0 && strings.IndexByte("!#$&-^_.+", c) >= 0) {
+			continue
+		}
+		return false
+	}
+	return true
 }

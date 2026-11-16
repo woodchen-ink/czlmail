@@ -196,7 +196,7 @@ func TestCallResponsesEmptyOutputFallsBack(t *testing.T) {
 	// 点名中间档时不退回, 空正文直接报错 —— 用户才看得出自己选的档位没生效。
 	efforts = nil
 	err := callResponses(context.Background(), srv.URL, "m", "k", "low", "i", "x", func(string) {})
-	if err == nil || !strings.Contains(err.Error(), "2209") {
+	if err == nil || !strings.Contains(err.Error(), "2309") {
 		t.Fatalf("err %v", err)
 	}
 	if !slices.Equal(efforts, []string{"low"}) {

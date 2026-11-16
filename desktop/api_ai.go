@@ -96,7 +96,7 @@ func (a *App) SaveAIConfig(cfg AIConfig, apiKey string) (AIConfig, error) {
 	}
 	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	if cfg.BaseURL != "" && !strings.HasPrefix(cfg.BaseURL, "http://") && !strings.HasPrefix(cfg.BaseURL, "https://") {
-		return cfg, fmt.Errorf("2200 base URL must start with http:// or https://")
+		return cfg, fmt.Errorf("2300 base URL must start with http:// or https://")
 	}
 	if err := st.SetBoolSettingNow(a.ctx, "aiEnabled", cfg.Enabled); err != nil {
 		return cfg, err
@@ -124,11 +124,11 @@ func (a *App) SaveAIConfig(cfg AIConfig, apiKey string) (AIConfig, error) {
 	case "":
 	case "-":
 		if err := keychain.Delete(config.KeyringService, aiKeyringKey); err != nil && !errors.Is(err, keychain.ErrNotFound) {
-			return cfg, fmt.Errorf("2201 delete api key: %w", err)
+			return cfg, fmt.Errorf("2301 delete api key: %w", err)
 		}
 	default:
 		if err := keychain.Set(config.KeyringService, aiKeyringKey, apiKey); err != nil {
-			return cfg, fmt.Errorf("2201 save api key to system keychain: %w", err)
+			return cfg, fmt.Errorf("2301 save api key to system keychain: %w", err)
 		}
 	}
 	if apiKey != "" {
@@ -166,7 +166,7 @@ type AIRequest struct {
 func (a *App) StartAI(req AIRequest) (string, error) {
 	cfg := a.GetAIConfig()
 	if !cfg.Enabled || cfg.BaseURL == "" || cfg.Model == "" || !cfg.HasKey {
-		return "", fmt.Errorf("2202 AI is not configured")
+		return "", fmt.Errorf("2302 AI is not configured")
 	}
 	lang := strings.TrimSpace(req.Language)
 	if lang == "" {
@@ -235,7 +235,7 @@ func (a *App) aiPrompt(req AIRequest, lang string) (string, string, error) {
 		// 带编号时基本不再错位, 个别编号坏了界面也只丢那几段。
 		var segs []string
 		if err := json.Unmarshal([]byte(req.Text), &segs); err != nil || len(segs) == 0 {
-			return "", "", fmt.Errorf("2208 invalid translation segments")
+			return "", "", fmt.Errorf("2308 invalid translation segments")
 		}
 		return aiSafety + "The data is a JSON object mapping numbered keys to text fragments, in order, from one email. " +
 				"Translate every fragment into " + lang + ". Reply with ONLY a JSON object with the same " + fmt.Sprint(len(segs)) +
@@ -304,7 +304,7 @@ func (a *App) aiPrompt(req AIRequest, lang string) (string, string, error) {
 			"User's intent (trusted):\n" + truncate(intent, 4000) +
 				"\n\nOriginal email:\n<data>\nFrom: " + formatSender(d.From) + "\nSubject: " + d.Subject + "\n\n" + truncate(body, aiMaxInput) + "\n</data>", nil
 	}
-	return "", "", fmt.Errorf("2203 unknown AI task %q", req.Kind)
+	return "", "", fmt.Errorf("2303 unknown AI task %q", req.Kind)
 }
 
 // numberedSegments 把片段写成 {"1":"…","2":"…"}。不用 map 编码: 那会按字符串排序成 1, 10, 11, 2 …
@@ -353,7 +353,7 @@ func (a *App) aiStream(ctx context.Context, kind, instructions, input string, on
 	cfg := a.GetAIConfig()
 	key, err := keychain.Get(config.KeyringService, aiKeyringKey)
 	if err != nil || key == "" {
-		return fmt.Errorf("2202 AI API key is not set")
+		return fmt.Errorf("2302 AI API key is not set")
 	}
 	return callResponses(ctx, cfg.BaseURL, cfg.Model, key, cfg.reasoningFor(kind), instructions, input, onDelta)
 }
@@ -438,13 +438,13 @@ func postResponses(ctx context.Context, baseURL, model, key, effort, instruction
 
 	resp, err := aiHTTP.Do(req)
 	if err != nil {
-		return fmt.Errorf("2204 AI request failed: %w", err), false
+		return fmt.Errorf("2304 AI request failed: %w", err), false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 2000))
 		badParam := effort != "" && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity)
-		return fmt.Errorf("2205 AI API returned HTTP %d: %s", resp.StatusCode, apiErrorMessage(msg)), badParam
+		return fmt.Errorf("2305 AI API returned HTTP %d: %s", resp.StatusCode, apiErrorMessage(msg)), badParam
 	}
 
 	if !strings.Contains(resp.Header.Get("Content-Type"), "event-stream") {
@@ -496,7 +496,7 @@ func postResponses(ctx context.Context, baseURL, model, key, effort, instruction
 			if msg == "" {
 				msg = apiErrorMessage(payload)
 			}
-			return fmt.Errorf("2206 AI error: %s", msg), false
+			return fmt.Errorf("2306 AI error: %s", msg), false
 		case "response.completed", "response.done":
 			if !wrote {
 				// 全部输出都进了思考通道, 正文是空的。换一档 reasoning 再来一次。
@@ -506,7 +506,7 @@ func postResponses(ctx context.Context, baseURL, model, key, effort, instruction
 		}
 	}
 	if err := sc.Err(); err != nil && ctx.Err() == nil {
-		return fmt.Errorf("2204 AI stream interrupted: %w", err), false
+		return fmt.Errorf("2304 AI stream interrupted: %w", err), false
 	}
 	if err := ctx.Err(); err != nil {
 		return err, false
@@ -518,7 +518,7 @@ func postResponses(ctx context.Context, baseURL, model, key, effort, instruction
 }
 
 // errNoOutput: 请求成功但模型一个字都没写进正文。
-var errNoOutput = errors.New("2209 AI returned no text (the model may have spent the reply on its reasoning)")
+var errNoOutput = errors.New("2309 AI returned no text (the model may have spent the reply on its reasoning)")
 
 // responseText 从非流式 Responses API 结果里取出文本。
 func responseText(data []byte) (string, error) {
@@ -533,7 +533,7 @@ func responseText(data []byte) (string, error) {
 		} `json:"output"`
 	}
 	if err := json.Unmarshal(data, &r); err != nil {
-		return "", fmt.Errorf("2207 unexpected AI response: %w", err)
+		return "", fmt.Errorf("2307 unexpected AI response: %w", err)
 	}
 	if r.OutputText != "" {
 		return r.OutputText, nil

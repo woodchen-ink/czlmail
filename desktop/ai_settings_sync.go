@@ -132,10 +132,12 @@ func (a *App) localAISettings(ctx context.Context, st *store.Store) (map[string]
 	delete(local, settingAIKeyUpdatedAt)
 	key, err := keychain.Get(config.KeyringService, aiKeyringKey)
 	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
-		return nil, fmt.Errorf("2201 read api key: %w", err)
+		return nil, fmt.Errorf("2301 read api key: %w", err)
 	}
 	// 清除过的 Key 也要以空值参与合并, 删除才能传到别的设备。
-	if key != "" || hasStamp {
+	// 用户清除时一定记了时间 (markAIKeyChanged); 时间为 0 而 Key 不在, 是钥匙串里的条目丢了
+	// (系统凭据被清理等), 不是清除: 当作本机没有, 让远端的 Key 写回来, 也不把空值推给别的设备。
+	if key != "" || (hasStamp && stamp.UpdatedAt > 0) {
 		local[aiSyncAPIKey] = store.TimedSetting{Value: key, UpdatedAt: stamp.UpdatedAt}
 	}
 	return local, nil
@@ -146,10 +148,10 @@ func (a *App) applyAISettings(ctx context.Context, st *store.Store, changes map[
 	if v, ok := changes[aiSyncAPIKey]; ok {
 		if v.Value == "" {
 			if err := keychain.Delete(config.KeyringService, aiKeyringKey); err != nil && !errors.Is(err, keychain.ErrNotFound) {
-				return fmt.Errorf("2201 delete api key: %w", err)
+				return fmt.Errorf("2301 delete api key: %w", err)
 			}
 		} else if err := keychain.Set(config.KeyringService, aiKeyringKey, v.Value); err != nil {
-			return fmt.Errorf("2201 save api key to system keychain: %w", err)
+			return fmt.Errorf("2301 save api key to system keychain: %w", err)
 		}
 	}
 	if err := st.WithTx(ctx, func(tx *sql.Tx) error {
