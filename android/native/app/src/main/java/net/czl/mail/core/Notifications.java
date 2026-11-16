@@ -48,8 +48,19 @@ public final class Notifications {
 
     /** 发一条通知。没有通知权限时系统静默丢弃, 不算错误。 */
     static void post(Context ctx, String title, String body, String actionId) {
+        post(ctx, nextId.incrementAndGet(), title, body, actionId);
+    }
+
+    /**
+     * 到点的日程提醒 (ReminderReceiver)。通知 id 取自提醒自己的标识: 这时进程可能刚被闹钟拉起来,
+     * 自增的 id 又从头数, 会把通知栏里还没看的那条顶掉。高位置 1, 不与自增 id 相撞。
+     */
+    static void postReminder(Context ctx, String reminderId, String title, String body, String actionId) {
+        post(ctx, 0x40000000 | (reminderId.hashCode() & 0x3fffffff), title, body, actionId);
+    }
+
+    private static void post(Context ctx, int id, String title, String body, String actionId) {
         ensureChannels(ctx);
-        int id = nextId.incrementAndGet();
         NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, CHANNEL_MAIL)
             .setSmallIcon(R.drawable.ic_stat_mail)
             .setContentTitle(title)

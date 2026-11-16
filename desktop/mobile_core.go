@@ -119,6 +119,7 @@ func CzlResume() {
 	if mobile.app != nil {
 		mobile.app.wakePush()
 		mobile.app.wakeNotes(true)
+		mobile.app.planRemindersSoon(true)
 	}
 }
 

@@ -46,6 +46,8 @@ type App struct {
 	cfg    config.Config
 
 	notifier notify.Notifier
+	// reminders 是移动端交给系统的定时日程提醒 (reminders_schedule.go)。
+	reminders reminderSchedule
 
 	// signInReason 非空表示服务器已明确拒绝保存的凭据, 同步已停, 等用户重新登录。
 	// 内容是带错误码的原因, 会话重新建立时清空。
@@ -308,6 +310,9 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.T
 			a.wakeNotes(true)
 		}
 		a.emit(EventPIMChanged, PIMChange{AccountID: accountID, Type: typeName})
+		if typeName == "" || typeName == "Calendar" || typeName == "CalendarEvent" {
+			a.planRemindersSoon(false)
+		}
 		// 模板与 AI/MCP 设置存在个人网盘里; 网盘有变化(含首次同步)时合并一次。
 		if (typeName == "" || typeName == "FileNode") && accountID == a.personalAccountID(st) {
 			a.syncDriveSoon()
