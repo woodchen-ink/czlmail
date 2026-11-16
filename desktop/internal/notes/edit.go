@@ -17,6 +17,7 @@ func (s *Service) Vaults() ([]Vault, error) {
 	}
 	out := []Vault{}
 	for _, v := range s.vaults {
+		v.Problems = s.problemCount(v.ID)
 		out = append(out, v)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -133,6 +134,10 @@ func (s *Service) Read(vault, id string) (Entry, error) {
 	if err == nil {
 		e.Deleted = s.effectivelyDeleted(e)
 		e.Path = s.folderPath(e)
+		// A newer remote version that could not be downloaded is reported on the note it belongs to.
+		if f, ok := s.remoteFail[e.RemoteID]; ok && e.RemoteID != "" && e.SyncError == "" {
+			e.SyncError, e.SyncDetail, e.SyncAttempts = f.kind, f.detail, f.attempts
+		}
 	}
 	return e, err
 }
@@ -237,8 +242,46 @@ func (s *Service) Update(in Edit) (Entry, error) {
 	if e.Status != "conflict" {
 		e.Status = "pending"
 	}
+	clearFailure(&e)
 	stamp(&e)
 	return e, s.commit(e, in.IdempotencyKey, hash)
+}
+
+// Stash keeps text typed on top of a revision that has since been replaced, typically because a
+// newer version arrived from another device mid-typing. The note becomes a conflict: local is what
+// was typed, remote is the version that arrived, and the usual comparison resolves it.
+// Only a note whose current content is the remote version can be represented that way.
+func (s *Service) Stash(in Edit) (Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, err := s.entry(in.VaultID, in.ID)
+	if err != nil {
+		return Entry{}, err
+	}
+	if e.Directory || e.Attachment || s.effectivelyDeleted(e) || len(in.Content) > MaxText || !utf8.ValidString(in.Content) {
+		return Entry{}, ErrInvalid
+	}
+	if e.Content == in.Content {
+		return e, nil
+	}
+	switch e.Status {
+	case "synced":
+		if e.Base == nil {
+			return Entry{}, ErrRevision
+		}
+		base := *e.Base
+		e.Remote = &base
+		e.RemoteContent = e.Content
+	case "conflict":
+		// The remote side is already kept; only the local side moves on.
+	default:
+		return Entry{}, ErrRevision
+	}
+	e.Content = in.Content
+	e.Status = "conflict"
+	clearFailure(&e)
+	stamp(&e)
+	return e, s.commit(e, "", "")
 }
 
 // Move changes only metadata; Markdown links and other notes' references remain untouched.
@@ -271,6 +314,7 @@ func (s *Service) Move(in Edit) (Entry, error) {
 	e.Name = in.Name
 	e.ParentID = in.ParentID
 	e.Status = "pending"
+	clearFailure(&e)
 	stamp(&e)
 	return e, s.commit(e, in.IdempotencyKey, digest(in))
 }
@@ -309,6 +353,7 @@ func (s *Service) Trash(vault, id string, revision int64, restore bool) (Entry, 
 		e.Deleted = true
 	}
 	e.Status = "pending"
+	clearFailure(&e)
 	stamp(&e)
 	return e, s.commit(e, "", "")
 }

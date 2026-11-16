@@ -22,7 +22,9 @@ const EventNotesConfigChanged = "notes:config-changed"
 type noteState struct {
 	sync.Mutex
 	services map[string]*notes.Service
-	wake     chan struct{}
+	// wake carries edits, urgent everything else; see wakeNotes.
+	wake   chan struct{}
+	urgent chan struct{}
 }
 
 // noteService lazily opens the durable profile store independently of network availability.
@@ -56,11 +58,16 @@ func (a *App) noteService() (*notes.Service, error) {
 	return service, nil
 }
 
-// wakeNotes coalesces edits and FileNode notifications instead of launching overlapping workers.
-func (a *App) wakeNotes() {
+// wakeNotes asks for a sync soon. Edits are urgent=false: they wait for typing to pause, so a
+// note being written is not uploaded every second. Everything else (remote changes, leaving a
+// note, manual actions) is urgent. Requests coalesce; overlapping workers are never launched.
+func (a *App) wakeNotes(urgent bool) {
 	a.notes.Lock()
-	wake := a.notes.wake
+	wake, now := a.notes.wake, a.notes.urgent
 	a.notes.Unlock()
+	if urgent {
+		wake = now
+	}
 	if wake != nil {
 		select {
 		case wake <- struct{}{}:
@@ -69,6 +76,14 @@ func (a *App) wakeNotes() {
 	}
 }
 
+const (
+	noteEditQuiet  = 3 * time.Second        // upload after typing has paused this long
+	noteEditLimit  = 15 * time.Second       // but never hold an edit back longer than this
+	noteSettle     = 750 * time.Millisecond // lets one burst of notifications coalesce
+	noteReconcile  = time.Minute            // periodic check for missed push notifications
+	noteRoundLimit = 10 * time.Minute       // one pass; each upload has its own shorter limit
+)
+
 // runNotes catches push changes and performs periodic reconciliation even while the pane is hidden.
 func (a *App) runNotes(ctx context.Context, s *syncer.Syncer) {
 	service, err := a.noteService()
@@ -76,48 +91,84 @@ func (a *App) runNotes(ctx context.Context, s *syncer.Syncer) {
 		return
 	}
 	service.SetRemote(noteRemote{s: s})
-	wake := make(chan struct{}, 1)
+	// A newer build may be able to send what an older one could not: retry recorded failures once.
+	if err = service.ResetFailuresOnce(version); err != nil {
+		a.log.Warn("notes failure reset", "err", err)
+	}
+	wake, urgent := make(chan struct{}, 1), make(chan struct{}, 1)
 	a.notes.Lock()
-	a.notes.wake = wake
+	a.notes.wake, a.notes.urgent = wake, urgent
 	a.notes.Unlock()
-	wake <- struct{}{}
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
 	defer func() {
 		a.notes.Lock()
 		if a.notes.wake == wake {
-			a.notes.wake = nil
+			a.notes.wake, a.notes.urgent = nil, nil
 		}
 		a.notes.Unlock()
 	}()
+	next := time.NewTimer(0)
+	defer next.Stop()
 	for {
+		delay := noteSettle
 		select {
 		case <-ctx.Done():
 			return
 		case <-wake:
-		case <-ticker.C:
+			delay = noteEditQuiet
+		case <-urgent:
+		case <-next.C:
+			delay = 0
 		}
-		// Let one burst of keystrokes/notifications settle. A quiet sync must not schedule itself.
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(750 * time.Millisecond):
-		}
-		if !service.GetConfig().Enabled {
-			continue
-		}
-		work, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		err = service.Sync(work)
-		cancel()
-		if err != nil && ctx.Err() == nil {
-			a.log.Warn("notes sync incomplete", "err", err)
-		}
-		if err == nil && service.HasPending() {
+		// Wait for the burst to end: more edits push the start back (up to a limit), anything
+		// urgent pulls it forward.
+		start := time.Now()
+		due := start.Add(delay)
+		for wait := time.Until(due); wait > 0; wait = time.Until(due) {
 			select {
-			case wake <- struct{}{}:
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			case <-wake:
+				if later := time.Now().Add(noteEditQuiet); later.After(due) {
+					due = later
+				}
+				if limit := start.Add(noteEditLimit); due.After(limit) {
+					due = limit
+				}
+			case <-urgent:
+				if sooner := time.Now().Add(noteSettle); sooner.Before(due) {
+					due = sooner
+				}
+			}
+		}
+		pause := noteReconcile
+		if service.GetConfig().Enabled {
+			work, cancel := context.WithTimeout(ctx, noteRoundLimit)
+			round, err := service.SyncRound(work, false)
+			cancel()
+			if ctx.Err() != nil {
+				return
+			}
+			if err != nil {
+				a.log.Warn("notes sync incomplete", "err", err)
+			}
+			// Continue at once only after real progress; a pass that moved nothing waits for the
+			// next change, a due retry or the periodic check, so a stuck entry cannot spin the loop.
+			if err == nil && round.More {
+				pause = 0
+			} else if round.RetryAt > 0 {
+				if until := time.Until(time.UnixMilli(round.RetryAt)); until < pause {
+					pause = max(until, time.Second)
+				}
+			}
+		}
+		if !next.Stop() {
+			select {
+			case <-next.C:
 			default:
 			}
 		}
+		next.Reset(pause)
 	}
 }
 
@@ -141,7 +192,7 @@ func (r noteRemote) Download(ctx context.Context, account, blob string, limit in
 		return nil, notes.ErrUnavailable
 	}
 	if int64(len(data)) > limit {
-		return nil, notes.ErrInvalid
+		return nil, notes.ErrTooLarge
 	}
 	return data, nil
 }
@@ -150,7 +201,7 @@ func (r noteRemote) Download(ctx context.Context, account, blob string, limit in
 func (r noteRemote) Upload(ctx context.Context, account string, data []byte) (string, error) {
 	limit := r.s.MaxUploadBytes()
 	if limit > 0 && int64(len(data)) > limit {
-		return "", notes.ErrInvalid
+		return "", notes.ErrTooLarge
 	}
 	blob, _, _, err := r.s.UploadBlob(ctx, account, bytes.NewReader(data))
 	if err != nil {
@@ -162,6 +213,11 @@ func (r noteRemote) Upload(ctx context.Context, account string, data []byte) (st
 // Inspect obtains a target object and state without enumerating the whole account for each upload.
 func (r noteRemote) Inspect(ctx context.Context, account, id string) (notes.Snapshot, error) {
 	return r.s.InspectFile(ctx, account, id)
+}
+
+// Changes lists what moved since a known state, so the periodic check need not list every file.
+func (r noteRemote) Changes(ctx context.Context, account, since string) (notes.Delta, error) {
+	return r.s.FileChanges(ctx, account, since)
 }
 
 // Set requires the observed FileNode state for both creates and updates.

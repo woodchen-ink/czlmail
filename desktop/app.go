@@ -305,7 +305,7 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.T
 	}
 	s.OnPIMChanged = func(accountID, typeName string) {
 		if typeName == "" || typeName == "FileNode" {
-			a.wakeNotes()
+			a.wakeNotes(true)
 		}
 		a.emit(EventPIMChanged, PIMChange{AccountID: accountID, Type: typeName})
 		// 模板与 AI/MCP 设置存在个人网盘里; 网盘有变化(含首次同步)时合并一次。

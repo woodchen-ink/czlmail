@@ -104,7 +104,7 @@ func (a *App) OpenJournal(vault, date, lang string) (notes.Entry, error) {
 	}
 	e, created, err := s.EnsureNote(vault, folders, name, notes.ExpandTemplate(template, at, name, lang))
 	if created {
-		a.wakeNotes()
+		a.wakeNotes(true)
 	}
 	return e, err
 }

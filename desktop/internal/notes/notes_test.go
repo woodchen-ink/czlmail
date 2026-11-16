@@ -52,11 +52,13 @@ func (r *fakeRemote) Set(_ context.Context, _, state, id string, n Node) (Node, 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if state != fmt.Sprint(r.state) {
-		return Node{}, ErrConflict
+		return Node{}, ErrStateChanged
 	}
 	if id == "" {
 		r.next++
 		id = fmt.Sprint("node", r.next)
+	} else if n.BlobID == "" {
+		n.BlobID = r.nodes[id].BlobID
 	}
 	n.ID = id
 	r.nodes[id] = n

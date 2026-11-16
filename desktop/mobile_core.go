@@ -111,12 +111,14 @@ func CzlHostReply(id C.int64_t, reply *C.char) {
 	deliverHostReply(int64(id), []byte(C.GoString(reply)))
 }
 
-// CzlResume 在程序回到前台时调用: 续期推送订阅 (服务端订阅会过期, 程序挂起期间计时器不走)。
+// CzlResume 在程序回到前台时调用: 续期推送订阅 (服务端订阅会过期, 程序挂起期间计时器不走),
+// 并让笔记立刻同步一轮 (挂起期间的定时对账与退避重试都没有走)。
 //
 //export CzlResume
 func CzlResume() {
 	if mobile.app != nil {
 		mobile.app.wakePush()
+		mobile.app.wakeNotes(true)
 	}
 }
 

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 import { errorMessage } from "@/lib/api";
+import { failureIsTemporary, failureLabel, noteFailure } from "@/lib/notes/sync-state";
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { noteApi, type NoteEntry } from "@/lib/notes/api";
 import { canDropNote } from "@/lib/notes/tree-drag";
@@ -114,7 +115,9 @@ function NoteTreeBranch({ vaultId, parentId, ancestors, tick, selectedId, disabl
           : <span className="size-4 shrink-0" aria-hidden />}
         <span className="truncate">{entry.directory ? entry.name : entry.name.replace(/\.md$/i, "")}</span>
         {entry.status === "conflict" && <span title={t("存在版本冲突")} className="text-destructive ml-auto">!</span>}
-        {entry.status === "pending" && <span title={t("本地已保存，等待同步")} className="ml-auto">•</span>}
+        {entry.status !== "conflict" && noteFailure(entry)
+          ? <span title={failureLabel(noteFailure(entry))} className={cn("ml-auto", failureIsTemporary(noteFailure(entry)) ? "text-muted-foreground" : "text-destructive")}>•</span>
+          : entry.status === "pending" && <span title={t("本地已保存，等待同步")} className="ml-auto opacity-60">•</span>}
       </button></ContextMenuTrigger>
       <ContextMenuContent><ContextMenuGroup>
         {entry.directory && <><ContextMenuItem onSelect={() => onAction(entry, "folder")}>{t("新建子文件夹")}</ContextMenuItem><ContextMenuItem onSelect={() => onAction(entry, "note")}>{t("在此目录新建笔记")}</ContextMenuItem><ContextMenuSeparator /></>}

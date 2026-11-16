@@ -37,7 +37,7 @@ func (s *Syncer) FileSnapshot(ctx context.Context, account string) (notes.Snapsh
 			return notes.Snapshot{}, notes.ErrUnavailable
 		}
 		if queryState != "" && q.QueryState != queryState {
-			return notes.Snapshot{}, notes.ErrConflict
+			return notes.Snapshot{}, notes.ErrStateChanged
 		}
 		queryState = q.QueryState
 		ids = append(ids, q.IDs...)
@@ -65,9 +65,70 @@ func (s *Syncer) FileSnapshot(ctx context.Context, account string) (notes.Snapsh
 		return notes.Snapshot{}, err
 	}
 	if after != state {
-		return notes.Snapshot{}, notes.ErrConflict
+		return notes.Snapshot{}, notes.ErrStateChanged
 	}
 	return result, nil
+}
+
+// FileChanges 取 since 之后变过的 FileNode: 每分钟的对账不必重新列出整个网盘。
+// state 被服务器回收 (cannotCalculateChanges) 等任何失败都原样返回, 调用方退回 FileSnapshot。
+func (s *Syncer) FileChanges(ctx context.Context, account, since string) (notes.Delta, error) {
+	out := notes.Delta{State: since}
+	touched := map[string]bool{}
+	for {
+		req := &jmap.Request{Context: ctx}
+		req.Invoke(jmapx.Changes(jmapx.FileNode, account, out.State, s.maxObjectsInGet))
+		resp, err := s.do(req)
+		if err != nil || len(resp.Responses) != 1 {
+			return notes.Delta{}, notes.ErrUnavailable
+		}
+		ch, ok := resp.Responses[0].Args.(*jmapx.ChangesResponse)
+		if !ok || ch.NewState == "" {
+			return notes.Delta{}, notes.ErrUnavailable
+		}
+		for _, id := range ch.Created {
+			touched[id] = true
+		}
+		for _, id := range ch.Updated {
+			touched[id] = true
+		}
+		for _, id := range ch.Destroyed {
+			delete(touched, id)
+			out.Destroyed = append(out.Destroyed, id)
+		}
+		out.State = ch.NewState
+		if !ch.HasMoreChanges {
+			break
+		}
+	}
+	if len(touched) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(touched))
+	for id := range touched {
+		ids = append(ids, id)
+	}
+	raw, err := s.getPIM(ctx, account, jmapx.FileNode, ids)
+	if err != nil {
+		return notes.Delta{}, notes.ErrUnavailable
+	}
+	seen := map[string]bool{}
+	for _, data := range raw {
+		n, err := FileNodeFrom(data)
+		if err != nil {
+			return notes.Delta{}, notes.ErrUnavailable
+		}
+		seen[n.ID] = true
+		out.Changed = append(out.Changed, notes.Node{ID: n.ID, ParentID: n.ParentID, Name: n.Name, Directory: n.IsDirectory, BlobID: n.BlobID, Type: n.ContentType, Size: n.Size, Created: n.Created * 1000, Modified: n.Modified * 1000})
+	}
+	// 变更里报了却取不到: 可能刚被删, 也可能是服务器少返回了。分不清就不猜, 让调用方退回全量快照,
+	// 否则一篇已同步的笔记会被当成「远端已删除」。
+	for _, id := range ids {
+		if !seen[id] {
+			return notes.Delta{}, notes.ErrUnavailable
+		}
+	}
+	return out, nil
 }
 
 // fileState fetches the account-level state even when there are no objects.
@@ -157,7 +218,8 @@ func (s *Syncer) SetFileConditional(ctx context.Context, account, state, id stri
 	if n.ParentID != "" {
 		obj["parentId"] = n.ParentID
 	}
-	if !n.Directory {
+	// 已有文件不带 blobId: 只改名 / 移动, 正文沿用服务器上那一份。
+	if !n.Directory && (id == "" || n.BlobID != "") {
 		obj["blobId"] = n.BlobID
 		obj["type"] = n.Type
 	}
@@ -184,12 +246,14 @@ func (s *Syncer) SetFileConditional(ctx context.Context, account, state, id stri
 		}
 	}
 	if err != nil {
-		if methodErrorType(err) == "stateMismatch" {
-			return notes.Node{}, notes.ErrConflict
+		// stateMismatch 是账号级的: 网盘里别的文件变了也会撞上, 不是这篇笔记的冲突。
+		kind := methodErrorType(err)
+		if kind == "stateMismatch" {
+			return notes.Node{}, notes.ErrStateChanged
 		}
 		var method *Error
 		if errors.As(err, &method) && method.Code == CodeMethod {
-			return notes.Node{}, notes.ErrForbidden
+			return notes.Node{}, fmt.Errorf("%w: %s", noteWriteError(kind), kind)
 		}
 		return notes.Node{}, notes.ErrUncertain
 	}
@@ -201,8 +265,13 @@ func (s *Syncer) SetFileConditional(ctx context.Context, account, state, id stri
 		return notes.Node{}, notes.ErrUncertain
 	}
 	if setErr := set.FirstError(); setErr != nil {
-		// 带上服务器给的原因 (类型与描述), 否则日志里只有一句 forbidden, 无从排查。
-		return notes.Node{}, fmt.Errorf("%w: %v", notes.ErrForbidden, setErr)
+		// 带上服务器给的原因 (类型与描述), 界面的「详情」与日志靠它排查。
+		kind := ""
+		var se *jmapx.SetError
+		if errors.As(setErr, &se) {
+			kind = se.Type
+		}
+		return notes.Node{}, fmt.Errorf("%w: %v", noteWriteError(kind), setErr)
 	}
 	if id == "" {
 		var created struct {
@@ -222,4 +291,27 @@ func (s *Syncer) SetFileConditional(ctx context.Context, account, state, id stri
 		n = latest.Nodes[0]
 	}
 	return n, nil
+}
+
+// noteWriteError 把服务器拒绝写入的类型归到笔记的错误码: 权限、配额、大小各自一类,
+// 其余 (invalidProperties 等) 是「服务器不接受这次写入」。
+func noteWriteError(kind string) error {
+	switch kind {
+	case "serverFail", "serverUnavailable", "rateLimit":
+		// 服务器一时的问题, 退避后自动重试。
+		return notes.ErrUnavailable
+	case "serverPartialFail":
+		// 可能写进去了一部分: 按结果不明处理, 下一轮核对。
+		return notes.ErrUncertain
+	case "alreadyExists":
+		// 同名文件在读与写之间出现了: 刷新视图后由拉取配对, 不是这条记录的错。
+		return notes.ErrStateChanged
+	case "forbidden", "accountReadOnly":
+		return notes.ErrForbidden
+	case "overQuota":
+		return notes.ErrQuota
+	case "tooLarge", "requestTooLarge":
+		return notes.ErrTooLarge
+	}
+	return notes.ErrRejected
 }

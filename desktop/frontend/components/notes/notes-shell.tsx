@@ -18,6 +18,7 @@ import { NoteSearchResults } from "@/components/notes/note-search-results";
 import { NoteTree } from "@/components/notes/note-tree";
 import { NoteAttachmentPane, type NoteAttachmentPreview } from "@/components/notes/note-attachment-pane";
 import { NoteDiffDialog } from "@/components/notes/note-diff-dialog";
+import { NoteProblems } from "@/components/notes/note-problems";
 import { api, errorMessage, onEvent } from "@/lib/api";
 import { onFileDrop } from "@/lib/file-drop";
 import { noteApi, noteEvents, fileBase64, localDay, takePendingNote, type NoteEntry, type NoteVault, type NoteDiff } from "@/lib/notes/api";
@@ -236,9 +237,16 @@ export function NotesShell({ active }: { active: boolean }) {
 
   useEffect(() => {
     if (!active || !vaultId) return;
-    const sync = () => { void noteApi.sync().catch(() => {}); };
+    // Coming back online or to the window only asks the background worker to look now; the
+    // manual sync (which also retries recorded failures) stays behind its button.
+    const sync = () => { void noteApi.nudge().catch(() => {}); };
     window.addEventListener("online", sync); window.addEventListener("focus", sync);
     return () => { window.removeEventListener("online", sync); window.removeEventListener("focus", sync); };
+  }, [active, vaultId]);
+
+  /** Leaving the module is a pause in typing: upload what is queued. */
+  useEffect(() => {
+    if (!active && vaultId) void noteApi.nudge().catch(() => {});
   }, [active, vaultId]);
 
   /** Dialog actions share the same version-checked backend as MCP. */
@@ -317,7 +325,7 @@ export function NotesShell({ active }: { active: boolean }) {
         {iconButton(t("新建笔记"), !vaultId || busy || trash, () => void createNote(""), <FilePlus2 />)}
         {iconButton(t("新建文件夹"), !vaultId || busy || trash, () => folderAt(""), <FolderPlus />)}
         {iconButton(t("重命名"), !selected || busy || trash, () => { setName(selected?.name ?? ""); setAction("rename"); }, <Pencil />)}
-        {iconButton(t("立即同步"), busy || syncing || !vaultId, () => void sync(), <RefreshCw className={syncing ? "animate-spin" : undefined} />)}
+        {iconButton(t("立即同步"), busy || syncing || !vaultId, () => void sync(true), <RefreshCw className={syncing ? "animate-spin" : undefined} />)}
       </div>
       <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("搜索笔记正文和标题")} aria-label={t("搜索笔记正文和标题")} />
     </div>
@@ -328,6 +336,11 @@ export function NotesShell({ active }: { active: boolean }) {
     </div>
     <div className="border-border flex items-center gap-2 border-t p-2">
       <Button variant={trash ? "secondary" : "ghost"} size="sm" onClick={() => setTrash((value) => !value)}>{trash ? <FolderOpen /> : <Trash2 />}{trash ? t("回到笔记区") : t("回收站")}</Button>
+      {/* 整个库连不上 (离线、未登录) 只在这里说一句, 不挂在正在看的那篇笔记上; 单条的问题进清单。 */}
+      {vault?.error
+        ? <span className="text-muted-foreground ml-auto min-w-0 truncate text-xs" title={errorMessage(vault.error)}>{errorMessage(vault.error)}</span>
+        : <NoteProblems vaultId={vaultId} count={vault?.problems ?? 0} tick={tick} syncing={syncing} onSync={() => void sync(true)}
+          onOpen={(problem) => void run(async () => { const entry = await noteApi.read(problem.vaultId, problem.id); setQuery(""); setTrash(!!entry.deleted); setMobileDoc(true); await open(entry); })} />}
     </div>
   </aside>;
 
@@ -348,9 +361,9 @@ export function NotesShell({ active }: { active: boolean }) {
           : doc.note && <NoteHeader note={doc.note} dirty={doc.dirty} failed={!!doc.error} mode={mode} busy={busy} focusTitle={created === doc.note.id} onMode={setMode}
             onRename={(value) => { const note = doc.getNote(); if (note) void rename(note, value); }}
             onAttach={() => picker.current?.click()} onDiff={compare}
+            onRetry={() => { const note = doc.getNote(); if (note) void noteApi.retry(note.vaultId, note.id).catch((err) => toast.error(errorMessage(err))); }}
             onTrash={() => { setSelected(doc.note); setAction("trash"); }}
             onBack={compact ? () => setMobileDoc(false) : undefined} />}
-        {vault?.error && <p className="text-destructive px-4 py-2 text-sm">{t("同步未完成，本地内容仍保留")}: {vault.error}</p>}
         {doc.error && <div className="text-destructive flex items-center gap-3 px-4 py-2 text-sm"><span>{doc.error}</span><Button variant="outline" size="sm" onClick={() => void run(doc.recover)}>{t("将当前编辑另存为恢复笔记")}</Button></div>}
         {attachmentPreview && <div className="min-h-0 flex-1"><NoteAttachmentPane item={attachmentPreview} onExternal={() => void run(async () => { if (attachmentPreview.src) BrowserOpenURL(attachmentPreview.src); else await noteApi.openLink(attachmentPreview.vaultId, attachmentPreview.noteId, attachmentPreview.path); })} /></div>}
         <div hidden={!!attachmentPreview} onClickCapture={(event) => {

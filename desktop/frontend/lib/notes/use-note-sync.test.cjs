@@ -18,6 +18,7 @@ function workspace() {
   const slots = [];
   let cursor = 0;
   const errors = [];
+  const notices = [];
   let network = deferred();
   const calls = { flush: 0, sync: 0, open: 0, created: [], moved: [] };
   let flushError = null;
@@ -45,6 +46,7 @@ function workspace() {
   const noteApi = {
     bind: async () => ({ id: "vault" }),
     sync: async () => { calls.sync++; return network.promise; },
+    nudge: async () => {}, retry: async () => {},
     create: async (value, directory) => { calls.created.push(value); return { ...value, id: "created", directory }; },
     read: async (vaultId, id) => ({ vaultId, id, name: "example.md", parentId: "", revision: 9 }),
     move: async (value) => { calls.moved.push(value); return value; },
@@ -54,12 +56,12 @@ function workspace() {
   const modules = {
     react,
     "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: "Fragment" },
-    sonner: { toast: { error: (value) => errors.push(value) } },
+    sonner: { toast: { error: (value) => errors.push(value), success: (value) => notices.push(value), warning: (value) => notices.push(value) } },
     "react-resizable-panels": { usePanelRef: () => ({ current: null }) },
     "@/lib/api": { api: { listAccounts: async () => [{ id: "account", isPersonal: true }] }, errorMessage: (err) => err.message },
     "@/lib/notes/api": { noteApi, noteEvents: {} },
     "@/lib/notes/use-note-document": { useNoteDocument: () => doc },
-    "@/lib/i18n": { t: (value) => value },
+    "@/lib/i18n": { t: (value, ...values) => values.reduce((text, item, index) => text.replace(`{${index}}`, item), value) },
     "@/components/locale-provider": { useI18n: () => {} },
     // Exercise the wide (desktop) layout; the compact split only changes which pane is visible.
     "@/lib/use-compact": { useCompact: () => false },
@@ -83,7 +85,7 @@ function workspace() {
   modules["@/lib/notes/use-note-sync"] = load("use-note-sync.ts");
   const { NotesShell } = load("../../components/notes/notes-shell.tsx");
   return {
-    calls, errors, get network() { return network; },
+    calls, errors, notices, get network() { return network; },
     nextSync: () => { network = deferred(); },
     failFlush: (err) => { flushError = err; },
     render: () => { cursor = 0; return NotesShell({ active: true }); },
@@ -203,6 +205,41 @@ test("manual synchronization flushes first but does not lock note selection", as
   assert.equal(app.calls.open, 1);
   app.network.resolve();
   await settle();
+});
+
+test("the sync button reports what is left; background syncs stay quiet", async () => {
+  const app = workspace();
+  await start(app);
+  app.network.resolve(0);
+  await settle();
+  assert.deepEqual(app.notices, [], "the first sync after binding is not announced");
+  app.nextSync();
+  syncButton(app).props.onClick();
+  await settle();
+  app.network.resolve(2);
+  await settle();
+  assert.deepEqual(app.notices, ["2 项未能同步"]);
+  app.nextSync();
+  syncButton(app).props.onClick();
+  await settle();
+  app.network.resolve(0);
+  await settle();
+  assert.deepEqual(app.notices, ["2 项未能同步", "已同步"]);
+  assert.deepEqual(app.errors, []);
+});
+
+test("an account-wide failure is said once in the sidebar, not above the open note", async () => {
+  const app = workspace(); await start(app); app.network.resolve(0); await settle();
+  await openNote(app);
+  const texts = [];
+  (function walk(node) {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (typeof node.props?.children === "string") texts.push(node.props.children);
+    walk(node.props?.children);
+  })(app.render());
+  assert.equal(texts.some((text) => text.includes("同步未完成")), false);
+  assert.ok(find(app.render(), (node) => node.type === "NoteProblems"));
 });
 
 test("failed synchronization reports an error and leaves local notes usable", async () => {

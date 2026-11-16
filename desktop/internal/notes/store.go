@@ -27,6 +27,9 @@ type Service struct {
 	entries map[string]Entry
 	remote  Remote
 	changed func()
+	// views and remoteFail belong to the sync worker (guarded by syncMu / mu respectively).
+	views      map[string]*remoteView
+	remoteFail map[string]remoteFailure
 }
 
 // Open restores durable local overlays without connecting to a remote account.
@@ -211,6 +214,10 @@ func clone(e Entry) Entry {
 	if e.Remote != nil {
 		n := *e.Remote
 		e.Remote = &n
+	}
+	if e.Intent != nil {
+		n := *e.Intent
+		e.Intent = &n
 	}
 	return e
 }

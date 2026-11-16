@@ -7,7 +7,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/components/locale-provider";
+import { NoteSyncFailure } from "@/components/notes/note-sync-failure";
 import type { NoteEntry } from "@/lib/notes/api";
+import { noteFailure } from "@/lib/notes/sync-state";
 import { t } from "@/lib/i18n";
 import { useCompact } from "@/lib/use-compact";
 
@@ -17,12 +19,14 @@ export type NoteMode = "live" | "source" | "read";
  * Note title row: folder path, editable file name, sync state and the per-note actions.
  * 窄屏下一行放不下全部操作: 只留返回、标题、同步状态与「更多」, 模式切换和添加附件收进「更多」, 不显示路径。
  */
-export function NoteHeader({ note, dirty, failed, mode, busy, focusTitle, onMode, onRename, onAttach, onDiff, onTrash, onBack }: {
+export function NoteHeader({ note, dirty, failed, mode, busy, focusTitle, onMode, onRename, onAttach, onDiff, onRetry, onTrash, onBack }: {
   note: NoteEntry; dirty: boolean; failed: boolean; mode: NoteMode; busy: boolean;
   /** Focus and select the title once, right after the note was created. */
   focusTitle: boolean;
   onMode: (mode: NoteMode) => void; onRename: (name: string) => void;
   onAttach: () => void; onDiff: () => void; onTrash: () => void;
+  /** Put this note back in the upload queue after a failed synchronization. */
+  onRetry: () => void;
   /** 窄屏下回到笔记目录。 */
   onBack?: () => void;
 }) {
@@ -58,7 +62,7 @@ export function NoteHeader({ note, dirty, failed, mode, busy, focusTitle, onMode
         }}
         className="hover:bg-secondary focus-visible:bg-secondary min-w-0 flex-1 truncate rounded-md bg-transparent px-1.5 py-1 font-medium outline-none disabled:hover:bg-transparent" />
     </div>
-    <NoteSyncState note={note} dirty={dirty} failed={failed} onDiff={onDiff} iconOnly={compact} />
+    <NoteSyncState note={note} dirty={dirty} failed={failed} onDiff={onDiff} onRetry={onRetry} iconOnly={compact} />
     {!compact && <>
       <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Button variant="ghost" size="icon-sm" aria-label={t("添加附件")} disabled={attachDisabled} onClick={onAttach}><Paperclip /></Button></span></TooltipTrigger><TooltipContent>{t("添加附件")}</TooltipContent></Tooltip>
       <ToggleGroup type="single" size="sm" value={mode} onValueChange={(value) => { if (value) onMode(value as NoteMode); }}>
@@ -85,10 +89,13 @@ export function NoteHeader({ note, dirty, failed, mode, busy, focusTitle, onMode
 
 /** One short word for the sync state; a conflict becomes the button that opens the comparison. */
 /** iconOnly: 窄屏只留图标, 文字放进悬浮说明 (冲突仍是按钮, 它要能点开对比)。 */
-function NoteSyncState({ note, dirty, failed, onDiff, iconOnly = false }: { note: NoteEntry; dirty: boolean; failed: boolean; onDiff: () => void; iconOnly?: boolean }) {
+function NoteSyncState({ note, dirty, failed, onDiff, onRetry, iconOnly = false }: { note: NoteEntry; dirty: boolean; failed: boolean; onDiff: () => void; onRetry: () => void; iconOnly?: boolean }) {
   if (note.status === "conflict") return <Button variant="ghost" size={iconOnly ? "icon-sm" : "sm"} className="text-destructive" onClick={onDiff} aria-label={t("存在版本冲突")}><AlertTriangle />{!iconOnly && t("存在版本冲突")}</Button>;
   if (note.status === "remote_deleted") return <span className="text-muted-foreground text-xs" title={t("远端文件已删除，本地副本仍保留")}>{iconOnly ? <AlertTriangle className="size-3.5" /> : t("远端文件已删除，本地副本仍保留")}</span>;
   if (failed) return <span className="text-destructive inline-flex shrink-0 items-center gap-1 text-xs" title={t("保存失败")}><AlertTriangle className="size-3.5" />{!iconOnly && t("保存失败")}</span>;
+  // 同步没成功: 只说这一篇的事, 点开是原因与重试。本机还有没保存的输入时先显示「未保存」。
+  const failure = noteFailure(note);
+  if (failure && !dirty) return <NoteSyncFailure kind={failure} detail={note.syncDetail} iconOnly={iconOnly} onRetry={onRetry} />;
   const synced = note.status === "synced" && !dirty;
   const label = dirty ? t("未保存") : synced ? t("已同步") : t("待同步");
   const description = dirty ? t("更改尚未保存到本机") : synced ? t("已与服务器一致") : t("本地已保存，等待同步");

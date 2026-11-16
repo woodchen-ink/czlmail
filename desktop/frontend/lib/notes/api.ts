@@ -7,6 +7,7 @@ export type NoteEntry = notes.Entry;
 export type NoteVault = notes.Vault;
 export type NoteConfig = notes.Config;
 export type NoteDiff = notes.Diff;
+export type NoteProblem = notes.Problem;
 export type JournalConfig = main.JournalConfig;
 export type NoteDayItem = main.NoteDayItem;
 
@@ -20,11 +21,18 @@ export const noteApi = {
   read: App.ReadNote,
   create: (value: Partial<notes.Edit>, directory = false) => App.CreateNote(notes.Edit.createFrom(value), directory),
   update: (value: Partial<notes.Edit>) => App.UpdateNote(notes.Edit.createFrom(value)),
+  /** Keep input typed on a revision that was replaced meanwhile; the note becomes a conflict. */
+  stash: (value: Partial<notes.Edit>) => App.StashNote(notes.Edit.createFrom(value)),
   move: (value: Partial<notes.Edit>) => App.MoveNote(notes.Edit.createFrom(value)),
   trash: App.TrashNote,
   diff: App.CompareNote,
   resolve: App.ResolveNote,
+  /** Manual sync: retries everything, resolves with the number of entries still needing attention. */
   sync: App.SyncNotes,
+  /** Upload queued edits now instead of waiting for typing to pause. */
+  nudge: App.NudgeNotes,
+  problems: App.ListNoteProblems,
+  retry: App.RetryNote,
   attach: App.AddNoteAttachment,
   attachPaths: App.AttachNotePaths,
   openLink: App.OpenNoteLink,

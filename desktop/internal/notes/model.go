@@ -22,6 +22,14 @@ var (
 	ErrStorage     = errors.New("2206 note_storage_failed")
 	ErrForbidden   = errors.New("2207 note_write_forbidden")
 	ErrUncertain   = errors.New("2208 note_remote_result_uncertain")
+	// ErrRejected: the server refused this particular write (invalid properties and the like).
+	// ErrForbidden is kept for missing permission only.
+	ErrRejected = errors.New("2209 note_rejected_by_server")
+	ErrQuota    = errors.New("2210 note_over_quota")
+	ErrTooLarge = errors.New("2211 note_too_large")
+	// ErrStateChanged: the account-level FileNode state moved between read and write because some
+	// other file changed. It is retried inside the round and never shown as a note conflict.
+	ErrStateChanged = errors.New("note_state_changed")
 )
 
 // Config is device-local; enabling notes never enables the MCP server.
@@ -39,6 +47,8 @@ type Vault struct {
 	Name      string `json:"name"`
 	Error     string `json:"error"`
 	SyncedAt  int64  `json:"syncedAt"`
+	// Problems counts entries that need the user's attention; filled on returned copies only.
+	Problems int `json:"problems"`
 }
 
 // Entry is the durable local overlay. Base tracks remote metadata at the last reconciliation.
@@ -67,6 +77,15 @@ type Entry struct {
 	OriginalParent string `json:"originalParent,omitempty"`
 	Uncertain      bool   `json:"uncertain"`
 	Intent         *Node  `json:"intent,omitempty"`
+	// IntentHash is the digest of the text sent with Intent, so a write whose response was lost
+	// can be recognised by content; the server replaces uploaded blob IDs.
+	IntentHash string `json:"intentHash,omitempty"`
+	// SyncError is the failure kind of the last attempt on this entry ("" when none); see failure.go.
+	// SyncDetail keeps the server's own words for the details view only.
+	SyncError    string `json:"syncError,omitempty"`
+	SyncDetail   string `json:"syncDetail,omitempty"`
+	SyncAttempts int    `json:"syncAttempts,omitempty"`
+	SyncRetryAt  int64  `json:"syncRetryAt,omitempty"`
 	// Generated marks a note created from a template (today's journal). Together with Revision == 1
 	// it means the user never touched it, so a same-named note created elsewhere may replace it.
 	Generated bool `json:"generated,omitempty"`
@@ -96,6 +115,7 @@ type Snapshot struct {
 }
 
 // Remote must provide conditional mutations. Unconditional writes are not a fallback.
+// Set with an empty Node.BlobID on an existing file changes name and place only and keeps its content.
 type Remote interface {
 	Snapshot(context.Context, string) (Snapshot, error)
 	Download(context.Context, string, string, int64) ([]byte, error)

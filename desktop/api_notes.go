@@ -30,7 +30,7 @@ func (a *App) SetNoteConfig(c notes.Config) error {
 		return err
 	}
 	a.emit(EventNotesConfigChanged, c)
-	a.wakeNotes()
+	a.wakeNotes(true)
 	a.stopMCP()
 	if a.settingOn(store.SettingMCPEnabled, false) {
 		return a.startMCP()
@@ -69,7 +69,7 @@ func (a *App) BindNoteVault(account, root string) (notes.Vault, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, time.Minute)
 	defer cancel()
 	v, err := s.Bind(ctx, account, root)
-	a.wakeNotes()
+	a.wakeNotes(true)
 	return v, err
 }
 
@@ -99,7 +99,8 @@ func (a *App) CreateNote(in notes.Edit, directory bool) (notes.Entry, error) {
 	}
 	e, err := s.Create(in, directory)
 	if err == nil {
-		a.wakeNotes()
+		// A new note is usually renamed right away; waiting like an edit makes that one upload.
+		a.wakeNotes(false)
 	}
 	return e, err
 }
@@ -112,9 +113,43 @@ func (a *App) UpdateNote(in notes.Edit) (notes.Entry, error) {
 	}
 	e, err := s.Update(in)
 	if err == nil {
-		a.wakeNotes()
+		a.wakeNotes(false)
 	}
 	return e, err
+}
+
+// StashNote keeps input typed on a revision that was replaced meanwhile; the note becomes a conflict.
+func (a *App) StashNote(in notes.Edit) (notes.Entry, error) {
+	s, err := a.noteService()
+	if err != nil {
+		return notes.Entry{}, err
+	}
+	return s.Stash(in)
+}
+
+// NudgeNotes uploads queued edits now instead of waiting for typing to pause; the interface calls
+// it when the user leaves a note.
+func (a *App) NudgeNotes() { a.wakeNotes(true) }
+
+// ListNoteProblems lists the entries of a library that did not synchronize.
+func (a *App) ListNoteProblems(vault string) ([]notes.Problem, error) {
+	s, err := a.noteService()
+	if err != nil {
+		return nil, err
+	}
+	return s.Problems(vault)
+}
+
+// RetryNote puts one failed entry back in the queue.
+func (a *App) RetryNote(vault, id string) error {
+	s, err := a.noteService()
+	if err != nil {
+		return err
+	}
+	if err = s.Retry(vault, id); err == nil {
+		a.wakeNotes(true)
+	}
+	return err
 }
 
 // MoveNote shares validation and reference-safety rules with MCP.
@@ -125,7 +160,7 @@ func (a *App) MoveNote(in notes.Edit) (notes.Entry, error) {
 	}
 	e, err := s.Move(in)
 	if err == nil {
-		a.wakeNotes()
+		a.wakeNotes(true)
 	}
 	return e, err
 }
@@ -138,7 +173,7 @@ func (a *App) TrashNote(vault, id string, revision int64, restore bool) (notes.E
 	}
 	e, err := s.Trash(vault, id, revision, restore)
 	if err == nil {
-		a.wakeNotes()
+		a.wakeNotes(true)
 	}
 	return e, err
 }
@@ -164,20 +199,33 @@ func (a *App) ResolveNote(vault, id string, revision int64, remoteVersion, strat
 	defer cancel()
 	e, err := s.Resolve(ctx, vault, id, revision, remoteVersion, strategy, content)
 	if err == nil {
-		a.wakeNotes()
+		a.wakeNotes(true)
 	}
 	return e, err
 }
 
-// SyncNotes is a manual retry in addition to the push/periodic worker.
-func (a *App) SyncNotes() error {
+// SyncNotes is the manual sync button: it waits for a pass already running, retries everything
+// that failed, runs passes until nothing more moves, and returns how many entries still need
+// attention. An account-wide failure (offline, signed out) is returned as the error.
+func (a *App) SyncNotes() (int, error) {
 	s, err := a.noteService()
 	if err != nil {
-		return err
+		return 0, err
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(a.ctx, noteRoundLimit)
 	defer cancel()
-	return s.Sync(ctx)
+	if err = s.SyncNow(ctx); err != nil {
+		return 0, err
+	}
+	vaults, err := s.Vaults()
+	if err != nil {
+		return 0, err
+	}
+	problems := 0
+	for _, v := range vaults {
+		problems += v.Problems
+	}
+	return problems, nil
 }
 
 // AddNoteAttachment persists clipboard bytes before returning a Markdown fragment.
@@ -195,7 +243,7 @@ func (a *App) AddNoteAttachment(vault, id string, revision int64, name, encoded 
 	}
 	out, err := s.AddAttachment(vault, id, revision, name, data)
 	if err == nil {
-		a.wakeNotes()
+		a.wakeNotes(true)
 	}
 	return out, err
 }
@@ -231,7 +279,7 @@ func (a *App) AttachNotePaths(vault, id string, revision int64, paths []string) 
 		}
 		out = append(out, item)
 	}
-	a.wakeNotes()
+	a.wakeNotes(true)
 	return out, nil
 }
 
@@ -242,6 +290,6 @@ func (a *App) ImportNoteFiles(vault string, files []notes.ImportedFile) (notes.I
 		return notes.ImportResult{}, err
 	}
 	result, err := s.Import(vault, files)
-	a.wakeNotes()
+	a.wakeNotes(true)
 	return result, err
 }

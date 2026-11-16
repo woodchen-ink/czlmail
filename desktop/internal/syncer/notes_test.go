@@ -65,3 +65,22 @@ func TestFileConditionProbe(t *testing.T) {
 		})
 	}
 }
+
+// TestNoteWriteError 服务器拒绝写入时按类型归类: 只有权限类才是「无权写入」。
+func TestNoteWriteError(t *testing.T) {
+	for kind, want := range map[string]error{
+		"invalidProperties": notes.ErrRejected,
+		"":                  notes.ErrRejected,
+		"forbidden":         notes.ErrForbidden,
+		"overQuota":         notes.ErrQuota,
+		"tooLarge":          notes.ErrTooLarge,
+		"serverFail":        notes.ErrUnavailable,
+		"rateLimit":         notes.ErrUnavailable,
+		"serverPartialFail": notes.ErrUncertain,
+		"alreadyExists":     notes.ErrStateChanged,
+	} {
+		if got := noteWriteError(kind); got != want {
+			t.Errorf("%q: got %v, want %v", kind, got, want)
+		}
+	}
+}
