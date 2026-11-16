@@ -19,6 +19,8 @@ const (
 	// EventMailChanged 某账号的邮件有变动, 负载为 accountID。
 	// 前端据此重新拉取当前列表, 而不是全量刷新界面。
 	EventMailChanged = "mail:changed"
+	// EventSyncStatus 连上后那一轮全账号同步的进度变了, 负载为 MailSyncStatus。
+	EventSyncStatus = "mail:sync-status"
 	// EventNewMail 到达新邮件, 负载为摘要列表。
 	EventNewMail = "mail:new"
 	// EventUnread 各账号收件箱未读总数变了(不含静音账号), 负载为总数。

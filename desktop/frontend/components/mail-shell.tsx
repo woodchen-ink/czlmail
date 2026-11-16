@@ -40,6 +40,7 @@ import { EmailContextMenu, type EmailMenuActions } from "@/components/email-cont
 import { EmailList } from "@/components/email-list";
 import { EmailView } from "@/components/email-view";
 import { MailSidebar, UNIFIED_UNREAD } from "@/components/mail-sidebar";
+import { MailSyncState } from "@/components/mail-sync-state";
 import { mailboxLabel } from "@/components/mailbox-tree";
 import { MobileNavButton, PaneLayout, type MobilePane } from "@/components/pane-layout";
 import { useCompact } from "@/lib/use-compact";
@@ -55,6 +56,7 @@ import {
   type Account,
   type EmailDetail,
   type EmailSummary,
+  type MailSyncStatus,
   type Mailbox,
 } from "@/lib/api";
 import { displayAddressList, fullDate } from "@/lib/format";
@@ -109,6 +111,9 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   }, []);
   const [scrolledAway, setScrolledAway] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  // 连上后那一轮全账号同步的进度; 首次登录时据此把空列表显示成「正在同步」。
+  const [syncStatus, setSyncStatus] = useState<MailSyncStatus | null>(null);
+  const [retryingSync, setRetryingSync] = useState(false);
   const [draft, setDraftState] = useState<ComposeDraft | null>(null);
   // 每次打开写信面板都换一个 key, 让面板重新挂载而不是沿用上一封的状态。
   const [draftKey, setDraftKey] = useState(0);
@@ -436,12 +441,22 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   /* ---------- 后台同步事件 ---------- */
 
   useEffect(() => {
+    const loadSyncStatus = () =>
+      api
+        .getMailSyncStatus()
+        .then(setSyncStatus)
+        .catch(() => {});
+    loadSyncStatus();
     const offConnected = onEvent(Events.connected, (name: string) => {
       setUsername(name);
       loadAccounts();
+      loadSyncStatus();
     });
+    const offSyncStatus = onEvent(Events.syncStatus, (s: MailSyncStatus) => setSyncStatus(s));
 
     const offChanged = onEvent(Events.mailChanged, (changed: string) => {
+      // 手动同步、重试补上的账号不经过那一轮的进度事件, 这里顺带更新。
+      loadSyncStatus();
       // 登录后第一轮同步到达时可能还没有选中任何文件夹。
       if (!unified && !mailboxId) {
         loadAccounts();
@@ -466,6 +481,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
     return () => {
       offConnected();
+      offSyncStatus();
       offChanged();
       offBusOpen();
       offCompose();
@@ -771,6 +787,32 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       toast.error(errorMessage(err));
     } finally {
       setSyncing(false);
+    }
+  }
+
+  // 当前列表为空是不是因为首次同步还没做完: 还没有任何文件夹可选, 或在看的账号还没同步过。
+  const pendingAccounts = syncStatus?.pending ?? [];
+  const viewPending = unified
+    ? pendingAccounts.length > 0
+    : mailboxId
+      ? pendingAccounts.includes(accountId)
+      : pendingAccounts.length > 0;
+  const firstSyncRunning = viewPending && (!!syncStatus?.running || retryingSync);
+
+  async function retryFirstSync() {
+    if (retryingSync) return;
+    setRetryingSync(true);
+    try {
+      // 逐个来: 第一个就失败时 (多半是网络) 不必把剩下的也各等一遍超时。
+      for (const acc of pendingAccounts) await api.syncNow(acc);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setRetryingSync(false);
+      api
+        .getMailSyncStatus()
+        .then(setSyncStatus)
+        .catch(() => {});
     }
   }
 
@@ -1081,6 +1123,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                   setMailboxId(box);
                   setMobileView("list");
                 }}
+                syncing={firstSyncRunning}
                 unified={unified}
                 onSelectUnified={(v) => {
                   setUnified(v);
@@ -1154,11 +1197,11 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                   size="icon"
                   className="size-8 shrink-0"
                   onClick={sync}
-                  disabled={syncing}
+                  disabled={syncing || firstSyncRunning}
                   aria-label={t("立即同步")}
                   title={t("立即同步")}
                 >
-                  {syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                  {syncing || firstSyncRunning ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 </Button>
               )}
             </div>
@@ -1245,6 +1288,11 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 selectedKey={selectedKey}
                 highlightSelected={!compact}
                 loading={loading}
+                emptyState={
+                  syncStatus && viewPending && !searching && (firstSyncRunning || syncStatus.error) ? (
+                    <MailSyncState status={syncStatus} retrying={retryingSync} onRetry={retryFirstSync} />
+                  ) : undefined
+                }
                 hasMore={hasMore && !searching}
                 onSelect={selectEmail}
                 onLoadMore={() => loadPage(emails.length, loadToken.current)}

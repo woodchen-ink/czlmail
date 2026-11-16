@@ -19,6 +19,7 @@ import {
   mailboxLabel,
   type FolderMenuAction,
 } from "@/components/mailbox-tree";
+import { SidebarSkeleton } from "@/components/mail-sync-state";
 import { UnreadBadge } from "@/components/unread-badge";
 import { cn } from "@/lib/utils";
 import { Events, api, errorMessage, onEvent, type Account, type Mailbox, type PullStatus } from "@/lib/api";
@@ -36,6 +37,8 @@ interface Props {
   onMailboxesChanged: (accountId: string) => void;
   /** 右键菜单里涉及邮件列表的操作(标记已读、导入、清空、刷新), 由外壳处理。 */
   onFolderAction: (accountId: string, action: "markRead" | "import" | "empty" | "refresh", mailbox: Mailbox) => void;
+  /** 首次同步还没把文件夹取回来: 一个文件夹都没有时显示占位而不是空白。 */
+  syncing?: boolean;
 }
 
 const COLLAPSE_KEY = "czlmail.sidebar.collapsed";
@@ -62,6 +65,7 @@ export function MailSidebar({
   onSelectUnified,
   onMailboxesChanged,
   onFolderAction,
+  syncing,
 }: Props) {
   useI18n();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -175,6 +179,8 @@ export function MailSidebar({
       badge: true,
     });
   }
+
+  if (syncing && allBoxes.length === 0) return <SidebarSkeleton />;
 
   return (
     <div className="flex flex-col gap-3">

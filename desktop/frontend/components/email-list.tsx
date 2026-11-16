@@ -58,6 +58,8 @@ interface Props {
    * 选中行的底色看起来像点按后没褪掉, 由调用方关掉; 选中键照常用于滚动定位。
    */
   highlightSelected?: boolean;
+  /** 列表为空时代替「没有邮件」显示的内容 (首次同步还没做完时的进度)。 */
+  emptyState?: React.ReactNode;
 }
 
 export function EmailList({
@@ -77,6 +79,7 @@ export function EmailList({
   onScrolledAway,
   whereOf,
   showRecipients,
+  emptyState,
 }: Props) {
   useI18n();
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -208,6 +211,7 @@ export function EmailList({
   );
 
   if (!loading && emails.length === 0) {
+    if (emptyState) return <>{emptyState}</>;
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
         {t("没有邮件")}</div>

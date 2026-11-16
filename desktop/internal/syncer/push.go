@@ -85,18 +85,39 @@ func (s *Syncer) listen(ctx context.Context) error {
 }
 
 func (s *Syncer) syncAllAccounts(ctx context.Context) error {
+	accounts := s.orderedAccounts()
+	status := RoundStatus{Running: true, Total: len(accounts)}
+	s.setRound(status)
+
 	var firstErr error
-	for _, accountID := range s.Accounts() {
+	for _, accountID := range accounts {
 		if err := ctx.Err(); err != nil {
-			return nil
+			break
 		}
-		if err := s.SyncAccount(ctx, accountID); err != nil {
+		mailDone := false
+		err := s.syncAccount(ctx, accountID, func() {
+			mailDone = true
+			status.Done++
+			s.setRound(status)
+		})
+		if err != nil {
 			s.log.Error("sync account", "account", accountID, "err", err)
 			if firstErr == nil {
 				firstErr = err
 			}
 		}
+		// 失败的账号也算处理过, 进度条不该停在半路。
+		if !mailDone {
+			status.Done++
+			s.setRound(status)
+		}
 	}
+
+	status.Running = false
+	if firstErr != nil && ctx.Err() == nil {
+		status.Error = firstErr.Error()
+	}
+	s.setRound(status)
 	return firstErr
 }
 

@@ -56,6 +56,10 @@ type Syncer struct {
 	// 与 OnChanged 分开: 日历变了不该让邮件列表重载。
 	OnPIMChanged func(accountID, typeName string)
 
+	// OnRound 在一轮全账号同步开始、每完成一个账号的邮件、结束时回调。
+	OnRound func(RoundStatus)
+	round   roundState
+
 	// mu 串行化同一账号上的同步, 避免推送密集时同一类型被并发拉取,
 	// 造成两条协程拿着同一个旧 state token 各拉一遍。
 	mu sync.Mutex
@@ -113,30 +117,40 @@ func (s *Syncer) Accounts() []string {
 
 // SyncAccount 把一个账号的全部已支持类型拉到最新。
 func (s *Syncer) SyncAccount(ctx context.Context, accountID string) error {
-	err := func() error {
-		s.mu.Lock()
-		defer s.mu.Unlock()
+	return s.syncAccount(ctx, accountID, nil)
+}
 
-		// 邮箱必须先于邮件同步: 邮件携带的 mailboxIds 指向邮箱, 反过来会让界面在
-		// 邮件已入库而邮箱树尚未建立的窗口期里显示出无归属的邮件。
-		if err := s.syncMailboxes(ctx, accountID); err != nil {
-			return err
-		}
-		if err := s.syncEmails(ctx, accountID); err != nil {
-			return err
-		}
-		// 日历、通讯录、文件放在邮件之后且不影响返回值: 邮件是主业务,
-		// 某个共享账号没有日历权限不该让整个账号显示同步失败。
-		s.syncPIM(ctx, accountID)
-		return nil
-	}()
+// syncAccount 先同步邮件再同步日历/通讯录/文件。afterMail 在邮件落库并通知界面之后、PIM 开始之前调用。
+//
+// 邮件一落库就通知, 不等 PIM: 首次登录时 PIM 是全量引导, 等它做完再通知的话,
+// 邮件早就在库里了界面却还是空的。
+func (s *Syncer) syncAccount(ctx context.Context, accountID string, afterMail func()) error {
+	// 邮箱必须先于邮件同步: 邮件携带的 mailboxIds 指向邮箱, 反过来会让界面在
+	// 邮件已入库而邮箱树尚未建立的窗口期里显示出无归属的邮件。
+	if err := s.SyncMail(ctx, accountID); err != nil {
+		return err
+	}
+	if afterMail != nil {
+		afterMail()
+	}
+
+	// 日历、通讯录、文件放在邮件之后且不影响返回值: 邮件是主业务,
+	// 某个共享账号没有日历权限不该让整个账号显示同步失败。
+	s.mu.Lock()
+	s.syncPIM(ctx, accountID)
+	s.mu.Unlock()
 
 	// 回调放在锁外: 回调方可能反过来调用本 Syncer, 持锁回调会死锁。
-	if err == nil {
-		s.notifyChanged(accountID)
-		s.notifyPIM(accountID, "")
+	s.notifyPIM(accountID, "")
+	return nil
+}
+
+func (s *Syncer) isPersonal(accountID string) bool {
+	if s.client.Session == nil {
+		return false
 	}
-	return err
+	acc, ok := s.client.Session.Accounts[jmap.ID(accountID)]
+	return ok && acc.IsPersonal
 }
 
 // SyncMail 只把一个账号的邮箱与邮件拉到最新, 不碰日历/通讯录/文件。

@@ -51,6 +51,7 @@ export type Invite = main.Invite;
 export type SignInHint = main.SignInHint;
 export type Unsubscribe = store.Unsubscribe;
 export type EmailLocation = store.EmailLocation;
+export type MailSyncStatus = main.MailSyncStatus;
 /** 整夹拉取进度，随 Events.pullProgress 推送。只经事件传递，Wails 不会为它生成模型。 */
 export interface PullStatus {
   accountId: string;
@@ -86,6 +87,7 @@ export const Events = {
   connected: "session:connected",
   signInRequired: "session:sign-in-required",
   mailChanged: "mail:changed",
+  syncStatus: "mail:sync-status",
   newMail: "mail:new",
   pullProgress: "mail:pull-progress",
   unread: "mail:unread",
@@ -147,6 +149,7 @@ export const api = {
   searchAllEmailsOnServer: guard(App.SearchAllEmailsOnServer),
   locateEmail: guard(App.LocateEmail),
   syncNow: guard(App.SyncNow),
+  getMailSyncStatus: guard(App.GetMailSyncStatus),
   pullMailbox: guard(App.PullMailbox),
 
   markRead: guard(App.MarkRead),

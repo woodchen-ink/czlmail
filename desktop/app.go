@@ -300,6 +300,9 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.T
 		a.refreshTrayUnreadSoon()
 		a.prefetchRecent(accountID)
 	}
+	s.OnRound = func(round syncer.RoundStatus) {
+		a.emit(EventSyncStatus, a.mailSyncStatus(s, st, round))
+	}
 	s.OnPIMChanged = func(accountID, typeName string) {
 		if typeName == "" || typeName == "FileNode" {
 			a.wakeNotes()
