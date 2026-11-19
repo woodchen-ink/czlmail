@@ -12,7 +12,7 @@ export function LanguageSelect() {
       value={locale}
       options={LOCALES}
       onChange={(value) => {
-        if (value === "zh-CN" || value === "en") setLocale(value);
+        if (value === "zh-CN" || value === "en" || value === "cs") setLocale(value);
       }}
       aria-label={t("语言")}
     />

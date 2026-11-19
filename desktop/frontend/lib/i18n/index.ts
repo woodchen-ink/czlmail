@@ -1,16 +1,17 @@
+import czech from "./cs.json";
 import english from "./en.json";
 
-export type Locale = "zh-CN" | "en";
+export type Locale = "zh-CN" | "en" | "cs";
 export const LOCALE_KEY = "czlmail.locale";
-export const LOCALES = [["zh-CN", "简体中文"], ["en", "English"]] as const;
+export const LOCALES = [["zh-CN", "简体中文"], ["en", "English"], ["cs", "Čeština"]] as const;
 
 let currentLocale: Locale = "zh-CN";
 const listeners = new Set<() => void>();
-const messages: Readonly<Record<string, string>> = english;
+const messages: Readonly<Record<string, Readonly<Record<string, string>>>> = { en: english, cs: czech };
 
 /** Reject unsupported or damaged preferences rather than using them as locale identifiers. */
 export function normalizeLocale(value: unknown): Locale {
-  return value === "en" ? "en" : "zh-CN";
+  return value === "en" || value === "cs" ? value : "zh-CN";
 }
 
 /** Current in-memory preference; initialized after hydration by LocaleProvider. */
@@ -50,7 +51,7 @@ export function restoreLocale(): void {
 
 /** Translate UI-owned messages only; substitutions are inserted once, never reinterpreted. */
 export function translate(locale: Locale, source: string, ...values: readonly unknown[]): string {
-  const template = locale === "en" ? messages[source] ?? source : source;
+  const template = messages[locale]?.[source] ?? source;
   return template.replace(/\{(\d+)\}/g, (match, index: string) => {
     const position = Number(index);
     return position < values.length ? String(values[position] ?? "") : match;
@@ -64,5 +65,5 @@ export function t(source: string, ...values: readonly unknown[]): string {
 
 /** Locale used for human-readable dates; storage and wire formats remain unchanged. */
 export function dateLocale(): string {
-  return currentLocale === "en" ? "en-US" : "zh-CN";
+  return currentLocale === "en" ? "en-US" : currentLocale === "cs" ? "cs-CZ" : "zh-CN";
 }

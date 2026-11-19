@@ -10,6 +10,7 @@ const ts = require("typescript");
 const root = path.resolve(__dirname, "../..");
 const corePath = path.join(__dirname, "index.ts");
 const english = require("./en.json");
+const czech = require("./cs.json");
 
 /** Load an isolated locale store without building Next.js or generating Wails bindings. */
 function loadLocale({ saved = null, blocked = false } = {}) {
@@ -51,6 +52,17 @@ test("English translates UI text and reorders substitutions", () => {
   assert.equal(api.t("邮件"), "Mail");
   assert.equal(api.t("由{0}检查", "mail.example.net"), "Checked by mail.example.net");
   assert.equal(api.t("已选{0}封", 5), "5 emails selected");
+});
+
+test("Czech translates UI text and reorders substitutions", () => {
+  const { api, storage, document } = loadLocale();
+  api.setLocale("cs");
+  assert.equal(api.t("邮件"), "Pošta");
+  assert.equal(api.t("已选{0}封", 5), "Vybráno e-mailů: 5");
+  assert.equal(api.t("custom folder name"), "custom folder name");
+  assert.equal(api.dateLocale(), "cs-CZ");
+  assert.equal(storage.get("czlmail.locale"), "cs");
+  assert.equal(document.documentElement.lang, "cs");
 });
 
 test("Inserted values are not interpreted as translation placeholders", () => {
@@ -134,10 +146,16 @@ test("Every literal UI translation key has an English entry", () => {
 
 test("Translations preserve all numbered placeholders", () => {
   const placeholders = (value) => [...new Set(value.match(/\{\d+\}/g) ?? [])].sort();
-  for (const [source, translated] of Object.entries(english)) {
-    assert.ok(translated.trim(), `empty translation: ${source}`);
-    assert.deepEqual(placeholders(translated), placeholders(source), source);
+  for (const dictionary of [english, czech]) {
+    for (const [source, translated] of Object.entries(dictionary)) {
+      assert.ok(translated.trim(), `empty translation: ${source}`);
+      assert.deepEqual(placeholders(translated), placeholders(source), source);
+    }
   }
+});
+
+test("Czech covers exactly the English dictionary", () => {
+  assert.deepEqual(Object.keys(czech), Object.keys(english));
 });
 
 test("Every TypeScript and JSX source parses", () => {
