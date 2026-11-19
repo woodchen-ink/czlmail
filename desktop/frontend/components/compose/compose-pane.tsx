@@ -626,7 +626,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
         </ul>
       )}
 
-      <footer className="border-border flex shrink-0 items-center gap-1 border-t px-3 py-2">
+      <footer className="border-border flex shrink-0 flex-wrap items-center justify-end gap-1 border-t px-3 py-2">
         <IconBtn label={uploading ? t("上传中") : t("添加附件")} onClick={addAttachments} disabled={uploading}>
           {uploading ? <Loader2 className="animate-spin" /> : <Paperclip />}
         </IconBtn>
