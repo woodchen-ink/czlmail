@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CalendarPlus, Loader2, Mail, Power } from "lucide-react";
 import { toast } from "sonner";
 
+import { LanguageSelect } from "@/components/language-select";
 import { OptionSelect } from "@/components/option-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -240,7 +241,8 @@ function OnboardDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="sm:items-center sm:justify-between">
+          <LanguageSelect />
           <Button onClick={onClose}>{t("完成")}</Button>
         </DialogFooter>
       </DialogContent>
