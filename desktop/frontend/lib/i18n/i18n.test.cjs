@@ -58,7 +58,7 @@ test("Czech translates UI text and reorders substitutions", () => {
   const { api, storage, document } = loadLocale();
   api.setLocale("cs");
   assert.equal(api.t("邮件"), "Pošta");
-  assert.equal(api.t("已选{0}封", 5), "Vybráno e-mailů: 5");
+  assert.equal(api.t("已选{0}封", 5), "Vybráno zpráv: 5");
   assert.equal(api.t("custom folder name"), "custom folder name");
   assert.equal(api.dateLocale(), "cs-CZ");
   assert.equal(storage.get("czlmail.locale"), "cs");
