@@ -89,3 +89,6 @@ func (a *App) installPackage(path string) error {
 	_, err := hostRequest(a.ctx, "installPackage", map[string]string{"path": path})
 	return err
 }
+
+// reportUILocale 只有 iOS 的通知扩展需要 (host_ios.go)。
+func (a *App) reportUILocale(string) {}

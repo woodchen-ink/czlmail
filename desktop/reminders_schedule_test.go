@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/i18n"
+
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/pim"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
@@ -57,7 +59,7 @@ func TestUpcomingReminders(t *testing.T) {
 		withoutTime: []pim.Alert{{Offset: -6 * time.Hour}},
 	}}
 
-	got := upcomingReminders(occs, defaults, now, horizon, 100, uiTexts[defaultUILocale])
+	got := upcomingReminders(occs, defaults, now, horizon, 100, sourceText)
 	want := []struct {
 		event string
 		at    time.Time
@@ -89,7 +91,7 @@ func TestUpcomingReminders(t *testing.T) {
 	}
 
 	// 标识只取决于事件、发生次与触发时刻: 重算后不变, 原生壳才能认出是同一条。
-	again := upcomingReminders(occs, defaults, now.Add(time.Minute), horizon, 100, uiTexts[defaultUILocale])
+	again := upcomingReminders(occs, defaults, now.Add(time.Minute), horizon, 100, sourceText)
 	if again[0].ID != got[0].ID {
 		t.Errorf("id changed between plans: %q vs %q", again[0].ID, got[0].ID)
 	}
@@ -103,7 +105,7 @@ func TestUpcomingRemindersLimit(t *testing.T) {
 	for i := 100; i >= 1; i-- {
 		occs = append(occs, occurrence(fmt.Sprintf("e%03d", i), now.Add(time.Duration(i)*time.Hour), pim.Alert{}))
 	}
-	got := upcomingReminders(occs, nil, now, 30*24*time.Hour, scheduledReminderMax, uiTexts[defaultUILocale])
+	got := upcomingReminders(occs, nil, now, 30*24*time.Hour, scheduledReminderMax, sourceText)
 	if len(got) != scheduledReminderMax {
 		t.Fatalf("got %d reminders, want %d", len(got), scheduledReminderMax)
 	}
@@ -120,10 +122,10 @@ func TestReminderText(t *testing.T) {
 	o := occurrence("", start)
 	o.Title = ""
 	o.Location = " 3 号会议室 "
-	if title, body := reminderText(o, start.Add(-15*time.Minute), uiTexts[defaultUILocale]); title != "(无标题日程)" || body != "今天 14:30 · 3 号会议室" {
+	if title, body := reminderText(o, start.Add(-15*time.Minute), sourceText); title != "(无标题日程)" || body != "今天 14:30 · 3 号会议室" {
 		t.Errorf("same day: %q / %q", title, body)
 	}
-	if _, body := reminderText(o, start.Add(-48*time.Hour), uiTexts[defaultUILocale]); body != "11月20日 14:30 · 3 号会议室" {
+	if _, body := reminderText(o, start.Add(-48*time.Hour), sourceText); body != "11月20日 14:30 · 3 号会议室" {
 		t.Errorf("earlier day: %q", body)
 	}
 }
@@ -250,4 +252,9 @@ func TestSyncReminders(t *testing.T) {
 	if a.reminders.hosted.Load() {
 		t.Fatal("polling must take over when the native shell refuses")
 	}
+}
+
+// sourceText 用源语言 (中文) 翻译, 测试的期望值按中文写。
+func sourceText(source string, values ...any) string {
+	return catalog.T(i18n.Source, source, values...)
 }

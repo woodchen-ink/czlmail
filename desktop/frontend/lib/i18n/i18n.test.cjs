@@ -182,10 +182,6 @@ test("Every dictionary covers exactly the English keys and is registered", () =>
     const id = name.replace(/\.json$/, "");
     assert.match(core, new RegExp(`id: "${id}"`), `${name} is not in LOCALE_TABLE`);
   }
-  const go = fs.readFileSync(path.join(root, "..", "api_locale.go"), "utf8");
-  for (const [id] of core.matchAll(/id: "([^"]+)"/g).map((m) => [m[1]])) {
-    assert.match(go, new RegExp(`^\t"${id}": \{`, "m"), `${id} has no Go uiTexts entry`);
-  }
 });
 
 test("Every TypeScript and JSX source parses", () => {

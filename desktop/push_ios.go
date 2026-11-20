@@ -269,7 +269,8 @@ func (a *App) pushTargets(ctx context.Context, s *syncer.Syncer, st *store.Store
 func (a *App) ensureRelay(ctx context.Context, st *store.Store, reg pushRelayReg, info pushInfo) (pushRelayReg, error) {
 	body := map[string]any{
 		"topic": pushTopic, "token": info.Token, "sandbox": info.Sandbox,
-		"alert": map[string]string{"title": "CZL Mail", "body": "新邮件"},
+		// 占位文字: 扩展解不开密文时原样显示; 每次续期都会带上, 换语言后下次续期生效。
+		"alert": map[string]string{"title": "CZL Mail", "body": a.t("新邮件")},
 	}
 	if reg.ID != "" {
 		err := relayCall(ctx, http.MethodPut, "/v1/subscriptions/"+reg.ID, reg.Secret, body, nil)

@@ -167,10 +167,9 @@ func (a *App) notifyUpdateOnce(info UpdateInfo) {
 	if n == nil {
 		return
 	}
-	text := a.text()
 	_ = n.Notify(ctx, notify.Notification{
-		Title:    fmt.Sprintf(text.UpdateTitle, info.Release.Version),
-		Body:     text.UpdateBody,
+		Title:    a.t("CZL Mail {0} 已发布", info.Release.Version),
+		Body:     a.t("打开「设置 → 关于与更新」一键更新"),
 		ActionID: "update:",
 	})
 	_ = st.SetStringSetting(a.ctx, "updateNotifiedVersion", info.Release.Version)

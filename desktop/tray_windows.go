@@ -4,7 +4,6 @@ package main
 
 import (
 	_ "embed"
-	"fmt"
 	"runtime"
 	"sync"
 
@@ -48,11 +47,10 @@ func (a *App) onTrayReady() {
 
 	trayMenu.Lock()
 	defer trayMenu.Unlock()
-	text := a.text()
-	trayMenu.open = systray.AddMenuItem(text.TrayOpen, "")
+	trayMenu.open = systray.AddMenuItem(a.t("打开 CZL Mail"), "")
 	trayMenu.open.Click(a.showWindow)
 	systray.AddSeparator()
-	trayMenu.quit = systray.AddMenuItem(text.TrayQuit, "")
+	trayMenu.quit = systray.AddMenuItem(a.t("退出 CZL Mail"), "")
 	trayMenu.quit.Click(func() {
 		if a.ctx != nil {
 			wruntime.Quit(a.ctx)
@@ -61,22 +59,21 @@ func (a *App) onTrayReady() {
 }
 
 // setTrayMenuText 按界面语言改托盘菜单的文字。在锁内重新取文案: 连续切换语言时以最后一次为准。
-func (a *App) setTrayMenuText(uiText) {
+func (a *App) setTrayMenuText() {
 	trayMenu.Lock()
 	defer trayMenu.Unlock()
 	if trayMenu.open == nil || trayMenu.quit == nil {
 		return
 	}
-	text := a.text()
-	trayMenu.open.SetTitle(text.TrayOpen)
-	trayMenu.quit.SetTitle(text.TrayQuit)
+	trayMenu.open.SetTitle(a.t("打开 CZL Mail"))
+	trayMenu.quit.SetTitle(a.t("退出 CZL Mail"))
 }
 
 // setTrayUnread 更新托盘图标角标与提示文字。
 func (a *App) setTrayUnread(n int) {
 	systray.SetIcon(badgeIcon(n))
 	if n > 0 {
-		systray.SetTooltip(fmt.Sprintf(a.text().TrayUnread, n))
+		systray.SetTooltip(a.t("CZL Mail — {0} 封未读", n))
 	} else {
 		systray.SetTooltip("CZL Mail")
 	}

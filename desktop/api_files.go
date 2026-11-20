@@ -67,7 +67,7 @@ func (a *App) UploadFiles(accountID, parentID string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	paths, err := a.openFilesDialog(fileDialog{Title: a.text().UploadFiles})
+	paths, err := a.openFilesDialog(fileDialog{Title: a.t("上传文件")})
 	if err != nil {
 		return 0, fmt.Errorf("2073 open file dialog: %w", err)
 	}
@@ -233,7 +233,7 @@ func (a *App) UploadPaths(accountID, parentID string, paths []string) (int, erro
 
 // UploadFolder 选择本地文件夹整个上传。
 func (a *App) UploadFolder(accountID, parentID string) (int, error) {
-	dir, err := a.openDirectoryDialog(fileDialog{Title: a.text().UploadFolder})
+	dir, err := a.openDirectoryDialog(fileDialog{Title: a.t("上传文件夹")})
 	if err != nil || dir == "" {
 		return 0, err
 	}

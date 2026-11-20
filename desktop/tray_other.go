@@ -14,7 +14,7 @@ func (a *App) stopTray() {}
 
 func (a *App) setTrayUnread(int) {}
 
-func (a *App) setTrayMenuText(uiText) {}
+func (a *App) setTrayMenuText() {}
 
 func (a *App) showWindow() {
 	if a.ctx == nil {

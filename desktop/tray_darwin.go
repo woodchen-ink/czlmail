@@ -16,7 +16,6 @@ void czlActivateApp(void);
 import "C"
 
 import (
-	"fmt"
 	"sync/atomic"
 	"unsafe"
 
@@ -37,8 +36,7 @@ var trayApp atomic.Pointer[App]
 func (a *App) startTray() {
 	trayApp.Store(a)
 	// 1024px 的应用图标, 由 AppKit 缩到菜单栏尺寸(Retina 下取 2 倍像素)。C 侧拷贝后释放。
-	text := a.text()
-	open, quit := C.CString(text.TrayOpen), C.CString(text.TrayQuit)
+	open, quit := C.CString(a.t("打开 CZL Mail")), C.CString(a.t("退出 CZL Mail"))
 	defer C.free(unsafe.Pointer(open))
 	defer C.free(unsafe.Pointer(quit))
 	C.czlTrayStart(C.CBytes(appIconPNG), C.int(len(appIconPNG)), open, quit)
@@ -51,8 +49,8 @@ func (a *App) stopTray() {
 }
 
 // setTrayMenuText 按界面语言改菜单栏图标菜单的文字。C 侧同步拷贝字符串, 调用返回后即可释放。
-func (a *App) setTrayMenuText(text uiText) {
-	open, quit := C.CString(text.TrayOpen), C.CString(text.TrayQuit)
+func (a *App) setTrayMenuText() {
+	open, quit := C.CString(a.t("打开 CZL Mail")), C.CString(a.t("退出 CZL Mail"))
 	defer C.free(unsafe.Pointer(open))
 	defer C.free(unsafe.Pointer(quit))
 	C.czlTraySetMenuText(open, quit)
@@ -62,7 +60,7 @@ func (a *App) setTrayMenuText(text uiText) {
 func (a *App) setTrayUnread(n int) {
 	tooltip := "CZL Mail"
 	if n > 0 {
-		tooltip = fmt.Sprintf(a.text().TrayUnread, n)
+		tooltip = a.t("CZL Mail — {0} 封未读", n)
 	}
 	cs := C.CString(tooltip)
 	defer C.free(unsafe.Pointer(cs))

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/woodchen-ink/czlmail/desktop/notify"
@@ -64,11 +63,10 @@ func (a *App) notifyNewMail(notices []newMailNotice) {
 		return
 	}
 
-	text := a.text()
 	if len(notices) > notifyMax {
 		_ = n.Notify(ctx, notify.Notification{
-			Title: text.NewMailTitle,
-			Body:  fmt.Sprintf(text.NewMailCount, len(notices)),
+			Title: a.t("新邮件"),
+			Body:  a.t("收到 {0} 封新邮件", len(notices)),
 		})
 		return
 	}
@@ -76,17 +74,18 @@ func (a *App) notifyNewMail(notices []newMailNotice) {
 	for _, notice := range notices {
 		_ = n.Notify(ctx, notify.Notification{
 			Title:    notice.From,
-			Body:     notificationBody(notice, text),
+			Body:     notificationBody(notice, a.t("(无主题)")),
 			ActionID: notice.AccountID + "/" + notice.ID,
 		})
 	}
 }
 
 // notificationBody 用主题加摘要, 主题为空时退回摘要。
-func notificationBody(notice newMailNotice, text uiText) string {
+// noSubject 是按界面语言写好的「(无主题)」。
+func notificationBody(notice newMailNotice, noSubject string) string {
 	subject := strings.TrimSpace(notice.Subject)
 	if subject == "" {
-		subject = text.NoSubject
+		subject = noSubject
 	}
 
 	preview := strings.TrimSpace(notice.Preview)

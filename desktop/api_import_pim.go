@@ -23,13 +23,13 @@ const maxImportFileBytes = 20 << 20
 
 // ImportCalendarFile 选择 .ics 导入到日历, 返回导入的事件数。
 func (a *App) ImportCalendarFile(accountID, calendarID string) (int, error) {
-	return a.importPIMFile(accountID, jmapx.CalendarEvent, a.text().ImportCalendar, "*.ics;*.ical;*.ifb",
+	return a.importPIMFile(accountID, jmapx.CalendarEvent, a.t("导入日历"), "*.ics;*.ical;*.ifb",
 		func(obj map[string]any) { obj["calendarIds"] = map[string]bool{calendarID: true} })
 }
 
 // ImportContactsFile 选择 .vcf 导入到通讯录, 返回导入的联系人数。
 func (a *App) ImportContactsFile(accountID, addressBookID string) (int, error) {
-	return a.importPIMFile(accountID, jmapx.ContactCard, a.text().ImportContacts, "*.vcf;*.vcard",
+	return a.importPIMFile(accountID, jmapx.ContactCard, a.t("导入联系人"), "*.vcf;*.vcard",
 		func(obj map[string]any) { obj["addressBookIds"] = map[string]bool{addressBookID: true} })
 }
 

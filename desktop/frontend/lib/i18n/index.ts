@@ -3,8 +3,9 @@ import english from "./en.json";
 
 /**
  * Supported languages; everything else (type, validation, date locale, system matching, picker) derives from here.
- * Adding one: a `<id>.json` with the keys of en.json, one row here, and a matching entry in the Go `uiTexts`
- * (desktop/api_locale.go) for notifications, tray and file dialogs. Chinese is the source language and needs no dictionary.
+ * Adding one: a `<id>.json` with the keys of en.json and one row here. The Go side embeds the same files for its
+ * notifications, tray and file dialogs (desktop/api_locale.go) and picks up new ones automatically.
+ * Chinese is the source language and needs no dictionary.
  */
 const LOCALE_TABLE = [
   { id: "zh-CN", label: "简体中文", date: "zh-CN", messages: null },

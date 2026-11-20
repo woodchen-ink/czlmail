@@ -111,7 +111,7 @@ func (a *App) SaveAttachment(accountID, blobID, name string) (string, error) {
 	}
 
 	path, err := a.saveFileDialog(fileDialog{
-		Title:           a.text().SaveAttachment,
+		Title:           a.t("保存附件"),
 		DefaultFilename: safeFilename(name),
 	})
 	if err != nil {
@@ -162,7 +162,7 @@ type UploadedAttachment struct {
 // 超过服务器上传上限的文件在本地就拒绝, 不去撞服务器 —— 上传几十 MB
 // 之后才被告知超限, 等待时间全浪费了。
 func (a *App) AddAttachments(accountID string) ([]UploadedAttachment, error) {
-	paths, err := a.openFilesDialog(fileDialog{Title: a.text().AddAttachments})
+	paths, err := a.openFilesDialog(fileDialog{Title: a.t("添加附件")})
 	if err != nil {
 		return nil, fmt.Errorf("2073 open file dialog: %w", err)
 	}

@@ -143,7 +143,7 @@ func (a *App) notifyEvent(o EventOccurrence) {
 		return
 	}
 
-	title, body := reminderText(o, time.Now(), a.text())
+	title, body := reminderText(o, time.Now(), a.t)
 	_ = n.Notify(ctx, notify.Notification{
 		Title:    title,
 		Body:     body,
@@ -151,22 +151,27 @@ func (a *App) notifyEvent(o EventOccurrence) {
 	})
 }
 
+// translator 按界面语言翻译后端文案 (a.t), 测试里换成固定语言。
+type translator func(source string, values ...any) string
+
 // reminderText 是提醒通知的标题与正文。shown 为通知弹出的时刻: 事件就在那一天时写「今天」。
-func reminderText(o EventOccurrence, shown time.Time, text uiText) (title, body string) {
+// 日期版式也走词典: 原文「1月2日」本身就是 Go 的时间版式, 各语言的译文同样写成 Go 版式。
+func reminderText(o EventOccurrence, shown time.Time, t translator) (title, body string) {
+	layout := t("1月2日")
 	switch {
 	case o.AllDay:
-		body = fmt.Sprintf(text.ReminderAllDay, o.Start.Format(text.DateLayout))
+		body = t("{0} 全天", o.Start.Format(layout))
 	case sameDay(o.Start, shown):
-		body = fmt.Sprintf(text.ReminderToday, o.Start.Local().Format("15:04"))
+		body = t("今天 {0}", o.Start.Local().Format("15:04"))
 	default:
-		body = o.Start.Local().Format(text.DateLayout + " 15:04")
+		body = o.Start.Local().Format(layout + " 15:04")
 	}
 	if loc := strings.TrimSpace(o.Location); loc != "" {
 		body += " · " + loc
 	}
 	title = o.Title
 	if title == "" {
-		title = text.NoEventTitle
+		title = t("(无标题日程)")
 	}
 	return title, body
 }
