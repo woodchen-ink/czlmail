@@ -166,6 +166,18 @@ var trayUnread struct {
 	sync.Mutex
 	timer *time.Timer
 	last  int
+	// counted 在第一次统计完成后为真; 之前 last 还不是真实未读数, 不能拿来重画。
+	counted bool
+}
+
+// redrawTrayUnread 按当前语言重画托盘提示与角标 (界面换语言时)。还没统计过就不画: 首次统计会用新语言画。
+func (a *App) redrawTrayUnread() {
+	trayUnread.Lock()
+	n, counted := trayUnread.last, trayUnread.counted
+	trayUnread.Unlock()
+	if counted {
+		a.setTrayUnread(n)
+	}
 }
 
 // GetUnreadTotal 返回托盘角标上的未读数, 界面左侧导航的邮件图标用同一个数。
@@ -188,6 +200,7 @@ func (a *App) refreshTrayUnreadSoon() {
 		trayUnread.Lock()
 		changed := n != trayUnread.last
 		trayUnread.last = n
+		trayUnread.counted = true
 		trayUnread.Unlock()
 		if changed {
 			a.setTrayUnread(n)

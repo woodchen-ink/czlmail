@@ -1,32 +1,42 @@
 package main
 
-import "testing"
+import (
+	"reflect"
+	"strings"
+	"testing"
+)
 
 func TestSetUILocaleRejectsUnknown(t *testing.T) {
 	a := &App{}
-	if got := a.currentUILocale(); got != defaultUILocale {
-		t.Fatalf("default locale = %q", got)
+	if got := a.text(); got != uiTexts[defaultUILocale] {
+		t.Fatal("text before the UI reports a locale is not the default")
 	}
 	a.SetUILocale("cs")
-	if got := a.currentUILocale(); got != "cs" {
-		t.Fatalf("locale = %q, want cs", got)
+	if got := a.text(); got != uiTexts["cs"] {
+		t.Fatal("cs not applied")
 	}
 	a.SetUILocale("fr")
-	if got := a.currentUILocale(); got != defaultUILocale {
-		t.Fatalf("unknown locale kept as %q", got)
+	if got := a.text(); got != uiTexts[defaultUILocale] {
+		t.Fatal("unknown locale not reset to default")
 	}
 }
 
-func TestUpdateNoticeCoversEveryLocale(t *testing.T) {
-	for _, locale := range []string{"zh-CN", "en", "cs"} {
-		if _, ok := updateNotices[locale]; !ok {
-			t.Errorf("no update notice for %s", locale)
+// 每种语言的每个字段都要填, 格式占位符与默认语言一致: 漏填会在通知里出现空标题, 占位符不符会打出 %!d。
+func TestUITextsComplete(t *testing.T) {
+	base := reflect.ValueOf(uiTexts[defaultUILocale])
+	for locale, text := range uiTexts {
+		v := reflect.ValueOf(text)
+		for i := range v.NumField() {
+			name := v.Type().Field(i).Name
+			got, want := v.Field(i).String(), base.Field(i).String()
+			if strings.TrimSpace(got) == "" {
+				t.Errorf("%s.%s is empty", locale, name)
+			}
+			for _, verb := range []string{"%s", "%d"} {
+				if strings.Count(got, verb) != strings.Count(want, verb) {
+					t.Errorf("%s.%s: %s count differs from %s", locale, name, verb, defaultUILocale)
+				}
+			}
 		}
-	}
-	if title, _ := updateNotice("en", "v1.2.3"); title != "CZL Mail v1.2.3 is available" {
-		t.Errorf("en title = %q", title)
-	}
-	if title, _ := updateNotice("xx", "v1.2.3"); title != "CZL Mail v1.2.3 已发布" {
-		t.Errorf("fallback title = %q", title)
 	}
 }

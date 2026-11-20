@@ -25,6 +25,9 @@
 
 static NSStatusItem *czlStatusItem = nil;
 static CZLTrayTarget *czlTarget = nil;
+// 菜单项留着引用, 界面换语言时改标题 (czlTraySetMenuText)。
+static NSMenuItem *czlOpenItem = nil;
+static NSMenuItem *czlQuitItem = nil;
 
 // 点 Dock 图标时, 窗口已被隐藏(关闭即隐藏)就把它找回来。
 static BOOL czlShouldHandleReopen(id self, SEL _cmd, NSApplication *app, BOOL hasVisibleWindows) {
@@ -44,14 +47,19 @@ static void czlInstallReopenHandler(void) {
                     (IMP)czlShouldHandleReopen, "c@:@c");
 }
 
-void czlTrayStart(const void *png, int length) {
+// open / quit 是菜单文字; 在调用线程上拷贝成 NSString, 调用方返回后即可释放。
+void czlTrayStart(const void *png, int length, const char *open, const char *quit) {
     NSData *data = [[NSData alloc] initWithBytes:png length:(NSUInteger)length];
     free((void *)png);
+    NSString *openTitle = [[NSString alloc] initWithUTF8String:open];
+    NSString *quitTitle = [[NSString alloc] initWithUTF8String:quit];
 
     dispatch_async(dispatch_get_main_queue(), ^{
         czlInstallReopenHandler();
         if (czlStatusItem != nil) {
             [data release];
+            [openTitle release];
+            [quitTitle release];
             return;
         }
 
@@ -68,17 +76,32 @@ void czlTrayStart(const void *png, int length) {
         [image release];
 
         NSMenu *menu = [[NSMenu alloc] initWithTitle:@"CZL Mail"];
-        NSMenuItem *open = [[NSMenuItem alloc] initWithTitle:@"打开 CZL Mail" action:@selector(openWindow:) keyEquivalent:@""];
-        [open setTarget:czlTarget];
-        [menu addItem:open];
-        [open release];
+        czlOpenItem = [[NSMenuItem alloc] initWithTitle:openTitle action:@selector(openWindow:) keyEquivalent:@""];
+        [czlOpenItem setTarget:czlTarget];
+        [menu addItem:czlOpenItem];
         [menu addItem:[NSMenuItem separatorItem]];
-        NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"退出 CZL Mail" action:@selector(quitApp:) keyEquivalent:@""];
-        [quit setTarget:czlTarget];
-        [menu addItem:quit];
-        [quit release];
+        czlQuitItem = [[NSMenuItem alloc] initWithTitle:quitTitle action:@selector(quitApp:) keyEquivalent:@""];
+        [czlQuitItem setTarget:czlTarget];
+        [menu addItem:czlQuitItem];
+        [openTitle release];
+        [quitTitle release];
         [czlStatusItem setMenu:menu];
         [menu release];
+    });
+}
+
+void czlTraySetMenuText(const char *open, const char *quit) {
+    NSString *openTitle = [[NSString alloc] initWithUTF8String:open];
+    NSString *quitTitle = [[NSString alloc] initWithUTF8String:quit];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (czlOpenItem != nil) {
+            [czlOpenItem setTitle:openTitle];
+        }
+        if (czlQuitItem != nil) {
+            [czlQuitItem setTitle:quitTitle];
+        }
+        [openTitle release];
+        [quitTitle release];
     });
 }
 
@@ -90,20 +113,28 @@ void czlTrayStop(void) {
         [[NSStatusBar systemStatusBar] removeStatusItem:czlStatusItem];
         [czlStatusItem release];
         czlStatusItem = nil;
+        [czlOpenItem release];
+        czlOpenItem = nil;
+        [czlQuitItem release];
+        czlQuitItem = nil;
     });
 }
 
 // 未读数同时显示在菜单栏图标右侧与 Dock 图标角标上; 0 时都清掉。
-void czlTraySetUnread(int n) {
+// tooltip 是悬停提示; 在调用线程上拷贝, 调用方返回后即可释放。
+void czlTraySetUnread(int n, const char *tooltip) {
+    NSString *tip = [[NSString alloc] initWithUTF8String:tooltip];
     dispatch_async(dispatch_get_main_queue(), ^{
         NSString *label = n > 0 ? [NSString stringWithFormat:@"%d", n] : nil;
         [[NSApp dockTile] setBadgeLabel:label];
         if (czlStatusItem == nil) {
+            [tip release];
             return;
         }
         NSStatusBarButton *button = [czlStatusItem button];
         [button setTitle:(label != nil ? [@" " stringByAppendingString:label] : @"")];
-        [button setToolTip:(label != nil ? [NSString stringWithFormat:@"CZL Mail — %d 封未读", n] : @"CZL Mail")];
+        [button setToolTip:tip];
+        [tip release];
     });
 }
 

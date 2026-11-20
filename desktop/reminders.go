@@ -143,7 +143,7 @@ func (a *App) notifyEvent(o EventOccurrence) {
 		return
 	}
 
-	title, body := reminderText(o, time.Now())
+	title, body := reminderText(o, time.Now(), a.text())
 	_ = n.Notify(ctx, notify.Notification{
 		Title:    title,
 		Body:     body,
@@ -152,21 +152,21 @@ func (a *App) notifyEvent(o EventOccurrence) {
 }
 
 // reminderText 是提醒通知的标题与正文。shown 为通知弹出的时刻: 事件就在那一天时写「今天」。
-func reminderText(o EventOccurrence, shown time.Time) (title, body string) {
+func reminderText(o EventOccurrence, shown time.Time, text uiText) (title, body string) {
 	switch {
 	case o.AllDay:
-		body = o.Start.Format("1月2日") + " 全天"
+		body = fmt.Sprintf(text.ReminderAllDay, o.Start.Format(text.DateLayout))
 	case sameDay(o.Start, shown):
-		body = "今天 " + o.Start.Local().Format("15:04")
+		body = fmt.Sprintf(text.ReminderToday, o.Start.Local().Format("15:04"))
 	default:
-		body = o.Start.Local().Format("1月2日 15:04")
+		body = o.Start.Local().Format(text.DateLayout + " 15:04")
 	}
 	if loc := strings.TrimSpace(o.Location); loc != "" {
 		body += " · " + loc
 	}
 	title = o.Title
 	if title == "" {
-		title = "(无标题日程)"
+		title = text.NoEventTitle
 	}
 	return title, body
 }

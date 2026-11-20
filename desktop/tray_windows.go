@@ -4,8 +4,9 @@ package main
 
 import (
 	_ "embed"
+	"fmt"
 	"runtime"
-	"strconv"
+	"sync"
 
 	"github.com/energye/systray"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -17,6 +18,13 @@ import (
 
 //go:embed build/windows/icon.ico
 var trayIcon []byte
+
+// trayMenu 留着菜单项引用, 界面换语言时改标题 (setTrayMenuText)。托盘就绪前为 nil。
+// 锁同时保护建菜单与改标题: 托盘线程建菜单时界面恰好上报语言, 改标题会等菜单建好再按最新语言写。
+var trayMenu struct {
+	sync.Mutex
+	open, quit *systray.MenuItem
+}
 
 // hideOnClose 报告关闭窗口时是否只隐藏。只有托盘可用的平台才能这样做,
 // 否则窗口隐藏后用户再也找不回来。
@@ -38,20 +46,37 @@ func (a *App) onTrayReady() {
 	systray.SetOnClick(func(systray.IMenu) { a.showWindow() })
 	systray.SetOnRClick(func(menu systray.IMenu) { _ = menu.ShowMenu() })
 
-	systray.AddMenuItem("打开 CZL Mail", "").Click(a.showWindow)
+	trayMenu.Lock()
+	defer trayMenu.Unlock()
+	text := a.text()
+	trayMenu.open = systray.AddMenuItem(text.TrayOpen, "")
+	trayMenu.open.Click(a.showWindow)
 	systray.AddSeparator()
-	systray.AddMenuItem("退出", "").Click(func() {
+	trayMenu.quit = systray.AddMenuItem(text.TrayQuit, "")
+	trayMenu.quit.Click(func() {
 		if a.ctx != nil {
 			wruntime.Quit(a.ctx)
 		}
 	})
 }
 
+// setTrayMenuText 按界面语言改托盘菜单的文字。在锁内重新取文案: 连续切换语言时以最后一次为准。
+func (a *App) setTrayMenuText(uiText) {
+	trayMenu.Lock()
+	defer trayMenu.Unlock()
+	if trayMenu.open == nil || trayMenu.quit == nil {
+		return
+	}
+	text := a.text()
+	trayMenu.open.SetTitle(text.TrayOpen)
+	trayMenu.quit.SetTitle(text.TrayQuit)
+}
+
 // setTrayUnread 更新托盘图标角标与提示文字。
 func (a *App) setTrayUnread(n int) {
 	systray.SetIcon(badgeIcon(n))
 	if n > 0 {
-		systray.SetTooltip("CZL Mail — " + strconv.Itoa(n) + " 封未读")
+		systray.SetTooltip(fmt.Sprintf(a.text().TrayUnread, n))
 	} else {
 		systray.SetTooltip("CZL Mail")
 	}

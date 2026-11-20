@@ -56,7 +56,7 @@ func (a *App) OpenNoteLink(vault, id, relative string) (notes.Entry, error) {
 
 // ImportNoteFolder uses a native picker for explicit filesystem consent; MCP only accepts provided bytes.
 func (a *App) ImportNoteFolder(vault string) (notes.ImportResult, error) {
-	root, err := a.openDirectoryDialog(fileDialog{Title: "导入 Markdown 笔记库"})
+	root, err := a.openDirectoryDialog(fileDialog{Title: a.text().ImportNoteVault})
 	if err != nil || root == "" {
 		return notes.ImportResult{}, err
 	}
@@ -109,7 +109,7 @@ func (a *App) ImportNoteFolder(vault string) (notes.ImportResult, error) {
 
 // ExportNoteVault writes to a new subdirectory, never overwriting the selected folder's files.
 func (a *App) ExportNoteVault(vault string) (string, error) {
-	root, err := a.openDirectoryDialog(fileDialog{Title: "导出笔记库"})
+	root, err := a.openDirectoryDialog(fileDialog{Title: a.text().ExportNoteVault})
 	if err != nil || root == "" {
 		return "", err
 	}

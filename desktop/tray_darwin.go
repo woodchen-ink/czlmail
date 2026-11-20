@@ -7,15 +7,18 @@ package main
 #cgo LDFLAGS: -framework Cocoa
 #include <stdlib.h>
 
-void czlTrayStart(const void *png, int length);
+void czlTrayStart(const void *png, int length, const char *open, const char *quit);
 void czlTrayStop(void);
-void czlTraySetUnread(int n);
+void czlTraySetMenuText(const char *open, const char *quit);
+void czlTraySetUnread(int n, const char *tooltip);
 void czlActivateApp(void);
 */
 import "C"
 
 import (
+	"fmt"
 	"sync/atomic"
+	"unsafe"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -34,7 +37,11 @@ var trayApp atomic.Pointer[App]
 func (a *App) startTray() {
 	trayApp.Store(a)
 	// 1024px 的应用图标, 由 AppKit 缩到菜单栏尺寸(Retina 下取 2 倍像素)。C 侧拷贝后释放。
-	C.czlTrayStart(C.CBytes(appIconPNG), C.int(len(appIconPNG)))
+	text := a.text()
+	open, quit := C.CString(text.TrayOpen), C.CString(text.TrayQuit)
+	defer C.free(unsafe.Pointer(open))
+	defer C.free(unsafe.Pointer(quit))
+	C.czlTrayStart(C.CBytes(appIconPNG), C.int(len(appIconPNG)), open, quit)
 	// 菜单栏就绪后按当前缓存显示一次未读数。
 	a.refreshTrayUnreadSoon()
 }
@@ -43,9 +50,23 @@ func (a *App) stopTray() {
 	C.czlTrayStop()
 }
 
-// setTrayUnread 在菜单栏图标旁与 Dock 图标上显示未读数。
+// setTrayMenuText 按界面语言改菜单栏图标菜单的文字。C 侧同步拷贝字符串, 调用返回后即可释放。
+func (a *App) setTrayMenuText(text uiText) {
+	open, quit := C.CString(text.TrayOpen), C.CString(text.TrayQuit)
+	defer C.free(unsafe.Pointer(open))
+	defer C.free(unsafe.Pointer(quit))
+	C.czlTraySetMenuText(open, quit)
+}
+
+// setTrayUnread 在菜单栏图标旁与 Dock 图标上显示未读数, 悬停提示按界面语言写。
 func (a *App) setTrayUnread(n int) {
-	C.czlTraySetUnread(C.int(n))
+	tooltip := "CZL Mail"
+	if n > 0 {
+		tooltip = fmt.Sprintf(a.text().TrayUnread, n)
+	}
+	cs := C.CString(tooltip)
+	defer C.free(unsafe.Pointer(cs))
+	C.czlTraySetUnread(C.int(n), cs)
 }
 
 // showWindow 恢复被隐藏或最小化的窗口并把程序切到前台。

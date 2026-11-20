@@ -2,7 +2,7 @@
 
 import { OptionSelect } from "@/components/option-select";
 import { useI18n } from "@/components/locale-provider";
-import { LOCALES } from "@/lib/i18n";
+import { isLocale, LOCALES } from "@/lib/i18n";
 
 /** Both entry points share the same device-local language preference. */
 export function LanguageSelect() {
@@ -12,7 +12,7 @@ export function LanguageSelect() {
       value={locale}
       options={LOCALES}
       onChange={(value) => {
-        if (value === "zh-CN" || value === "en" || value === "cs") setLocale(value);
+        if (isLocale(value)) setLocale(value);
       }}
       aria-label={t("语言")}
     />

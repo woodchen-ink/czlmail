@@ -106,9 +106,9 @@ func (a *App) ExportEmail(accountID, emailID string) (string, error) {
 	}
 
 	path, err := a.saveFileDialog(fileDialog{
-		Title:           "导出邮件",
+		Title:           a.text().ExportEmail,
 		DefaultFilename: safeFilename(detail.Subject) + ".eml",
-		Filters:         []fileFilter{{Name: "邮件 (*.eml)", Pattern: "*.eml"}},
+		Filters:         []fileFilter{{Name: a.text().EmailFiles, Pattern: "*.eml"}},
 	})
 	if err != nil {
 		return "", fmt.Errorf("2036 open save dialog: %w", err)
@@ -147,9 +147,9 @@ func (a *App) ImportEmails(accountID, mailboxID string) (*ImportResult, error) {
 	}
 
 	paths, err := a.openFilesDialog(fileDialog{
-		Title: "导入邮件",
+		Title: a.text().ImportEmail,
 		Filters: []fileFilter{
-			{Name: "邮件或压缩包 (*.eml, *.zip)", Pattern: "*.eml;*.zip"},
+			{Name: a.text().EmailOrZipFiles, Pattern: "*.eml;*.zip"},
 		},
 	})
 	if err != nil {

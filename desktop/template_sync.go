@@ -212,8 +212,8 @@ func (a *App) ImportTemplatesFile() (int, error) {
 		return 0, err
 	}
 	path, err := a.openFileDialog(fileDialog{
-		Title:   "导入邮件模板",
-		Filters: []fileFilter{{Name: "模板文件 (*.json)", Pattern: "*.json"}},
+		Title:   a.text().ImportTemplates,
+		Filters: []fileFilter{{Name: a.text().TemplateFiles, Pattern: "*.json"}},
 	})
 	if err != nil || path == "" {
 		return 0, err

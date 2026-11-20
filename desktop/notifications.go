@@ -64,10 +64,11 @@ func (a *App) notifyNewMail(notices []newMailNotice) {
 		return
 	}
 
+	text := a.text()
 	if len(notices) > notifyMax {
 		_ = n.Notify(ctx, notify.Notification{
-			Title: "新邮件",
-			Body:  fmt.Sprintf("收到 %d 封新邮件", len(notices)),
+			Title: text.NewMailTitle,
+			Body:  fmt.Sprintf(text.NewMailCount, len(notices)),
 		})
 		return
 	}
@@ -75,17 +76,17 @@ func (a *App) notifyNewMail(notices []newMailNotice) {
 	for _, notice := range notices {
 		_ = n.Notify(ctx, notify.Notification{
 			Title:    notice.From,
-			Body:     notificationBody(notice),
+			Body:     notificationBody(notice, text),
 			ActionID: notice.AccountID + "/" + notice.ID,
 		})
 	}
 }
 
 // notificationBody 用主题加摘要, 主题为空时退回摘要。
-func notificationBody(notice newMailNotice) string {
+func notificationBody(notice newMailNotice, text uiText) string {
 	subject := strings.TrimSpace(notice.Subject)
 	if subject == "" {
-		subject = "(无主题)"
+		subject = text.NoSubject
 	}
 
 	preview := strings.TrimSpace(notice.Preview)

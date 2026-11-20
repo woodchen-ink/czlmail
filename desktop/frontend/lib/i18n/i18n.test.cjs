@@ -10,7 +10,9 @@ const ts = require("typescript");
 const root = path.resolve(__dirname, "../..");
 const corePath = path.join(__dirname, "index.ts");
 const english = require("./en.json");
-const czech = require("./cs.json");
+/** Every translated dictionary next to en.json; a new language is checked without touching this file. */
+const dictionaries = fs.readdirSync(__dirname).filter((name) => /^[a-z]{2}(-[A-Z]{2})?\.json$/.test(name))
+  .map((name) => [name, require(path.join(__dirname, name))]);
 
 /** Load an isolated locale store without building Next.js or generating Wails bindings. */
 function loadLocale({ saved = null, blocked = false, languages } = {}) {
@@ -165,7 +167,7 @@ test("Every literal UI translation key has an English entry", () => {
 
 test("Translations preserve all numbered placeholders", () => {
   const placeholders = (value) => [...new Set(value.match(/\{\d+\}/g) ?? [])].sort();
-  for (const dictionary of [english, czech]) {
+  for (const [, dictionary] of dictionaries) {
     for (const [source, translated] of Object.entries(dictionary)) {
       assert.ok(translated.trim(), `empty translation: ${source}`);
       assert.deepEqual(placeholders(translated), placeholders(source), source);
@@ -173,8 +175,17 @@ test("Translations preserve all numbered placeholders", () => {
   }
 });
 
-test("Czech covers exactly the English dictionary", () => {
-  assert.deepEqual(Object.keys(czech), Object.keys(english));
+test("Every dictionary covers exactly the English keys and is registered", () => {
+  const core = fs.readFileSync(corePath, "utf8");
+  for (const [name, dictionary] of dictionaries) {
+    assert.deepEqual(Object.keys(dictionary), Object.keys(english), name);
+    const id = name.replace(/\.json$/, "");
+    assert.match(core, new RegExp(`id: "${id}"`), `${name} is not in LOCALE_TABLE`);
+  }
+  const go = fs.readFileSync(path.join(root, "..", "api_locale.go"), "utf8");
+  for (const [id] of core.matchAll(/id: "([^"]+)"/g).map((m) => [m[1]])) {
+    assert.match(go, new RegExp(`^\t"${id}": \{`, "m"), `${id} has no Go uiTexts entry`);
+  }
 });
 
 test("Every TypeScript and JSX source parses", () => {

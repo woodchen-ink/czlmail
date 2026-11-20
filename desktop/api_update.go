@@ -167,23 +167,11 @@ func (a *App) notifyUpdateOnce(info UpdateInfo) {
 	if n == nil {
 		return
 	}
-	title, body := updateNotice(a.currentUILocale(), info.Release.Version)
-	_ = n.Notify(ctx, notify.Notification{Title: title, Body: body, ActionID: "update:"})
+	text := a.text()
+	_ = n.Notify(ctx, notify.Notification{
+		Title:    fmt.Sprintf(text.UpdateTitle, info.Release.Version),
+		Body:     text.UpdateBody,
+		ActionID: "update:",
+	})
 	_ = st.SetStringSetting(a.ctx, "updateNotifiedVersion", info.Release.Version)
-}
-
-// updateNotices 是新版本系统通知的标题与正文模板, 按界面语言选; 标题与界面内提示「CZL Mail {0} 已发布」的译文一致。
-var updateNotices = map[string][2]string{
-	"zh-CN": {"CZL Mail %s 已发布", "打开「设置 → 关于与更新」一键更新"},
-	"en":    {"CZL Mail %s is available", "Open Settings → About and updates to install it"},
-	"cs":    {"Byla vydána verze CZL Mail %s", "Aktualizovat můžete v Nastavení → O aplikaci a aktualizace"},
-}
-
-// updateNotice 返回新版本通知的标题与正文, 不认识的语言用默认语言。
-func updateNotice(locale, version string) (title, body string) {
-	text, ok := updateNotices[locale]
-	if !ok {
-		text = updateNotices[defaultUILocale]
-	}
-	return fmt.Sprintf(text[0], version), text[1]
 }

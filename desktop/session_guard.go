@@ -171,8 +171,8 @@ func (a *App) requireSignIn(client *jmap.Client, reason error) {
 	// 窗口多半缩在托盘里, 只在界面上提示用户看不到。
 	if first && n != nil {
 		_ = n.Notify(a.ctx, notify.Notification{
-			Title:    "登录已失效",
-			Body:     username + " 需要重新登录后才能继续收发邮件",
+			Title:    a.text().SignInTitle,
+			Body:     fmt.Sprintf(a.text().SignInBody, username),
 			ActionID: signInActionID,
 		})
 	}

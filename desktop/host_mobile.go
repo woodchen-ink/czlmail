@@ -115,6 +115,9 @@ func (a *App) startTray() {}
 
 func (a *App) stopTray() {}
 
+// 移动端没有托盘菜单。
+func (a *App) setTrayMenuText(uiText) {}
+
 func (a *App) setTrayUnread(n int) {
 	go func() {
 		if _, err := hostRequest(a.ctx, "badge", map[string]int{"count": n}); err != nil {

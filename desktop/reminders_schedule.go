@@ -60,7 +60,7 @@ type reminderSchedule struct {
 
 // upcomingReminders 算出 (now, now+horizon] 内的提醒, 按触发时间取最近的 limit 条。
 // 规则与 checkReminders 相同; 同一次发生在同一时刻的多条提醒 (事件同属两个日历、默认提醒相同) 只留一条。
-func upcomingReminders(occs []EventOccurrence, defaults defaultAlerts, now time.Time, horizon time.Duration, limit int) []scheduledReminder {
+func upcomingReminders(occs []EventOccurrence, defaults defaultAlerts, now time.Time, horizon time.Duration, limit int, text uiText) []scheduledReminder {
 	until := now.Add(horizon)
 	seen := map[string]bool{}
 	out := []scheduledReminder{}
@@ -80,7 +80,7 @@ func upcomingReminders(occs []EventOccurrence, defaults defaultAlerts, now time.
 			}
 			seen[key] = true
 			sum := sha256.Sum256([]byte(key))
-			title, body := reminderText(o, at)
+			title, body := reminderText(o, at, text)
 			out = append(out, scheduledReminder{
 				ID:       hex.EncodeToString(sum[:8]),
 				Title:    title,
@@ -120,7 +120,7 @@ func (a *App) reminderPlan(now time.Time) ([]scheduledReminder, error) {
 	if err != nil {
 		return nil, err
 	}
-	return upcomingReminders(occs, calendarDefaultAlerts(a.ctx, st), now, reminderHorizon, scheduledReminderMax), nil
+	return upcomingReminders(occs, calendarDefaultAlerts(a.ctx, st), now, reminderHorizon, scheduledReminderMax, a.text()), nil
 }
 
 // syncReminders 重新计算并登记。force 为假时内容没变就不打扰原生壳;
