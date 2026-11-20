@@ -124,12 +124,14 @@ export function EmailList({
   }, [emails]);
 
   // 列表刷新(新邮件到达、标记已读)后, 展开的会话重新读取。
+  // 按会话行代表的那封读取: 它在回收站之外时, 删到回收站的往来不再列出。
   useEffect(() => {
     if (!expanded) return;
+    const head = rows.find((r) => threadKey(r.head) === expanded)?.head;
+    if (!head) return;
     let cancelled = false;
-    const i = expanded.indexOf("/");
     api
-      .threadEmails(expanded.slice(0, i), expanded.slice(i + 1))
+      .threadEmails(head.accountId, head.id)
       .catch(() => [])
       .then((list) => {
         if (!cancelled) setThreads({ [expanded]: list ?? [] });
@@ -157,7 +159,7 @@ export function EmailList({
     }
     setExpanded(key);
     if (!threads[key]) {
-      const list = (await api.threadEmails(email.accountId, email.threadId).catch(() => [])) ?? [];
+      const list = (await api.threadEmails(email.accountId, email.id).catch(() => [])) ?? [];
       setThreads((prev) => ({ ...prev, [key]: list }));
     }
   }

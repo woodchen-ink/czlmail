@@ -236,6 +236,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   const hiddenIds = useRef(new Map<string, number>());
   const patchedIds = useRef(new Map<string, { patch: Partial<EmailSummary>; seq: number }>());
   const mutationSeq = useRef(0);
+  /** 阅读栏里被操作的那封所在会话, 移走它后选中该会话在列表里的行。 */
+  const openThread = useRef<{ key: string; accountId: string; threadId: string } | null>(null);
   // 正在清空的文件夹(账号/文件夹): 后台逐批删除期间列表保持为空。
   const emptying = useRef(new Set<string>());
 
@@ -621,6 +623,12 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
         setSelectedKey((cur) => {
           if (!keySet.has(cur)) return cur;
           const idx = list.findIndex((e) => emailKey(e) === cur);
+          // 选中的是展开会话里不在本文件夹的一封(如已发送的回复): 列表里没有它, 回到代表该会话的行。
+          if (idx < 0) {
+            const open = openThread.current;
+            const head = open?.key === cur && open.threadId && list.find((e) => e.accountId === open.accountId && e.threadId === open.threadId && !inSet(e));
+            return head ? emailKey(head) : "";
+          }
           const after = list.slice(idx + 1).find((e) => !inSet(e));
           const before = list
             .slice(0, Math.max(0, idx))
@@ -966,16 +974,31 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     (email: EmailDetail): ToolbarActions => {
       const acc = email.accountId;
       const key = emailKey(email);
+      const remember = () => {
+        openThread.current = { key, accountId: acc, threadId: email.threadId };
+      };
       return {
         reply: () => setDraft(replyDraft(acc, email, false)),
         replyAll: () => setDraft(replyDraft(acc, email, true)),
         forward: () => setDraft(forwardDraft(email, acc)),
         forwardAsAttachment: () => setDraft(forwardAsAttachmentDraft(email, acc)),
-        archive: () => archiveIds([key]),
-        trash: () => trashIds([key]),
-        move: (target) => moveIds([key], acc, target),
+        archive: () => {
+          remember();
+          archiveIds([key]);
+        },
+        trash: () => {
+          remember();
+          trashIds([key]);
+        },
+        move: (target) => {
+          remember();
+          moveIds([key], acc, target);
+        },
         setLabel: (label, set) => setLabelIds([key], label, set),
-        junk: (junk) => junkIds([key], junk),
+        junk: (junk) => {
+          remember();
+          junkIds([key], junk);
+        },
         markUnread: () => {
           markReadIds([key], false);
           // 标为未读后关闭阅读栏，否则停留在这封上会被再次自动标记已读。
@@ -1399,6 +1422,16 @@ function inlinePartsOf(email: EmailDetail) {
     .map((a) => ({ blobId: a.blobId, type: a.type, name: a.name || a.cid, cid: a.cid }));
 }
 
+/**
+ * 回复、转发时优先用的发件地址: 原邮件寄到的地址(收件人、抄送、密送), 最后是发件人
+ * (回复自己发出的邮件时沿用当时的身份)。对方的地址不会是自己的身份, 匹配时自然跳过。
+ */
+function fromCandidatesOf(email: EmailDetail): string[] {
+  return [...(email.to ?? []), ...(email.cc ?? []), ...(email.bcc ?? []), ...(email.from ?? [])]
+    .map((a) => a.email ?? "")
+    .filter(Boolean);
+}
+
 /** 原邮件正文转成可以引用的 HTML。 */
 function originalHtml(email: EmailDetail): string {
   return email.bodyHtml || textToHtml(email.bodyText || "");
@@ -1419,6 +1452,7 @@ function replyDraft(accountId: string, email: EmailDetail, all: boolean): Compos
     references: refs,
     replyTo: { accountId, emailId: email.id },
     inlineParts: inlinePartsOf(email),
+    fromCandidates: fromCandidatesOf(email),
     accountId,
   };
 }
@@ -1444,6 +1478,7 @@ function forwardDraft(email: EmailDetail, accountId: string): ComposeDraft {
     attachments: (email.attachments ?? [])
       .filter((a) => !a.inline)
       .map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, size: a.size })),
+    fromCandidates: fromCandidatesOf(email),
     accountId,
   };
 }
@@ -1457,6 +1492,7 @@ function forwardAsAttachmentDraft(email: EmailDetail, accountId: string): Compos
     subject: withPrefix("Fwd:", email.subject),
     html: "",
     attachments: [{ blobId: email.blobId, type: "message/rfc822", name: `${email.subject || "email"}.eml`, size: email.size }],
+    fromCandidates: fromCandidatesOf(email),
   };
 }
 
@@ -1476,6 +1512,8 @@ function draftFromEmail(email: EmailDetail, accountId: string): ComposeDraft {
       .map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, size: a.size })),
     draftId: email.id,
     inlineParts: inlinePartsOf(email),
+    // 草稿的发件人就是当时选的身份, 续编时不换成默认身份。
+    fromCandidates: (email.from ?? []).map((a) => a.email ?? "").filter(Boolean),
     accountId,
   };
 }

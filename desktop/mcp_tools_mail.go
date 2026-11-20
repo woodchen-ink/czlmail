@@ -203,7 +203,7 @@ func (a *App) addMailTools(server *mcp.Server) {
 		if err != nil {
 			return nil, nil, err
 		}
-		list, err := a.ThreadEmails(acc, d.ThreadID)
+		list, err := a.ThreadEmails(acc, d.ID)
 		if err != nil {
 			return nil, nil, err
 		}

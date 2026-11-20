@@ -315,16 +315,29 @@ func (a *App) defaultCalendar(accountID string) (string, error) {
 	return first, nil
 }
 
-// ThreadEmails 列出与某封邮件同一会话的全部邮件(时间正序), 供阅读栏展示往来记录。
-func (a *App) ThreadEmails(accountID, threadID string) ([]store.EmailSummary, error) {
+// ThreadEmails 列出与某封邮件同一会话的邮件(时间正序), 供列表展开会话与 AI 总结往来。
+// 那封邮件不在回收站/垃圾邮件里时, 只在那里的往来不列出(见 store.ThreadEmails)。
+func (a *App) ThreadEmails(accountID, emailID string) ([]store.EmailSummary, error) {
 	st, err := a.currentStore()
 	if err != nil {
 		return nil, err
 	}
-	if threadID == "" {
+	if emailID == "" {
 		return nil, nil
 	}
-	return st.ThreadEmails(a.ctx, accountID, threadID, 200)
+	return st.ThreadEmails(a.ctx, accountID, emailID, 200)
+}
+
+// LatestInThread 返回会话里最新一封邮件的 id, 供 czlmail://thread 链接打开; 本地没有时为空。
+func (a *App) LatestInThread(accountID, threadID string) (string, error) {
+	st, err := a.currentStore()
+	if err != nil {
+		return "", err
+	}
+	if threadID == "" {
+		return "", nil
+	}
+	return st.LatestInThread(a.ctx, accountID, threadID)
 }
 
 // SendReadReceipt 回复发件人的已读回执请求, 并打上 $mdnsent 避免重复提示。

@@ -40,8 +40,7 @@ export function Integration() {
           // czlmail:// 链接与点系统通知。会话链接打开其中最新的一封; 本地没有缓存时提示而不是静默忽略。
           let emailId = r.id;
           if (r.kind === "thread") {
-            const list = (await api.threadEmails(r.accountId, r.id).catch(() => [])) ?? [];
-            emailId = list[list.length - 1]?.id ?? "";
+            emailId = (await api.latestInThread(r.accountId, r.id).catch(() => "")) ?? "";
           }
           if (!emailId) {
             toast.error(t("本地找不到链接指向的邮件"));

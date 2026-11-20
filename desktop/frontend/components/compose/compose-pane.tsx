@@ -83,6 +83,11 @@ export interface ComposeDraft {
   /** 回复的原邮件, 供 AI 起草回复使用。 */
   replyTo?: { accountId: string; emailId: string };
   /**
+   * 优先用作发件身份的地址, 按顺序匹配。回复/转发是原邮件寄到的地址(对方写给 support@a 就用 support@a 回),
+   * 续编草稿是草稿的发件人; 都匹配不上时按默认身份。
+   */
+  fromCandidates?: string[];
+  /**
    * 写信用的账号。回复、转发、续编草稿时是原邮件所在账号(引用的附件 blob 只在该账号可用,
    * 发件身份也取自它); 新写的信不填, 由外壳按当前视图决定。
    */
@@ -205,8 +210,10 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       const preferred = st?.defaultIdentities?.[accountId];
       // 没有设置默认身份时, 优先用与登录账号同地址的身份。
       const login = session?.username?.toLowerCase() ?? "";
+      const byAddress = (addr: string) => list.find((i) => i.email.toLowerCase() === addr.toLowerCase());
+      const matched = (draft.fromCandidates ?? []).map(byAddress).find(Boolean);
       setIdentityId(
-        (list.find((i) => i.id === preferred) ?? list.find((i) => i.email.toLowerCase() === login) ?? list[0])?.id ?? "",
+        (matched ?? list.find((i) => i.id === preferred) ?? byAddress(login) ?? list[0])?.id ?? "",
       );
     });
     return () => {

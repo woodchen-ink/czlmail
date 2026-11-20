@@ -294,6 +294,7 @@ export const api = {
   saveTranslation: guard(App.SaveTranslation),
   addInviteToCalendar: guard(App.AddInviteToCalendar),
   threadEmails: guard(App.ThreadEmails),
+  latestInThread: guard(App.LatestInThread),
   sendReadReceipt: guard(App.SendReadReceipt),
   ignoreReadReceipt: guard(App.IgnoreReadReceipt),
 };

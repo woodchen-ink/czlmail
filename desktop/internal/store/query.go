@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -149,9 +150,22 @@ func (s *Store) pinnedInMailbox(ctx context.Context, accountID, mailboxID string
 	return scanSummaries(rows)
 }
 
+// discardedSQL 是「邮件只在回收站/垃圾邮件里」的条件, alias 为 emails 表的别名。
+// 按服务器 role 判断, 不含按名称推断的类别(那要在 Go 里算, 没法放进列表查询)。
+func discardedSQL(alias string) string {
+	return strings.ReplaceAll(`NOT EXISTS (
+		SELECT 1 FROM email_mailboxes dm
+		LEFT JOIN mailboxes db ON db.account_id = dm.account_id AND db.id = dm.mailbox_id
+		WHERE dm.account_id = @.account_id AND dm.email_id = @.id
+		  AND COALESCE(LOWER(db.role), '') NOT IN ('trash', 'junk'))`, "@", alias)
+}
+
 // threadCountColumn 附加在列表查询末尾, scanSummaries 按列数识别。
-const threadCountColumn = `,
-	(SELECT COUNT(*) FROM emails t WHERE t.account_id = e.account_id AND t.thread_id = e.thread_id AND e.thread_id != '')`
+// 删掉的往来不计: 收件箱里的会话行不该因为回收站里的几封而显示成多封; 行本身在回收站/垃圾邮件里时全部计入。
+// 与 ThreadEmails 的筛选一致, 封数才对得上展开后的行数。
+var threadCountColumn = `,
+	(SELECT COUNT(*) FROM emails t WHERE t.account_id = e.account_id AND t.thread_id = e.thread_id AND e.thread_id != ''
+	   AND (` + discardedSQL("e") + ` OR NOT ` + discardedSQL("t") + `))`
 
 func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 	var out []EmailSummary
@@ -193,15 +207,34 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 	return out, wrap(CodeQuery, "iterate email summaries", rows.Err())
 }
 
-// ThreadEmails 按时间正序列出同一会话的邮件(跨文件夹), 最多 limit 封。
-func (s *Store) ThreadEmails(ctx context.Context, accountID, threadID string, limit int) ([]EmailSummary, error) {
+// LatestInThread 返回会话里最新一封邮件的 id, 不在回收站/垃圾邮件里的优先; 本地没有时为空。
+func (s *Store) LatestInThread(ctx context.Context, accountID, threadID string) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT e.id FROM emails e
+		WHERE e.account_id = ? AND e.thread_id = ?
+		ORDER BY `+discardedSQL("e")+` ASC, e.received_at DESC
+		LIMIT 1`,
+		accountID, threadID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return id, wrap(CodeQuery, "query latest in thread", err)
+}
+
+// ThreadEmails 按时间正序列出 anchor 所在会话的邮件(跨文件夹), 最多 limit 封。
+// anchor 是界面上代表会话的那封: 它不在回收站/垃圾邮件里时, 只在那里的往来不列出
+// (否则刚删掉的邮件仍留在展开区, 看起来像没删掉); 它本身在回收站里时全部列出。
+func (s *Store) ThreadEmails(ctx context.Context, accountID, anchorID string, limit int) ([]EmailSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+summaryColumns+`
-		FROM emails e
-		WHERE e.account_id = ? AND e.thread_id = ?
+		FROM emails a
+		JOIN emails e ON e.account_id = a.account_id AND e.thread_id = a.thread_id
+		WHERE a.account_id = ? AND a.id = ? AND a.thread_id != ''
+		  AND (`+discardedSQL("a")+` OR NOT `+discardedSQL("e")+`)
 		ORDER BY e.received_at ASC
 		LIMIT ?`,
-		accountID, threadID, limit)
+		accountID, anchorID, limit)
 	if err != nil {
 		return nil, wrap(CodeQuery, "query thread", err)
 	}
