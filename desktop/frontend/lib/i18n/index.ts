@@ -1,5 +1,6 @@
 import czech from "./cs.json";
 import english from "./en.json";
+import russian from "./ru.json";
 
 /**
  * Supported languages; everything else (type, validation, date locale, system matching, picker) derives from here.
@@ -11,6 +12,7 @@ const LOCALE_TABLE = [
   { id: "zh-CN", label: "简体中文", date: "zh-CN", messages: null },
   { id: "en", label: "English", date: "en-US", messages: english },
   { id: "cs", label: "Čeština", date: "cs-CZ", messages: czech },
+  { id: "ru", label: "Русский", date: "ru-RU", messages: russian },
 ] as const satisfies readonly {
   id: string; label: string; date: string; messages: Readonly<Record<string, string>> | null;
 }[];

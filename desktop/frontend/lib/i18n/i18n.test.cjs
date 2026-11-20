@@ -250,7 +250,7 @@ test("Date labels change language but date input and protocol values do not", ()
 
 test("Language switching never translates attachment detection keywords or request values", () => {
   const compose = fs.readFileSync(path.join(root, "components/compose/compose-pane.tsx"), "utf8");
-  assert.match(compose, /const ATTACHMENT_WORDS = \["附件", "附上", "见附", "attached", "attachment", "enclosed", "příloh", "příloze", "přiklád", "přilož"\]/);
+  assert.match(compose, /const ATTACHMENT_WORDS = \["附件", "附上", "见附", "attached", "attachment", "enclosed", "příloh", "příloze", "přiklád", "přilož", "влож", "прилага", "прикреп"\]/);
   assert.match(compose, /language: lang/);
   const login = fs.readFileSync(path.join(root, "components/sign-in.tsx"), "utf8");
   const appearance = fs.readFileSync(path.join(root, "components/settings/general-sections.tsx"), "utf8");
