@@ -242,7 +242,7 @@ export function SignIn({ onSignedIn, reauth, onBack }: Props) {
 
           {error && (
             <p className="text-destructive text-sm leading-relaxed" role="alert">
-              {signInError(error)}
+              {errorMessage(error)}
             </p>
           )}
         </form>
@@ -293,27 +293,6 @@ function Field({
       {hint && <p className="text-muted-foreground text-xs leading-relaxed">{hint}</p>}
     </div>
   );
-}
-
-/** 把登录流程的错误码转成用户能照着处理的说明; 未收录的原样显示, 方便反馈时对照日志。 */
-export function signInError(msg: string): string {
-  const code = msg.slice(0, 4);
-  const map: Record<string, string> = {
-    "2020": t("本机没有找到保存的登录凭据。"),
-    "2065": t("登录已过期，保存的令牌无法再续期。"),
-    "2060": t("认证失败：请检查邮箱地址与应用专用密码（单点登录的密码在这里不能用）。"),
-    "2061": t("这个地址上没有找到 JMAP 服务，请确认服务器地址。"),
-    "2062": t("连不上邮件服务器，请检查网络与服务器地址。"),
-    "2063": t("邮件服务器没有正常响应，请稍后重试。"),
-    "2064": t("邮件服务器不接受这次浏览器授权得到的令牌（服务器可能把认证交给了外部身份提供商）。请改用应用专用密码登录。"),
-    "2052": t("单点登录需要同时填写身份提供商地址和客户端 ID。"),
-    "3001": t("这个服务器没有提供浏览器授权登录，请改用应用专用密码。"),
-    "3021": t("浏览器授权超时或已取消。"),
-    "3022": t("换取令牌失败，请重试；多次失败请改用应用专用密码登录。"),
-    "3023": t("授权被拒绝。"),
-    "3024": t("授权状态校验失败，请重新登录。"),
-  };
-  return map[code] ? `${map[code]}（${code}）` : msg;
 }
 
 const PREF_PREFIX = "czlmail.signin.";

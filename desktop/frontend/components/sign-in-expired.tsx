@@ -7,7 +7,6 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { signInError } from "@/components/sign-in";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -90,7 +89,7 @@ export function SignInExpired({ onReauth }: { onReauth: (status: SessionStatus) 
       await api.retrySession();
       toast.success(t("已重新连接"));
     } catch (err) {
-      setRetryError(signInError(errorMessage(err)));
+      setRetryError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -108,7 +107,7 @@ export function SignInExpired({ onReauth }: { onReauth: (status: SessionStatus) 
           </AlertDialogDescription>
         </AlertDialogHeader>
         <p className="text-muted-foreground text-xs leading-relaxed">
-          {t("原因：{0}", signInError(status.signInReason))}
+          {t("原因：{0}", errorMessage(status.signInReason))}
         </p>
         {retryError && (
           <p className="text-destructive text-xs leading-relaxed" role="alert">

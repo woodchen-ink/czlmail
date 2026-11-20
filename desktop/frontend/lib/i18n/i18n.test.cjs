@@ -184,6 +184,24 @@ test("Every dictionary covers exactly the English keys and is registered", () =>
   }
 });
 
+test("Every localized error code exists in the Go backend", () => {
+  const api = fs.readFileSync(path.join(root, "lib/api.ts"), "utf8");
+  const table = api.slice(api.indexOf("const ERROR_MESSAGES"), api.indexOf("};", api.indexOf("const ERROR_MESSAGES")));
+  const codes = [...table.matchAll(/^ {2}"(\d{4})":/gm)].map((m) => m[1]);
+  assert.ok(codes.length > 50, "error table not found");
+  /** Go sources under desktop/, skipping the frontend and build output. */
+  function goFiles(directory) {
+    return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) return ["frontend", "build", "node_modules"].includes(entry.name) ? [] : goFiles(file);
+      return entry.name.endsWith(".go") && !entry.name.endsWith("_test.go") ? [file] : [];
+    });
+  }
+  const backend = goFiles(path.join(root, "..")).map((file) => fs.readFileSync(file, "utf8")).join("\n");
+  const missing = codes.filter((code) => !new RegExp(`"${code}[ "]`).test(backend));
+  assert.deepEqual(missing, [], "codes in ERROR_MESSAGES that the backend never returns");
+});
+
 test("Every TypeScript and JSX source parses", () => {
   for (const file of files) {
     const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);

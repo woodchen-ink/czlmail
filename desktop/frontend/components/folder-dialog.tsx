@@ -178,12 +178,8 @@ function pathOf(m: Mailbox, all: Mailbox[]): string {
 }
 
 function folderError(err: unknown): string {
+  // 错误码的说明在 lib/api.ts 的 ERROR_MESSAGES; 同名冲突是服务器的 SetError, 没有错误码。
   const msg = errorMessage(err);
-  if (msg.startsWith("2191")) return t("文件夹里还有邮件，勾选「同时删除其中的邮件」后再删除");
-  if (msg.startsWith("2192")) return t("请先删除或移走子文件夹");
-  if (msg.startsWith("2193")) return t("文件夹名称不能为空，也不能包含 /");
-  if (msg.startsWith("2194")) return t("不能把文件夹移动到它自己里面");
-  if (msg.startsWith("2195")) return t("系统文件夹不能删除或移动");
   if (/alreadyExists/i.test(msg)) return t("同一位置已有同名文件夹");
   return msg;
 }
