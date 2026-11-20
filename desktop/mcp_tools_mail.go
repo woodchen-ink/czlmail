@@ -354,7 +354,7 @@ func (a *App) addMailTools(server *mcp.Server) {
 		if err != nil {
 			return nil, nil, err
 		}
-		def, _ := a.pickIdentity(acc, "")
+		def, _ := a.pickIdentity(acc, "", nil)
 		out := make([]map[string]any, 0, len(ids))
 		for _, id := range ids {
 			out = append(out, map[string]any{"id": id.ID, "name": id.Name, "email": id.Email, "isDefault": id.ID == def.ID})

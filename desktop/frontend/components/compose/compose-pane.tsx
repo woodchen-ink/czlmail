@@ -87,6 +87,13 @@ export interface ComposeDraft {
    * 续编草稿是草稿的发件人; 都匹配不上时按默认身份。
    */
   fromCandidates?: string[];
+  /** 回复全部: 身份加载后从抄送里去掉自己的地址(本账号的全部发件身份与登录地址)。 */
+  dropOwnFromCc?: boolean;
+  /**
+   * 回复时原邮件的发件人与收件人。发件人是自己的身份(回复自己发出的邮件)时,
+   * 收件人改回原收件人(回复全部再带原抄送), 而不是发给自己。身份要等面板加载才知道, 所以在这里换。
+   */
+  original?: { from: string; to: string; cc: string };
   /**
    * 写信用的账号。回复、转发、续编草稿时是原邮件所在账号(引用的附件 blob 只在该账号可用,
    * 发件身份也取自它); 新写的信不填, 由外壳按当前视图决定。
@@ -215,6 +222,19 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       setIdentityId(
         (matched ?? list.find((i) => i.id === preferred) ?? byAddress(login) ?? list[0])?.id ?? "",
       );
+      const own = new Set([login, ...list.map((i) => i.email.toLowerCase())].filter(Boolean));
+      const orig = draft.original;
+      if (orig && own.has(orig.from.toLowerCase())) {
+        // 原收件人里也可能有自己(发给自己的另一个地址), 去掉后为空就保留原样。
+        const recipients = withoutAddresses(orig.to, own) || orig.to;
+        // 只在用户还没改过时替换。
+        setTo((prev) => (prev === draft.to ? recipients : prev));
+        if (draft.dropOwnFromCc) {
+          setCc((prev) => (prev === draft.cc ? withoutAddresses(orig.cc, own) : withoutAddresses(prev, own)));
+        }
+      } else if (draft.dropOwnFromCc) {
+        setCc((prev) => withoutAddresses(prev, own));
+      }
     });
     return () => {
       cancelled = true;
@@ -837,6 +857,18 @@ function schedulePresets(): { label: string; date: Date }[] {
   ];
   if (now.getHours() < 17) list.unshift({ label: t("今天傍晚"), date: at(0, 18) });
   return list;
+}
+
+/** 去掉地址栏里属于 drop 的地址(小写), 其余按原写法保留。 */
+function withoutAddresses(input: string, drop: Set<string>): string {
+  return input
+    .split(/[,;，；]/)
+    .map((part) => part.trim())
+    .filter((part) => {
+      const email = parseAddresses(part)[0]?.email?.toLowerCase();
+      return !email || !drop.has(email);
+    })
+    .join(", ");
 }
 
 /**

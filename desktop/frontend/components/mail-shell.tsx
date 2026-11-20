@@ -1437,17 +1437,41 @@ function originalHtml(email: EmailDetail): string {
   return email.bodyHtml || textToHtml(email.bodyText || "");
 }
 
+/*
+ * 引用原邮件的内联样式(发出去的邮件里只有内联样式可靠)。与 mcp_tools_compose.go 的同名常量一致。
+ * 不写 color / background: 带配色的邮件在暗色主题下会被整封按亮色渲染(hasOwnColors), 灰度用 opacity。
+ */
+const QUOTE_STYLE = "margin-top:24px";
+const QUOTE_META_STYLE = "font-size:13px;opacity:.65;margin:0 0 8px";
+const QUOTE_BLOCK_STYLE = "margin:0;padding:0 0 0 12px;border-left:3px solid #d0d7de";
+const FORWARD_META_STYLE = "font-size:13px;line-height:1.7;opacity:.7;margin:0 0 12px;padding:10px 0 0;border-top:1px solid #d0d7de";
+
 function replyDraft(accountId: string, email: EmailDetail, all: boolean): ComposeDraft {
   // References 应是原邮件的 References 加上它自己的 Message-ID。本地没存完整链，
   // 用 In-Reply-To + Message-ID 近似，足够对方客户端把回复挂进线程。
   const refs = [email.inReplyTo, email.messageId].filter(Boolean) as string[];
   const intro = t("在 {0}，{1} 写道：", fullDate(email.receivedAt), displayAddressList(email.from));
+  const to = email.replyTo?.length ? email.replyTo : email.from;
+  // 抄送去掉已在收件人里的与重复的地址; 自己的地址由写信面板按发件身份去掉(这里还不知道身份)。
+  const seen = new Set((to ?? []).map((a) => a.email?.toLowerCase()));
+  const cc = [...(email.to ?? []), ...(email.cc ?? [])].filter((a) => {
+    const key = a.email?.toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   return {
-    to: addressesOf(email.replyTo?.length ? email.replyTo : email.from),
-    cc: all ? addressesOf([...(email.to ?? []), ...(email.cc ?? [])]) : "",
+    to: addressesOf(to),
+    cc: all ? addressesOf(cc) : "",
+    dropOwnFromCc: all,
+    original: {
+      from: email.from?.[0]?.email ?? "",
+      to: addressesOf(email.to),
+      cc: all ? addressesOf(email.cc) : "",
+    },
     subject: withPrefix("Re:", email.subject),
     html: "",
-    quoteHtml: `<div class="czl-quote"><p>${escapeHtml(intro)}</p><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${originalHtml(email)}</blockquote></div>`,
+    quoteHtml: `<div class="czl-quote" style="${QUOTE_STYLE}"><div style="${QUOTE_META_STYLE}">${escapeHtml(intro)}</div><blockquote style="${QUOTE_BLOCK_STYLE}">${originalHtml(email)}</blockquote></div>`,
     inReplyTo: email.messageId,
     references: refs,
     replyTo: { accountId, emailId: email.id },
@@ -1472,7 +1496,7 @@ function forwardDraft(email: EmailDetail, accountId: string): ComposeDraft {
     cc: "",
     subject: withPrefix("Fwd:", email.subject),
     html: "",
-    quoteHtml: `<div class="czl-quote"><p>${header}</p>${originalHtml(email)}</div>`,
+    quoteHtml: `<div class="czl-quote" style="${QUOTE_STYLE}"><div style="${FORWARD_META_STYLE}">${header}</div>${originalHtml(email)}</div>`,
     inlineParts: inlinePartsOf(email),
     // 普通转发带上原邮件的附件，引用服务器上已有的 blob，无需重新上传。
     attachments: (email.attachments ?? [])

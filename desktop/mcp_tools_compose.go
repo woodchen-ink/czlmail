@@ -72,24 +72,22 @@ func (a *App) addComposeTools(server *mcp.Server) {
 	})
 }
 
+// 引用原邮件的内联样式, 与写信面板(mail-shell.tsx 的 QUOTE_*)一致。
+// 不写 color / background: 界面会把带配色的邮件在暗色主题下按亮色渲染, 灰度用 opacity。
+const (
+	quoteStyle       = "margin-top:24px"
+	quoteMetaStyle   = "font-size:13px;opacity:.65;margin:0 0 8px"
+	quoteBlockStyle  = "margin:0;padding:0 0 0 12px;border-left:3px solid #d0d7de"
+	forwardMetaStyle = "font-size:13px;line-height:1.7;opacity:.7;margin:0 0 12px;padding:10px 0 0;border-top:1px solid #d0d7de"
+)
+
 // mcpCompose 按模式组出 ComposeRequest。
 func (a *App) mcpCompose(in composeIn) (ComposeRequest, error) {
 	acc, err := a.mcpAccount(in.AccountID)
 	if err != nil {
 		return ComposeRequest{}, err
 	}
-	identity, err := a.pickIdentity(acc, in.IdentityID)
-	if err != nil {
-		return ComposeRequest{}, err
-	}
-	req := ComposeRequest{
-		AccountID: acc, IdentityID: identity.ID,
-		To: parseAddressList(in.To), CC: parseAddressList(in.CC), BCC: parseAddressList(in.BCC),
-		Subject: strings.TrimSpace(in.Subject),
-	}
-
 	var orig *store.EmailDetail
-	quoteText, quoteHTML := "", ""
 	switch in.Mode {
 	case "", "new":
 	case "reply", "replyAll", "forward":
@@ -102,6 +100,17 @@ func (a *App) mcpCompose(in composeIn) (ComposeRequest, error) {
 	default:
 		return ComposeRequest{}, fmt.Errorf("unknown mode %q", in.Mode)
 	}
+
+	identity, err := a.pickIdentity(acc, in.IdentityID, replyFromCandidates(orig))
+	if err != nil {
+		return ComposeRequest{}, err
+	}
+	req := ComposeRequest{
+		AccountID: acc, IdentityID: identity.ID,
+		To: parseAddressList(in.To), CC: parseAddressList(in.CC), BCC: parseAddressList(in.BCC),
+		Subject: strings.TrimSpace(in.Subject),
+	}
+	quoteText, quoteHTML := "", ""
 
 	if orig != nil {
 		original := emailText(orig)
@@ -122,12 +131,17 @@ func (a *App) mcpCompose(in composeIn) (ComposeRequest, error) {
 				"主题：" + orig.Subject,
 			}
 			quoteText = strings.Join(header, "\n") + "\n\n" + original
-			quoteHTML = `<div class="czl-quote"><p>` + joinEscaped(header, "<br>") + `</p>` + textToHTML(original) + `</div>`
+			quoteHTML = `<div class="czl-quote" style="` + quoteStyle + `"><div style="` + forwardMetaStyle + `">` +
+				joinEscaped(header, "<br>") + `</div>` + textToHTML(original) + `</div>`
 		} else {
 			if len(req.To) == 0 {
 				req.To = orig.From
 				if len(orig.ReplyTo) > 0 {
 					req.To = orig.ReplyTo
+				}
+				// 回复自己发出的邮件: 发给原收件人, 不是发给自己。
+				if len(orig.From) > 0 && a.isOwnAddress(acc, orig.From[0].Email) && len(orig.To) > 0 {
+					req.To = orig.To
 				}
 			}
 			if in.Mode == "replyAll" && len(req.CC) == 0 {
@@ -146,8 +160,8 @@ func (a *App) mcpCompose(in composeIn) (ComposeRequest, error) {
 			}
 			intro := fmt.Sprintf("在 %s，%s 写道：", when, addressLine(orig.From))
 			quoteText = intro + "\n" + quoteLines(original)
-			quoteHTML = `<div class="czl-quote"><p>` + html.EscapeString(intro) +
-				`</p><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">` +
+			quoteHTML = `<div class="czl-quote" style="` + quoteStyle + `"><div style="` + quoteMetaStyle + `">` +
+				html.EscapeString(intro) + `</div><blockquote style="` + quoteBlockStyle + `">` +
 				textToHTML(original) + `</blockquote></div>`
 		}
 	}
@@ -177,9 +191,44 @@ func (a *App) mcpCompose(in composeIn) (ComposeRequest, error) {
 	return req, nil
 }
 
-// pickIdentity 选发件身份: 指定的 id 或地址 > 设置里的默认身份 > 与登录地址相同的身份 > 第一个。
-// 与写信面板的默认规则一致。发信必须带身份, 服务器不会按账号补 From 头。
-func (a *App) pickIdentity(accountID, want string) (Identity, error) {
+// replyFromCandidates 是回复/转发时优先用作发件身份的地址: 原邮件寄到的地址, 最后是发件人
+// (回复自己发出的邮件时沿用当时的身份)。与写信面板的 fromCandidates 相同。
+func replyFromCandidates(orig *store.EmailDetail) []string {
+	if orig == nil {
+		return nil
+	}
+	var out []string
+	for _, list := range [][]store.Address{orig.To, orig.CC, orig.BCC, orig.From} {
+		for _, addr := range list {
+			out = append(out, addr.Email)
+		}
+	}
+	return out
+}
+
+// isOwnAddress 判断地址是不是本账号的发件身份或登录地址。
+func (a *App) isOwnAddress(accountID, email string) bool {
+	if email == "" {
+		return false
+	}
+	if strings.EqualFold(email, a.GetSessionStatus().Username) {
+		return true
+	}
+	ids, err := a.ListIdentities(accountID)
+	if err != nil {
+		return false
+	}
+	for _, id := range ids {
+		if strings.EqualFold(id.Email, email) {
+			return true
+		}
+	}
+	return false
+}
+
+// pickIdentity 选发件身份: 指定的 id 或地址 > prefer 里第一个匹配的地址 > 设置里的默认身份 > 与登录地址相同的身份 > 第一个。
+// 与写信面板的规则一致。发信必须带身份, 服务器不会按账号补 From 头。
+func (a *App) pickIdentity(accountID, want string, prefer []string) (Identity, error) {
 	ids, err := a.ListIdentities(accountID)
 	if err != nil {
 		return Identity{}, err
@@ -194,6 +243,13 @@ func (a *App) pickIdentity(accountID, want string) (Identity, error) {
 			}
 		}
 		return Identity{}, fmt.Errorf("identity %q not found; see list_identities", want)
+	}
+	for _, addr := range prefer {
+		for _, id := range ids {
+			if addr != "" && strings.EqualFold(id.Email, addr) {
+				return id, nil
+			}
+		}
 	}
 	if s, err := a.GetSettings(); err == nil {
 		if pref := s.DefaultIdentities[accountID]; pref != "" {
