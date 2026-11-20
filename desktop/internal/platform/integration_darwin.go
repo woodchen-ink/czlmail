@@ -121,7 +121,7 @@ func SetAutostart(on bool) error {
 	// 直接从下载目录打开未签名的程序时, 系统把它放到只读的随机路径(App Translocation)运行,
 	// 下次登录这个路径就不存在了。
 	if strings.Contains(exe, "/AppTranslocation/") {
-		return errors.New("2172 请先把 CZL Mail 拖到「应用程序」文件夹再开启开机自启")
+		return errors.New("2172 move CZL Mail into the Applications folder before turning on launch at login") // 界面按码显示本地化说明
 	}
 	plist := `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

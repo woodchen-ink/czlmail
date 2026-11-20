@@ -4,9 +4,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/i18n"
@@ -29,7 +31,20 @@ func TestSetUILocaleRejectsUnknown(t *testing.T) {
 
 // 后端 a.t("…")、reminderText 里 t("…") 与 catalog.T 用到的原文, 每个语言文件都要有: 缺了就会在通知、托盘里漏出中文。
 func TestBackendTextsTranslated(t *testing.T) {
-	files, err := filepath.Glob("*.go")
+	// 根包与 internal 下的包 (OAuth 回调页等经调用方传入的翻译函数写文案)。
+	var files []string
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && path != "." && path != "internal" && !strings.HasPrefix(filepath.ToSlash(path), "internal/") {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			files = append(files, path)
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

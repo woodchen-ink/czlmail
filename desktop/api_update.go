@@ -105,7 +105,8 @@ func (a *App) InstallUpdate() error {
 		// 解压新版 .app, 本进程退出后由后台脚本替换并重新打开。
 		if err := update.InstallApp(path); err != nil {
 			if errors.Is(err, update.ErrAppDirNotWritable) {
-				return errors.New("2155 应用所在文件夹没有写入权限, 已在访达中显示新版本, 请手动拖入「应用程序」")
+				// 界面按 2155 显示本地化说明 (lib/api.ts errorMessage)。
+				return errors.New("2155 the app folder is not writable; the new version was revealed in Finder, drag it into Applications")
 			}
 			return fmt.Errorf("2154 install update: %w", err)
 		}

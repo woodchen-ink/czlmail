@@ -1175,5 +1175,12 @@
   "邮件或压缩包 (*.eml, *.zip)": "Email or archive (*.eml, *.zip)",
   "导入 Markdown 笔记库": "Import Markdown library",
   "导入邮件模板": "Import email templates",
-  "模板文件 (*.json)": "Template file (*.json)"
+  "模板文件 (*.json)": "Template file (*.json)",
+  "应用所在文件夹没有写入权限，已在访达中显示新版本，请手动拖入「应用程序」。": "The app's folder is not writable. The new version is shown in Finder; drag it into Applications.",
+  "请先把 CZL Mail 拖到「应用程序」文件夹，再开启开机自启。": "Move CZL Mail into the Applications folder before turning on launch at login.",
+  "授权未完成": "Authorization not completed",
+  "状态校验失败，请重试。": "State check failed. Please try again.",
+  "服务器未返回授权码。": "The server did not return an authorization code.",
+  "登录成功": "Signed in",
+  "可以关闭这个页面，回到 CZL Mail。": "You can close this page and return to CZL Mail."
 }

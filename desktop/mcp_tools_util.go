@@ -32,7 +32,7 @@ func outwardTool() *mcp.ToolAnnotations {
 }
 
 // mcpRequire 检查用户是否在 AI 助手页开了对应权限。
-// 错误信息写给模型看, 让它转告用户去哪里开, 而不是反复重试。
+// 错误信息写给模型看, 让它转告用户去哪里开, 而不是反复重试。设置项名称按界面语言写, 与用户看到的一致。
 func (a *App) mcpRequire(setting string) error {
 	st, err := a.currentStore()
 	if err != nil {
@@ -43,9 +43,11 @@ func (a *App) mcpRequire(setting string) error {
 	}
 	switch setting {
 	case store.SettingMCPAllowSend:
-		return errors.New("sending is disabled: the user must turn on 「允许 AI 发送邮件」 in CZL Mail → AI 助手. Save a draft with create_draft instead")
+		return fmt.Errorf("sending is disabled: the user must turn on «%s» in CZL Mail → %s. Save a draft with create_draft instead",
+			a.t("允许 AI 发送邮件"), a.t("AI 助手"))
 	default:
-		return errors.New("this change is disabled: the user must turn on 「允许 AI 整理邮件与日程」 in CZL Mail → AI 助手")
+		return fmt.Errorf("this change is disabled: the user must turn on «%s» in CZL Mail → %s",
+			a.t("允许 AI 整理邮件与日程"), a.t("AI 助手"))
 	}
 }
 

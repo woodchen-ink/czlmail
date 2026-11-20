@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"time"
@@ -44,6 +45,8 @@ type Config struct {
 	// RedirectURI 必须与注册时一致, 交换授权码时服务器会校验。
 	RedirectURI string
 	Scopes      []string
+	// Text 按界面语言翻译回调页上的文字 (调用方传 a.t); 为 nil 时显示原文 (中文)。
+	Text func(source string, values ...any) string
 }
 
 func (c *Config) oauth2Config() *oauth2.Config {
@@ -82,7 +85,7 @@ func Authorize(ctx context.Context, cfg *Config, listener net.Listener) (*oauth2
 	)
 
 	result := make(chan authResult, 1)
-	srv := &http.Server{Handler: callbackHandler(state, result)}
+	srv := &http.Server{Handler: callbackHandler(state, result, cfg.Text)}
 
 	go srv.Serve(listener)
 	defer srv.Close()
@@ -117,14 +120,17 @@ type authResult struct {
 	err  error
 }
 
-func callbackHandler(wantState string, out chan<- authResult) http.Handler {
+func callbackHandler(wantState string, out chan<- authResult, t func(string, ...any) string) http.Handler {
+	if t == nil {
+		t = func(s string, _ ...any) string { return s }
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 
 		if e := q.Get("error"); e != "" {
 			desc := q.Get("error_description")
-			writePage(w, r, "授权未完成", desc)
+			writePage(w, r, t("授权未完成"), desc)
 			out <- authResult{err: fmt.Errorf("3023 authorization denied: %s %s", e, desc)}
 			return
 		}
@@ -132,19 +138,19 @@ func callbackHandler(wantState string, out chan<- authResult) http.Handler {
 		// 常数时间比较: state 是防 CSRF 的凭据, 按普通字符串比较会泄漏前缀信息。
 		got := q.Get("state")
 		if subtle.ConstantTimeCompare([]byte(got), []byte(wantState)) != 1 {
-			writePage(w, r, "授权未完成", "状态校验失败，请重试。")
+			writePage(w, r, t("授权未完成"), t("状态校验失败，请重试。"))
 			out <- authResult{err: fmt.Errorf("3024 state mismatch")}
 			return
 		}
 
 		code := q.Get("code")
 		if code == "" {
-			writePage(w, r, "授权未完成", "服务器未返回授权码。")
+			writePage(w, r, t("授权未完成"), t("服务器未返回授权码。"))
 			out <- authResult{err: fmt.Errorf("3025 no authorization code in callback")}
 			return
 		}
 
-		writePage(w, r, "登录成功", "可以关闭这个页面，回到 CZL Mail。")
+		writePage(w, r, t("登录成功"), t("可以关闭这个页面，回到 CZL Mail。"))
 		out <- authResult{code: code}
 	})
 	return mux
@@ -158,7 +164,9 @@ func writePage(w http.ResponseWriter, r *http.Request, title, detail string) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `<!doctype html><html lang="zh"><head><meta charset="utf-8">
+	// detail 可能来自服务器回传的 error_description, 一律转义。
+	title, detail = html.EscapeString(title), html.EscapeString(detail)
+	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8">
 <title>%s</title></head>
 <body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;
 background:#F6F7F8;color:#10131A;font:15px/1.6 system-ui,-apple-system,sans-serif">

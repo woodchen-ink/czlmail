@@ -1175,5 +1175,12 @@
   "邮件或压缩包 (*.eml, *.zip)": "Zprávy nebo archiv (*.eml, *.zip)",
   "导入 Markdown 笔记库": "Importovat knihovnu Markdown",
   "导入邮件模板": "Importovat šablony zpráv",
-  "模板文件 (*.json)": "Soubor šablon (*.json)"
+  "模板文件 (*.json)": "Soubor šablon (*.json)",
+  "应用所在文件夹没有写入权限，已在访达中显示新版本，请手动拖入「应用程序」。": "Do složky aplikace nelze zapisovat. Nová verze je zobrazena ve Finderu, přetáhněte ji do složky Aplikace.",
+  "请先把 CZL Mail 拖到「应用程序」文件夹，再开启开机自启。": "Než zapnete spouštění po přihlášení, přesuňte CZL Mail do složky Aplikace.",
+  "授权未完成": "Autorizace nebyla dokončena",
+  "状态校验失败，请重试。": "Kontrola stavu selhala. Zkuste to znovu.",
+  "服务器未返回授权码。": "Server nevrátil autorizační kód.",
+  "登录成功": "Přihlášení proběhlo úspěšně",
+  "可以关闭这个页面，回到 CZL Mail。": "Tuto stránku můžete zavřít a vrátit se do CZL Mail."
 }

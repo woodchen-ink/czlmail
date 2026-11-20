@@ -130,6 +130,7 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 		ClientID:    cfg.ClientID,
 		RedirectURI: cfg.RedirectURI,
 		Scopes:      cfg.Scopes,
+		Text:        a.t,
 	}, listener)
 	if err != nil {
 		a.log.Warn("oauth authorize failed", "err", err)
