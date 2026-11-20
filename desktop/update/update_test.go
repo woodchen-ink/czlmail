@@ -16,6 +16,10 @@ func TestNewer(t *testing.T) {
 		{"v0.0.3", "v0.0.3-rc1", false},
 		{"0.0.4", "v0.0.3", true},
 		{"garbage", "v0.0.3", false},
+		// v1.0.2 之后改用日期版本号, 已装 1.x 的用户必须能更新上来。
+		{"v2026.11.0", "v1.0.2", true},
+		{"v2026.12.0", "v2026.11.3", true},
+		{"v2026.11.1", "v2026.11.0", true},
 	}
 	for _, c := range cases {
 		if got := Newer(c.latest, c.current); got != c.want {

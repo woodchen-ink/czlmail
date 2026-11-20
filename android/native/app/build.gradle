@@ -1,7 +1,7 @@
 apply plugin: 'com.android.application'
 
-// 版本号取 VERSION 环境变量 (vX.Y.Z, CI 传 tag 名), 否则取最近的 git tag; versionCode = X*1000000 + Y*1000 + Z,
-// 系统据此判断是否为更新。带 "-" 的预发布版本与正式版同号。
+// 版本号取 VERSION 环境变量 (v年.月.序号, CI 传 tag 名), 否则取最近的 git tag; versionCode = X*1000000 + Y*1000 + Z,
+// 系统据此判断是否为更新 (日期版本 2026.11.0 = 2026011000, 低于 Google Play 上限 2100000000)。带 "-" 的预发布版本与正式版同号。
 def appVersion = System.getenv("VERSION") ?: providers.exec {
     commandLine "git", "describe", "--tags", "--abbrev=0"
     ignoreExitValue = true
