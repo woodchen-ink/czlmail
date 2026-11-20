@@ -13,7 +13,7 @@ const english = require("./en.json");
 const czech = require("./cs.json");
 
 /** Load an isolated locale store without building Next.js or generating Wails bindings. */
-function loadLocale({ saved = null, blocked = false } = {}) {
+function loadLocale({ saved = null, blocked = false, languages } = {}) {
   const storage = new Map(saved === null ? [] : [["czlmail.locale", saved]]);
   const document = { documentElement: { lang: "zh-CN" } };
   const window = { localStorage: {
@@ -25,7 +25,8 @@ function loadLocale({ saved = null, blocked = false } = {}) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true,
   } }).outputText;
   const compiledModule = { exports: {} };
-  vm.runInNewContext(output, { module: compiledModule, exports: compiledModule.exports, require: createRequire(corePath), window, document });
+  vm.runInNewContext(output, { module: compiledModule, exports: compiledModule.exports, require: createRequire(corePath), window, document,
+    ...(languages ? { navigator: { languages, language: languages[0] } } : {}) });
   return { api: compiledModule.exports, storage, document };
 }
 
@@ -114,6 +115,24 @@ test("Corrupt or unavailable storage falls back safely", () => {
   blocked.api.setLocale("en");
   assert.equal(blocked.api.getLocale(), "en");
   assert.equal(blocked.document.documentElement.lang, "en");
+});
+
+test("Without a saved preference the system language is followed but not stored", () => {
+  for (const [languages, expected] of [
+    [["cs-CZ", "en-US"], "cs"], [["zh-TW"], "zh-CN"], [["en-GB"], "en"],
+    [["ja-JP", "cs"], "cs"], [["ja-JP", "de-DE"], "en"],
+  ]) {
+    const { api, storage } = loadLocale({ languages });
+    api.restoreLocale();
+    assert.equal(api.getLocale(), expected, languages.join(","));
+    assert.equal(storage.has("czlmail.locale"), false);
+  }
+  const saved = loadLocale({ saved: "zh-CN", languages: ["cs-CZ"] });
+  saved.api.restoreLocale();
+  assert.equal(saved.api.getLocale(), "zh-CN");
+  const corrupt = loadLocale({ saved: "fr", languages: ["en-US"] });
+  corrupt.api.restoreLocale();
+  assert.equal(corrupt.api.getLocale(), "en");
 });
 
 test("Cross-window updates need not rewrite storage", () => {

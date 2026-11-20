@@ -42,11 +42,32 @@ export function setLocale(value: Locale, persist = true): void {
   for (const listener of listeners) listener();
 }
 
-/** Restore only the explicit app preference; Chinese remains the default. */
+/** System UI languages in preference order; Chinese stays the default when none is supported. */
+export function systemLocale(languages: readonly string[] | undefined = systemLanguages()): Locale {
+  if (!languages?.length) return "zh-CN";
+  for (const tag of languages) {
+    const language = tag.toLowerCase().split(/[-_]/)[0];
+    if (language === "zh") return "zh-CN";
+    if (language === "en" || language === "cs") return language;
+  }
+  return "en";
+}
+
+function systemLanguages(): readonly string[] | undefined {
+  if (typeof navigator === "undefined") return undefined;
+  return navigator.languages?.length ? navigator.languages : navigator.language ? [navigator.language] : undefined;
+}
+
+/** An explicit app preference wins; without one the system language is followed but not stored. */
+export function preferredLocale(saved: string | null): Locale {
+  return saved === "zh-CN" || saved === "en" || saved === "cs" ? saved : systemLocale();
+}
+
+/** Restore after hydration; the static export always renders the Chinese snapshot first. */
 export function restoreLocale(): void {
   let saved: string | null = null;
-  try { saved = window.localStorage.getItem(LOCALE_KEY); } catch { /* Use the default. */ }
-  setLocale(normalizeLocale(saved), false);
+  try { saved = window.localStorage.getItem(LOCALE_KEY); } catch { /* Follow the system. */ }
+  setLocale(preferredLocale(saved), false);
 }
 
 /** Translate UI-owned messages only; substitutions are inserted once, never reinterpreted. */

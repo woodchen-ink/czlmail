@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import {
-  getLocale, getServerLocale, LOCALE_KEY, normalizeLocale, restoreLocale,
+  getLocale, getServerLocale, LOCALE_KEY, preferredLocale, restoreLocale,
   setLocale, subscribeLocale, translate,
 } from "@/lib/i18n";
 
@@ -18,7 +18,7 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     restoreLocale();
     const handleStorage = (event: StorageEvent) => {
-      if (event.key === LOCALE_KEY || event.key === null) setLocale(normalizeLocale(event.newValue), false);
+      if (event.key === LOCALE_KEY || event.key === null) setLocale(preferredLocale(event.newValue), false);
     };
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
