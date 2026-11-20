@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "@/lib/i18n";
+import { t, tContext } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useEffect, useState } from "react";
@@ -218,7 +218,7 @@ export function MailSidebar({
 
       {personal.length > 0 && (
         <Section
-          title={t("文件夹")}
+          title={tContext("heading", "文件夹")}
           open={!isCollapsed("personal")}
           onToggle={() => toggle("personal")}
           unread={sumInbox(personal)}

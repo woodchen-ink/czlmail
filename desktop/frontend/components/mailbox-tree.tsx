@@ -1,6 +1,6 @@
 "use client";
 
-import { dateLocale, t } from "@/lib/i18n";
+import { dateLocale, t, tContext } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useMemo } from "react";
@@ -68,10 +68,10 @@ const getKindMeta: () => (Record<string, { icon: typeof Inbox; label: string; co
   inbox: { icon: Inbox, label: t("收件箱"), color: "text-folder-inbox" },
   drafts: { icon: FileText, label: t("草稿"), color: "text-folder-drafts" },
   scheduled: { icon: CalendarClock, label: t("已计划"), color: "text-folder-scheduled" },
-  sent: { icon: Send, label: t("已发送"), color: "text-folder-sent" },
-  archive: { icon: Archive, label: t("归档"), color: "text-folder-archive" },
+  sent: { icon: Send, label: tContext("folder", "已发送"), color: "text-folder-sent" },
+  archive: { icon: Archive, label: tContext("folder", "归档"), color: "text-folder-archive" },
   junk: { icon: ShieldAlert, label: t("垃圾邮件"), color: "text-folder-junk" },
-  trash: { icon: Trash2, label: t("已删除"), color: "text-folder-trash" },
+  trash: { icon: Trash2, label: tContext("folder", "已删除"), color: "text-folder-trash" },
 });
 
 /** 常用邮箱的固定顺序。服务端的 sortOrder 多数为 0，排不出有意义的次序。 */

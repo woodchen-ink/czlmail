@@ -68,6 +68,17 @@ test("Czech translates UI text and reorders substitutions", () => {
   assert.equal(document.documentElement.lang, "cs");
 });
 
+test("Context-specific wording falls back to the plain word", () => {
+  const { api } = loadLocale();
+  assert.equal(api.tContext("folder", "已发送"), "已发送");
+  api.setLocale("en");
+  assert.equal(api.tContext("heading", "文件夹"), "Folders");
+  assert.equal(api.tContext("folder", "收件箱"), "Inbox");
+  api.setLocale("cs");
+  assert.equal(api.t("已发送"), "Odesláno");
+  assert.equal(api.tContext("folder", "已发送"), "Odeslané");
+});
+
 test("Inserted values are not interpreted as translation placeholders", () => {
   const { api } = loadLocale();
   api.setLocale("en");
@@ -163,6 +174,29 @@ test("Every literal UI translation key has an English entry", () => {
   }
   assert.ok(count > 1000, "scan must cover the complete app, not just the login page");
   assert.deepEqual([...missing], []);
+});
+
+test("Context keys extend a real source string and are all used", () => {
+  const isContextKey = (key) => key.includes("|");
+  const used = new Set();
+  for (const file of files) {
+    const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+    function visit(node) {
+      if (ts.isCallExpression(node) && node.expression.getText(source) === "tContext" && node.arguments.length === 2 && node.arguments.every(ts.isStringLiteral)) {
+        used.add(`${node.arguments[1].text}|${node.arguments[0].text}`);
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(source);
+  }
+  for (const key of Object.keys(english).filter(isContextKey)) {
+    const [base, context, ...rest] = key.split("|");
+    assert.deepEqual(rest, [], `${key}: one separator only`);
+    assert.match(context, /^[a-z]+$/, `${key}: context must be a lowercase ASCII word`);
+    assert.ok(Object.hasOwn(english, base), `${key}: base string has no plain entry`);
+    assert.ok(used.has(key), `${key}: no tContext() call uses it`);
+  }
+  for (const key of used) assert.ok(Object.hasOwn(english, key.split("|")[0]), `${key}: base string has no plain entry`);
 });
 
 test("Translations preserve all numbered placeholders", () => {

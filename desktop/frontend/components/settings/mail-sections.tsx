@@ -1,6 +1,6 @@
 "use client";
 
-import { dateLocale, t } from "@/lib/i18n";
+import { dateLocale, t, tContext } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -325,7 +325,7 @@ export function FoldersSection({ active }: { active: boolean }) {
   return (
     <>
       <div className="flex items-end justify-between gap-4">
-        <SectionTitle title={t("文件夹")} desc={t("系统文件夹（收件箱、已发送等）不能改名或删除。也可以在邮件侧栏里右键文件夹管理。")} />
+        <SectionTitle title={tContext("heading", "文件夹")} desc={t("系统文件夹（收件箱、已发送等）不能改名或删除。也可以在邮件侧栏里右键文件夹管理。")} />
         <div className="flex shrink-0 items-center gap-2">
           <AccountPicker accounts={accounts} value={accountId} onChange={setAccountId} />
           <Button size="sm" onClick={() => setAction({ kind: "create", accountId })} disabled={!accountId}>
@@ -427,7 +427,7 @@ export function ScheduledSection({ active }: { active: boolean }) {
   return (
     <>
       <div className="flex items-end justify-between gap-4">
-        <SectionTitle title={t("定时发送")} desc={t("等待发出的邮件保存在服务器上，关机也会按时发送。取消后邮件回到草稿。")} />
+        <SectionTitle title={tContext("heading", "定时发送")} desc={t("等待发出的邮件保存在服务器上，关机也会按时发送。取消后邮件回到草稿。")} />
         <AccountPicker accounts={accounts} value={accountId} onChange={setAccountId} />
       </div>
       <Card className="gap-0 p-0">

@@ -1229,5 +1229,10 @@
   "这封邮件没有请求已读回执。": "Tato zpráva nežádá o potvrzení o přečtení.",
   "接口地址必须以 http:// 或 https:// 开头。": "Adresa API musí začínat http:// nebo https://.",
   "AI 没有返回内容（模型可能把输出都用在了思考上），可以把思考档位调低后重试。": "AI nevrátila žádný text (model mohl celou odpověď spotřebovat na uvažování). Zkuste nižší úroveň uvažování.",
-  "服务器地址必须使用 https。": "Adresa serveru musí používat https."
+  "服务器地址必须使用 https。": "Adresa serveru musí používat https.",
+  "已发送|folder": "Odeslané",
+  "已删除|folder": "Koš",
+  "归档|folder": "Archiv",
+  "文件夹|heading": "Složky",
+  "定时发送|heading": "Naplánované zprávy"
 }

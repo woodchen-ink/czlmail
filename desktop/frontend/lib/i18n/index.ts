@@ -113,6 +113,20 @@ export function t(source: string, ...values: readonly unknown[]): string {
   return translate(currentLocale, source, ...values);
 }
 
+/**
+ * Separator of context keys. A dictionary may hold `<source>|<context>` next to `<source>` when one Chinese word
+ * needs different wording by where it appears (gettext's msgctxt): `已发送|folder` is the Sent folder, while
+ * `已发送` stays the "sent" toast. `<context>` is a lowercase ASCII word; `<source>` must also exist as a plain key.
+ * Chinese never needs context keys, and a language that does not need a distinction repeats the plain wording.
+ */
+export const CONTEXT_SEPARATOR = "|";
+
+/** Translate `source` as used in `context`, falling back to the plain translation of `source`. */
+export function tContext(context: string, source: string): string {
+  const dictionary: Readonly<Record<string, string>> | null | undefined = localeInfo.get(currentLocale)?.messages;
+  return dictionary?.[`${source}${CONTEXT_SEPARATOR}${context}`] ?? t(source);
+}
+
 /** Locale used for human-readable dates; storage and wire formats remain unchanged. */
 export function dateLocale(): string {
   return localeInfo.get(currentLocale)?.date ?? DEFAULT_LOCALE;
