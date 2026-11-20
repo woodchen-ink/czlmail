@@ -866,6 +866,7 @@
   "删除并退出": "Delete and quit",
   "会删除本机保存的应用专用密码。本地缓存的邮件保留，重新登录后无需重新下载。": "Remove the locally saved app password. Cached emails are kept, so signing in again does not require downloading them again.",
   "已是最新版本": "You are up to date",
+  "暂无发布版本": "No releases published yet",
   "版本": "Version",
   "检查更新": "Check for updates",
   "发现新版本": "Update available",

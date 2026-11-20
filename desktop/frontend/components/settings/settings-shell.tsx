@@ -752,7 +752,7 @@ function AboutSection({ active }: { active: boolean }) {
     try {
       const res = await api.checkForUpdate();
       setInfo(res);
-      if (!res.available) toast.success(res.message || t("已是最新版本"));
+      if (!res.available) toast.success(res.release ? t("已是最新版本") : t("暂无发布版本"));
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {

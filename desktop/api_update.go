@@ -33,8 +33,6 @@ type UpdateInfo struct {
 	Current   string          `json:"current"`
 	Available bool            `json:"available"`
 	Release   *update.Release `json:"release"`
-	// Message 在没有可用版本或检查失败时说明原因。
-	Message string `json:"message"`
 }
 
 var updateMu sync.Mutex
@@ -52,7 +50,7 @@ func (a *App) GetPendingUpdate() *UpdateInfo {
 	return pendingUpdate.info
 }
 
-// CheckForUpdate 立即检查更新。
+// CheckForUpdate 立即检查更新。没有发布版本时 Release 为 nil, 提示文案由界面按语言给出。
 func (a *App) CheckForUpdate() (UpdateInfo, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
 	defer cancel()
@@ -64,16 +62,12 @@ func (a *App) CheckForUpdate() (UpdateInfo, error) {
 	}
 	switch {
 	case errors.Is(err, update.ErrNoRelease):
-		info.Message = "暂无发布版本"
 		return info, nil
 	case err != nil:
 		return info, fmt.Errorf("2150 %w", err)
 	}
 	info.Release = rel
 	info.Available = update.Newer(rel.Version, version)
-	if !info.Available {
-		info.Message = "已是最新版本"
-	}
 	return info, nil
 }
 
