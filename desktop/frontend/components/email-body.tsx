@@ -205,7 +205,7 @@ export function EmailBody({
       {blockedImages > 0 && !allowImages && (
         <div className="border-border bg-secondary flex flex-wrap items-center gap-3 rounded-md border px-3 py-2.5">
           <ImageOff className="text-muted-foreground size-4 shrink-0" />
-          <div className="min-w-0 flex-1">
+          <div className="min-w-48 flex-1">
             <p className="text-sm font-medium">{t("已屏蔽{0}张远程图片", blockedImages)}</p>
             <p className="text-muted-foreground text-xs">
               {t("加载后发件人会得知你打开邮件的时间与网络位置")}</p>
