@@ -235,6 +235,7 @@ export const api = {
   resetMCPToken: guard(App.ResetMCPToken),
 
   checkForUpdate: guard(App.CheckForUpdate),
+  setUILocale: guard(App.SetUILocale),
   installUpdate: guard(App.InstallUpdate),
 
   cancelAI: guard(App.CancelAI),

@@ -46,6 +46,8 @@ type App struct {
 	cfg    config.Config
 
 	notifier notify.Notifier
+	// uiLocale 是界面当前语言 (SetUILocale), 用于后端自己发出的通知文案。
+	uiLocale string
 	// reminders 是移动端交给系统的定时日程提醒 (reminders_schedule.go)。
 	reminders reminderSchedule
 
