@@ -153,12 +153,21 @@ export function ContactsShell({ active }: { active: boolean }) {
   }, [scope]);
 
   useEffect(() => {
-    return onEvent(Events.pimChanged, (c: PIMChange) => {
+    const offChanged = onEvent(Events.pimChanged, (c: PIMChange) => {
       if (c.type === "" || c.type === "AddressBook" || c.type === "ContactCard") {
         loadBooks();
         loadContacts();
       }
     });
+    // 共享被撤销时那个账号的通讯录连同缓存一起删掉, 不会有 pim:changed。
+    const offAccounts = onEvent(Events.accountsChanged, () => {
+      loadBooks();
+      loadContacts();
+    });
+    return () => {
+      offChanged();
+      offAccounts();
+    };
   }, [loadBooks, loadContacts]);
 
   const counts = useMemo(() => {

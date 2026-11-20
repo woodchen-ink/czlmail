@@ -614,11 +614,15 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [purgeText, setPurgeText] = useState("");
   const [purging, setPurging] = useState(false);
+  const { settings, save } = useSettings(active);
+  const excluded = new Set(settings?.unifiedExcludedAccounts ?? []);
 
   useEffect(() => {
     if (!active) return;
     api.getSessionStatus().then(setStatus).catch(() => {});
-    api.listAccounts().then((a) => setAccounts(a ?? [])).catch(() => {});
+    const loadAccounts = () => api.listAccounts().then((a) => setAccounts(a ?? [])).catch(() => {});
+    loadAccounts();
+    return onEvent(Events.accountsChanged, loadAccounts);
   }, [active]);
 
   return (
@@ -634,13 +638,30 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
 
       {accounts.length > 1 && (
         <>
-          <SectionTitle title={t("可访问的邮箱")} desc={t("由服务器按你的权限共享，在邮件侧栏的「共享」下显示。")} small />
+          <SectionTitle
+            title={t("可访问的邮箱")}
+            desc={t("由服务器按你的权限共享，在邮件侧栏的「共享」下显示，新共享的邮箱会自动出现。开关决定是否并入「全部账号」；关闭后仍可在「共享」下单独查看，统一搜索照常包含它。")}
+            small
+          />
           <Card className="gap-0 p-0">
             {accounts.map((a, i) => (
               <div key={a.id} className={cn("flex items-center gap-2 px-4 py-2.5 text-sm", i > 0 && "border-border border-t")}>
                 <UserRound className="text-muted-foreground size-4" />
                 <span className="flex-1 truncate">{a.name}</span>
                 <span className="text-muted-foreground text-xs">{a.isPersonal ? t("个人") : t("共享")}</span>
+                {!a.isPersonal && (
+                  <Switch
+                    aria-label={t("并入全部账号")}
+                    checked={!excluded.has(a.id)}
+                    disabled={!settings}
+                    onCheckedChange={(on) => {
+                      const next = new Set(excluded);
+                      if (on) next.delete(a.id);
+                      else next.add(a.id);
+                      save({ unifiedExcludedAccounts: [...next] });
+                    }}
+                  />
+                )}
               </div>
             ))}
           </Card>

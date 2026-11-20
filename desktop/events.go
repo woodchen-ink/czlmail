@@ -29,6 +29,8 @@ const (
 	EventPIMChanged = "pim:changed"
 	// EventSettingsChanged 应用设置(AppSettings)保存了, 无负载; 侧栏据此重读静音账号。
 	EventSettingsChanged = "settings:changed"
+	// EventAccountsChanged 会话里的账号增减或改名(共享、撤销共享), 无负载; 界面据此重读账号列表。
+	EventAccountsChanged = "session:accounts-changed"
 )
 
 // PIMChange 是 EventPIMChanged 的负载。Type 为空表示该账号全部类型都可能变了。

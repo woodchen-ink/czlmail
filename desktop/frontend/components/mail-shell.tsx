@@ -453,6 +453,15 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
       loadSyncStatus();
     });
     const offSyncStatus = onEvent(Events.syncStatus, (s: MailSyncStatus) => setSyncStatus(s));
+    // 运行中新共享过来或被撤销的邮箱: 重读账号与文件夹, 侧栏随之增减; 统一视图里可能有被撤销账号的邮件, 一并重载。
+    const offAccounts = onEvent(Events.accountsChanged, () => {
+      loadAccounts();
+      if (unified) reload();
+    });
+    // 「并入全部账号」开关改了: 打开着的统一视图要换成新的账号范围。
+    const offSettings = onEvent(Events.settingsChanged, () => {
+      if (unified) reload();
+    });
 
     const offChanged = onEvent(Events.mailChanged, (changed: string) => {
       // 手动同步、重试补上的账号不经过那一轮的进度事件, 这里顺带更新。
@@ -482,6 +491,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
     return () => {
       offConnected();
       offSyncStatus();
+      offAccounts();
+      offSettings();
       offChanged();
       offBusOpen();
       offCompose();

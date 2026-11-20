@@ -181,6 +181,8 @@ type AppSettings struct {
 	DefaultIdentities map[string]string `json:"defaultIdentities"`
 	// MutedMailAccounts 是关闭了新邮件通知的账号(多为共享邮箱)。
 	MutedMailAccounts []string `json:"mutedMailAccounts"`
+	// UnifiedExcludedAccounts 是不并入侧栏「全部账号」的账号 (如出站归档这类只偶尔查看的共享邮箱)。
+	UnifiedExcludedAccounts []string `json:"unifiedExcludedAccounts"`
 }
 
 var boolSettings = []struct {
@@ -219,10 +221,8 @@ func (a *App) GetSettings() (AppSettings, error) {
 	if v, err := st.StringSetting(a.ctx, "defaultIdentities"); err == nil {
 		_ = json.Unmarshal([]byte(v), &s.DefaultIdentities)
 	}
-	s.MutedMailAccounts = []string{}
-	if v, err := st.StringSetting(a.ctx, "mutedMailAccounts"); err == nil && v != "" {
-		_ = json.Unmarshal([]byte(v), &s.MutedMailAccounts)
-	}
+	s.MutedMailAccounts = a.accountListSetting(st, "mutedMailAccounts")
+	s.UnifiedExcludedAccounts = a.accountListSetting(st, settingUnifiedExcluded)
 	return s, nil
 }
 
@@ -253,18 +253,35 @@ func (a *App) SaveSettings(s AppSettings) error {
 	if err := st.SetStringSetting(a.ctx, "defaultIdentities", string(ids)); err != nil {
 		return err
 	}
-	if s.MutedMailAccounts == nil {
-		s.MutedMailAccounts = []string{}
-	}
-	muted, _ := json.Marshal(s.MutedMailAccounts)
-	if err := st.SetStringSetting(a.ctx, "mutedMailAccounts", string(muted)); err != nil {
-		return err
+	for key, list := range map[string][]string{
+		"mutedMailAccounts":    s.MutedMailAccounts,
+		settingUnifiedExcluded: s.UnifiedExcludedAccounts,
+	} {
+		if list == nil {
+			list = []string{}
+		}
+		raw, _ := json.Marshal(list)
+		if err := st.SetStringSetting(a.ctx, key, string(raw)); err != nil {
+			return err
+		}
 	}
 	a.refreshTrayUnreadSoon()
 	a.emit(EventSettingsChanged)
 	a.pushSettingsChanged()
 	a.planRemindersSoon(false)
 	return nil
+}
+
+// settingUnifiedExcluded 存不并入统一视图的账号 id 列表 (JSON 数组)。
+const settingUnifiedExcluded = "unifiedExcludedAccounts"
+
+// accountListSetting 读一个「账号 id 列表」类设置, 读不到或格式不对时返回空列表。
+func (a *App) accountListSetting(st *store.Store, key string) []string {
+	out := []string{}
+	if v, err := st.StringSetting(a.ctx, key); err == nil && v != "" {
+		_ = json.Unmarshal([]byte(v), &out)
+	}
+	return out
 }
 
 // settingOn 读一个布尔设置, 读失败时按默认值处理。

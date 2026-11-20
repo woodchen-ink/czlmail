@@ -10,6 +10,8 @@ import (
 )
 
 // 统一视图: 所有账号(个人 + 共享)的同类文件夹合成一个列表, 不用逐个点进共享邮箱查看。
+// 设置里排除的账号 (settingUnifiedExcluded) 不进文件夹列表与「未读」; 统一搜索仍覆盖全部账号 ——
+// 被排除的多是归档这类平时不看、要查时才搜的邮箱。
 // view 是文件夹类别(inbox/drafts/...), 或 unifiedUnread 表示各账号所有需要处理的未读。
 const unifiedUnread = "unread"
 
@@ -62,8 +64,12 @@ func (a *App) unifiedMailboxes(st *store.Store, view string) ([]store.MailboxRef
 	if err != nil {
 		return nil, err
 	}
+	excluded := a.accountListSetting(st, settingUnifiedExcluded)
 	var out []store.MailboxRef
 	for _, acc := range accounts {
+		if slices.Contains(excluded, acc.ID) {
+			continue
+		}
 		boxes, err := st.Mailboxes(a.ctx, acc.ID)
 		if err != nil {
 			return nil, err

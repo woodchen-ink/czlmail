@@ -287,6 +287,8 @@ func (a *App) SyncNow(accountID string) error {
 	if err != nil {
 		return err
 	}
+	// 手动同步时顺带重读会话: 刚被共享的邮箱不必等推送或定时检查。
+	s.RequestSessionRefresh()
 	return s.SyncAccount(a.ctx, accountID)
 }
 

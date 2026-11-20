@@ -23,10 +23,18 @@ const (
 // 永久漏掉这段空窗内到达的邮件。重连后的这次同步是唯一的兜底。
 func (s *Syncer) Run(ctx context.Context) error {
 	delay := reconnectMinDelay
+	go s.watchSession(ctx)
 
-	for {
+	for first := true; ; first = false {
 		if err := ctx.Err(); err != nil {
 			return nil
+		}
+
+		// 连上时刚读过会话; 重连时重读一次, 断线期间新共享或撤销的账号这一轮就能对上。
+		if !first {
+			if err := s.refreshSession(ctx); err != nil {
+				s.log.Warn("refresh session before resync", "err", err)
+			}
 		}
 
 		if err := s.syncAllAccounts(ctx); err != nil {

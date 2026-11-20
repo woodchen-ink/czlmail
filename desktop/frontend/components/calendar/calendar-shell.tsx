@@ -233,6 +233,11 @@ export function CalendarShell({ active }: { active: boolean }) {
       if (c.type === "" || c.type === "Calendar") loadCalendars();
       if (c.type === "" || c.type === "CalendarEvent") loadEvents();
     });
+    // 共享被撤销时那个账号的日历连同缓存一起删掉, 不会有 pim:changed。
+    const offAccounts = onEvent(Events.accountsChanged, () => {
+      loadCalendars();
+      loadEvents();
+    });
     const offOpen = onEvent(Events.openEvent, (ref: string) => {
       const [accountId, eventId] = String(ref).split("/");
       if (accountId && eventId)
@@ -241,6 +246,7 @@ export function CalendarShell({ active }: { active: boolean }) {
     return () => {
       offChanged();
       offOpen();
+      offAccounts();
     };
   }, [loadCalendars, loadEvents]);
 

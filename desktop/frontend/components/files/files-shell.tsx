@@ -153,6 +153,19 @@ export function FilesShell({ active }: { active: boolean }) {
       .catch((err) => toast.error(errorMessage(err)));
   }, [active, accountId]);
 
+  // 运行中新共享或撤销的账号: 更新账号列表; 正在看的账号没了就回到个人网盘。
+  useEffect(() => {
+    return onEvent(Events.accountsChanged, () => {
+      api
+        .listAccounts()
+        .then((list) => {
+          setAccounts(list ?? []);
+          setAccountId((cur) => ((list ?? []).some((a) => a.id === cur) ? cur : ""));
+        })
+        .catch(() => {});
+    });
+  }, []);
+
   const load = useCallback(async () => {
     if (!accountId) return;
     setLoading(true);

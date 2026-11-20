@@ -93,6 +93,7 @@ export const Events = {
   unread: "mail:unread",
   pimChanged: "pim:changed",
   settingsChanged: "settings:changed",
+  accountsChanged: "session:accounts-changed",
   openEvent: "calendar:open",
   updateAvailable: "update:available",
   openUpdate: "update:open",

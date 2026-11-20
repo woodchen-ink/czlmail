@@ -89,11 +89,16 @@ export function MailSidebar({
   // 关了新邮件通知的账号(多为共享邮箱): 未读不算进汇总的红色角标, 自己的收件箱改灰底。
   // 与托盘角标(tray_badge.go 跳过静音账号)一致。
   const [muted, setMuted] = useState<Set<string>>(new Set());
+  // 不并入「全部账号」的账号(设置 → 账户): 统一视图的条目与未读数都不算它, 与后端 unifiedMailboxes 一致。
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
   useEffect(() => {
     const load = () =>
       api
         .getSettings()
-        .then((s) => setMuted(new Set(s.mutedMailAccounts ?? [])))
+        .then((s) => {
+          setMuted(new Set(s.mutedMailAccounts ?? []));
+          setExcluded(new Set(s.unifiedExcludedAccounts ?? []));
+        })
         .catch(() => {});
     load();
     return onEvent(Events.settingsChanged, load);
@@ -156,12 +161,14 @@ export function MailSidebar({
   const selectedIn = (acc: string) => (!unified && acc === accountId ? mailboxId : "");
 
   // 统一视图的条目: 至少一个账号有的系统文件夹, 按侧栏固定顺序, 「未读」跟在收件箱后面。
-  // 条目按全部账号列, 未读数只数没静音的账号。
+  // 条目按并入统一视图的账号列, 未读数只数其中没静音的账号。
   const allBoxes = accounts.flatMap((a) => mailboxesByAccount[a.id] ?? []);
-  const countedBoxes = accounts.flatMap((a) => (muted.has(a.id) ? [] : (mailboxesByAccount[a.id] ?? [])));
+  const unifiedAccounts = accounts.filter((a) => !excluded.has(a.id));
+  const unifiedBoxes = unifiedAccounts.flatMap((a) => mailboxesByAccount[a.id] ?? []);
+  const countedBoxes = unifiedAccounts.flatMap((a) => (muted.has(a.id) ? [] : (mailboxesByAccount[a.id] ?? [])));
   const unreadOf = (kind: string) =>
     countedBoxes.filter((m) => m.kind === kind).reduce((n, m) => n + m.unreadEmails, 0);
-  const unifiedRows = KIND_ORDER.filter((kind) => allBoxes.some((m) => m.kind === kind)).map((kind) => ({
+  const unifiedRows = KIND_ORDER.filter((kind) => unifiedBoxes.some((m) => m.kind === kind)).map((kind) => ({
     view: kind,
     icon: mailboxIcon(kind),
     color: mailboxColor(kind),

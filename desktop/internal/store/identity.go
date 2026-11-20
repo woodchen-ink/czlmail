@@ -40,3 +40,30 @@ func (s *Store) ResetIdentityData(ctx context.Context, settingKeys []string) err
 		return nil
 	})
 }
+
+// accountTables 是按 account_id 存的数据, 失去某个账号的访问权时整账号删除。
+// 与 identityTables 的差别: 模板不分账号, accounts 本身按 id 删。
+var accountTables = []string{
+	"email_keywords", "email_mailboxes", "threads", "translations", "emails",
+	"mailboxes", "calendar_events", "calendars", "contacts", "address_books",
+	"file_nodes", "trusted_senders", "sync_state",
+}
+
+// RemoveAccount 删除一个账号的全部缓存 (会话里已没有它, 如共享被撤销)。
+// emails 的删除触发器会逐行清掉全文索引。
+func (s *Store) RemoveAccount(ctx context.Context, accountID string) error {
+	return s.WithTx(ctx, func(tx *sql.Tx) error {
+		for _, t := range accountTables {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+t+` WHERE account_id = ?`, accountID); err != nil {
+				return wrap(CodeQuery, "remove account data from "+t, err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM accounts WHERE id = ?`, accountID); err != nil {
+			return wrap(CodeQuery, "remove account", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM app_settings WHERE key = ?`, "reconciledAt:"+accountID); err != nil {
+			return wrap(CodeQuery, "remove reconcile mark", err)
+		}
+		return nil
+	})
+}

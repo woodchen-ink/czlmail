@@ -16,7 +16,7 @@ import (
 // 静音与默认发件身份 (按账号 id 记)、推送订阅。界面偏好 (已读方式、提醒开关、头像开关等) 属于这台设备, 不清。
 func identitySettings() []string {
 	keys := append([]string{}, aiSyncedSettings...)
-	return append(keys, settingAIKeyUpdatedAt, "mutedMailAccounts", "defaultIdentities", "pushRelay")
+	return append(keys, settingAIKeyUpdatedAt, "mutedMailAccounts", settingUnifiedExcluded, "defaultIdentities", "pushRelay")
 }
 
 // ensureCacheOwner 在会话建立后、同步开始前确认本机缓存属于这次登录的身份, 不是就清空。

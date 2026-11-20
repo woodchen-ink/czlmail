@@ -60,6 +60,16 @@ type Syncer struct {
 	OnRound func(RoundStatus)
 	round   roundState
 
+	// OnAccountsChanged 在重读会话发现账号增减或改名时回调 (见 session_refresh.go),
+	// 在同步新账号之前执行, 上层据此更新缓存里的账号表并通知界面; 失去访问的账号缓存此时已删掉。
+	OnAccountsChanged func(AccountDiff)
+	// sessionRefresh 是待处理的重读会话请求, 容量 1 用于合并。
+	sessionRefresh chan struct{}
+	// sessionMu 串行化重读会话与账号清理; 与 mu 同时持有时先 sessionMu 后 mu。
+	sessionMu sync.Mutex
+	// missing 是缓存里有、会话里连续缺失的账号及缺失次数, 由 sessionMu 保护。
+	missing map[string]int
+
 	// mu 串行化同一账号上的同步, 避免推送密集时同一类型被并发拉取,
 	// 造成两条协程拿着同一个旧 state token 各拉一遍。
 	mu sync.Mutex
@@ -77,6 +87,7 @@ func New(client *jmap.Client, st *store.Store, log *slog.Logger) *Syncer {
 		log:               log,
 		maxObjectsInGet:   defaultMaxObjectsInGet,
 		maxCallsInRequest: defaultMaxCallsInRequest,
+		sessionRefresh:    make(chan struct{}, 1),
 	}
 	s.readCoreLimits()
 	return s
@@ -187,6 +198,11 @@ func (s *Syncer) notifyChanged(accountID string) {
 // applyStateChange 收到推送后按类型比对本地 state, 只拉真正落后的部分。
 func (s *Syncer) applyStateChange(ctx context.Context, change *jmap.StateChange) {
 	for accountID, typeStates := range change.Changed {
+		// 会话里没有的账号多半是刚共享过来的: 重读会话后由 refreshSession 引导它, 这里先跳过。
+		if !s.knowsAccount(accountID) {
+			s.RequestSessionRefresh()
+			continue
+		}
 		for typeName, remoteState := range typeStates {
 			dt := store.DataType(typeName)
 			if !s.handles(dt) {

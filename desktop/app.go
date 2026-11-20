@@ -324,12 +324,15 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.T
 
 	// 同步循环的生命周期跟随应用而不是跟随某次调用, 因此从 a.ctx 派生。
 	syncCtx, cancel := context.WithCancel(a.ctx)
+	s.OnAccountsChanged = func(diff syncer.AccountDiff) { a.onAccountsChanged(syncCtx, client, st, diff) }
 	a.cancelSync = cancel
 	a.mu.Unlock()
 
 	if err := a.persistAccounts(syncCtx, client, st); err != nil {
 		a.log.Error("persist accounts", "err", err)
 	}
+	// 程序关着时被撤销的共享: 缓存里有、会话里没有。这里只记下, 之后的重读会话确认了再删。
+	s.PruneAccounts(syncCtx)
 
 	go a.runNotes(syncCtx, s)
 	go a.runReminders(syncCtx)
@@ -382,6 +385,22 @@ func (a *App) persistAccounts(ctx context.Context, client *jmap.Client, st *stor
 	return st.WithTx(ctx, func(tx *sql.Tx) error {
 		return store.UpsertAccounts(ctx, tx, accounts, caps)
 	})
+}
+
+// onAccountsChanged 在运行中重读会话发现账号变化时更新缓存并通知界面。
+// 失去访问的账号缓存已由 syncer 删掉; 新账号的邮件随后由 syncer 引导, 落库后照常发 mail:changed。
+// ctx 是这次会话的同步上下文: 退出登录后迟到的回调不再写库。
+func (a *App) onAccountsChanged(ctx context.Context, client *jmap.Client, st *store.Store, diff syncer.AccountDiff) {
+	if ctx.Err() != nil {
+		return
+	}
+	if err := a.persistAccounts(ctx, client, st); err != nil {
+		a.log.Error("persist accounts", "err", err)
+	}
+	a.emit(EventAccountsChanged)
+	a.refreshTrayUnreadSoon()
+	// 推送订阅按账号列出要推的收件箱, 账号变了要重新对齐 (仅 iOS 有实现)。
+	a.pushSettingsChanged()
 }
 
 // cachedMetadata 在重新发现失败时兜底。
