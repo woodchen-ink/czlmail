@@ -104,7 +104,8 @@ interface Props {
 }
 
 const AUTOSAVE_MS = 4000;
-const ATTACHMENT_WORDS = ["附件", "附上", "见附", "attached", "attachment", "enclosed"];
+// 与界面语言无关: 按收件人可能用的语言都查; 捷克语取词干, 覆盖 příloha/přílohu/v příloze/přikládám/přiložený 等变格。
+const ATTACHMENT_WORDS = ["附件", "附上", "见附", "attached", "attachment", "enclosed", "příloh", "příloze", "přiklád", "přilož"];
 const LANGUAGES = ["简体中文", "English", "日本語", "한국어", "Deutsch", "Français", "Español", "Русский"];
 
 /**
