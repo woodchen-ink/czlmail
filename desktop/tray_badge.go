@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/png"
 	"strconv"
 	"sync"
@@ -15,8 +16,10 @@ import (
 // 托盘未读数: 在托盘图标右上角画红色数字角标。Windows 托盘图标是 16~32px 的小图,
 // 系统字体不可用, 数字用内置的 3x5 点阵画, 放大两倍后在高分屏上也能看清。
 
-//go:embed build/appicon.png
-var appIconPNG []byte
+// 托盘底图: 32px 的小尺寸符号 (docs/design/brand/build-icons.js 生成)。
+//
+//go:embed build/tray/tray-32.png
+var trayGlyphPNG []byte
 
 const trayIconSize = 32
 
@@ -31,31 +34,15 @@ var (
 	baseIcon     *image.RGBA
 )
 
-// trayBase 把 1024px 的应用图标按区域平均缩到托盘尺寸。只做一次。
+// trayBase 解出托盘底图。只做一次。
 func trayBase() *image.RGBA {
 	baseIconOnce.Do(func() {
 		baseIcon = image.NewRGBA(image.Rect(0, 0, trayIconSize, trayIconSize))
-		src, err := png.Decode(bytes.NewReader(appIconPNG))
+		src, err := png.Decode(bytes.NewReader(trayGlyphPNG))
 		if err != nil {
 			return
 		}
-		b := src.Bounds()
-		sx, sy := b.Dx()/trayIconSize, b.Dy()/trayIconSize
-		if sx == 0 || sy == 0 {
-			return
-		}
-		for y := 0; y < trayIconSize; y++ {
-			for x := 0; x < trayIconSize; x++ {
-				var r, g, bl, al, n uint32
-				for yy := 0; yy < sy; yy++ {
-					for xx := 0; xx < sx; xx++ {
-						cr, cg, cb, ca := src.At(b.Min.X+x*sx+xx, b.Min.Y+y*sy+yy).RGBA()
-						r, g, bl, al, n = r+cr, g+cg, bl+cb, al+ca, n+1
-					}
-				}
-				baseIcon.Set(x, y, color.RGBA64{uint16(r / n), uint16(g / n), uint16(bl / n), uint16(al / n)})
-			}
-		}
+		draw.Draw(baseIcon, baseIcon.Bounds(), src, src.Bounds().Min, draw.Src)
 	})
 	return baseIcon
 }

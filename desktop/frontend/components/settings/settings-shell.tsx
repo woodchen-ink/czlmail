@@ -797,7 +797,7 @@ function AboutSection({ active }: { active: boolean }) {
       <Card>
         <div className="flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="" className="size-12" />
+          <img src="/app-icon.png" alt="" className="size-12" />
           <div className="min-w-0 flex-1">
             <p className="font-semibold">CZL Mail</p>
             <p className="text-muted-foreground text-sm">{t("版本")} {version || "—"}</p>

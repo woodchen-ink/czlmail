@@ -7,7 +7,7 @@ package main
 #cgo LDFLAGS: -framework Cocoa
 #include <stdlib.h>
 
-void czlTrayStart(const void *png, int length, const char *open, const char *quit);
+void czlTrayStart(const void *png1x, int len1x, const void *png2x, int len2x, const char *open, const char *quit);
 void czlTrayStop(void);
 void czlTraySetMenuText(const char *open, const char *quit);
 void czlTraySetUnread(int n, const char *tooltip);
@@ -16,6 +16,7 @@ void czlActivateApp(void);
 import "C"
 
 import (
+	_ "embed"
 	"sync/atomic"
 	"unsafe"
 
@@ -33,13 +34,22 @@ const hideOnClose = true
 
 var trayApp atomic.Pointer[App]
 
+// 菜单栏 template 图标: 小尺寸符号的纯黑剪影, 系统按菜单栏主题着色; 18pt 的 1x 与 2x 两份
+// (docs/design/brand/build-icons.js 生成)。
+var (
+	//go:embed build/tray/menubar.png
+	menubarPNG []byte
+	//go:embed build/tray/menubar@2x.png
+	menubar2xPNG []byte
+)
+
 func (a *App) startTray() {
 	trayApp.Store(a)
-	// 1024px 的应用图标, 由 AppKit 缩到菜单栏尺寸(Retina 下取 2 倍像素)。C 侧拷贝后释放。
+	// 图标数据由 C 侧拷贝后释放。
 	open, quit := C.CString(a.t("打开 CZL Mail")), C.CString(a.t("退出 CZL Mail"))
 	defer C.free(unsafe.Pointer(open))
 	defer C.free(unsafe.Pointer(quit))
-	C.czlTrayStart(C.CBytes(appIconPNG), C.int(len(appIconPNG)), open, quit)
+	C.czlTrayStart(C.CBytes(menubarPNG), C.int(len(menubarPNG)), C.CBytes(menubar2xPNG), C.int(len(menubar2xPNG)), open, quit)
 	// 菜单栏就绪后按当前缓存显示一次未读数。
 	a.refreshTrayUnreadSoon()
 }

@@ -48,16 +48,20 @@ static void czlInstallReopenHandler(void) {
 }
 
 // open / quit 是菜单文字; 在调用线程上拷贝成 NSString, 调用方返回后即可释放。
-void czlTrayStart(const void *png, int length, const char *open, const char *quit) {
-    NSData *data = [[NSData alloc] initWithBytes:png length:(NSUInteger)length];
-    free((void *)png);
+// png1x / png2x 是 18pt 菜单栏 template 图标的 1x 与 2x 位图, 由 C.CBytes 分配, 这里拷贝后释放。
+void czlTrayStart(const void *png1x, int len1x, const void *png2x, int len2x, const char *open, const char *quit) {
+    NSData *data1x = [[NSData alloc] initWithBytes:png1x length:(NSUInteger)len1x];
+    NSData *data2x = [[NSData alloc] initWithBytes:png2x length:(NSUInteger)len2x];
+    free((void *)png1x);
+    free((void *)png2x);
     NSString *openTitle = [[NSString alloc] initWithUTF8String:open];
     NSString *quitTitle = [[NSString alloc] initWithUTF8String:quit];
 
     dispatch_async(dispatch_get_main_queue(), ^{
         czlInstallReopenHandler();
         if (czlStatusItem != nil) {
-            [data release];
+            [data1x release];
+            [data2x release];
             [openTitle release];
             [quitTitle release];
             return;
@@ -66,9 +70,19 @@ void czlTrayStart(const void *png, int length, const char *open, const char *qui
         czlTarget = [[CZLTrayTarget alloc] init];
         czlStatusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength] retain];
 
-        NSImage *image = [[NSImage alloc] initWithData:data];
-        [data release];
-        [image setSize:NSMakeSize(18, 18)];
+        // 两份位图挂在同一个 18pt 的 NSImage 上, AppKit 按屏幕倍率挑; template 让系统按亮暗菜单栏着色。
+        NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(18, 18)];
+        for (NSData *d in @[ data1x, data2x ]) {
+            NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithData:d];
+            if (rep != nil) {
+                [rep setSize:NSMakeSize(18, 18)];
+                [image addRepresentation:rep];
+                [rep release];
+            }
+        }
+        [data1x release];
+        [data2x release];
+        [image setTemplate:YES];
         NSStatusBarButton *button = [czlStatusItem button];
         [button setImage:image];
         [button setImagePosition:NSImageLeft];

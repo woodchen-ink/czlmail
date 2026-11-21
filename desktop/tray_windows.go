@@ -15,7 +15,9 @@ import (
 // 系统托盘。关闭窗口只是隐藏(见 main.go 的 HideWindowOnClose), 邮件客户端要常驻
 // 才能实时收信与弹通知; 托盘是用户找回窗口与真正退出的入口。
 
-//go:embed build/windows/icon.ico
+// 托盘图标: 小尺寸符号的多帧 ico (16 / 20 / 24 / 32, 覆盖 100%-200% 缩放); 有未读时换成带角标的 32px 单帧。
+//
+//go:embed build/tray/tray.ico
 var trayIcon []byte
 
 // trayMenu 留着菜单项引用, 界面换语言时改标题 (setTrayMenuText)。托盘就绪前为 nil。
@@ -71,10 +73,11 @@ func (a *App) setTrayMenuText() {
 
 // setTrayUnread 更新托盘图标角标与提示文字。
 func (a *App) setTrayUnread(n int) {
-	systray.SetIcon(badgeIcon(n))
 	if n > 0 {
+		systray.SetIcon(badgeIcon(n))
 		systray.SetTooltip(a.t("CZL Mail — {0} 封未读", n))
 	} else {
+		systray.SetIcon(trayIcon)
 		systray.SetTooltip("CZL Mail")
 	}
 }
