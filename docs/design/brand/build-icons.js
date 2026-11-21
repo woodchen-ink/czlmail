@@ -68,23 +68,23 @@ const tmp = (name, s) => write(path.join(TMP, name), png(s))
 
 // 桌面端: 透明底完整标志, Wails 由 appicon.png 生成 macOS icns
 write(path.join(DESK, 'build/appicon.png'), png(markIcon(1024)))
-// Windows icon.ico (安装包与程序图标): 16 / 24 / 32 小尺寸符号, 48 起透明底完整标志
-for (const s of [16, 24, 32]) tmp(`app-${s}.png`, glyphIcon(s))
-for (const s of [48, 64, 128, 256]) tmp(`app-${s}.png`, markIcon(s))
-// 托盘: Windows 多帧 ico 覆盖 100%-200% 缩放, 32px 另存一份作未读角标的底图
-for (const s of [16, 20, 24, 32]) tmp(`tray-${s}.png`, glyphIcon(s))
-write(path.join(DESK, 'build/tray/tray-32.png'), png(glyphIcon(32)))
+// Windows icon.ico (安装包与程序图标): 16 / 20 小尺寸符号, 24 起透明底完整标志
+for (const s of [16, 20]) tmp(`app-${s}.png`, glyphIcon(s))
+for (const s of [24, 32, 48, 64, 128, 256]) tmp(`app-${s}.png`, markIcon(s))
+// 托盘: Windows 多帧 ico 覆盖 100%-200% 缩放, 16 / 20 符号、24 / 32 完整标志; 32px 另存一份作未读角标的底图
+for (const s of [16, 20]) tmp(`tray-${s}.png`, glyphIcon(s))
+for (const s of [24, 32]) tmp(`tray-${s}.png`, markIcon(s))
+write(path.join(DESK, 'build/tray/tray-32.png'), png(markIcon(32)))
 // macOS 菜单栏 template: 纯黑 + alpha, 系统按主题着色
 write(path.join(DESK, 'build/tray/menubar.png'), png(glyphIcon(18, '#000')))
 write(path.join(DESK, 'build/tray/menubar@2x.png'), png(glyphIcon(36, '#000', 1)))
 
-// 桌面端界面: 左侧导航 32px 用小尺寸符号, 「关于」48px 用完整标志 (亮色渐变 / 暗色白色)
-write(path.join(DESK, 'frontend/public/glyph.svg'), glyphIcon(256, C1, 8))
+// 桌面端界面: 左侧导航 (32px) 与「关于」(48px) 都用完整标志, 亮色渐变 / 暗色白色
 write(path.join(DESK, 'frontend/public/logo.svg'), markIcon(256))
 write(path.join(DESK, 'frontend/public/logo-white.svg'), markIcon(256, true))
-// favicon: 16 / 32 符号 + 48 完整标志
-for (const s of [16, 32]) tmp(`fav-${s}.png`, glyphIcon(s))
-tmp('fav-48.png', markIcon(48))
+// favicon: 16 符号, 32 / 48 完整标志
+tmp('fav-16.png', glyphIcon(16))
+for (const s of [32, 48]) tmp(`fav-${s}.png`, markIcon(s))
 
 // 手机看笔记网页
 write(path.join(NOTE, 'app/icon.svg'), glyphIcon(256, C1, 8))
@@ -139,6 +139,8 @@ write(
 if (fs.existsSync(IOS)) write(path.join(IOS, 'AppIcon-512@2x.png'), png(solidIcon(1024)))
 
 // 验收预览用 (不进仓库)
-for (const s of [16, 24, 32]) tmp(`glyph-${s}.png`, glyphIcon(s))
-tmp('mark-48.png', markIcon(48))
-tmp('mark-white-48.png', markIcon(48, true))
+for (const s of [16, 20]) tmp(`glyph-${s}.png`, glyphIcon(s))
+for (const s of [24, 32, 48]) {
+  tmp(`mark-${s}.png`, markIcon(s))
+  tmp(`mark-white-${s}.png`, markIcon(s, true))
+}

@@ -20,7 +20,7 @@ def pack(dest: str, prefix: str, sizes: list[int]) -> None:
     print("wrote", dest)
 
 
-pack("desktop/build/windows/icon.ico", "app", [16, 24, 32, 48, 64, 128, 256])
+pack("desktop/build/windows/icon.ico", "app", [16, 20, 24, 32, 48, 64, 128, 256])
 pack("desktop/build/tray/tray.ico", "tray", [16, 20, 24, 32])
 pack("desktop/frontend/app/favicon.ico", "fav", [16, 32, 48])
 

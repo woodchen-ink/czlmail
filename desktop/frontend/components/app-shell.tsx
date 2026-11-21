@@ -166,7 +166,9 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
     <div className="flex h-full flex-col md:flex-row">
       <nav className="border-border bg-sidebar hidden w-14 shrink-0 flex-col items-center gap-1 border-r py-3 md:flex" aria-label={t("模块")}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/glyph.svg" alt="CZL Mail" className="mb-3 size-8" />
+        <img src="/logo.svg" alt="CZL Mail" className="mb-3 size-8 dark:hidden" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-white.svg" alt="CZL Mail" className="mb-3 hidden size-8 dark:block" />
         {nav.map((item) => (
           <RailButton
             key={item.id}
