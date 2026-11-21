@@ -174,7 +174,7 @@ func (s *Syncer) Send(ctx context.Context, d Draft, draftMailboxID, sentMailboxI
 			s.log.Warn("destroy replaced draft", "err", err)
 		}
 	}
-	return s.SyncAccount(ctx, d.AccountID)
+	return s.SyncMail(ctx, d.AccountID)
 }
 
 // SaveDraft 把邮件存进草稿箱并返回新草稿 id; ReplaceDraftID 指向的旧版本随后删除。
@@ -210,7 +210,7 @@ func (s *Syncer) SaveDraft(ctx context.Context, d Draft, draftMailboxID string) 
 			s.log.Warn("destroy replaced draft", "err", err)
 		}
 	}
-	return string(created.ID), s.SyncAccount(ctx, d.AccountID)
+	return string(created.ID), s.SyncMail(ctx, d.AccountID)
 }
 
 // emailCreate 构造 Email/set 的创建调用。go-jmap 的 Email 结构体表达不了
@@ -233,10 +233,9 @@ func emailCreate(d Draft, msg *email.Email) (*jmapx.Call, error) {
 	}}, nil
 }
 
+// destroyEmail 删除一封邮件; 服务端放进 notDestroyed 的拒绝也作为错误返回。
 func (s *Syncer) destroyEmail(ctx context.Context, accountID, id string) error {
-	req := &jmap.Request{Context: ctx}
-	req.Invoke(&email.Set{Account: jmap.ID(accountID), Destroy: []jmap.ID{jmap.ID(id)}})
-	_, err := s.do(req)
+	_, err := s.setEmails(ctx, &email.Set{Account: jmap.ID(accountID), Destroy: []jmap.ID{jmap.ID(id)}})
 	return err
 }
 
