@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "@/lib/i18n";
+import { t, tContext } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useCallback, useEffect, useState } from "react";
@@ -138,8 +138,8 @@ const allGroups: () => ({ title: string; items: { id: Section; label: string; ic
       { id: "vacation", label: t("自动回复"), icon: Plane },
       { id: "filters", label: t("过滤规则"), icon: ListFilter },
       { id: "templates", label: t("邮件模板"), icon: FileText },
-      { id: "folders", label: t("文件夹"), icon: Folder },
-      { id: "scheduled", label: t("定时发送"), icon: CalendarClock },
+      { id: "folders", label: tContext("heading", "文件夹"), icon: Folder },
+      { id: "scheduled", label: tContext("heading", "定时发送"), icon: CalendarClock },
       { id: "privacy", label: t("内容与发件人"), icon: ShieldCheck },
     ],
   },
