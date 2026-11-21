@@ -1,4 +1,4 @@
-<p align="center"><img src="desktop/frontend/public/logo.png" width="96" alt="CZL Mail"></p>
+<p align="center"><img src="docs/design/brand/mark.svg" width="110" alt="CZL Mail"></p>
 
 <h1 align="center">CZL Mail</h1>
 
