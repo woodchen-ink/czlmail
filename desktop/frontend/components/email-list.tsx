@@ -45,6 +45,11 @@ interface Props {
   onCheck?: (key: string, range: boolean) => void;
   /** 给行套上右键菜单。 */
   rowMenu?: (email: EmailSummary, row: React.ReactElement) => React.ReactElement;
+  /**
+   * 给读回来的会话成员套上外壳里还没提交完的乐观更新(删除、已读、星标)。
+   * 展开区里的邮件不一定在 emails 里(如已发送的回复), 外壳改不到它们, 只能在这里套。
+   */
+  overlay?: (list: EmailSummary[]) => EmailSummary[];
   /** 滚动容器挂载/卸载时回调, 供外部回到顶部。 */
   onScrollContainer?: (el: HTMLDivElement | null) => void;
   /** 滚动超过一屏(或回到一屏以内)时回调。 */
@@ -75,6 +80,7 @@ export function EmailList({
   checked,
   onCheck,
   rowMenu,
+  overlay,
   onScrollContainer,
   onScrolledAway,
   whereOf,
@@ -99,6 +105,7 @@ export function EmailList({
   }, [onScrolledAway]);
   useEffect(reportScroll, [reportScroll, emails, loading]);
   const wrapRow = rowMenu ?? ((_: EmailSummary, row: React.ReactElement) => row);
+  const applyOverlay = overlay ?? ((list: EmailSummary[]) => list);
   // 同一时间只展开一个会话, 键为「账号/会话 id」(统一视图里不同账号的会话 id 可能相同)。
   const [expanded, setExpanded] = useState("");
   const [threads, setThreads] = useState<Record<string, EmailSummary[]>>({});
@@ -134,7 +141,7 @@ export function EmailList({
       .threadEmails(head.accountId, head.id)
       .catch(() => [])
       .then((list) => {
-        if (!cancelled) setThreads({ [expanded]: list ?? [] });
+        if (!cancelled) setThreads({ [expanded]: applyOverlay(list ?? []) });
       });
     return () => {
       cancelled = true;
@@ -160,7 +167,7 @@ export function EmailList({
     setExpanded(key);
     if (!threads[key]) {
       const list = (await api.threadEmails(email.accountId, email.id).catch(() => [])) ?? [];
-      setThreads((prev) => ({ ...prev, [key]: list }));
+      setThreads((prev) => ({ ...prev, [key]: applyOverlay(list) }));
     }
   }
 
@@ -451,45 +458,90 @@ export function EmailList({
                   {members.map((m) => (
                     <Fragment key={emailKey(m)}>
                       <li>
-                        <button
-                          type="button"
-                          data-email-key={emailKey(m)}
-                          onClick={() => onSelect(emailKey(m))}
-                          aria-current={
-                            emailKey(m) === selectedKey ? "true" : undefined
-                          }
-                          className={cn(
-                            "flex w-full items-center gap-2 py-1.5 pr-3 pl-12 text-left text-sm",
-                            highlightSelected && emailKey(m) === selectedKey
-                              ? "bg-muted"
-                              : "hover:bg-secondary",
-                          )}
-                        >
-                          <SenderAvatar
-                            email={m.from?.[0]?.email ?? ""}
-                            name={m.from?.[0]?.name}
-                            className="size-5 text-[9px]"
-                          />
-                          <span
+                        {/* 与会话行一样可以右键、加星标、删除; 行里有按钮, 所以外层不能是 button。 */}
+                        {wrapRow(
+                          m,
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            data-email-key={emailKey(m)}
+                            onClick={() => onSelect(emailKey(m))}
+                            onKeyDown={(e) => {
+                              if (e.target !== e.currentTarget) return;
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onSelect(emailKey(m));
+                              }
+                            }}
+                            aria-current={
+                              emailKey(m) === selectedKey ? "true" : undefined
+                            }
                             className={cn(
-                              "w-24 shrink-0 truncate",
-                              m.isUnread && "font-medium",
+                              "group/member flex w-full cursor-default items-center gap-2 py-1.5 pr-3 pl-12 text-left text-sm",
+                              "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+                              highlightSelected && emailKey(m) === selectedKey
+                                ? "bg-muted"
+                                : "hover:bg-secondary",
                             )}
                           >
-                            {m.from?.[0]?.name ||
-                              m.from?.[0]?.email ||
-                              t("(无发件人)")}
-                          </span>
-                          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-                            {m.preview}
-                          </span>
-                          {m.hasAttachment && (
-                            <Paperclip className="text-muted-foreground size-3 shrink-0" />
-                          )}
-                          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                            {listDate(m.receivedAt)}
-                          </span>
-                        </button>
+                            <SenderAvatar
+                              email={m.from?.[0]?.email ?? ""}
+                              name={m.from?.[0]?.name}
+                              className="size-5 text-[9px]"
+                            />
+                            <span
+                              className={cn(
+                                "w-24 shrink-0 truncate",
+                                m.isUnread && "font-medium",
+                              )}
+                            >
+                              {m.from?.[0]?.name ||
+                                m.from?.[0]?.email ||
+                                t("(无发件人)")}
+                            </span>
+                            <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                              {m.preview}
+                            </span>
+                            {m.hasAttachment && (
+                              <Paperclip className="text-muted-foreground size-3 shrink-0" />
+                            )}
+                            {onDelete && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDelete(m);
+                                }}
+                                aria-label={t("删除")}
+                                title={t("删除")}
+                                className="hover:bg-muted text-muted-foreground hover:text-destructive shrink-0 rounded-sm p-0.5 opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleFlag(m);
+                              }}
+                              aria-label={m.isFlagged ? t("取消星标") : t("加星标")}
+                              className="hover:bg-muted shrink-0 rounded-sm p-0.5"
+                            >
+                              <Star
+                                className={cn(
+                                  "size-3.5",
+                                  m.isFlagged
+                                    ? "fill-chart-4 text-chart-4"
+                                    : "text-muted-foreground opacity-0 group-hover/member:opacity-100",
+                                )}
+                              />
+                            </button>
+                            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                              {listDate(m.receivedAt)}
+                            </span>
+                          </div>,
+                        )}
                       </li>
                     </Fragment>
                   ))}

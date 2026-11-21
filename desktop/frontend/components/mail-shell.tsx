@@ -625,7 +625,14 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
           const idx = list.findIndex((e) => emailKey(e) === cur);
           // 选中的是展开会话里不在本文件夹的一封(如已发送的回复): 列表里没有它, 回到代表该会话的行。
           if (idx < 0) {
-            const open = openThread.current;
+            // 工具栏操作记在 openThread 里; 展开区里直接点删除或右键时没有记, 用阅读栏正开着的那封。
+            const shown = currentEmail.current;
+            const open =
+              openThread.current?.key === cur
+                ? openThread.current
+                : shown && emailKey(shown) === cur
+                  ? { key: cur, accountId: shown.accountId, threadId: shown.threadId }
+                  : null;
             const head = open?.key === cur && open.threadId && list.find((e) => e.accountId === open.accountId && e.threadId === open.threadId && !inSet(e));
             return head ? emailKey(head) : "";
           }
@@ -1092,6 +1099,16 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   }, [emails, selectedKey, focusMode, currentKind, actionsFor, setDraft]);
 
 
+  /**
+   * 这封邮件所在的文件夹, 供右键菜单的「移动到」排除。
+   * 展开会话里的邮件可能在别的文件夹(如已发送的回复), 此时不是当前列表的文件夹。
+   */
+  function boxOf(email: EmailSummary): string {
+    const box = listBoxOf(email.accountId);
+    const own = email.mailboxIds ?? [];
+    return own.length === 0 || own.includes(box) ? box : own[0];
+  }
+
   // 多选都属于同一个账号时的账号 id, 否则为空(跨账号没有共同的目标文件夹)。
   const checkedAccounts = new Set([...checked].map((key) => parseEmailKey(key).accountId));
   const checkedAccount = checkedAccounts.size === 1 ? [...checkedAccounts][0] : "";
@@ -1332,12 +1349,13 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
                 onLoadMore={() => loadPage(emails.length, loadToken.current)}
                 onToggleFlag={toggleFlag}
                 onDelete={(email) => trashIds([emailKey(email)])}
+                overlay={overlay}
                 rowMenu={(email, row) => (
                   <EmailContextMenu
                     email={email}
                     checked={checked}
                     mailboxes={mailboxesByAccount[email.accountId] ?? []}
-                    mailboxId={listBoxOf(email.accountId)}
+                    mailboxId={boxOf(email)}
                     currentKind={currentKind}
                     knownLabels={labelsByAccount[email.accountId] ?? []}
                     actions={menuActions}
