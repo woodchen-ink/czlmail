@@ -1049,7 +1049,14 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       }
 
       const step = (delta: number) => {
-        const idx = emails.findIndex((m) => emailKey(m) === selectedKey);
+        let idx = emails.findIndex((m) => emailKey(m) === selectedKey);
+        // 选中的是展开会话里不在本列表的一封 (较早的、别的文件夹的): 从代表该会话的行起步,
+        // 否则会跳回列表第一封。
+        const cur = currentEmail.current;
+        if (idx < 0 && cur && emailKey(cur) === selectedKey) {
+          const tk = `${cur.accountId}/${cur.threadId || cur.id}`;
+          idx = emails.findIndex((m) => `${m.accountId}/${m.threadId || m.id}` === tk);
+        }
         const next = emails[idx < 0 ? 0 : idx + delta];
         if (next) setSelectedKey(emailKey(next));
       };
