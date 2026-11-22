@@ -99,6 +99,8 @@ const IGNORED_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "Ca
 /**
  * 不能绑的键: 界面本身的键盘操作 (Tab 走焦点, Enter / 空格激活, Esc 关闭),
  * 系统的复制粘贴撤销, 以及模块切换 (Ctrl+1…6、Ctrl+,)。
+ * Ctrl+R / Ctrl+F / Ctrl+P / F5 不必保留: Wails 在 Windows 上关掉了 WebView2 自带的快捷键
+ * (AreBrowserAcceleratorKeysEnabled=false), 正式版里它们不会刷新、查找或打印。
  */
 const RESERVED = new Set([
   "Tab", "Shift+Tab", "Enter", "Space", "Escape",
@@ -191,9 +193,22 @@ function readRaw(): string | null {
   }
 }
 
+// 存储内容只在本模块写入 (store) 或别的窗口写入 (storage 事件) 时变化, 其余时候不再读 localStorage:
+// 每次按键、每次渲染都会调 getShortcuts。
+let stale = true;
+let watching = false;
+
 /** 当前生效的键位。结果按存储内容缓存, 没变化时返回同一个对象。 */
 export function getShortcuts(): ShortcutMap {
   if (typeof window === "undefined") return DEFAULT_SHORTCUTS;
+  if (!watching) {
+    watching = true;
+    window.addEventListener("storage", (e) => {
+      if (e.key === STORAGE_KEY || e.key === null) stale = true;
+    });
+  }
+  if (!stale) return cached;
+  stale = false;
   const raw = readRaw();
   if (raw !== cachedRaw) {
     cachedRaw = raw;
@@ -218,6 +233,7 @@ function store(map: ShortcutMap) {
   } catch {
     // 存不下时本次修改不生效, 界面仍显示存储里的真实状态。
   }
+  stale = true;
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
