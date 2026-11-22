@@ -6,6 +6,8 @@ import (
 
 	"git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/mail/email"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
 // 邮件操作一律走服务端的 Email/set, 不在本地先改。
@@ -78,6 +80,50 @@ func (s *Syncer) Move(ctx context.Context, accountID string, emailIDs []string, 
 		Account: jmap.ID(accountID),
 		Update:  updates,
 	})
+}
+
+// Restore 把邮件放回 places 记下的文件夹, 并还原垃圾邮件标记, 用于撤销移动类操作。
+//
+// 与 Move 一样整体替换 mailboxIds; 关键字只动 $junk / $notjunk, 其余(已读、星标、标签)
+// 在撤销前后可能已被用户改过, 不能拿旧值覆盖。没有文件夹的条目跳过 ——
+// JMAP 不允许邮件不属于任何邮箱。
+func (s *Syncer) Restore(ctx context.Context, accountID string, places []store.EmailPlacement) error {
+	updates := restoreUpdates(places)
+	if len(updates) == 0 {
+		return nil
+	}
+	return s.applySet(ctx, accountID, &email.Set{
+		Account: jmap.ID(accountID),
+		Update:  updates,
+	})
+}
+
+// restoreUpdates 是 Restore 的 Email/set update 部分。
+func restoreUpdates(places []store.EmailPlacement) map[jmap.ID]jmap.Patch {
+	updates := make(map[jmap.ID]jmap.Patch, len(places))
+	for _, p := range places {
+		if p.ID == "" || len(p.MailboxIDs) == 0 {
+			continue
+		}
+		boxes := make(map[string]bool, len(p.MailboxIDs))
+		for _, b := range p.MailboxIDs {
+			boxes[b] = true
+		}
+		updates[jmap.ID(p.ID)] = jmap.Patch{
+			"mailboxIds":        boxes,
+			"keywords/$junk":    keywordValue(p.Junk),
+			"keywords/$notjunk": keywordValue(p.NotJunk),
+		}
+	}
+	return updates
+}
+
+// keywordValue 是 patch 里关键字的值: 设置为 true, 清除为 null。
+func keywordValue(set bool) any {
+	if set {
+		return true
+	}
+	return nil
 }
 
 // Delete 彻底销毁邮件。

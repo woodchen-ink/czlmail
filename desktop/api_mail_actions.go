@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
 // 阅读栏工具条上的其余操作: 归档、垃圾邮件、标签、查看源码、导出 / 导入 .eml。
@@ -43,6 +45,25 @@ func (a *App) MarkJunk(accountID string, emailIDs []string, junk bool) error {
 		return fmt.Errorf("2032 account has no %s mailbox", kind)
 	}
 	return s.MarkJunk(a.ctx, accountID, emailIDs, target, junk)
+}
+
+// EmailPlacements 读出邮件现在所在的文件夹与垃圾邮件标记(本地缓存)。
+// 界面在删除、移动、归档、标记垃圾邮件之前调用, 留作「撤销」时 RestoreEmails 的参数。
+func (a *App) EmailPlacements(accountID string, emailIDs []string) ([]store.EmailPlacement, error) {
+	st, err := a.currentStore()
+	if err != nil {
+		return nil, err
+	}
+	return st.EmailPlacements(a.ctx, accountID, emailIDs)
+}
+
+// RestoreEmails 把邮件放回 EmailPlacements 记下的位置, 撤销一次移动类操作。
+func (a *App) RestoreEmails(accountID string, places []store.EmailPlacement) error {
+	s, err := a.currentSyncer()
+	if err != nil {
+		return err
+	}
+	return s.Restore(a.ctx, accountID, places)
 }
 
 // SetLabel 给邮件加上或去掉标签。标签即 JMAP 的自定义关键字。

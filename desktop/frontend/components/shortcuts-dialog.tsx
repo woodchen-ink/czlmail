@@ -13,14 +13,15 @@ import {
 } from "@/components/ui/dialog";
 import { send } from "@/lib/app-bus";
 import { isNative } from "@/lib/native-bridge";
-import { SHORTCUT_ACTIONS, formatKeys, shortcutLabel, useShortcuts } from "@/lib/shortcuts";
+import { SHORTCUT_ACTIONS, formatKey, formatKeys, shortcutLabel, useShortcuts } from "@/lib/shortcuts";
 
-/** 键位来自 lib/shortcuts (mail-shell 按同一张表处理按键); Esc 是固定的。 */
+/** 键位来自 lib/shortcuts (mail-shell 按同一张表处理按键); Ctrl+Z 与 Esc 是固定的。 */
 export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   useI18n();
   const keys = useShortcuts();
   const rows = [
     ...SHORTCUT_ACTIONS.map((action) => ({ id: action, keys: formatKeys(keys[action]), action: shortcutLabel(action) })),
+    { id: "undo", keys: formatKey("Ctrl+z"), action: t("撤销上一步操作") },
     { id: "escape", keys: "Esc", action: t("退出全屏阅读 / 关闭对话框") },
   ];
   return (
