@@ -1234,5 +1234,13 @@
   "已删除|folder": "Koš",
   "归档|folder": "Archiv",
   "文件夹|heading": "Složky",
-  "定时发送|heading": "Naplánované zprávy"
+  "定时发送|heading": "Naplánované zprávy",
+  "切换已读 / 未读": "Přepnout přečtené / nepřečtené",
+  "自定义快捷键…": "Upravit zkratky…",
+  "邮件模块里的快捷键，只在这台设备上生效。点「添加」后按下想用的键；一个键只能用于一个动作。": "Zkratky pro poštu, platí jen na tomto zařízení. Zvolte Přidat a stiskněte požadovanou klávesu; jedna klávesa může patřit jen jedné akci.",
+  "请按下要使用的键，按 Esc 取消": "Stiskněte požadovanou klávesu, Esc akci zruší",
+  "「{0}」不能用作快捷键": "Klávesu {0} nelze použít jako zkratku",
+  "「{0}」原来用于「{1}」，现在用于「{2}」": "Klávesa {0} dosud patřila akci „{1}“, nyní patří akci „{2}“",
+  "已恢复默认键位": "Výchozí zkratky obnoveny",
+  "恢复默认键位": "Obnovit výchozí"
 }

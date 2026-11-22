@@ -65,6 +65,7 @@ import { useAppearance } from "@/lib/theme";
 import { listen, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
+import { shortcutActionOf, type ShortcutAction } from "@/lib/shortcuts";
 
 const PAGE_SIZE = 50;
 // 定位一封邮件时最多加载多少封。再深就不值得了: 每 200 封一次查询,
@@ -724,8 +725,12 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   );
 
   const markReadIds = useCallback(
-    (keys: string[], read: boolean) =>
-      mutate({ keys, patch: { isUnread: !read }, op: (acc, ids) => api.markRead(acc, ids, read) }),
+    (keys: string[], read: boolean) => {
+      // 阅读栏里那封的详情不随已读变化重载; 快捷键「切换已读」要看它, 这里跟着改。
+      const shown = currentEmail.current;
+      if (shown && keys.includes(emailKey(shown))) currentEmail.current = { ...shown, isUnread: !read } as EmailDetail;
+      mutate({ keys, patch: { isUnread: !read }, op: (acc, ids) => api.markRead(acc, ids, read) });
+    },
     [mutate],
   );
 
@@ -1039,14 +1044,17 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
       // 在输入框、对话框、菜单里操作时不触发。
-      if (
-        target?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [role=menu]") ||
-        e.ctrlKey ||
-        e.metaKey ||
-        e.altKey
-      ) {
+      if (target?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [role=menu]")) return;
+
+      // Esc 是固定的, 不在可自定义的键位里。
+      if (e.key === "Escape" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (focusMode) setFocusMode(false);
         return;
       }
+
+      // 键位见 lib/shortcuts, 用户可以在设置里改。
+      const action = shortcutActionOf(e);
+      if (!action) return;
 
       const step = (delta: number) => {
         let idx = emails.findIndex((m) => emailKey(m) === selectedKey);
@@ -1061,42 +1069,54 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         if (next) setSelectedKey(emailKey(next));
       };
 
-      switch (e.key) {
-        case "j":
-        case "ArrowDown":
-          e.preventDefault();
-          return step(1);
-        case "k":
-        case "ArrowUp":
-          e.preventDefault();
-          return step(-1);
-        case "/":
-          e.preventDefault();
-          return searchRef.current?.focus();
-        case "?":
-          return setShowShortcuts(true);
-        case "c":
-          return setDraft({ to: "", cc: "", subject: "", html: "" });
-        case "Escape":
-          if (focusMode) setFocusMode(false);
-          return;
+      /** 已读类操作的对象: 有多选时是多选, 否则是选中的那封。 */
+      const readTarget = (): { keys: string[]; unread: boolean; batch: boolean } | null => {
+        if (checked.size > 0) {
+          return { keys: [...checked], unread: emails.some((m) => m.isUnread && checked.has(emailKey(m))), batch: true };
+        }
+        const shown = currentEmail.current;
+        // 展开会话里不在本文件夹的邮件不在列表里, 用阅读栏里读到的详情。
+        const one = emails.find((m) => emailKey(m) === selectedKey) ?? (shown && emailKey(shown) === selectedKey ? shown : null);
+        return one ? { keys: [selectedKey], unread: one.isUnread, batch: false } : null;
+      };
+      const setRead = (read: boolean | "toggle") => {
+        const target = readTarget();
+        if (!target) return;
+        const value = read === "toggle" ? target.unread : read;
+        markReadIds(target.keys, value);
+        // 与工具栏的「标为未读」一致: 单封标为未读后关闭阅读栏, 免得停留其上又被自动标记已读。
+        if (!value && !target.batch) setSelectedKey("");
+      };
+
+      const general: Partial<Record<ShortcutAction, () => void>> = {
+        next: () => step(1),
+        prev: () => step(-1),
+        search: () => searchRef.current?.focus(),
+        help: () => setShowShortcuts(true),
+        compose: () => setDraft({ to: "", cc: "", subject: "", html: "" }),
+        markRead: () => setRead(true),
+        markUnread: () => setRead(false),
+        toggleRead: () => setRead("toggle"),
+      };
+      const run = general[action];
+      if (run) {
+        e.preventDefault();
+        return run();
       }
 
       const email = currentEmail.current;
       if (!email || emailKey(email) !== selectedKey) return;
       const a = actionsFor(email);
-      const map: Record<string, () => void> = {
-        r: a.reply,
-        a: a.replyAll,
-        f: a.forward,
-        e: a.archive,
-        "#": a.trash,
-        Delete: a.trash,
-        s: a.toggleFlag,
-        u: a.markUnread,
-        "!": () => a.junk(currentKind !== "junk"),
+      const map: Partial<Record<ShortcutAction, () => void>> = {
+        reply: a.reply,
+        replyAll: a.replyAll,
+        forward: a.forward,
+        archive: a.archive,
+        trash: a.trash,
+        toggleFlag: a.toggleFlag,
+        junk: () => a.junk(currentKind !== "junk"),
       };
-      const fn = map[e.key];
+      const fn = map[action];
       if (fn) {
         e.preventDefault();
         fn();
@@ -1105,7 +1125,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, emails, selectedKey, focusMode, currentKind, actionsFor, setDraft]);
+  }, [active, emails, selectedKey, checked, focusMode, currentKind, actionsFor, markReadIds, setDraft]);
 
 
   /**
