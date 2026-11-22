@@ -327,6 +327,10 @@ export function EmailView({
     }
   }
 
+  // 外壳的 revision 整个会话只增不减。自动标记已读只在打开这封邮件的那一次读取时做,
+  // 所以与打开时的值比, 而不是与 0 比: 否则加过一次星标后, 之后打开的未读邮件都不再自动标记。
+  const openedAt = useRef(revision);
+
   useEffect(() => {
     let cancelled = false;
     let markTimer: ReturnType<typeof setTimeout> | undefined;
@@ -360,7 +364,7 @@ export function EmailView({
 
         // 按设置标记已读。放在正文取回之后，避免网络失败时
         // 邮件已被标记已读却什么都没显示。
-        if (detail.isUnread && !cancelled && revision === 0) {
+        if (detail.isUnread && !cancelled && revision === openedAt.current) {
           const mode =
             (await api.getSettings().catch(() => null))?.markRead ??
             "immediate";
