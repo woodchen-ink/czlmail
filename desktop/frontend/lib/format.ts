@@ -29,13 +29,26 @@ export function listDate(value: string | Date): string {
     const date = `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     return sameYear ? `${date} ${time}` : `${d.getFullYear()}-${date} ${time}`;
   }
-  const date = new Intl.DateTimeFormat(locale, {
-    year: sameYear ? undefined : "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
+  const date = listDateFormat(locale, sameYear).format(d);
   // 捷克语的规范写法是 20. 11., 但窄列里通行不带空格的 20.11. (Outlook 等也这样写)。
   return `${date.replace(/\.\s+(?=\d)/g, ".")} ${time}`;
+}
+
+// 列表每行都要格式化一次, 格式化器按 语言 + 是否带年份 复用, 不逐行新建。
+const listDateFormats = new Map<string, Intl.DateTimeFormat>();
+
+function listDateFormat(locale: string, sameYear: boolean): Intl.DateTimeFormat {
+  const key = `${locale}|${sameYear}`;
+  let format = listDateFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, {
+      year: sameYear ? undefined : "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    listDateFormats.set(key, format);
+  }
+  return format;
 }
 
 /** 阅读窗格的完整时间。 */
