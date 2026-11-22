@@ -266,6 +266,38 @@ test("Date labels change language but date input and protocol values do not", ()
   assert.equal(dates.toLocalDateTime(date), protocol);
 });
 
+test("The mail list writes dates the way the interface language does", () => {
+  const { api } = loadLocale();
+  const output = ts.transpileModule(fs.readFileSync(path.join(root, "lib/format.ts"), "utf8"), { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
+  } }).outputText;
+  const compiledModule = { exports: {} };
+  vm.runInNewContext(output, {
+    module: compiledModule, exports: compiledModule.exports,
+    require: (specifier) => { assert.equal(specifier, "@/lib/i18n"); return api; },
+  });
+  const { listDate } = compiledModule.exports;
+  const year = new Date().getFullYear();
+  // Never today: January 2 or 3 of the current year, and the same day five years back.
+  const day = new Date().getMonth() === 0 && new Date().getDate() === 2 ? 3 : 2;
+  const recent = new Date(year, 0, day, 9, 5);
+  const old = new Date(year - 5, 0, day, 9, 5);
+  const dd = String(day).padStart(2, "0");
+  const plain = (value) => value.replace(/[  ]/g, " ");
+  assert.equal(listDate(recent), `01-${dd} 09:05`);
+  assert.equal(listDate(old), `${year - 5}-01-${dd} 09:05`);
+  api.setLocale("cs");
+  assert.equal(plain(listDate(recent)), `${dd}.01. 09:05`);
+  assert.equal(plain(listDate(old)), `${dd}.01.${year - 5} 09:05`);
+  api.setLocale("en");
+  assert.equal(listDate(recent), `01/${dd} 09:05`);
+  assert.equal(listDate(old), `01/${dd}/${year - 5} 09:05`);
+  api.setLocale("ru");
+  assert.equal(listDate(recent), `${dd}.01 09:05`);
+  assert.equal(plain(listDate(old)).replace(/ г\.$/, ""), `${dd}.01.${year - 5} 09:05`);
+  assert.equal(listDate("0001-01-01T00:00:00Z"), "");
+});
+
 test("Language switching never translates attachment detection keywords or request values", () => {
   const compose = fs.readFileSync(path.join(root, "components/compose/compose-pane.tsx"), "utf8");
   assert.match(compose, /const ATTACHMENT_WORDS = \["附件", "附上", "见附", "attached", "attachment", "enclosed", "příloh", "příloze", "přiklád", "přilož", "влож", "прилага", "прикреп"\]/);

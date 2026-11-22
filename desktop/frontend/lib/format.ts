@@ -7,6 +7,9 @@ import type { Address } from "@/lib/api";
  *
  * 今天只显示时刻，今年省去年份，更早的补上年份。日期与时刻都用固定位数，
  * 列表里上下行的时间能按列对齐。
+ *
+ * 日期的写法跟界面语言走: 中文是 11-20, 捷克语是 20.11., 英语是 11/20。
+ * 时刻各语言一律 24 小时制。
  */
 export function listDate(value: string | Date): string {
   const d = toDate(value);
@@ -19,9 +22,33 @@ export function listDate(value: string | Date): string {
     d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
 
   if (sameDay) return time;
-  const date = `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  if (d.getFullYear() === now.getFullYear()) return `${date} ${time}`;
-  return `${d.getFullYear()}-${date} ${time}`;
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const locale = dateLocale();
+  // 中文沿用连字符的写法; Intl 给出的是 11/20。
+  if (locale.startsWith("zh")) {
+    const date = `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    return sameYear ? `${date} ${time}` : `${d.getFullYear()}-${date} ${time}`;
+  }
+  const date = listDateFormat(locale, sameYear).format(d);
+  // 捷克语的规范写法是 20. 11., 但窄列里通行不带空格的 20.11. (Outlook 等也这样写)。
+  return `${date.replace(/\.\s+(?=\d)/g, ".")} ${time}`;
+}
+
+// 列表每行都要格式化一次, 格式化器按 语言 + 是否带年份 复用, 不逐行新建。
+const listDateFormats = new Map<string, Intl.DateTimeFormat>();
+
+function listDateFormat(locale: string, sameYear: boolean): Intl.DateTimeFormat {
+  const key = `${locale}|${sameYear}`;
+  let format = listDateFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, {
+      year: sameYear ? undefined : "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    listDateFormats.set(key, format);
+  }
+  return format;
 }
 
 /** 阅读窗格的完整时间。 */
