@@ -1231,7 +1231,7 @@
   "AI 没有返回内容（模型可能把输出都用在了思考上），可以把思考档位调低后重试。": "The AI returned no text (the model may have spent the whole reply on reasoning). Try a lower reasoning level.",
   "服务器地址必须使用 https。": "The server address must use https.",
   "已发送|folder": "Sent",
-  "已删除|folder": "Deleted",
+  "已删除|folder": "Trash",
   "归档|folder": "Archive",
   "文件夹|heading": "Folders",
   "定时发送|heading": "Scheduled emails"
