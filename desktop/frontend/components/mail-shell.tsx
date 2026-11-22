@@ -76,7 +76,7 @@ function locateDepth(index: number): number {
   return Math.min(LOCATE_LIMIT, (Math.floor(index / PAGE_SIZE) + 1) * PAGE_SIZE);
 }
 
-export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
+export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
   useI18n();
   const { bodyMode, bodyAppearance, setBodyAppearance } = useAppearance();
 
@@ -1027,6 +1027,8 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
   /* ---------- 键盘快捷键 ---------- */
 
   useEffect(() => {
+    // 模块切走时只是隐藏, 不卸载: 不拦这里, 在日历、设置等页面按 Delete 会删掉邮件里选中的那封。
+    if (!active) return;
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
       // 在输入框、对话框、菜单里操作时不触发。
@@ -1089,7 +1091,7 @@ export function MailShell({ onSignedOut }: { onSignedOut: () => void }) {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [emails, selectedKey, focusMode, currentKind, actionsFor, setDraft]);
+  }, [active, emails, selectedKey, focusMode, currentKind, actionsFor, setDraft]);
 
 
   // 多选都属于同一个账号时的账号 id, 否则为空(跨账号没有共同的目标文件夹)。

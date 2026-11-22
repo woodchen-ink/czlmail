@@ -190,7 +190,7 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
 
       <main className="relative min-w-0 flex-1">
         <Pane show={module === "mail"}>
-          <MailShell onSignedOut={onSignedOut} />
+          <MailShell active={module === "mail"} onSignedOut={onSignedOut} />
         </Pane>
         {visited.has("calendar") && (
           <Pane show={module === "calendar"}>
