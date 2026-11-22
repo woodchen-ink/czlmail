@@ -29,6 +29,7 @@ export const SHORTCUT_ACTIONS = [
   "markUnread",
   "toggleRead",
   "junk",
+  "undo",
   "search",
   "help",
 ] as const;
@@ -50,6 +51,7 @@ export const DEFAULT_SHORTCUTS: ShortcutMap = {
   markUnread: ["u"],
   toggleRead: ["m"],
   junk: ["!"],
+  undo: ["Ctrl+z"],
   search: ["/"],
   help: ["?"],
 };
@@ -83,6 +85,8 @@ export function shortcutLabel(action: ShortcutAction): string {
       return t("切换已读 / 未读");
     case "junk":
       return t("标记为垃圾邮件");
+    case "undo":
+      return t("撤销上一步操作");
     case "search":
       return t("搜索");
     case "help":
@@ -98,13 +102,14 @@ const MODIFIER_PREFIX = /^(?:(?:Ctrl|Alt|Shift|Meta)\+)*/;
 const IGNORED_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "NumLock", "ScrollLock", "Dead", "Process", "Unidentified", "OS", "Fn"]);
 /**
  * 不能绑的键: 界面本身的键盘操作 (Tab 走焦点, Enter / 空格激活, Esc 关闭),
- * 系统的复制粘贴撤销, 以及模块切换 (Ctrl+1…6、Ctrl+,)。
+ * 系统的复制粘贴, 以及模块切换 (Ctrl+1…6、Ctrl+,)。
+ * Ctrl+Z 不在其中: 它是「撤销」动作的默认键位, 输入框里照旧是系统的撤销 (mail-shell 不处理输入框里的按键)。
  * Ctrl+R / Ctrl+F / Ctrl+P / F5 不必保留: Wails 在 Windows 上关掉了 WebView2 自带的快捷键
  * (AreBrowserAcceleratorKeysEnabled=false), 正式版里它们不会刷新、查找或打印。
  */
 const RESERVED = new Set([
   "Tab", "Shift+Tab", "Enter", "Space", "Escape",
-  ...["c", "v", "x", "a", "z", "y", "1", "2", "3", "4", "5", "6", ","].flatMap((k) => [`Ctrl+${k}`, `Meta+${k}`]),
+  ...["c", "v", "x", "a", "y", "1", "2", "3", "4", "5", "6", ","].flatMap((k) => [`Ctrl+${k}`, `Meta+${k}`]),
 ]);
 
 /** 按键事件对应的键位; 只按了修饰键时返回空串。 */

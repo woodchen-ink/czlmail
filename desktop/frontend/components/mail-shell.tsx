@@ -14,6 +14,7 @@ import {
   Mail as MailIcon,
   PenSquare,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldAlert,
   Star,
@@ -66,7 +67,7 @@ import { useAppearance } from "@/lib/theme";
 import { listen, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
-import { formatKey, keyOf, shortcutActionOf, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
+import { formatKey, formatKeys, shortcutActionOf, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
 
 const PAGE_SIZE = 50;
 
@@ -201,7 +202,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   const currentEmail = useRef<EmailDetail | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   // 搜索框提示里显示「搜索」动作的第一个键位; 用户把键位删光时不带括号。
-  const searchKey = useShortcuts().search[0];
+  const shortcuts = useShortcuts();
+  const searchKey = shortcuts.search[0];
   const searchHint = searchKey ? formatKey(searchKey) : "";
 
   // 每次切换账号/邮箱都会重来一遍分页，用一个自增的令牌把过期请求的结果丢掉，
@@ -307,6 +309,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   const emptying = useRef(new Set<string>());
   /** 最近一次可撤销的邮件操作, Ctrl+Z 撤销它。只记一步, 与 Outlook 相同。 */
   const lastUndo = useRef<UndoEntry | null>(null);
+  // 列表上方的「撤销」按钮据此置灰。
+  const [canUndo, setCanUndo] = useState(false);
 
   const overlay = useCallback((list: EmailSummary[]) => {
     const hidden = hiddenIds.current;
@@ -815,13 +819,17 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
           trigger: () => {
             if (used) return;
             used = true;
-            if (lastUndo.current === e) lastUndo.current = null;
+            if (lastUndo.current === e) {
+              lastUndo.current = null;
+              setCanUndo(false);
+            }
             toast.dismiss(toastId);
             if (m.remove) void restore();
             else revert();
           },
         };
         lastUndo.current = e;
+        setCanUndo(true);
         entry = e;
       }
       if (m.done) {
@@ -1236,13 +1244,6 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         return;
       }
 
-      // Ctrl+Z 也是固定的 (系统撤销键, 不能改绑): 撤销最近一次删除、移动、标记等操作。
-      if (keyOf(e) === "Ctrl+z" || keyOf(e) === "Meta+z") {
-        e.preventDefault();
-        undoLast();
-        return;
-      }
-
       // 键位见 lib/shortcuts, 用户可以在设置里改。
       const action = shortcutActionOf(e);
       if (!action) return;
@@ -1287,6 +1288,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         markRead: () => setRead(true),
         markUnread: () => setRead(false),
         toggleRead: () => setRead("toggle"),
+        undo: undoLast,
       };
       const run = general[action];
       if (run) {
@@ -1454,6 +1456,17 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 )}
               </div>
 
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0"
+                onClick={undoLast}
+                disabled={!canUndo}
+                aria-label={t("撤销")}
+                title={shortcuts.undo.length > 0 ? `${t("撤销")} (${formatKeys(shortcuts.undo)})` : t("撤销")}
+              >
+                <RotateCcw className="size-4" />
+              </Button>
               {scrolledAway ? (
                 <Button
                   variant="ghost"
