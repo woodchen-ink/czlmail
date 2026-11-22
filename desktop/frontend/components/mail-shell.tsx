@@ -727,6 +727,18 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     [mutate],
   );
 
+  // 拖到侧栏文件夹: 进出垃圾邮件与「标记为垃圾邮件 / 不是垃圾邮件」一样打 $junk / $notjunk, 供服务端学习。
+  const dropIds = useCallback(
+    (keys: string[], acc: string, target: string) => {
+      const kind = mailboxesByAccount[acc]?.find((m) => m.id === target)?.kind;
+      const own = keys.filter((key) => parseEmailKey(key).accountId === acc);
+      if (kind === "junk") junkIds(own, true);
+      else if (kind === "inbox" && currentKind === "junk") junkIds(own, false);
+      else moveIds(keys, acc, target);
+    },
+    [mailboxesByAccount, currentKind, junkIds, moveIds],
+  );
+
   const markReadIds = useCallback(
     (keys: string[], read: boolean) => {
       // 阅读栏里那封的详情不随已读变化重载; 快捷键「切换已读」要看它, 这里跟着改。
@@ -1226,7 +1238,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 }}
                 onMailboxesChanged={loadMailboxes}
                 onFolderAction={folderAction}
-                onDropEmails={moveIds}
+                onDropEmails={dropIds}
               />
             </ScrollArea>
           </>
