@@ -3,33 +3,26 @@
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { send } from "@/lib/app-bus";
+import { isNative } from "@/lib/native-bridge";
+import { SHORTCUT_ACTIONS, formatKeys, shortcutLabel, useShortcuts } from "@/lib/shortcuts";
 
-/** 与 mail-shell 里的键位处理保持一一对应。 */
-export const getShortcuts: () => ({ keys: string; action: string }[]) = () => ([
-  { keys: "j / ↓", action: t("下一封") },
-  { keys: "k / ↑", action: t("上一封") },
-  { keys: "c", action: t("写邮件") },
-  { keys: "r", action: t("回复") },
-  { keys: "a", action: t("全部回复") },
-  { keys: "f", action: t("转发") },
-  { keys: "e", action: t("归档") },
-  { keys: "#  / Delete", action: t("删除") },
-  { keys: "s", action: t("加星标 / 取消星标") },
-  { keys: "u", action: t("标为未读") },
-  { keys: "!", action: t("标记为垃圾邮件") },
-  { keys: "/", action: t("搜索") },
-  { keys: "Esc", action: t("退出全屏阅读 / 关闭对话框") },
-  { keys: "?", action: t("显示本帮助") },
-]);
-
+/** 键位来自 lib/shortcuts (mail-shell 按同一张表处理按键); Esc 是固定的。 */
 export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   useI18n();
+  const keys = useShortcuts();
+  const rows = [
+    ...SHORTCUT_ACTIONS.map((action) => ({ id: action, keys: formatKeys(keys[action]), action: shortcutLabel(action) })),
+    { id: "escape", keys: "Esc", action: t("退出全屏阅读 / 关闭对话框") },
+  ];
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
@@ -37,16 +30,37 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
           <DialogTitle>{t("键盘快捷键")}</DialogTitle>
         </DialogHeader>
         <ul className="flex flex-col">
-          {getShortcuts().map((s) => (
+          {rows.map((s) => (
             <li
-              key={s.keys}
+              key={s.id}
               className="border-border flex items-center justify-between border-b py-2 text-sm last:border-b-0"
             >
               <span>{s.action}</span>
-              <kbd className="bg-secondary rounded-sm px-2 py-0.5 font-mono text-xs">{s.keys}</kbd>
+              {s.keys ? (
+                <kbd className="bg-secondary rounded-sm px-2 py-0.5 font-mono text-xs">{s.keys}</kbd>
+              ) : (
+                <span className="text-muted-foreground text-xs">{t("未设置")}</span>
+              )}
             </li>
           ))}
         </ul>
+        {/* 移动端壳里没有这一页设置。 */}
+        {!isNative() && (
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onClose();
+                send("navigate", { module: "settings" });
+                // 设置模块第一次打开时才挂载, 等它订阅上再发 (同 app-shell 里打开「关于」的做法)。
+                setTimeout(() => send("openSettings", { section: "shortcuts" }), 0);
+              }}
+            >
+              {t("自定义快捷键…")}
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -2,6 +2,7 @@
 
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
+import { formatKey, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
 import { MobileNavButton } from "@/components/pane-layout";
 
 import { useState } from "react";
@@ -86,26 +87,29 @@ export function EmailToolbar({
 }: Props) {
   useI18n();
   const inJunk = currentKind === "junk";
+  const keys = useShortcuts();
+  /** 提示里显示动作的第一个键位; 用户把键位删光时不显示。 */
+  const hint = (action: ShortcutAction) => (keys[action][0] ? formatKey(keys[action][0]) : undefined);
 
   return (
     <div className="border-border flex shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2 py-1.5">
       <MobileNavButton kind="back" />
-      <Action icon={Reply} label={t("回复")} shortcut="R" onClick={actions.reply} showLabel />
-      <Action icon={ReplyAll} label={t("全部回复")} shortcut="A" onClick={actions.replyAll} />
-      <Action icon={Forward} label={t("转发")} shortcut="F" onClick={actions.forward} showLabel />
+      <Action icon={Reply} label={t("回复")} shortcut={hint("reply")} onClick={actions.reply} showLabel />
+      <Action icon={ReplyAll} label={t("全部回复")} shortcut={hint("replyAll")} onClick={actions.replyAll} />
+      <Action icon={Forward} label={t("转发")} shortcut={hint("forward")} onClick={actions.forward} showLabel />
 
       <Divider />
 
-      <Action icon={Archive} label={t("归档")} shortcut="E" onClick={actions.archive} showLabel />
-      <Action icon={Trash2} label={t("删除")} shortcut="#" onClick={actions.trash} showLabel />
+      <Action icon={Archive} label={t("归档")} shortcut={hint("archive")} onClick={actions.archive} showLabel />
+      <Action icon={Trash2} label={t("删除")} shortcut={hint("trash")} onClick={actions.trash} showLabel />
       <MoveMenu mailboxes={mailboxes} onMove={actions.move} />
       <LabelMenu current={email.labels ?? []} known={labels} onSet={actions.setLabel} />
       {inJunk ? (
         <Action icon={ShieldCheck} label={t("不是垃圾邮件")} onClick={() => actions.junk(false)} showLabel />
       ) : (
-        <Action icon={ShieldAlert} label={t("垃圾邮件")} shortcut="!" onClick={() => actions.junk(true)} showLabel />
+        <Action icon={ShieldAlert} label={t("垃圾邮件")} shortcut={hint("junk")} onClick={() => actions.junk(true)} showLabel />
       )}
-      <Action icon={Mail} label={t("标为未读")} shortcut="U" onClick={actions.markUnread} />
+      <Action icon={Mail} label={t("标为未读")} shortcut={hint("markUnread")} onClick={actions.markUnread} />
 
       <div className="min-w-2 flex-1" />
 
