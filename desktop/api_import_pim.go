@@ -93,7 +93,11 @@ func (a *App) importPIMData(accountID, typeName string, data []byte, assign func
 	if err != nil {
 		return 0, err
 	}
-	blobID, _, _, err := s.UploadBlob(a.ctx, accountID, bytes.NewReader(data))
+	mediaType := "text/calendar"
+	if typeName == jmapx.ContactCard {
+		mediaType = "text/vcard"
+	}
+	blobID, _, _, err := s.UploadBlobType(a.ctx, accountID, mediaType, bytes.NewReader(data))
 	if err != nil {
 		return 0, err
 	}
