@@ -86,7 +86,7 @@ func (a *App) UploadFiles(accountID, parentID string) (int, error) {
 		if err != nil {
 			return 0, fmt.Errorf("2074 open %s: %w", filepath.Base(path), err)
 		}
-		blobID, serverType, _, err := s.UploadBlob(a.ctx, accountID, f)
+		blobID, serverType, _, err := s.UploadBlobType(a.ctx, accountID, attachmentType(path, ""), f)
 		f.Close()
 		if err != nil {
 			return 0, err
@@ -269,7 +269,7 @@ func (a *App) uploadPath(accountID, parentID, path string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		blobID, serverType, _, err := s.UploadBlob(a.ctx, accountID, f)
+		blobID, serverType, _, err := s.UploadBlobType(a.ctx, accountID, attachmentType(path, ""), f)
 		f.Close()
 		if err != nil {
 			return 0, err
@@ -410,7 +410,7 @@ func (a *App) CreateTextFile(accountID, parentID, name string) error {
 	if err != nil {
 		return err
 	}
-	blobID, _, _, err := s.UploadBlob(a.ctx, accountID, strings.NewReader(""))
+	blobID, _, _, err := s.UploadBlobType(a.ctx, accountID, "text/plain", strings.NewReader(""))
 	if err != nil {
 		return err
 	}

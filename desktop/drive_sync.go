@@ -69,7 +69,7 @@ func (f *driveSyncFile) exists() bool { return f.file != nil }
 
 // write 上传新内容, 文件或文件夹不存在时创建。
 func (f *driveSyncFile) write(ctx context.Context, data []byte) error {
-	blobID, _, _, err := f.s.UploadBlob(ctx, f.accountID, bytes.NewReader(data))
+	blobID, _, _, err := f.s.UploadBlobType(ctx, f.accountID, "application/json", bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
