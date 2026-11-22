@@ -195,7 +195,7 @@ func (a *App) AttachPaths(accountID string, paths []string) ([]UploadedAttachmen
 		if err != nil {
 			return out, fmt.Errorf("2074 open %s: %w", filepath.Base(path), err)
 		}
-		blobID, serverType, size, err := s.UploadBlob(a.ctx, accountID, f)
+		blobID, serverType, size, err := s.UploadBlobType(a.ctx, accountID, attachmentType(path, ""), f)
 		f.Close()
 		if err != nil {
 			return out, err
