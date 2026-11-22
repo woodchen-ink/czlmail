@@ -155,6 +155,9 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
   const [intent, setIntent] = useState("");
 
   const editorRef = useRef<Editor | null>(null);
+  // 打开写信面板时光标落在第一个空着的地方, 不用先点鼠标: 新邮件、转发 → 收件人,
+  // 从通讯录写信 → 主题, 回复 → 正文开头 (引用在下面)。
+  const initialFocus = !draft.to.trim() ? "to" : !draft.subject.trim() ? "subject" : "body";
   const rootRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -549,7 +552,14 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
             </div>
           }
         >
-          <RecipientInput value={to} onChange={(v) => (setTo(v), markDirty())} placeholder={t("收件人")} label={t("收件人")} bare />
+          <RecipientInput
+            value={to}
+            onChange={(v) => (setTo(v), markDirty())}
+            placeholder={t("收件人")}
+            label={t("收件人")}
+            bare
+            autoFocus={initialFocus === "to"}
+          />
         </Field>
         {showCc && (
           <Field label={t("抄送")}>
@@ -569,6 +579,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
               markDirty();
             }}
             placeholder={t("主题")}
+            autoFocus={initialFocus === "subject"}
             className="placeholder:text-muted-foreground h-9 min-w-0 flex-1 bg-transparent outline-none"
             aria-label={t("主题")}
           />
@@ -582,6 +593,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
             placeholder={t("正文")}
             className="shrink-0"
             onReady={(e) => (editorRef.current = e)}
+            autoFocus={initialFocus === "body"}
             onChange={(v) => {
               setHtml(v);
               markDirty();

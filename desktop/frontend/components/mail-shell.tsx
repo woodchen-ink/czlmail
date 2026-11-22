@@ -1059,8 +1059,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     if (!active) return;
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
-      // 在输入框、对话框、菜单里操作时不触发。
-      if (target?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [role=menu]")) return;
+      // 在输入框、对话框、菜单、工具条 (写邮件的格式按钮) 里操作时不触发。
+      if (target?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [role=menu], [role=toolbar]")) return;
 
       // Esc 是固定的, 不在可自定义的键位里。
       if (e.key === "Escape" && !e.ctrlKey && !e.metaKey && !e.altKey) {

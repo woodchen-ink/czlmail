@@ -18,6 +18,8 @@ interface Props {
   label: string;
   /** 嵌在写信表头里时不画边框。 */
   bare?: boolean;
+  /** 挂载时聚焦输入框 (写新邮件时光标直接落在收件人)。 */
+  autoFocus?: boolean;
 }
 
 interface Chip {
@@ -46,7 +48,7 @@ type Suggestion = Recipient & { directory?: boolean };
  * 收件人输入: 已确认的地址显示为标签, 回车 / Tab / 逗号 / 分号确认当前输入, 退格删除上一个。
  * 候选来自通讯录、最近往来的地址与同邮局用户目录。
  */
-export function RecipientInput({ value, onChange, placeholder, label, bare }: Props) {
+export function RecipientInput({ value, onChange, placeholder, label, bare, autoFocus }: Props) {
   useI18n();
   const [text, setText] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -179,6 +181,7 @@ export function RecipientInput({ value, onChange, placeholder, label, bare }: Pr
         })}
         <input
           ref={inputRef}
+          autoFocus={autoFocus}
           value={text}
           onChange={(e) => {
             const v = e.target.value;
