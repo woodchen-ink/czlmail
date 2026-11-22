@@ -128,7 +128,7 @@ Download the latest release from [Releases](https://github.com/woodchen-ink/czlm
   and we never receive or store your password or notes.
   It needs a JMAP server with file storage and CORS ([details](web-phone-note/README.md#server-requirements)).
 
-What changed in each version: [changelog (Chinese)](https://www.sunai.net/t/topic/1495).
+What changed in each version: [release notes](https://github.com/woodchen-ink/czlmail/releases).
 
 ### Opening on macOS for the first time
 
@@ -231,7 +231,7 @@ Integration tests run against a live server and are skipped unless credentials c
 
 Questions, bugs and ideas: open an [issue](https://github.com/woodchen-ink/czlmail/issues) or leave a
 comment in the [forum thread](https://sunai.net/t/topic/1485). Release notes for every version are
-collected in the [changelog thread](https://www.sunai.net/t/topic/1495).
+on the [releases page](https://github.com/woodchen-ink/czlmail/releases).
 
 ## License
 

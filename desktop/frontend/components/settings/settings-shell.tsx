@@ -158,8 +158,8 @@ const allGroups: () => ({ title: string; items: { id: Section; label: string; ic
 
 export const GITHUB_URL = "https://github.com/woodchen-ink/czlmail";
 export const FORUM_URL = "https://sunai.net/t/topic/1485";
-// 每次发版都会把版本说明回复到这个帖子, 见 CLAUDE.md「版本」。
-export const CHANGELOG_URL = "https://www.sunai.net/t/topic/1495";
+// 版本说明写在带注释的 tag 里, CI 发布时作为 Release 正文, 见 CLAUDE.md「版本」。
+export const CHANGELOG_URL = `${GITHUB_URL}/releases`;
 
 export function SettingsShell({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
   useI18n();

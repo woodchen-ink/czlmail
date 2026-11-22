@@ -114,7 +114,7 @@ claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp 
   我们收不到、也不保存你的密码和笔记。
   需要服务器支持 JMAP 文件存储并允许跨域（[详情](web-phone-note/README.zh-CN.md#服务器要求)）。
 
-每个版本改了什么，见论坛的[更新日志](https://www.sunai.net/t/topic/1495)。
+每个版本改了什么，见 GitHub 的[发版日志](https://github.com/woodchen-ink/czlmail/releases)。
 
 ### macOS 首次打开
 
@@ -206,7 +206,7 @@ Android 版另外需要 JDK 21 与 Android SDK + NDK，见 [android/README.md](a
 
 ## 反馈
 
-使用中遇到问题或有建议，欢迎提 [Issue](https://github.com/woodchen-ink/czlmail/issues)，或到[论坛反馈帖](https://sunai.net/t/topic/1485)留言。历次版本说明汇总在[更新日志帖](https://www.sunai.net/t/topic/1495)。
+使用中遇到问题或有建议，欢迎提 [Issue](https://github.com/woodchen-ink/czlmail/issues)，或到[论坛反馈帖](https://sunai.net/t/topic/1485)留言。历次版本说明见 GitHub 的[发版日志](https://github.com/woodchen-ink/czlmail/releases)。
 
 ## 许可证
 
