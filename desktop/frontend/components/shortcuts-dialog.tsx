@@ -22,6 +22,7 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
   const rows = [
     ...SHORTCUT_ACTIONS.map((action) => ({ id: action, keys: formatKeys(keys[action]), action: shortcutLabel(action) })),
     { id: "escape", keys: "Esc", action: t("退出全屏阅读 / 关闭对话框") },
+    { id: "toolbar", keys: "Alt+F10", action: t("写邮件时跳到格式工具条") },
   ];
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>

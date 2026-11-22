@@ -3,7 +3,7 @@
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
-import { useEffect } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Color, TextStyle } from "@tiptap/extension-text-style";
@@ -57,6 +57,7 @@ const TEXT_COLORS = ["#000000", "#444444", "#C0392B", "#D35400", "#B7950B", "#1E
 
 export function RichEditor({ content, placeholder, onChange, onReady, className, toolbarExtra }: Props) {
   useI18n();
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -75,7 +76,16 @@ export function RichEditor({ content, placeholder, onChange, onReady, className,
     ],
     content,
     editorProps: {
-      attributes: { class: "czl-editor min-h-48 outline-none px-4 py-3 text-sm leading-relaxed" },
+      attributes: { class: "czl-editor min-h-48 outline-none px-4 py-3 text-sm leading-relaxed", "aria-keyshortcuts": "Alt+F10" },
+      // Alt+F10 跳到格式工具条, 与 Word、TinyMCE、CKEditor 相同; 工具条里按 Esc 回到正文。
+      handleKeyDown: (_view, event) => {
+        if (event.key !== "F10" || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
+        const target = toolbarRef.current && currentToolbarItem(toolbarRef.current);
+        if (!target) return false;
+        event.preventDefault();
+        target.focus();
+        return true;
+      },
     },
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   });
@@ -86,16 +96,62 @@ export function RichEditor({ content, placeholder, onChange, onReady, className,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
+  // 工具条在 DOM 里排在正文之后, 靠 order-first 显示在上方: 从主题按 Tab 直接进正文,
+  // 正文里按 Tab 才到工具条。工具条整体只占一个 Tab 停靠点, 里面用方向键移动 (WAI-ARIA toolbar)。
   return (
     <div className={cn("flex min-h-0 flex-col", className)}>
-      {editor && <Toolbar editor={editor} extra={toolbarExtra} />}
       <EditorContent editor={editor} className="czl-scroll min-h-0 flex-1 overflow-y-auto" />
+      {editor && <Toolbar editor={editor} extra={toolbarExtra} containerRef={toolbarRef} />}
     </div>
   );
 }
 
-function Toolbar({ editor, extra }: { editor: Editor; extra?: React.ReactNode }) {
+/** 工具条里可聚焦的按钮 (颜色、AI 菜单的弹出层挂在 body 下, 不在其中)。 */
+function toolbarItems(el: HTMLElement): HTMLButtonElement[] {
+  return Array.from(el.querySelectorAll<HTMLButtonElement>("button")).filter((b) => !b.disabled);
+}
+
+/** 工具条的 Tab 停靠点: 上次聚焦过的按钮, 没有就是第一个。 */
+function currentToolbarItem(el: HTMLElement): HTMLButtonElement | undefined {
+  const items = toolbarItems(el);
+  return items.find((b) => b.tabIndex === 0) ?? items[0];
+}
+
+/**
+ * 漫游焦点: 只有一个按钮 tabIndex=0。按钮来自本组件和外部传入的 extra, 撤销/重做会变成禁用,
+ * 所以在 DOM 变化时重新整理, 而不是在各个按钮上写 tabIndex。
+ */
+function useRovingFocus(ref: RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let current: HTMLElement | null = null;
+    const sync = () => {
+      const items = toolbarItems(el);
+      if (!current || !items.includes(current as HTMLButtonElement)) current = items[0] ?? null;
+      for (const b of el.querySelectorAll<HTMLButtonElement>("button")) b.tabIndex = b === current ? 0 : -1;
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target instanceof HTMLButtonElement && el.contains(target)) {
+        current = target;
+        sync();
+      }
+    };
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(el, { subtree: true, childList: true, attributes: true, attributeFilter: ["disabled"] });
+    el.addEventListener("focusin", onFocusIn);
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("focusin", onFocusIn);
+    };
+  }, [ref]);
+}
+
+function Toolbar({ editor, extra, containerRef }: { editor: Editor; extra?: React.ReactNode; containerRef: RefObject<HTMLDivElement | null> }) {
   useI18n();
+  useRovingFocus(containerRef);
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -131,8 +187,32 @@ function Toolbar({ editor, extra }: { editor: Editor; extra?: React.ReactNode })
     chain().extendMarkRange("link").setLink({ href: url.trim() }).run();
   }
 
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const el = containerRef.current;
+    // 弹出层里的按键也会经 React 树冒泡到这里, 只处理工具条本身的按钮。
+    if (!el || !(e.target instanceof HTMLElement) || !el.contains(e.target)) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      editor.commands.focus();
+      return;
+    }
+    const items = toolbarItems(el);
+    const i = items.indexOf(e.target as HTMLButtonElement);
+    if (i < 0) return;
+    const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: items.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    items[(next + items.length) % items.length].focus();
+  }
+
   return (
-    <div className="border-border flex shrink-0 flex-wrap items-center gap-0.5 border-b px-2 py-1.5">
+    <div
+      ref={containerRef}
+      role="toolbar"
+      aria-label={t("格式工具条")}
+      onKeyDown={onKeyDown}
+      className="border-border order-first flex shrink-0 flex-wrap items-center gap-0.5 border-b px-2 py-1.5"
+    >
       <Btn label={t("加粗")} active={s.bold} onClick={() => chain().toggleBold().run()}>
         <Bold />
       </Btn>
