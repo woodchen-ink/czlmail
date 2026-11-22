@@ -45,6 +45,8 @@ interface Props {
   className?: string;
   /** 工具条右侧的额外按钮(如 AI)。 */
   toolbarExtra?: React.ReactNode;
+  /** 编辑器就绪后把光标放在正文开头。 */
+  autoFocus?: boolean;
 }
 
 /**
@@ -55,7 +57,7 @@ interface Props {
  */
 const TEXT_COLORS = ["#000000", "#444444", "#C0392B", "#D35400", "#B7950B", "#1E8449", "#1F618D", "#7D3C98"];
 
-export function RichEditor({ content, placeholder, onChange, onReady, className, toolbarExtra }: Props) {
+export function RichEditor({ content, placeholder, onChange, onReady, className, toolbarExtra, autoFocus }: Props) {
   useI18n();
   const toolbarRef = useRef<HTMLDivElement>(null);
   const editor = useEditor({
@@ -75,6 +77,8 @@ export function RichEditor({ content, placeholder, onChange, onReady, className,
       Placeholder.configure({ placeholder: placeholder ?? "" }),
     ],
     content,
+    // 交给 tiptap 在视图挂上之后再聚焦; onReady 时视图可能还没挂上, 那时调 focus() 不起作用。
+    autofocus: autoFocus ? "start" : false,
     editorProps: {
       attributes: { class: "czl-editor min-h-48 outline-none px-4 py-3 text-sm leading-relaxed", "aria-keyshortcuts": "Alt+F10" },
       // Alt+F10 跳到格式工具条, 与 Word、TinyMCE、CKEditor 相同; 工具条里按 Esc 回到正文。
