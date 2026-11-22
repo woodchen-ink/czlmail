@@ -17,6 +17,10 @@ import (
 
 const driveSyncFolder = "CZL Mail"
 
+// errNoDriveSync 表示服务器没有文件存储 (不公布 FileNode, 例如把 IMAP 转成 JMAP 的网关)。
+// 这时模板与 AI 设置只留在本机; 后台同步遇到它不记警告, 否则每次改设置都会重复同一条。
+var errNoDriveSync = errors.New("2164 the server has no file storage; templates and AI settings stay on this device")
+
 // driveSyncMu 串行化所有网盘同步: 各同步首次运行时都可能去建 CZL Mail 文件夹,
 // 并发执行会建出两个同名文件夹。
 var driveSyncMu sync.Mutex
@@ -43,6 +47,9 @@ func (a *App) openDriveSyncFile(ctx context.Context, name string) (*driveSyncFil
 	accountID := a.personalAccountID(st)
 	if accountID == "" {
 		return nil, nil, errors.New("2160 no personal account")
+	}
+	if !s.SupportsFiles(accountID) {
+		return nil, nil, errNoDriveSync
 	}
 	f := &driveSyncFile{s: s, accountID: accountID, name: name}
 	f.folder, _ = st.FileNodeByName(ctx, accountID, "", driveSyncFolder)

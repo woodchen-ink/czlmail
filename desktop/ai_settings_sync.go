@@ -60,7 +60,9 @@ type aiSettingEntry struct {
 // syncAISettingsSoon 在后台同步 AI 与 MCP 设置, 失败只记日志。
 func (a *App) syncAISettingsSoon() {
 	go func() {
-		if err := a.SyncAISettings(); err != nil {
+		if err := a.SyncAISettings(); errors.Is(err, errNoDriveSync) {
+			a.log.Debug("sync ai settings skipped", "err", err)
+		} else if err != nil {
 			a.log.Warn("sync ai settings", "err", err)
 		}
 	}()
