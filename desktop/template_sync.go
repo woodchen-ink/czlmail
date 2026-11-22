@@ -54,7 +54,9 @@ type templateEntry struct {
 // syncTemplatesSoon 在后台同步模板, 失败只记日志。
 func (a *App) syncTemplatesSoon() {
 	go func() {
-		if err := a.SyncTemplates(); err != nil {
+		if err := a.SyncTemplates(); errors.Is(err, errNoDriveSync) {
+			a.log.Debug("sync templates skipped", "err", err)
+		} else if err != nil {
 			a.log.Warn("sync templates", "err", err)
 		}
 	}()

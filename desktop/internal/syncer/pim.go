@@ -63,6 +63,11 @@ func (s *Syncer) accountSupports(accountID string, uri jmap.URI) bool {
 	return ok
 }
 
+// SupportsFiles 报告账号所在的服务器是否提供文件存储 (FileNode)。
+func (s *Syncer) SupportsFiles(accountID string) bool {
+	return s.accountSupports(accountID, jmapx.FileNodeURI)
+}
+
 // syncPIM 同步一个账号的全部 PIM 类型。调用方持有 s.mu。
 func (s *Syncer) syncPIM(ctx context.Context, accountID string) {
 	for _, k := range pimKinds {
