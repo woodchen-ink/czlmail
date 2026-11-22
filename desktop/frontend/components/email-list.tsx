@@ -175,20 +175,44 @@ export function EmailList({
   // block: "nearest" 在行已经可见时什么都不做, 所以点击行本身不会引起跳动;
   // 记下滚过的键, 列表刷新(新邮件、标记已读)时不把用户滚回去。
   const scrolledTo = useRef("");
+  /** 选中的邮件在列表上的那一行; 是会话里较早的一封时, 列表上只有代表整个会话的那一行。 */
+  const rowOf = useCallback(
+    (key: string): HTMLElement | null => {
+      const root = scrollRef.current;
+      if (!root) return null;
+      const find = (k: string) => root.querySelector<HTMLElement>(`[data-email-key="${CSS.escape(k)}"]`);
+      const target = emails.find((e) => emailKey(e) === key);
+      const tk = target ? threadKey(target) : "";
+      const head = tk ? rows.find(({ head: h }) => threadKey(h) === tk)?.head : undefined;
+      return find(key) ?? (head ? find(emailKey(head)) : null);
+    },
+    [emails, rows],
+  );
   useEffect(() => {
     if (!selectedKey || scrolledTo.current === selectedKey) return;
-    const root = scrollRef.current;
-    if (!root) return;
-    const find = (key: string) => root.querySelector(`[data-email-key="${CSS.escape(key)}"]`);
-    // 选中的是会话里较早的一封时, 列表上只有代表整个会话的那一行, 滚到它。
-    const target = emails.find((e) => emailKey(e) === selectedKey);
-    const tk = target ? threadKey(target) : "";
-    const head = tk ? rows.find(({ head: h }) => threadKey(h) === tk)?.head : undefined;
-    const row = find(selectedKey) ?? (head ? find(emailKey(head)) : null);
+    const row = rowOf(selectedKey);
     if (!row) return; // 还没加载到那一页, 等列表到了再滚。
     scrolledTo.current = selectedKey;
     row.scrollIntoView({ block: "nearest" });
-  }, [selectedKey, emails, rows, threads]);
+  }, [selectedKey, rowOf, threads]);
+
+  // 上下键与 J/K 一样由 mail-shell 的全局快捷键处理 (键位可在设置里改), 行本身不再处理。
+  // 点过某一行后焦点留在那一行上; 选中换到别处时焦点跟过去, 否则焦点框停在旧行上,
+  // 下一次按 Enter 也会打开旧行。焦点不在列表的行上 (搜索框、阅读栏) 时不抢焦点。
+  const focusedFor = useRef("");
+  useEffect(() => {
+    if (!selectedKey || focusedFor.current === selectedKey) return;
+    const root = scrollRef.current;
+    const active = document.activeElement;
+    if (!root || !(active instanceof HTMLElement) || !active.dataset.emailKey || !root.contains(active)) {
+      focusedFor.current = selectedKey;
+      return;
+    }
+    const row = rowOf(selectedKey);
+    if (!row) return;
+    focusedFor.current = selectedKey;
+    if (row !== active) row.focus({ preventScroll: true });
+  }, [selectedKey, rowOf, threads]);
 
   // 触底加载。用 IntersectionObserver 而不是监听 scroll 事件：
   // scroll 在快速滚动时每帧都触发，而这里只需要知道「哨兵进入视口」这一个事实。
@@ -208,17 +232,6 @@ export function EmailList({
     return () => io.disconnect();
   }, [hasMore, loading, onLoadMore]);
 
-  const handleKey = useCallback(
-    (e: React.KeyboardEvent, index: number) => {
-      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-      e.preventDefault();
-      const next = e.key === "ArrowDown" ? index + 1 : index - 1;
-      const target = rows[next]?.head;
-      if (target) onSelect(emailKey(target));
-    },
-    [rows, onSelect],
-  );
-
   if (!loading && emails.length === 0) {
     if (emptyState) return <>{emptyState}</>;
     return (
@@ -230,7 +243,7 @@ export function EmailList({
   return (
     <ScrollArea ref={setScrollEl} onScroll={reportScroll} className="h-full overflow-x-hidden">
       <ul className="flex flex-col">
-        {rows.map(({ head: email, unread }, index) => {
+        {rows.map(({ head: email, unread }) => {
           const key = emailKey(email);
           const tk = threadKey(email);
           const count = email.threadCount ?? 0;
@@ -271,7 +284,6 @@ export function EmailList({
                       onSelect(key);
                       expandThread(email);
                     }
-                    handleKey(e, index);
                   }}
                   className={cn(
                     "group border-border flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
