@@ -51,7 +51,7 @@ export const DEFAULT_SHORTCUTS: ShortcutMap = {
   markUnread: ["u"],
   toggleRead: ["m"],
   junk: ["!"],
-  undo: ["Ctrl+z"],
+  undo: ["Ctrl+z", "Meta+z"], // Meta+z 是 macOS 的 ⌘Z
   search: ["/"],
   help: ["?"],
 };
