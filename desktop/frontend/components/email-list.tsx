@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { displayAddressList, listDate } from "@/lib/format";
 import { api, type EmailSummary } from "@/lib/api";
 import { emailKey } from "@/lib/email-key";
+import { endEmailDrag, onEmailDrag, startEmailDrag } from "@/lib/email-drag";
 
 interface Props {
   emails: EmailSummary[];
@@ -65,6 +66,8 @@ interface Props {
   highlightSelected?: boolean;
   /** 列表为空时代替「没有邮件」显示的内容 (首次同步还没做完时的进度)。 */
   emptyState?: React.ReactNode;
+  /** 行可以拖到侧栏的文件夹上移动 (见 lib/email-drag)。 */
+  draggable?: boolean;
 }
 
 export function EmailList({
@@ -86,8 +89,25 @@ export function EmailList({
   whereOf,
   showRecipients,
   emptyState,
+  draggable = false,
 }: Props) {
   useI18n();
+  // 正被拖走的邮件键: 这些行变淡, 看得出拖的是哪几封。
+  const [dragging, setDragging] = useState<Set<string>>(new Set());
+  useEffect(() => onEmailDrag((items) => setDragging(new Set(items?.map((i) => i.key) ?? []))), []);
+  // 拖的行在多选里时拖走整个多选, 否则只拖这一封 (与右键菜单作用于谁一致)。
+  const dragProps = (email: EmailSummary) =>
+    draggable
+      ? {
+          draggable: true,
+          onDragStart: (e: React.DragEvent) => {
+            const sel = checked ?? new Set<string>();
+            const batch = sel.has(emailKey(email)) && sel.size > 1;
+            startEmailDrag(e, batch ? emails.filter((m) => sel.has(emailKey(m))) : [email]);
+          },
+          onDragEnd: endEmailDrag,
+        }
+      : {};
   const sentinelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const setScrollEl = useCallback(
@@ -264,6 +284,7 @@ export function EmailList({
                   tabIndex={0}
                   data-email-key={key}
                   aria-current={key === selectedKey ? "true" : undefined}
+                  {...dragProps(email)}
                   onClick={(e) => {
                     if (
                       onCheck &&
@@ -290,6 +311,7 @@ export function EmailList({
                     "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
                     ((highlightSelected && key === selectedKey) || isChecked) && "bg-muted",
                     childSelected && "bg-secondary",
+                    dragging.has(key) && "opacity-40",
                   )}
                 >
                   {/* 未读用头像旁的色点而不是整行加粗：整行加粗在长列表里显得噪杂，
@@ -477,6 +499,7 @@ export function EmailList({
                             role="button"
                             tabIndex={0}
                             data-email-key={emailKey(m)}
+                            {...dragProps(m)}
                             onClick={() => onSelect(emailKey(m))}
                             onKeyDown={(e) => {
                               if (e.target !== e.currentTarget) return;
@@ -494,6 +517,7 @@ export function EmailList({
                               highlightSelected && emailKey(m) === selectedKey
                                 ? "bg-muted"
                                 : "hover:bg-secondary",
+                              dragging.has(emailKey(m)) && "opacity-40",
                             )}
                           >
                             <SenderAvatar
