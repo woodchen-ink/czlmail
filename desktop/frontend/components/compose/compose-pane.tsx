@@ -286,7 +286,11 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
     // 什么都没写时不在服务器上留空草稿。
     if (!to.trim() && !cc.trim() && !bcc.trim() && !subject.trim() && isHtmlEmpty(html) && attachments.length === 0 && !draftId.current) return;
     dirty.current = false;
+    // 保存排队执行: 每次保存都是"建新删旧", 上一次没返回就开始下一次时,
+    // 两次拿到的是同一个旧 id, 先建的那份不会被任何一次删掉, 发送后留在草稿箱。
+    const prev = saving.current;
     const run = (async () => {
+      await prev;
       try {
         draftId.current = await api.saveDraft(buildRequest());
       } catch (err) {
