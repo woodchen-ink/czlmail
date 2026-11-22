@@ -65,7 +65,7 @@ import { useAppearance } from "@/lib/theme";
 import { listen, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
-import { shortcutActionOf, type ShortcutAction } from "@/lib/shortcuts";
+import { formatKey, shortcutActionOf, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
 
 const PAGE_SIZE = 50;
 // 定位一封邮件时最多加载多少封。再深就不值得了: 每 200 封一次查询,
@@ -139,6 +139,9 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   // 当前打开的邮件，供键盘快捷键使用。
   const currentEmail = useRef<EmailDetail | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // 搜索框提示里显示「搜索」动作的第一个键位; 用户把键位删光时不带括号。
+  const searchKey = useShortcuts().search[0];
+  const searchHint = searchKey ? formatKey(searchKey) : "";
 
   // 每次切换账号/邮箱都会重来一遍分页，用一个自增的令牌把过期请求的结果丢掉，
   // 否则慢的那次返回会覆盖快的那次，列表显示成上一个邮箱的内容。
@@ -1250,7 +1253,11 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                       e.currentTarget.blur();
                     }
                   }}
-                  placeholder={unified ? t("搜索全部账号（/）") : t("搜索全部文件夹（/）")}
+                  placeholder={
+                    searchHint
+                      ? unified ? t("搜索全部账号（{0}）", searchHint) : t("搜索全部文件夹（{0}）", searchHint)
+                      : unified ? t("搜索全部账号") : t("搜索全部文件夹")
+                  }
                   className="h-8 pr-8 pl-8"
                   aria-label={t("搜索邮件")}
                 />
