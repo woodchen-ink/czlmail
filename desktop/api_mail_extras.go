@@ -325,7 +325,12 @@ func (a *App) ThreadEmails(accountID, emailID string) ([]store.EmailSummary, err
 	if emailID == "" {
 		return nil, nil
 	}
-	return st.ThreadEmails(a.ctx, accountID, emailID, 200)
+	list, err := st.ThreadEmails(a.ctx, accountID, emailID, 200)
+	if err != nil {
+		return nil, err
+	}
+	// 展开区里的邮件可能不在当前列表的文件夹(如已发送的回复), 右键「移动到」按它真正所在的文件夹排除。
+	return list, st.FillMailboxIDs(a.ctx, accountID, list)
 }
 
 // LatestInThread 返回会话里最新一封邮件的 id, 供 czlmail://thread 链接打开; 本地没有时为空。

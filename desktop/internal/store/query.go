@@ -31,7 +31,7 @@ type EmailSummary struct {
 	IsPinned bool `json:"isPinned"`
 	// ThreadCount 是同一会话的邮件总数(跨文件夹); 只有列表查询会填, 其它查询为 0。
 	ThreadCount int `json:"threadCount"`
-	// MailboxIDs 是邮件所在的文件夹; 只有搜索结果会填, 界面据此标出邮件在哪。
+	// MailboxIDs 是邮件所在的文件夹; 只有搜索结果与会话成员会填, 界面据此标出邮件在哪、「移动到」排除所在文件夹。
 	MailboxIDs []string `json:"mailboxIds,omitempty"`
 }
 
