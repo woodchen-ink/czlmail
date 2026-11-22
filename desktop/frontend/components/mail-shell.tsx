@@ -1226,6 +1226,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 }}
                 onMailboxesChanged={loadMailboxes}
                 onFolderAction={folderAction}
+                onDropEmails={moveIds}
               />
             </ScrollArea>
           </>
@@ -1383,6 +1384,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 showRecipients={!searching && ["sent", "drafts", "scheduled"].includes(currentKind)}
                 checked={checked}
                 onCheck={checkEmail}
+                // 拖到侧栏文件夹上移动; 窄屏侧栏收起没有可放的地方, 已计划的邮件不移动。
+                draggable={!compact && currentKind !== "scheduled"}
                 emails={emails}
                 selectedKey={selectedKey}
                 highlightSelected={!compact}
