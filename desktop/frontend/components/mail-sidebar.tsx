@@ -22,6 +22,7 @@ import {
 import { SidebarSkeleton } from "@/components/mail-sync-state";
 import { UnreadBadge } from "@/components/unread-badge";
 import { cn } from "@/lib/utils";
+import { draggedEmails, onEmailDrag } from "@/lib/email-drag";
 import { Events, api, errorMessage, onEvent, type Account, type Mailbox, type PullStatus } from "@/lib/api";
 
 interface Props {
@@ -39,6 +40,8 @@ interface Props {
   onFolderAction: (accountId: string, action: "markRead" | "import" | "empty" | "refresh", mailbox: Mailbox) => void;
   /** 首次同步还没把文件夹取回来: 一个文件夹都没有时显示占位而不是空白。 */
   syncing?: boolean;
+  /** 邮件从列表拖到 accountId 账号的 mailboxId 文件夹上放下。 */
+  onDropEmails?: (keys: string[], accountId: string, mailboxId: string) => void;
 }
 
 const COLLAPSE_KEY = "czlmail.sidebar.collapsed";
@@ -66,6 +69,7 @@ export function MailSidebar({
   onMailboxesChanged,
   onFolderAction,
   syncing,
+  onDropEmails,
 }: Props) {
   useI18n();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -117,9 +121,9 @@ export function MailSidebar({
   const defaultCollapsed = (key: string) => hasUnified && (key === "personal" || key === "shared");
   const isCollapsed = (key: string) => collapsed[key] ?? defaultCollapsed(key);
 
-  function toggle(key: string) {
+  function toggle(key: string, open?: boolean) {
     setCollapsed((prev) => {
-      const next = { ...prev, [key]: !(prev[key] ?? defaultCollapsed(key)) };
+      const next = { ...prev, [key]: open === undefined ? !(prev[key] ?? defaultCollapsed(key)) : !open };
       try {
         localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
       } catch {
@@ -128,6 +132,31 @@ export function MailSidebar({
       return next;
     });
   }
+
+  // 拖着邮件在收起的分组标题上停一会儿就展开, 好把邮件放进里面的文件夹(同 Outlook)。
+  const [dragHover, setDragHover] = useState("");
+  useEffect(() => onEmailDrag((items) => !items && setDragHover("")), []);
+  useEffect(() => {
+    if (!dragHover) return;
+    const id = setTimeout(() => {
+      setDragHover("");
+      toggle(dragHover, true);
+    }, 600);
+    return () => clearTimeout(id);
+    // toggle 每次渲染都是新函数, 计时只跟着悬停的分组走。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragHover]);
+  const dragExpand = (key: string) =>
+    onDropEmails && isCollapsed(key)
+      ? {
+          onDragEnter: (e: React.DragEvent) => {
+            if (draggedEmails(e)) setDragHover(key);
+          },
+          onDragLeave: (e: React.DragEvent) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragHover((cur) => (cur === key ? "" : cur));
+          },
+        }
+      : {};
 
   // 整夹拉取在后台进行，进度用一条随进度更新的 toast 显示，id 按文件夹区分。
   useEffect(() => {
@@ -223,6 +252,7 @@ export function MailSidebar({
           onToggle={() => toggle("personal")}
           unread={sumInbox(personal)}
           onAdd={() => setFolderAction({ kind: "create", accountId: personal[0].id })}
+          headerProps={dragExpand("personal")}
         >
           {personal.map((acc) => (
             <MailboxTree
@@ -232,13 +262,21 @@ export function MailSidebar({
               onSelect={(id) => onSelect(acc.id, id)}
               onAction={act(acc.id)}
               quiet={muted.has(acc.id)}
+              accountId={acc.id}
+              onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
             />
           ))}
         </Section>
       )}
 
       {shared.length > 0 && (
-        <Section title={t("共享")} open={!isCollapsed("shared")} onToggle={() => toggle("shared")} unread={sumInbox(shared)}>
+        <Section
+          title={t("共享")}
+          open={!isCollapsed("shared")}
+          onToggle={() => toggle("shared")}
+          unread={sumInbox(shared)}
+          headerProps={dragExpand("shared")}
+        >
           {shared.map((acc) => {
             const key = `acc:${acc.id}`;
             const open = !isCollapsed(key);
@@ -247,6 +285,7 @@ export function MailSidebar({
                 <button
                   type="button"
                   onClick={() => toggle(key)}
+                  {...dragExpand(key)}
                   aria-expanded={open}
                   className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 rounded-sm px-2 py-1 text-left text-xs"
                 >
@@ -266,6 +305,8 @@ export function MailSidebar({
                     onAction={act(acc.id)}
                     indent={1}
                     quiet={muted.has(acc.id)}
+                    accountId={acc.id}
+                    onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
                   />
                 )}
               </div>
@@ -290,6 +331,7 @@ function Section({
   onToggle,
   onAdd,
   unread = 0,
+  headerProps,
   children,
 }: {
   title: string;
@@ -298,6 +340,8 @@ function Section({
   onAdd?: () => void;
   /** 折叠时显示的收件箱未读数。 */
   unread?: number;
+  /** 标题按钮上的额外属性 (拖动邮件时悬停展开)。 */
+  headerProps?: React.ComponentProps<"button">;
   children: React.ReactNode;
 }) {
   useI18n();
@@ -306,6 +350,7 @@ function Section({
       <div className="group/section flex items-center">
         <button
           type="button"
+          {...headerProps}
           onClick={onToggle}
           aria-expanded={open}
           className="hover:bg-secondary flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-2 py-1 text-left text-sm font-semibold"

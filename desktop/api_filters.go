@@ -109,7 +109,7 @@ func (a *App) SaveSieveScript(accountID, script string) error {
 	if err != nil {
 		return err
 	}
-	blobID, _, _, err := s.UploadBlob(a.ctx, accountID, bytes.NewReader([]byte(script)))
+	blobID, _, _, err := s.UploadBlobType(a.ctx, accountID, "application/sieve", bytes.NewReader([]byte(script)))
 	if err != nil {
 		return err
 	}

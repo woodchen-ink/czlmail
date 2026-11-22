@@ -1245,6 +1245,8 @@
   "「{0}」原来用于「{1}」，现在用于「{2}」": "Klávesa {0} dosud patřila akci „{1}“, nyní patří akci „{2}“",
   "已恢复默认键位": "Výchozí zkratky obnoveny",
   "恢复默认键位": "Obnovit výchozí",
+  "格式工具条": "Panel formátování",
+  "写邮件时跳到格式工具条": "Přejít na panel formátování (při psaní zprávy)",
   "已撤销": "Vráceno zpět",
   "无法撤销": "Nelze vrátit zpět",
   "撤销上一步操作": "Vrátit poslední akci zpět"

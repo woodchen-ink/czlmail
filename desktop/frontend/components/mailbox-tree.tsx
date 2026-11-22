@@ -3,7 +3,7 @@
 import { dateLocale, t, tContext } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Archive,
   CloudDownload,
@@ -34,6 +34,7 @@ import {
 import { UnreadBadge } from "@/components/unread-badge";
 import { cn } from "@/lib/utils";
 import type { Mailbox } from "@/lib/api";
+import { canDropEmails, draggedEmails, endEmailDrag, keysToMove, onEmailDrag } from "@/lib/email-drag";
 
 /** 文件夹右键菜单的操作。 */
 export type FolderMenuAction =
@@ -57,6 +58,9 @@ interface Props {
   indent?: number;
   /** 账号关了新邮件通知: 收件箱未读用灰底角标。 */
   quiet?: boolean;
+  /** 这棵树所属的账号与邮件拖到文件夹上放下时的回调; 不给时文件夹不接收拖放。 */
+  accountId?: string;
+  onDropEmails?: (keys: string[], mailboxId: string) => void;
 }
 
 /**
@@ -102,9 +106,10 @@ export function mailboxTreeOrder(mailboxes: Mailbox[]): (Mailbox & { depth: numb
   return buildTree(mailboxes);
 }
 
-export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent = 0, quiet }: Props) {
+export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent = 0, quiet, accountId, onDropEmails }: Props) {
   useI18n();
   const nodes = useMemo(() => buildTree(mailboxes), [mailboxes]);
+  const drop = accountId && onDropEmails ? { accountId, onDropEmails } : undefined;
 
   return (
     <nav className="flex flex-col gap-0.5" aria-label={t("邮箱")}>
@@ -117,6 +122,7 @@ export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent 
           onAction={onAction}
           indent={indent}
           quiet={quiet}
+          drop={drop}
         />
       ))}
     </nav>
@@ -130,6 +136,7 @@ function MailboxRow({
   onAction,
   indent,
   quiet,
+  drop,
 }: {
   node: Node;
   selected: boolean;
@@ -137,11 +144,41 @@ function MailboxRow({
   onAction?: Props["onAction"];
   indent: number;
   quiet?: boolean;
+  drop?: { accountId: string; onDropEmails: (keys: string[], mailboxId: string) => void };
 }) {
   useI18n();
   const meta = getKindMeta()[node.kind];
   const Icon = meta?.icon ?? Folder;
   const label = meta?.label ?? node.name;
+  const [dropOver, setDropOver] = useState(false);
+  // 拖动取消 (Esc、放到别处) 时不一定经过 dragleave, 拖动结束一律取消高亮。
+  const droppable = !!drop;
+  useEffect(() => (droppable ? onEmailDrag((items) => !items && setDropOver(false)) : undefined), [droppable]);
+
+  // 只有能放下时才 preventDefault: 否则指针显示禁止符号, 文件夹也不高亮。
+  const dropHandlers = drop
+    ? {
+        onDragOver: (e: React.DragEvent) => {
+          const items = draggedEmails(e);
+          if (!items || !canDropEmails(items, drop.accountId, node)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (!dropOver) setDropOver(true);
+        },
+        onDragLeave: (e: React.DragEvent) => {
+          if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) setDropOver(false);
+        },
+        onDrop: (e: React.DragEvent) => {
+          setDropOver(false);
+          const items = draggedEmails(e);
+          if (!items || !canDropEmails(items, drop.accountId, node)) return;
+          e.preventDefault();
+          // 移走的行随即从列表消失, 源元素不在了就收不到 dragend, 这里先结束拖动。
+          endEmailDrag();
+          drop.onDropEmails(keysToMove(items, node.id), node.id);
+        },
+      }
+    : {};
 
   const row = (
     <FolderButton
@@ -156,6 +193,8 @@ function MailboxRow({
       // 收件箱用醒目的角标; 其它文件夹(垃圾邮件、归档等)的未读多是不必处理的, 保持灰字。
       badge={node.kind === "inbox"}
       quiet={quiet}
+      dropTarget={dropOver}
+      {...dropHandlers}
     />
   );
 
@@ -225,6 +264,7 @@ export function FolderButton({
   unread,
   badge,
   quiet,
+  dropTarget,
   ...rest
 }: {
   icon: typeof Inbox;
@@ -240,6 +280,8 @@ export function FolderButton({
   badge: boolean;
   /** 角标用灰底(关了通知的账号)。 */
   quiet?: boolean;
+  /** 拖着邮件停在这个文件夹上, 松开就移进来。 */
+  dropTarget?: boolean;
 } & Omit<React.ComponentProps<"button">, "onClick" | "title">) {
   return (
     <button
@@ -251,6 +293,8 @@ export function FolderButton({
         "group flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors",
         "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
         selected && "bg-muted font-medium",
+        // 目标文件夹整行铺强调色, 图标也跟着反白, 一眼看出会落到哪里。
+        dropTarget && "bg-accent text-accent-foreground hover:bg-accent font-medium shadow-md [&_svg]:text-accent-foreground",
       )}
       style={{ paddingLeft: `${depth * 12 + 8}px` }}
     >

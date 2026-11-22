@@ -906,6 +906,18 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     [mutate],
   );
 
+  // 拖到侧栏文件夹: 进出垃圾邮件与「标记为垃圾邮件 / 不是垃圾邮件」一样打 $junk / $notjunk, 供服务端学习。
+  const dropIds = useCallback(
+    (keys: string[], acc: string, target: string) => {
+      const kind = mailboxesByAccount[acc]?.find((m) => m.id === target)?.kind;
+      const own = keys.filter((key) => parseEmailKey(key).accountId === acc);
+      if (kind === "junk") junkIds(own, true);
+      else if (kind === "inbox" && currentKind === "junk") junkIds(own, false);
+      else moveIds(keys, acc, target);
+    },
+    [mailboxesByAccount, currentKind, junkIds, moveIds],
+  );
+
   /** undoable 为 false 用于打开邮件时自动标为已读: 那不是用户的操作, 不该占掉 Ctrl+Z。 */
   const markReadIds = useCallback(
     (keys: string[], read: boolean, undoable = true) =>
@@ -1235,8 +1247,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     if (!active) return;
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
-      // 在输入框、对话框、菜单里操作时不触发。
-      if (target?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [role=menu]")) return;
+      // 在输入框、对话框、菜单、工具条 (写邮件的格式按钮) 里操作时不触发。
+      if (target?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [role=menu], [role=toolbar]")) return;
 
       // Esc 是固定的, 不在可自定义的键位里。
       if (e.key === "Escape" && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -1403,6 +1415,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 }}
                 onMailboxesChanged={loadMailboxes}
                 onFolderAction={folderAction}
+                onDropEmails={dropIds}
               />
             </ScrollArea>
           </>
@@ -1571,6 +1584,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 showRecipients={!searching && ["sent", "drafts", "scheduled"].includes(currentKind)}
                 checked={checked}
                 onCheck={checkEmail}
+                // 拖到侧栏文件夹上移动; 窄屏侧栏收起没有可放的地方, 已计划的邮件不移动。
+                draggable={!compact && currentKind !== "scheduled"}
                 emails={emails}
                 selectedKey={selectedKey}
                 highlightSelected={!compact}

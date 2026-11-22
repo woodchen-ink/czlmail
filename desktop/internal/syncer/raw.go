@@ -23,7 +23,7 @@ func (s *Syncer) RawMessage(ctx context.Context, accountID, blobID string) ([]by
 		return nil, fmt.Errorf("1130 email has no blob id")
 	}
 
-	rc, err := s.client.DownloadWithContext(ctx, jmap.ID(accountID), jmap.ID(blobID))
+	rc, err := s.downloadBlob(ctx, accountID, blobID)
 	if err != nil {
 		return nil, wrap(CodeRequest, "download message", err)
 	}
@@ -46,7 +46,7 @@ func (s *Syncer) RawMessage(ctx context.Context, accountID, blobID string) ([]by
 // 走 Email/import 而不是 Email/set: import 让服务器按原文解析出完整结构,
 // 保留原始的头部、编码与附件; set 需要客户端自己拆 MIME, 必然丢信息。
 func (s *Syncer) ImportMessage(ctx context.Context, accountID, mailboxID string, raw []byte, receivedAt *time.Time) error {
-	up, err := s.client.UploadWithContext(ctx, jmap.ID(accountID), bytes.NewReader(raw))
+	up, err := s.uploadBlob(ctx, accountID, "message/rfc822", bytes.NewReader(raw))
 	if err != nil {
 		return wrap(CodeRequest, "upload message", err)
 	}
