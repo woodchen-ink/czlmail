@@ -14,6 +14,7 @@ import {
   Mail as MailIcon,
   PenSquare,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldAlert,
   Star,
@@ -55,6 +56,7 @@ import {
   onEvent,
   type Account,
   type EmailDetail,
+  type EmailPlacement,
   type EmailSummary,
   type MailSyncStatus,
   type Mailbox,
@@ -65,9 +67,10 @@ import { useAppearance } from "@/lib/theme";
 import { listen, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
-import { formatKey, shortcutActionOf, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
+import { formatKey, formatKeys, shortcutActionOf, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
 
 const PAGE_SIZE = 50;
+
 // 定位一封邮件时最多加载多少封。再深就不值得了: 每 200 封一次查询,
 // 列表也长到滚动条没有意义, 这时只打开邮件、不强求列表停在它上面。
 const LOCATE_LIMIT = 2000;
@@ -75,6 +78,65 @@ const LOCATE_LIMIT = 2000;
 /** 为了让第 index 封出现在列表里, 需要加载的封数(按整页取, 免得刚好停在页边)。 */
 function locateDepth(index: number): number {
   return Math.min(LOCATE_LIMIT, (Math.floor(index / PAGE_SIZE) + 1) * PAGE_SIZE);
+}
+
+/** 一次邮件操作, 见 mutate。 */
+interface Mutation {
+  keys: string[];
+  op: (accountId: string, ids: string[]) => Promise<unknown>;
+  remove?: boolean;
+  patch?: Partial<EmailSummary>;
+  done?: string;
+  /** 能否撤销, 默认能。彻底删除、打开邮件时自动标为已读传 false。 */
+  undoable?: boolean;
+}
+
+/** 可撤销的一步。trigger 来自 Ctrl+Z 或提示里的「撤销」按钮, 只生效一次。 */
+interface UndoEntry {
+  trigger: () => void;
+}
+
+/** 带「撤销」按钮的提示多停留一会儿, 来得及点。 */
+const UNDO_TOAST_MS = 8000;
+
+const PATCH_FIELDS = ["isUnread", "isFlagged", "isPinned"] as const;
+
+/**
+ * patch 生效前各封的原值, 按原值分组: 键是原值的 JSON, 值是这一组的邮件键。
+ * 列表里没有的(展开会话里别的文件夹的)取阅读栏的详情, 都没有就当是与 patch 相反的值。
+ * 原值与 patch 相同的邮件不会变化, 不记。
+ */
+function previousValues(
+  keys: string[],
+  patch: Partial<EmailSummary>,
+  list: EmailSummary[],
+  shown: EmailSummary | null,
+): Map<string, string[]> {
+  const byKey = new Map(list.map((e) => [emailKey(e), e]));
+  const out = new Map<string, string[]>();
+  for (const key of keys) {
+    const e = byKey.get(key) ?? (shown && emailKey(shown) === key ? shown : undefined);
+    const old: Partial<Record<(typeof PATCH_FIELDS)[number], boolean>> = {};
+    let changes = false;
+    for (const f of PATCH_FIELDS) {
+      const v = patch[f];
+      if (v === undefined) continue;
+      old[f] = e ? e[f] : !v;
+      if (old[f] !== v) changes = true;
+    }
+    if (!changes) continue;
+    const sig = JSON.stringify(old);
+    out.set(sig, [...(out.get(sig) ?? []), key]);
+  }
+  return out;
+}
+
+/** 把 patch(已读、星标、固定之一)提交到服务器。 */
+function patchOp(accountId: string, ids: string[], patch: Partial<EmailSummary>): Promise<unknown> {
+  if (patch.isUnread !== undefined) return api.markRead(accountId, ids, !patch.isUnread);
+  if (patch.isFlagged !== undefined) return api.markFlagged(accountId, ids, patch.isFlagged);
+  if (patch.isPinned !== undefined) return api.setPinned(accountId, ids, patch.isPinned);
+  return Promise.resolve();
 }
 
 export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
@@ -140,7 +202,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   const currentEmail = useRef<EmailDetail | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   // 搜索框提示里显示「搜索」动作的第一个键位; 用户把键位删光时不带括号。
-  const searchKey = useShortcuts().search[0];
+  const shortcuts = useShortcuts();
+  const searchKey = shortcuts.search[0];
   const searchHint = searchKey ? formatKey(searchKey) : "";
 
   // 每次切换账号/邮箱都会重来一遍分页，用一个自增的令牌把过期请求的结果丢掉，
@@ -244,6 +307,10 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   const openThread = useRef<{ key: string; accountId: string; threadId: string } | null>(null);
   // 正在清空的文件夹(账号/文件夹): 后台逐批删除期间列表保持为空。
   const emptying = useRef(new Set<string>());
+  /** 最近一次可撤销的邮件操作, Ctrl+Z 撤销它。只记一步, 与 Outlook 相同。 */
+  const lastUndo = useRef<UndoEntry | null>(null);
+  // 列表上方的「撤销」按钮据此置灰。
+  const [canUndo, setCanUndo] = useState(false);
 
   const overlay = useCallback((list: EmailSummary[]) => {
     const hidden = hiddenIds.current;
@@ -299,6 +366,13 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   useEffect(() => {
     emailsRef.current = emails;
   }, [emails]);
+
+  // 当前看的是哪个列表。撤销删除时只在同一个列表里把选中放回恢复的那封。
+  const viewKey = `${unified}|${accountId}|${mailboxId}`;
+  const viewRef = useRef(viewKey);
+  useEffect(() => {
+    viewRef.current = viewKey;
+  }, [viewKey]);
 
   // 一次加载列表开头的 want 封并整段替换。
   // 静默刷新(同步推送、操作完成后)与定位到某封邮件都走这里: 前者不能只重载第一页,
@@ -589,21 +663,19 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     });
   }, []);
 
+  // 撤销已读、星标时再走一次 mutate; 它在自己的回调里拿不到自身, 经 ref 取。
+  const mutateRef = useRef<(m: Mutation) => void>(() => {});
+
   /**
    * 乐观执行一个邮件操作: 立刻按预期结果更新界面, 请求在后台提交。
    * keys 是「账号/id」键, 统一视图里可能跨账号, 按账号分组逐个提交 op。
    * remove 表示邮件会离开当前列表(删除、移动、归档、垃圾邮件), 选中的邮件随之跳到下一封;
    * patch 是对摘要字段的预期修改(已读、星标、固定)。
    * 失败时提示并重新加载, 界面回到服务器的真实状态。
+   * 除非 undoable 为 false, 操作记作最近一步, Ctrl+Z 或提示里的「撤销」把它改回去。
    */
   const mutate = useCallback(
-    (m: {
-      keys: string[];
-      op: (accountId: string, ids: string[]) => Promise<unknown>;
-      remove?: boolean;
-      patch?: Partial<EmailSummary>;
-      done?: string;
-    }) => {
+    (m: Mutation) => {
       const keys = m.keys;
       if (keys.length === 0) return;
       const keySet = new Set(keys);
@@ -611,6 +683,17 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       const seq = ++mutationSeq.current;
       const list = emailsRef.current;
       const inSet = (e: EmailSummary) => keySet.has(emailKey(e));
+      const undoable = m.undoable !== false;
+      const view = viewRef.current;
+      let wasSelected = "";
+
+      // 撤销已读、星标、固定要知道每封原来的值, 在乐观更新之前记下。
+      const shown = currentEmail.current;
+      const previous = undoable && m.patch ? previousValues(keys, m.patch, list, shown) : null;
+      // 阅读栏里那封的详情不随已读变化重载; 快捷键「切换已读」要看它, 这里跟着改。
+      if (m.patch?.isUnread !== undefined && shown && keySet.has(emailKey(shown))) {
+        currentEmail.current = { ...shown, isUnread: m.patch.isUnread } as EmailDetail;
+      }
       // 侧栏未读数按账号各调各的文件夹; 未读视图没有单一文件夹, 等操作完成后重读。
       const adjust = (count: (e: EmailSummary) => number) => {
         for (const acc of groups.keys()) {
@@ -626,6 +709,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         // 阅读栏不突然变空: 选中的邮件被移走时, 跳到它后面(没有则前面)第一封没被移走的。
         setSelectedKey((cur) => {
           if (!keySet.has(cur)) return cur;
+          wasSelected = cur;
           const idx = list.findIndex((e) => emailKey(e) === cur);
           // 选中的是展开会话里不在本文件夹的一封(如已发送的回复): 列表里没有它, 回到代表该会话的行。
           if (idx < 0) {
@@ -664,9 +748,98 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         }
         setEmails((prev) => prev.map((e) => (inSet(e) ? ({ ...e, ...patch } as EmailSummary) : e)));
       }
-      if (m.done) toast.success(m.done);
+      // 移动类操作撤销时要把邮件放回原处: 提交前先从本地缓存记下各封所在的文件夹。
+      const placements = new Map<string, Promise<EmailPlacement[] | null>>();
+      const job = Promise.all(
+        [...groups].map(async ([acc, ids]) => {
+          if (undoable && m.remove) {
+            const snap = api.emailPlacements(acc, ids).catch(() => null);
+            placements.set(acc, snap);
+            await snap;
+          }
+          await m.op(acc, ids);
+        }),
+      );
+      // 撤销要等原操作提交完, 否则两个请求可能颠倒顺序到达服务器。
+      const succeeded = job.then(
+        () => true,
+        () => false,
+      );
 
-      Promise.all([...groups].map(([acc, ids]) => m.op(acc, ids)))
+      /** 把移走的邮件放回原来的文件夹。 */
+      const restore = async () => {
+        if (!(await succeeded)) return; // 原操作失败, 界面已经回到服务器的真实状态
+        try {
+          let count = 0;
+          await Promise.all(
+            [...placements].map(async ([acc, snap]) => {
+              const places = await snap;
+              if (!places?.length) return;
+              await api.restoreEmails(acc, places);
+              count += places.length;
+            }),
+          );
+          if (count === 0) {
+            toast.error(t("无法撤销"));
+            return;
+          }
+          toast.success(t("已撤销"));
+          // 还在原来的列表里时, 选中放回刚才那封。
+          if (wasSelected && viewRef.current === view) setSelectedKey(wasSelected);
+        } catch (err) {
+          toast.error(errorMessage(err));
+        } finally {
+          for (const acc of placements.keys()) loadMailboxes(acc);
+          reload();
+        }
+      };
+
+      /** 已读、星标、固定改回原来的值, 界面照样乐观更新。 */
+      const revert = () => {
+        for (const [sig, group] of previous ?? []) {
+          const old = JSON.parse(sig) as Partial<EmailSummary>;
+          mutateRef.current({
+            keys: group,
+            patch: old,
+            undoable: false,
+            op: async (acc, ids) => {
+              if (await succeeded) await patchOp(acc, ids, old);
+            },
+          });
+        }
+        toast.success(t("已撤销"));
+      };
+
+      // 没有任何一封真正变化(如把已读的标为已读)时不记, 免得盖掉上一步真正的操作。
+      let entry: UndoEntry | null = null;
+      const toastId = `mail-op-${seq}`;
+      if (undoable && (m.remove || (previous && previous.size > 0))) {
+        let used = false;
+        const e: UndoEntry = {
+          trigger: () => {
+            if (used) return;
+            used = true;
+            if (lastUndo.current === e) {
+              lastUndo.current = null;
+              setCanUndo(false);
+            }
+            toast.dismiss(toastId);
+            if (m.remove) void restore();
+            else revert();
+          },
+        };
+        lastUndo.current = e;
+        setCanUndo(true);
+        entry = e;
+      }
+      if (m.done) {
+        toast.success(m.done, {
+          id: toastId,
+          ...(entry && { duration: UNDO_TOAST_MS, action: { label: t("撤销"), onClick: entry.trigger } }),
+        });
+      }
+
+      job
         .catch((err) => toast.error(errorMessage(err)))
         .finally(() => {
           for (const key of keys) {
@@ -682,13 +855,19 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     },
     [listBoxOf, adjustUnread, loadMailboxes, reload, refreshCurrent],
   );
+  useEffect(() => {
+    mutateRef.current = mutate;
+  }, [mutate]);
+
+  /** Ctrl+Z: 撤销最近一次邮件操作。 */
+  const undoLast = useCallback(() => lastUndo.current?.trigger(), []);
 
   const trashIds = useCallback(
     (keys: string[]) => {
       if (currentKind === "trash") {
         const what = keys.length > 1 ? t("选中的 {0} 封邮件", keys.length) : t("这封邮件");
         if (!window.confirm(t("彻底删除{0}？此操作无法撤销。", what))) return;
-        mutate({ keys, remove: true, op: (acc, ids) => api.deleteEmails(acc, ids), done: t("已彻底删除") });
+        mutate({ keys, remove: true, undoable: false, op: (acc, ids) => api.deleteEmails(acc, ids), done: t("已彻底删除") });
         return;
       }
       mutate({ keys, remove: true, op: (acc, ids) => api.trashEmails(acc, ids), done: t("已删除") });
@@ -739,13 +918,10 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     [mailboxesByAccount, currentKind, junkIds, moveIds],
   );
 
+  /** undoable 为 false 用于打开邮件时自动标为已读: 那不是用户的操作, 不该占掉 Ctrl+Z。 */
   const markReadIds = useCallback(
-    (keys: string[], read: boolean) => {
-      // 阅读栏里那封的详情不随已读变化重载; 快捷键「切换已读」要看它, 这里跟着改。
-      const shown = currentEmail.current;
-      if (shown && keys.includes(emailKey(shown))) currentEmail.current = { ...shown, isUnread: !read } as EmailDetail;
-      mutate({ keys, patch: { isUnread: !read }, op: (acc, ids) => api.markRead(acc, ids, read) });
-    },
+    (keys: string[], read: boolean, undoable = true) =>
+      mutate({ keys, patch: { isUnread: !read }, undoable, op: (acc, ids) => api.markRead(acc, ids, read) }),
     [mutate],
   );
 
@@ -1124,6 +1300,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         markRead: () => setRead(true),
         markUnread: () => setRead(false),
         toggleRead: () => setRead("toggle"),
+        undo: undoLast,
       };
       const run = general[action];
       if (run) {
@@ -1152,7 +1329,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, emails, selectedKey, checked, focusMode, currentKind, actionsFor, markReadIds, leaveAfterUnread, setDraft]);
+  }, [active, emails, selectedKey, checked, focusMode, currentKind, actionsFor, markReadIds, leaveAfterUnread, setDraft, undoLast]);
 
 
   /**
@@ -1292,6 +1469,17 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 )}
               </div>
 
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0"
+                onClick={undoLast}
+                disabled={!canUndo}
+                aria-label={t("撤销")}
+                title={shortcuts.undo.length > 0 ? `${t("撤销")} (${formatKeys(shortcuts.undo)})` : t("撤销")}
+              >
+                <RotateCcw className="size-4" />
+              </Button>
               {scrolledAway ? (
                 <Button
                   variant="ghost"
@@ -1457,7 +1645,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 }}
                 revision={revision}
                 onOpenEmail={(id) => setSelectedKey(emailKey({ accountId: selected.accountId, id }))}
-                onMarkRead={(id) => markReadIds([emailKey({ accountId: selected.accountId, id })], true)}
+                onMarkRead={(id) => markReadIds([emailKey({ accountId: selected.accountId, id })], true, false)}
               />
             ) : (
               <div className="text-muted-foreground flex h-full items-center justify-center text-sm">{t("选择一封邮件")}</div>

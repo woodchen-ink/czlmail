@@ -51,6 +51,7 @@ export type Invite = main.Invite;
 export type SignInHint = main.SignInHint;
 export type Unsubscribe = store.Unsubscribe;
 export type EmailLocation = store.EmailLocation;
+export type EmailPlacement = store.EmailPlacement;
 export type MailSyncStatus = main.MailSyncStatus;
 /** 整夹拉取进度，随 Events.pullProgress 推送。只经事件传递，Wails 不会为它生成模型。 */
 export interface PullStatus {
@@ -167,6 +168,8 @@ export const api = {
 
   archiveEmails: guard(App.ArchiveEmails),
   markJunk: guard(App.MarkJunk),
+  emailPlacements: guard(App.EmailPlacements),
+  restoreEmails: guard(App.RestoreEmails),
   setLabel: guard(App.SetLabel),
   listLabels: guard(App.ListLabels),
   viewSource: guard(App.ViewSource),
