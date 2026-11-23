@@ -18,6 +18,7 @@ import { EmailBody } from "@/components/email-body";
 import { EmailDetails } from "@/components/email-details";
 import { EmailToolbar, type ToolbarActions } from "@/components/email-toolbar";
 import { SenderAvatar } from "@/components/sender-avatar";
+import { isSignaturePart, SignatureBadge } from "@/components/signature-badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -472,11 +473,14 @@ export function EmailView({
           )}
 
           <div className="flex items-start gap-3">
-            <SenderAvatar
-              email={sender?.email ?? ""}
-              name={sender?.name}
-              className="size-10"
-            />
+            <div className="flex shrink-0 flex-col items-center gap-1.5">
+              <SenderAvatar
+                email={sender?.email ?? ""}
+                name={sender?.name}
+                className="size-10"
+              />
+              <SignatureBadge accountId={accountId} email={email} />
+            </div>
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2">
@@ -646,7 +650,7 @@ export function EmailView({
               <AttachmentList
                 accountId={accountId}
                 emailId={email.id}
-                attachments={email.attachments ?? []}
+                attachments={(email.attachments ?? []).filter((a) => !isSignaturePart(a))}
               />
               {
                 <EmailBody

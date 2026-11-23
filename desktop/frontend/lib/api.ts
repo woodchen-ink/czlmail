@@ -23,6 +23,7 @@ export type SessionStatus = main.SessionStatus;
 export type AppSettings = main.AppSettings;
 export type ComposeRequest = main.ComposeRequest;
 export type SigningCertificate = smime.Certificate;
+export type SignatureCheck = smime.Verification;
 export type Attachment = store.Attachment;
 export type UploadedAttachment = main.UploadedAttachment;
 export type Calendar = store.Calendar;
@@ -194,6 +195,7 @@ export const api = {
   listTrustedSenders: guard(App.ListTrustedSenders),
   getSettings: guard(App.GetSettings),
   listSigningCertificates: guard(App.ListSigningCertificates),
+  verifySignature: guard(App.VerifySignature),
   saveSettings: guard(App.SaveSettings),
   getVersion: guard(App.GetVersion),
 

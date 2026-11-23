@@ -1,0 +1,157 @@
+"use client";
+
+import { dateLocale, t } from "@/lib/i18n";
+import { useI18n } from "@/components/locale-provider";
+
+import { useEffect, useState } from "react";
+import { ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
+
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { api, type Attachment, type EmailDetail, type SignatureCheck } from "@/lib/api";
+
+/** S/MIME 签名部件 (smime.p7s): 阅读视图不把它当附件列出, 由签名标记代替。 */
+export function isSignaturePart(a: Attachment): boolean {
+  const type = a.type.toLowerCase();
+  return type === "application/pkcs7-signature" || type === "application/x-pkcs7-signature";
+}
+
+type Tone = "good" | "warn" | "bad" | "neutral";
+
+const TONE_CLASS: Record<Tone, string> = {
+  good: "text-chart-3 border-chart-3/40 bg-chart-3/10",
+  warn: "text-amber-500 border-amber-500/40 bg-amber-500/10",
+  bad: "text-destructive border-destructive/40 bg-destructive/10",
+  neutral: "text-muted-foreground border-border bg-muted",
+};
+
+function toneOf(status: string): Tone {
+  switch (status) {
+    case "valid":
+      return "good";
+    case "invalid":
+      return "bad";
+    case "untrusted":
+    case "address":
+      return "warn";
+    default:
+      return "neutral";
+  }
+}
+
+function texts(r: SignatureCheck): { title: string; summary: string } {
+  switch (r.status) {
+    case "valid":
+      return {
+        title: t("数字签名有效"),
+        summary: r.expired
+          ? t("邮件来自签名者，签名后没有被改动。签名证书现已过期，但签名时有效。")
+          : t("邮件来自签名者，签名后没有被改动。"),
+      };
+    case "invalid":
+      return { title: t("数字签名无效"), summary: t("邮件在签名后被改动过，内容可能不是发件人写的。") };
+    case "untrusted":
+      return { title: t("签名证书不受信任"), summary: t("签名与内容一致，但无法确认签名证书来自可信的颁发机构。") };
+    case "address":
+      return { title: t("签名证书与发件人不符"), summary: t("签名与内容一致，但签名证书上没有这个发件地址。") };
+    default:
+      return { title: t("无法核对数字签名"), summary: t("CZL Mail 不支持这种签名格式。") };
+  }
+}
+
+function day(v: unknown) {
+  return new Date(String(v)).toLocaleDateString(dateLocale());
+}
+
+function dateTime(v: unknown) {
+  return new Date(String(v)).toLocaleString(dateLocale(), { dateStyle: "short", timeStyle: "short" });
+}
+
+/**
+ * 签名邮件在发件人头像下方的标记: 打开邮件时下载原文核对签名, 绿色有效, 黄色可疑, 红色被改动。
+ * 点开显示签名者、颁发者与有效期。不是签名邮件或核对不了 (离线) 时不显示。
+ */
+export function SignatureBadge({ accountId, email }: { accountId: string; email: EmailDetail }) {
+  useI18n();
+  const signed = (email.attachments ?? []).some(isSignaturePart);
+  const key = `${accountId}/${email.id}`;
+  // 结果按邮件记下, 换了邮件旧结果自然失效, 不必在 effect 里先清空。
+  const [checked, setChecked] = useState<{ key: string; result: SignatureCheck | null } | null>(null);
+
+  useEffect(() => {
+    if (!signed) return;
+    let cancelled = false;
+    api
+      .verifySignature(accountId, email.id)
+      .then((result) => !cancelled && setChecked({ key, result: result ?? null }))
+      .catch(() => !cancelled && setChecked({ key, result: null }));
+    return () => {
+      cancelled = true;
+    };
+  }, [signed, accountId, email.id, key]);
+
+  if (!signed) return null;
+  const result = checked?.key === key ? checked.result : undefined;
+  if (result === null) return null;
+
+  if (result === undefined) {
+    return (
+      <span className={cn("inline-flex h-[22px] w-7 items-center justify-center rounded-full border", TONE_CLASS.neutral)} aria-label={t("正在核对数字签名")}>
+        <ShieldQuestion className="size-3.5 animate-pulse" />
+      </span>
+    );
+  }
+
+  const tone = toneOf(result.status);
+  const Icon = tone === "good" ? ShieldCheck : tone === "neutral" ? ShieldQuestion : ShieldAlert;
+  const { title, summary } = texts(result);
+  const signer = result.signer;
+
+  return (
+    <Popover>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className={cn("inline-flex h-[22px] w-7 items-center justify-center rounded-full border", TONE_CLASS[tone])}
+              aria-label={title}
+            >
+              <Icon className="size-3.5" />
+            </button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent>{title}</TooltipContent>
+      </Tooltip>
+      <PopoverContent align="start" className="w-80 text-sm">
+        <p className={cn("flex items-center gap-2 font-semibold", TONE_CLASS[tone].split(" ")[0])}>
+          <Icon className="size-4.5 shrink-0" />
+          {title}
+        </p>
+        <p className="text-muted-foreground mt-1">{summary}</p>
+        {signer && (
+          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+            <dt className="text-muted-foreground">{t("签名者")}</dt>
+            <dd className="min-w-0">
+              <span className="block break-words">{signer.subject}</span>
+              {(signer.emails ?? []).length > 0 && <span className="text-muted-foreground block break-all text-xs">{(signer.emails ?? []).join(", ")}</span>}
+            </dd>
+            <dt className="text-muted-foreground">{t("颁发者")}</dt>
+            <dd className="min-w-0 break-words">{signer.issuer}</dd>
+            <dt className="text-muted-foreground">{t("有效期")}</dt>
+            <dd>{t("{0} 至 {1}", day(signer.notBefore), day(signer.notAfter))}</dd>
+            {result.signedAt && !String(result.signedAt).startsWith("0001") && (
+              <>
+                <dt className="text-muted-foreground">{t("签名时间")}</dt>
+                <dd>{dateTime(result.signedAt)}</dd>
+              </>
+            )}
+            <dt className="text-muted-foreground">{t("指纹")}</dt>
+            <dd className="min-w-0 font-mono text-[11px] break-all">{signer.thumbprint}</dd>
+          </dl>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
