@@ -92,8 +92,10 @@ func (a *App) showWindow() {
 		return
 	}
 	mainWindow.markSeen()
+	// WindowShow 自己会把最小化的窗口还原 (最小化前是最大化的就回到最大化)。
+	// 不要再调 WindowUnminimise: 它在 Windows 上不管窗口当前状态都发 SW_RESTORE,
+	// 关窗前是最大化的, 从托盘唤出后就变成了「向下还原」的大小。
 	wruntime.WindowShow(a.ctx)
-	wruntime.WindowUnminimise(a.ctx)
 	// 抢前台交给 raiseToForeground(见 window_windows.go)。
 	// 不能用"置顶再取消"那一套: 取消没落地时窗口会永远压在别的程序上面。
 	platform.RaiseToForeground()
