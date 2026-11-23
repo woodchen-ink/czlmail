@@ -20,10 +20,17 @@ export function isSignaturePart(a: Attachment): boolean {
 type Tone = "good" | "warn" | "bad" | "neutral";
 
 const TONE_CLASS: Record<Tone, string> = {
-  good: "text-chart-3 border-chart-3/40 bg-chart-3/10",
-  warn: "text-amber-500 border-amber-500/40 bg-amber-500/10",
+  good: "text-emerald-600 border-emerald-600/40 bg-emerald-600/10 dark:text-emerald-400 dark:border-emerald-400/40 dark:bg-emerald-400/10",
+  warn: "text-amber-600 border-amber-600/40 bg-amber-600/10 dark:text-amber-400 dark:border-amber-400/40 dark:bg-amber-400/10",
   bad: "text-destructive border-destructive/40 bg-destructive/10",
   neutral: "text-muted-foreground border-border bg-muted",
+};
+
+const TITLE_CLASS: Record<Tone, string> = {
+  good: "text-emerald-600 dark:text-emerald-400",
+  warn: "text-amber-600 dark:text-amber-400",
+  bad: "text-destructive",
+  neutral: "text-muted-foreground",
 };
 
 function toneOf(status: string): Tone {
@@ -125,7 +132,7 @@ export function SignatureBadge({ accountId, email }: { accountId: string; email:
         <TooltipContent>{title}</TooltipContent>
       </Tooltip>
       <PopoverContent align="start" className="w-80 text-sm">
-        <p className={cn("flex items-center gap-2 font-semibold", TONE_CLASS[tone].split(" ")[0])}>
+        <p className={cn("flex items-center gap-2 font-semibold", TITLE_CLASS[tone])}>
           <Icon className="size-4.5 shrink-0" />
           {title}
         </p>
