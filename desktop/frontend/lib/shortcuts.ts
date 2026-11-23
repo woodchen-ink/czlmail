@@ -102,14 +102,14 @@ const MODIFIER_PREFIX = /^(?:(?:Ctrl|Alt|Shift|Meta)\+)*/;
 const IGNORED_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "NumLock", "ScrollLock", "Dead", "Process", "Unidentified", "OS", "Fn"]);
 /**
  * 不能绑的键: 界面本身的键盘操作 (Tab 走焦点, Enter / 空格激活, Esc 关闭),
- * 系统的复制粘贴, 以及模块切换 (Ctrl+1…6、Ctrl+,)。
+ * 系统的复制粘贴, 模块切换 (Ctrl+1…6、Ctrl+,), 以及正文缩放 (Ctrl+加减号、Ctrl+0)。
  * Ctrl+Z 不在其中: 它是「撤销」动作的默认键位, 输入框里照旧是系统的撤销 (mail-shell 不处理输入框里的按键)。
  * Ctrl+R / Ctrl+F / Ctrl+P / F5 不必保留: Wails 在 Windows 上关掉了 WebView2 自带的快捷键
  * (AreBrowserAcceleratorKeysEnabled=false), 正式版里它们不会刷新、查找或打印。
  */
 const RESERVED = new Set([
   "Tab", "Shift+Tab", "Enter", "Space", "Escape",
-  ...["c", "v", "x", "a", "y", "1", "2", "3", "4", "5", "6", ","].flatMap((k) => [`Ctrl+${k}`, `Meta+${k}`]),
+  ...["c", "v", "x", "a", "y", "1", "2", "3", "4", "5", "6", ",", "+", "=", "-", "0"].flatMap((k) => [`Ctrl+${k}`, `Meta+${k}`]),
 ]);
 
 /** 按键事件对应的键位; 只按了修饰键时返回空串。 */

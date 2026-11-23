@@ -643,6 +643,7 @@ export function EmailView({
                   html={translation ? translation.html : email.bodyHtml}
                   text={translation?.text || email.bodyText}
                   translated={translation?.translated}
+                  zoomKey={email.id}
                   senderEmail={sender?.email ?? ""}
                   senderTrusted={senderTrusted}
                   mode={bodyMode}

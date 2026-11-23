@@ -5,7 +5,7 @@ import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Copy, ExternalLink, ImageOff, UserCheck } from "lucide-react";
+import { Copy, ExternalLink, ImageOff, Minus, Plus, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,31 @@ interface Props {
    * srcDoc 一变整个文档就重载，图片要重新请求一遍，流式翻译时就是一直在闪。
    */
   translated?: [number, string][];
+  /** 换了这个值(通常是邮件 id)手动缩放回到 100%。翻译只换正文, 不重置。 */
+  zoomKey?: string;
+}
+
+/** 手动缩放的档位, 与浏览器一致。 */
+const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+
+function nextZoom(current: number, step: number): number {
+  if (step === 0) return 1;
+  if (step > 0) return ZOOM_STEPS.find((z) => z > current + 0.001) ?? current;
+  return [...ZOOM_STEPS].reverse().find((z) => z < current - 0.001) ?? current;
+}
+
+/** Ctrl+加号/等号放大, Ctrl+减号缩小, Ctrl+0 还原; 其余返回 null。 */
+function zoomStepOf(e: KeyboardEvent): number | null {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return null;
+  if (e.key === "+" || e.key === "=") return 1;
+  if (e.key === "-") return -1;
+  if (e.key === "0" || e.code === "Digit0" || e.code === "Numpad0") return 0;
+  return null;
+}
+
+function isEditable(target: EventTarget | null): boolean {
+  const el = target instanceof HTMLElement ? target : null;
+  return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 }
 
 /**
@@ -65,6 +90,7 @@ export function EmailBody({
   mode: requestedMode,
   inlineImages,
   translated,
+  zoomKey,
 }: Props) {
   useI18n();
   // 自带配色的邮件在暗色主题下仍用亮色纸面，见 hasOwnColors。
@@ -77,6 +103,16 @@ export function EmailBody({
 
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(320);
+
+  // 手动缩放, 只对这一封邮件有效: 换邮件回到 100%。
+  const [zoom, setZoom] = useState(1);
+  const [zoomFor, setZoomFor] = useState(zoomKey);
+  if (zoomFor !== zoomKey) {
+    setZoomFor(zoomKey);
+    setZoom(1);
+  }
+  const zoomRef = useRef(zoom);
+  const stepZoom = (step: number) => setZoom((z) => nextZoom(z, step));
   // 正文里链接的右键菜单。坐标是相对应用视口的，由 iframe 上报的坐标加上 iframe 自身位置得到。
   const [linkMenu, setLinkMenu] = useState<{ url: string; x: number; y: number } | null>(null);
 
@@ -130,6 +166,28 @@ export function EmailBody({
     });
   };
 
+  const sendZoom = (value: number) => {
+    frameRef.current?.contentWindow?.postMessage({ type: "czl-zoom", value }, "*");
+  };
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+    if (readyRef.current) sendZoom(zoom);
+  }, [zoom]);
+
+  // 焦点在应用里(不在正文里)时的缩放快捷键; 正文里的按键由 iframe 上报。
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.defaultPrevented || isEditable(e.target)) return;
+      const step = zoomStepOf(e);
+      if (step === null) return;
+      e.preventDefault();
+      setZoom((z) => nextZoom(z, step));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const sendTranslated = (items: [number, string][]) => {
     frameRef.current?.contentWindow?.postMessage({ type: "czl-translate", items }, "*");
   };
@@ -165,14 +223,20 @@ export function EmailBody({
         height?: unknown;
         x?: unknown;
         y?: unknown;
+        step?: unknown;
       };
 
       if (msg.type === "ready") {
         readyRef.current = true;
+        sendZoom(zoomRef.current);
         sendImages();
         const queued = pendingRef.current;
         pendingRef.current = null;
         if (queued?.length) sendTranslated(queued);
+        return;
+      }
+      if (msg.type === "zoom" && (msg.step === 1 || msg.step === -1 || msg.step === 0)) {
+        stepZoom(msg.step);
         return;
       }
       if (msg.type === "link" && typeof msg.url === "string") {
@@ -222,6 +286,27 @@ export function EmailBody({
                 <UserCheck className="size-3.5" />
                 {t("始终信任此发件人")}</Button>
             )}
+          </div>
+        </div>
+      )}
+
+      {zoom !== 1 && (
+        // 指示条跟着阅读栏滚动停在顶部: 长邮件读到一半也看得到、点得到。
+        // 高度为 0 并抵消 gap, 出现与消失时正文不跳动。
+        <div className="pointer-events-none sticky top-2 z-10 -mb-3 h-0">
+          <div className="border-border bg-background/95 text-foreground pointer-events-auto absolute top-0 right-1 flex items-center rounded-md border shadow-sm">
+            <Button size="icon" variant="ghost" className="size-7" title={t("缩小")} aria-label={t("缩小")}
+              disabled={zoom <= ZOOM_STEPS[0]} onClick={() => stepZoom(-1)}>
+              <Minus className="size-3.5" />
+            </Button>
+            <button type="button" className="hover:bg-accent min-w-12 rounded px-1 text-xs tabular-nums"
+              title={t("恢复原始大小")} onClick={() => stepZoom(0)}>
+              {Math.round(zoom * 100)} %
+            </button>
+            <Button size="icon" variant="ghost" className="size-7" title={t("放大")} aria-label={t("放大")}
+              disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} onClick={() => stepZoom(1)}>
+              <Plus className="size-3.5" />
+            </Button>
           </div>
         </div>
       )}
@@ -327,8 +412,41 @@ function bridgeScript(nonce: string): string {
   // 上面的回复文字保持原大, 只有引用部分变小。
   // 用 zoom 而不是 transform: zoom 参与排版, scrollHeight 直接是缩放后的高度。
   // 每次先还原再量自然宽度, 阅读栏变宽后能缩回原大; 结果不变时 ResizeObserver 不会再触发, 不会循环。
-  // 缩到 0.5 以下字已经看不清, 到下限后保留横向滚动。
+  // 缩小以字看得清为限: 这一块里大部分文字缩完至少 READABLE_PX, 到下限后保留横向滚动。
+  var READABLE_PX = 11, MIN_ZOOM = 0.5;
   var zoomed = [];
+  // 用户手动缩放(Ctrl+滚轮、Ctrl+加减), 由父页面送来, 乘在自动缩放之上。
+  var userZoom = 1;
+  var fontCache = new WeakMap();
+  // 这一块里大部分文字的字号: 按字数加权的中位数, 页脚小字和大标题都不左右结果。
+  function mainFontSize(el) {
+    if (fontCache.has(el)) return fontCache.get(el);
+    var sizes = {}, total = 0;
+    var w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (var t = w.nextNode(); t; t = w.nextNode()) {
+      var p = t.parentElement;
+      if (!p || p.nodeName === "STYLE" || p.nodeName === "SCRIPT") continue;
+      var n = t.nodeValue.replace(/\\s+/g, "").length;
+      if (!n) continue;
+      var px = parseFloat(getComputedStyle(p).fontSize) || 0;
+      if (!px) continue;
+      sizes[px] = (sizes[px] || 0) + n;
+      total += n;
+    }
+    var keys = Object.keys(sizes).map(Number).sort(function (a, b) { return a - b; });
+    var acc = 0, size = 0;
+    for (var i = 0; i < keys.length; i++) {
+      acc += sizes[keys[i]];
+      if (acc * 2 >= total) { size = keys[i]; break; }
+    }
+    fontCache.set(el, size);
+    return size;
+  }
+  // 这一块最多能缩到多小; 没有文字(纯图片)时只受 MIN_ZOOM 限制。
+  function minZoom(el) {
+    var px = mainFontSize(el);
+    return px ? Math.min(1, Math.max(MIN_ZOOM, READABLE_PX / px)) : MIN_ZOOM;
+  }
   function shrink(el, view) {
     for (var c = el.firstElementChild; c; c = c.nextElementSibling) {
       var r = c.getBoundingClientRect();
@@ -337,27 +455,33 @@ function bridgeScript(nonce: string): string {
           (c.scrollWidth <= c.clientWidth + 1 || getComputedStyle(c).overflowX !== "visible")) continue;
       var avail = view - Math.max(r.left, 0);
       if (c.offsetWidth > avail + 1 && avail > 0) {
-        c.style.zoom = String(Math.max(avail / c.offsetWidth, 0.5));
-        zoomed.push(c);
+        var z = Math.max(avail / c.offsetWidth, minZoom(c));
+        if (z < 0.999) {
+          c.style.zoom = String(z);
+          zoomed.push(c);
+        }
       } else {
         shrink(c, view);
       }
     }
   }
   function fit() {
-    var root = document.documentElement;
-    if (!document.body) return;
+    var root = document.documentElement, body = document.body;
+    if (!body) return;
     for (var i = 0; i < zoomed.length; i++) zoomed[i].style.zoom = "";
     zoomed = [];
+    // 先按原大量, 自动缩放算好后再乘上用户缩放。
+    body.style.zoom = "";
+    var auto = 1;
     var view = root.clientWidth;
-    var w = Math.max(root.scrollWidth, document.body.scrollWidth);
-    if (!(view > 0 && w > view + 1)) return;
-    shrink(document.body, view);
-    // 找不到具体是哪一块撑宽的(比如不换行的长文字直接在 body 里), 照旧整体缩小。
-    if (!zoomed.length) {
-      document.body.style.zoom = String(Math.max(view / w, 0.5));
-      zoomed.push(document.body);
+    var w = Math.max(root.scrollWidth, body.scrollWidth);
+    if (view > 0 && w > view + 1) {
+      shrink(body, view);
+      // 找不到具体是哪一块撑宽的(比如不换行的长文字直接在 body 里), 照旧整体缩小。
+      if (!zoomed.length) auto = Math.max(view / w, minZoom(body));
     }
+    var total = auto * userZoom;
+    if (Math.abs(total - 1) > 0.001) body.style.zoom = String(total);
   }
   function report() {
     fit();
@@ -398,6 +522,33 @@ function bridgeScript(nonce: string): string {
     if (!d || d.type !== "czl-image" || typeof d.src !== "string" || d.src.indexOf("data:image/") !== 0) return;
     var imgs = document.querySelectorAll('img[data-czl-img="' + Number(d.index) + '"]');
     for (var i = 0; i < imgs.length; i++) imgs[i].src = d.src;
+  });
+  // 手动缩放: 按键与滚轮只上报方向, 档位由父页面决定, 再把结果送回来。
+  // 触控板捏合也是 Ctrl+滚轮, 只是每次的量很小, 攒够一格再算一步。
+  var wheelAcc = 0;
+  window.addEventListener("wheel", function (e) {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    wheelAcc += e.deltaY;
+    if (Math.abs(wheelAcc) < 50) return;
+    parent.postMessage({ type: "zoom", step: wheelAcc < 0 ? 1 : -1 }, "*");
+    wheelAcc = 0;
+  }, { passive: false });
+  document.addEventListener("keydown", function (e) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    var step = e.key === "+" || e.key === "=" ? 1 : e.key === "-" ? -1
+      : e.key === "0" || e.code === "Digit0" || e.code === "Numpad0" ? 0 : null;
+    if (step === null) return;
+    e.preventDefault();
+    parent.postMessage({ type: "zoom", step: step }, "*");
+  });
+  window.addEventListener("message", function (e) {
+    if (e.source !== parent) return;
+    var d = e.data;
+    if (!d || d.type !== "czl-zoom" || typeof d.value !== "number" || !(d.value >= 0.25 && d.value <= 5)) return;
+    if (d.value === userZoom) return;
+    userZoom = d.value;
+    report();
   });
   // 父窗口送来的译文: 按 data-czl-tr 找到片段, 只写 textContent(不解析 HTML)。
   var marks = null;
