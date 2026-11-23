@@ -520,22 +520,36 @@ export function EmailList({
                               dragging.has(emailKey(m)) && "opacity-40",
                             )}
                           >
-                            <SenderAvatar
-                              email={m.from?.[0]?.email ?? ""}
-                              name={m.from?.[0]?.name}
-                              className="size-5 text-[9px]"
-                            />
+                            {/* 未读与会话行一样在头像角上标色点, 名字加粗、摘要用正文色; 只靠字重在小字里看不出来。 */}
+                            <span className="relative shrink-0">
+                              <SenderAvatar
+                                email={m.from?.[0]?.email ?? ""}
+                                name={m.from?.[0]?.name}
+                                className="size-5 text-[9px]"
+                              />
+                              {m.isUnread && (
+                                <span
+                                  className="bg-accent ring-background absolute -top-0.5 -left-0.5 size-2 rounded-full ring-2"
+                                  aria-label={t("未读")}
+                                />
+                              )}
+                            </span>
                             <span
                               className={cn(
                                 "w-24 shrink-0 truncate",
-                                m.isUnread && "font-medium",
+                                m.isUnread && "font-semibold",
                               )}
                             >
                               {m.from?.[0]?.name ||
                                 m.from?.[0]?.email ||
                                 t("(无发件人)")}
                             </span>
-                            <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                            <span
+                              className={cn(
+                                "min-w-0 flex-1 truncate text-xs",
+                                m.isUnread ? "text-foreground" : "text-muted-foreground",
+                              )}
+                            >
                               {m.preview}
                             </span>
                             {m.hasAttachment && (
