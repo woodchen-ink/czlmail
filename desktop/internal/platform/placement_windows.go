@@ -13,11 +13,12 @@ import "unsafe"
 // WINDOWPLACEMENT 里的 rcNormalPosition 正是「向下还原」时的位置与大小, 最大化、最小化时也保持不变。
 
 var (
-	procGetWindowPlacement = user32.NewProc("GetWindowPlacement")
-	procSetWindowPlacement = user32.NewProc("SetWindowPlacement")
-	procIsZoomed           = user32.NewProc("IsZoomed")
-	procIsWindowVisible    = user32.NewProc("IsWindowVisible")
-	procMonitorFromRect    = user32.NewProc("MonitorFromRect")
+	procGetWindowPlacement   = user32.NewProc("GetWindowPlacement")
+	procSetWindowPlacement   = user32.NewProc("SetWindowPlacement")
+	procIsZoomed             = user32.NewProc("IsZoomed")
+	procIsWindowVisible      = user32.NewProc("IsWindowVisible")
+	procMonitorFromRect      = user32.NewProc("MonitorFromRect")
+	procSystemParametersInfo = user32.NewProc("SystemParametersInfoW")
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 	swShowMinimized       = 2
 	wpfRestoreToMaximized = 2
 	monitorDefaultToNull  = 0
+	spiGetWorkArea        = 0x0030
 	// 标题栏至少这么高的一条要落在某个显示器上, 窗口才算还能被抓回来。
 	titleStrip = 32
 )
@@ -47,21 +49,25 @@ func getPlacement(hwnd uintptr) (windowPlacement, bool) {
 }
 
 // MainWindowPlacement 返回主窗口「向下还原」时的位置与大小(工作区坐标, 物理像素),
-// 以及窗口当前是否最大化。窗口藏在托盘或最小化时也照样有效。
-func MainWindowPlacement() (WindowRect, bool, bool) {
+// 以及窗口当前是否最大化、是否可见。窗口藏在托盘或最小化时也照样有效。
+func MainWindowPlacement() (WindowPlacement, bool) {
 	hwnd := findMainWindow()
 	if hwnd == 0 {
-		return WindowRect{}, false, false
+		return WindowPlacement{}, false
 	}
 	wp, ok := getPlacement(hwnd)
 	if !ok || wp.RcNormalPosition.empty() {
-		return WindowRect{}, false, false
+		return WindowPlacement{}, false
 	}
 	// IsZoomed 看的是 WS_MAXIMIZE 样式, 窗口隐藏(缩到托盘)后依旧准确;
 	// 最大化后再最小化的窗口要看 WPF_RESTORETOMAXIMIZED。
 	zoomed, _, _ := procIsZoomed.Call(hwnd)
-	maximized := zoomed != 0 || (wp.ShowCmd == swShowMinimized && wp.Flags&wpfRestoreToMaximized != 0)
-	return wp.RcNormalPosition, maximized, true
+	visible, _, _ := procIsWindowVisible.Call(hwnd)
+	return WindowPlacement{
+		Normal:    wp.RcNormalPosition,
+		Maximized: zoomed != 0 || (wp.ShowCmd == swShowMinimized && wp.Flags&wpfRestoreToMaximized != 0),
+		Visible:   visible != 0,
+	}, true
 }
 
 // PlaceMainWindow 把主窗口「向下还原」时的位置与大小设为 r, 不改变窗口当前是否可见。
@@ -89,8 +95,16 @@ func PlaceMainWindow(r WindowRect) bool {
 	return set != 0
 }
 
+// onSomeMonitor 判断 r (工作区坐标) 的标题栏是否落在某个显示器上。
+// 工作区坐标以主显示器的工作区左上角为原点, MonitorFromRect 收的是屏幕坐标:
+// 任务栏在主屏顶部或左侧时两者差一个任务栏的宽度, 要先换算。
 func onSomeMonitor(r WindowRect) bool {
-	strip := WindowRect{Left: r.Left, Top: r.Top, Right: r.Right, Bottom: min(r.Bottom, r.Top+titleStrip)}
+	var work WindowRect
+	if ok, _, _ := procSystemParametersInfo.Call(spiGetWorkArea, 0, uintptr(unsafe.Pointer(&work)), 0); ok == 0 {
+		work = WindowRect{}
+	}
+	top := r.Top + work.Top
+	strip := WindowRect{Left: r.Left + work.Left, Top: top, Right: r.Right + work.Left, Bottom: min(r.Bottom+work.Top, top+titleStrip)}
 	m, _, _ := procMonitorFromRect.Call(uintptr(unsafe.Pointer(&strip)), monitorDefaultToNull)
 	return m != 0
 }

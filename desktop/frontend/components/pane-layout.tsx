@@ -69,7 +69,18 @@ const storage = {
       // 忽略
     }
   },
+  removeItem(key: string) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // 忽略
+    }
+  },
 };
+
+function legacyLayoutKey(id: string, panelIds: string[]) {
+  return `czlmail.layout.${id}:${panelIds.join(":")}`;
+}
 
 /** 侧栏与列表记住的宽度 (像素)。详情栏没有自己的宽度, 占剩下的部分。 */
 type PaneWidths = { sidebar?: number; list?: number };
@@ -93,10 +104,10 @@ function readWidths(key: string): PaneWidths | null {
 
 /**
  * 旧版本按百分比存的布局 (react-resizable-panels 的 useDefaultLayout, 键为 `czlmail.layout.<模块>:<各栏 id>`)。
- * 只在还没有像素宽度时读一次, 让升级后的第一次启动仍是用户调好的样子, 随后即改存像素。
+ * 只在还没有像素宽度时读一次, 让升级后的第一次启动仍是用户调好的样子, 随后即改存像素并删掉旧记录。
  */
 function readLegacyLayout(id: string, panelIds: string[]): Record<string, number> | undefined {
-  const raw = storage.getItem(`czlmail.layout.${id}:${panelIds.join(":")}`);
+  const raw = storage.getItem(legacyLayoutKey(id, panelIds));
   if (!raw) return undefined;
   try {
     const value: unknown = JSON.parse(raw);
@@ -157,6 +168,7 @@ function WidePanes({
     if (listPx) next.list = Math.round(listPx);
     if (next.sidebar === undefined && next.list === undefined) return;
     storage.setItem(key, JSON.stringify(next));
+    if (!current) storage.removeItem(legacyLayoutKey(id, panelIds));
   };
 
   return (

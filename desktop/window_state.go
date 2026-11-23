@@ -56,9 +56,12 @@ type windowMemory struct {
 	mu    sync.Mutex
 	state windowState
 	log   *slog.Logger
-	// seen 表示窗口本次运行中已经显示过。开机自启时窗口一直藏在托盘里,
-	// 还没按上次的状态最大化, 这时读到的「未最大化」不能覆盖保存的状态。
-	seen atomic.Bool
+	// seen 表示窗口本次运行中已经显示过。显示之前 (Wails 等页面加载完才显示, 开机自启时一直藏在托盘里)
+	// 窗口还没按上次的状态最大化, 这时读到的「未最大化」不能覆盖保存的状态。
+	// Windows 上看窗口是否真的可见 (Wails 显示与最大化是同一个调用);
+	// 其他平台读不到, 以 shown (domReady / markSeen 标记) 为准。
+	seen  atomic.Bool
+	shown atomic.Bool
 }
 
 // mainWindow 只有一个: 单实例锁保证每个进程一个主窗口。
@@ -103,10 +106,10 @@ func (s windowState) startOptions(o *options.App) {
 	}
 }
 
-// restore 在窗口创建后、显示前把它挪回上次的位置, 然后开始跟踪变化。
-// Wails 要等页面加载完才显示窗口, OnStartup 早于此, 所以用户看不到窗口跳动。
-func (m *windowMemory) restore(ctx context.Context, startHidden bool) {
-	m.seen.Store(!startHidden)
+// restore 在窗口创建后把它挪回上次的位置, 然后开始跟踪变化。
+// Wails 等页面加载完才显示窗口; OnStartup 与页面加载在不同协程里同时进行, 通常远早于加载完成,
+// 所以用户看不到窗口跳动 (偶尔晚了也只是显示后挪一下)。
+func (m *windowMemory) restore(ctx context.Context) {
 	m.mu.Lock()
 	normal := m.state.Normal
 	m.mu.Unlock()
@@ -120,8 +123,15 @@ func (m *windowMemory) restore(ctx context.Context, startHidden bool) {
 	go m.track(ctx)
 }
 
+// domReady 在页面第一次加载完时调用, Wails 随即显示窗口; 开机自启时窗口留在托盘, 等 markSeen。
+func (m *windowMemory) domReady(startHidden bool) {
+	if !startHidden {
+		m.shown.Store(true)
+	}
+}
+
 // markSeen 在窗口从托盘被唤出时调用。
-func (m *windowMemory) markSeen() { m.seen.Store(true) }
+func (m *windowMemory) markSeen() { m.shown.Store(true) }
 
 func (m *windowMemory) track(ctx context.Context) {
 	t := time.NewTicker(windowCheckInterval)
@@ -140,6 +150,10 @@ func (m *windowMemory) track(ctx context.Context) {
 // final 用于退出前的最后一次保存: 这时只用系统接口, 不再调 Wails 运行时
 // (macOS 上那些调用要派发到主线程, 而退出回调本身就在主线程上)。
 func (m *windowMemory) save(ctx context.Context, final bool) {
+	p, native := platform.MainWindowPlacement()
+	if (native && p.Visible) || (!native && m.shown.Load()) {
+		m.seen.Store(true)
+	}
 	if !m.seen.Load() {
 		return
 	}
@@ -147,9 +161,8 @@ func (m *windowMemory) save(ctx context.Context, final bool) {
 	defer m.mu.Unlock()
 
 	next := m.state
-	rect, maximized, native := platform.MainWindowPlacement()
 	if native {
-		next.Normal, next.Maximized = &rect, maximized
+		next.Normal, next.Maximized = &p.Normal, p.Maximized
 	} else if final {
 		return
 	} else {

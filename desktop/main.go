@@ -74,8 +74,8 @@ func main() {
 		Menu: appMenu(app),
 
 		OnStartup: func(ctx context.Context) {
-			// 先把窗口挪回上次的位置: 这时窗口已创建但还没显示。见 window_state.go。
-			mainWindow.restore(ctx, startHidden)
+			// 先把窗口挪回上次的位置: 这时窗口已创建, 通常还没显示。见 window_state.go。
+			mainWindow.restore(ctx)
 			app.startup(ctx)
 		},
 		OnBeforeClose: func(ctx context.Context) bool {
@@ -83,7 +83,10 @@ func main() {
 			return false
 		},
 		OnShutdown: app.shutdown,
-		OnDomReady: app.domReady,
+		OnDomReady: func(ctx context.Context) {
+			mainWindow.domReady(startHidden)
+			app.domReady(ctx)
+		},
 
 		Bind: []any{app},
 
