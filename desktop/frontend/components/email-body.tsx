@@ -5,7 +5,7 @@ import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Copy, ExternalLink, ImageOff, Minus, Plus, UserCheck } from "lucide-react";
+import { Copy, ExternalLink, ImageOff, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { hasOwnColors, sanitizeEmailHtml } from "@/lib/sanitize-email";
 import { openExternal } from "@/lib/external";
+import { zoomStepOf } from "@/components/message-zoom";
 
 interface Props {
   html: string;
@@ -43,26 +44,15 @@ interface Props {
    * srcDoc 一变整个文档就重载，图片要重新请求一遍，流式翻译时就是一直在闪。
    */
   translated?: [number, string][];
-  /** 换了这个值(通常是邮件 id)手动缩放回到 100%。翻译只换正文, 不重置。 */
-  zoomKey?: string;
-}
-
-/** 手动缩放的档位, 与浏览器一致。 */
-const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
-
-function nextZoom(current: number, step: number): number {
-  if (step === 0) return 1;
-  if (step > 0) return ZOOM_STEPS.find((z) => z > current + 0.001) ?? current;
-  return [...ZOOM_STEPS].reverse().find((z) => z < current - 0.001) ?? current;
-}
-
-/** Ctrl+加号/等号放大, Ctrl+减号缩小, Ctrl+0 还原; 其余返回 null。 */
-function zoomStepOf(e: KeyboardEvent): number | null {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey) return null;
-  if (e.key === "+" || e.key === "=") return 1;
-  if (e.key === "-") return -1;
-  if (e.key === "0" || e.code === "Digit0" || e.code === "Numpad0") return 0;
-  return null;
+  /** 手动缩放(1 = 100%), 由使用方保存, 见 useMessageZoom。不给则不能手动缩放。 */
+  zoom?: number;
+  /** 缩放快捷键与 Ctrl+滚轮: 1 放大, -1 缩小, 0 还原。 */
+  onZoomStep?: (step: number) => void;
+  /**
+   * 正文比阅读栏宽(放大了, 或缩到看得清的下限仍放不下)。这时正文按实际宽度显示,
+   * 由阅读栏横向滚动, 滚动条在窗口底部始终看得到, 而不是藏在长邮件的末尾。
+   */
+  onWideChange?: (wide: boolean) => void;
 }
 
 function isEditable(target: EventTarget | null): boolean {
@@ -90,7 +80,9 @@ export function EmailBody({
   mode: requestedMode,
   inlineImages,
   translated,
-  zoomKey,
+  zoom = 1,
+  onZoomStep,
+  onWideChange,
 }: Props) {
   useI18n();
   // 自带配色的邮件在暗色主题下仍用亮色纸面，见 hasOwnColors。
@@ -103,16 +95,17 @@ export function EmailBody({
 
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(320);
-
-  // 手动缩放, 只对这一封邮件有效: 换邮件回到 100%。
-  const [zoom, setZoom] = useState(1);
-  const [zoomFor, setZoomFor] = useState(zoomKey);
-  if (zoomFor !== zoomKey) {
-    setZoomFor(zoomKey);
-    setZoom(1);
-  }
+  // 正文实际需要的宽度; 不比阅读栏宽时为 0, iframe 跟着容器宽。
+  const [contentWidth, setContentWidth] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef(0);
   const zoomRef = useRef(zoom);
-  const stepZoom = (step: number) => setZoom((z) => nextZoom(z, step));
+  const stepRef = useRef(onZoomStep);
+  const wideRef = useRef(onWideChange);
+  useLayoutEffect(() => {
+    stepRef.current = onZoomStep;
+    wideRef.current = onWideChange;
+  });
   // 正文里链接的右键菜单。坐标是相对应用视口的，由 iframe 上报的坐标加上 iframe 自身位置得到。
   const [linkMenu, setLinkMenu] = useState<{ url: string; x: number; y: number } | null>(null);
 
@@ -169,20 +162,46 @@ export function EmailBody({
   const sendZoom = (value: number) => {
     frameRef.current?.contentWindow?.postMessage({ type: "czl-zoom", value }, "*");
   };
+  // 阅读栏给正文的宽度。iframe 变宽以后它自己的视口不再是阅读栏, 缩放按这个宽度算。
+  const sendView = (width: number) => {
+    frameRef.current?.contentWindow?.postMessage({ type: "czl-view", width }, "*");
+  };
 
   useEffect(() => {
     zoomRef.current = zoom;
     if (readyRef.current) sendZoom(zoom);
   }, [zoom]);
 
+  useEffect(() => {
+    wideRef.current?.(contentWidth > 0);
+  }, [contentWidth]);
+  useEffect(() => () => wideRef.current?.(false), []);
+
+  // 纸面有 p-4 内边距(亮色), 正文可用宽度 = 外层宽度 - 内边距。
+  const padding = mode === "light" ? 32 : 0;
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const measure = () => {
+      const width = Math.max(root.clientWidth - padding, 0);
+      if (width === viewRef.current) return;
+      viewRef.current = width;
+      if (readyRef.current) sendView(width);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, [padding]);
+
   // 焦点在应用里(不在正文里)时的缩放快捷键; 正文里的按键由 iframe 上报。
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.defaultPrevented || isEditable(e.target)) return;
+      if (!stepRef.current || e.defaultPrevented || isEditable(e.target)) return;
       const step = zoomStepOf(e);
       if (step === null) return;
       e.preventDefault();
-      setZoom((z) => nextZoom(z, step));
+      stepRef.current(step);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -221,6 +240,7 @@ export function EmailBody({
         type?: unknown;
         url?: unknown;
         height?: unknown;
+        width?: unknown;
         x?: unknown;
         y?: unknown;
         step?: unknown;
@@ -228,6 +248,7 @@ export function EmailBody({
 
       if (msg.type === "ready") {
         readyRef.current = true;
+        if (viewRef.current) sendView(viewRef.current);
         sendZoom(zoomRef.current);
         sendImages();
         const queued = pendingRef.current;
@@ -236,7 +257,7 @@ export function EmailBody({
         return;
       }
       if (msg.type === "zoom" && (msg.step === 1 || msg.step === -1 || msg.step === 0)) {
-        stepZoom(msg.step);
+        stepRef.current?.(msg.step);
         return;
       }
       if (msg.type === "link" && typeof msg.url === "string") {
@@ -257,6 +278,10 @@ export function EmailBody({
       if (msg.type === "height" && typeof msg.height === "number") {
         // 留一点余量，避免因为四舍五入出现一条内部滚动条。
         setHeight(Math.min(Math.max(msg.height + 16, 120), 20000));
+        if (typeof msg.width === "number") {
+          const view = viewRef.current;
+          setContentWidth(view && msg.width > view + 1 ? Math.min(Math.ceil(msg.width), 20000) : 0);
+        }
       }
     }
 
@@ -265,7 +290,7 @@ export function EmailBody({
   }, []);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div ref={rootRef} className="flex flex-col gap-3">
       {blockedImages > 0 && !allowImages && (
         <div className="border-border bg-secondary flex flex-wrap items-center gap-3 rounded-md border px-3 py-2.5">
           <ImageOff className="text-muted-foreground size-4 shrink-0" />
@@ -290,33 +315,12 @@ export function EmailBody({
         </div>
       )}
 
-      {zoom !== 1 && (
-        // 指示条跟着阅读栏滚动停在顶部: 长邮件读到一半也看得到、点得到。
-        // 高度为 0 并抵消 gap, 出现与消失时正文不跳动。
-        <div className="pointer-events-none sticky top-2 z-10 -mb-3 h-0">
-          <div className="border-border bg-background/95 text-foreground pointer-events-auto absolute top-0 right-1 flex items-center rounded-md border shadow-sm">
-            <Button size="icon" variant="ghost" className="size-7" title={t("缩小")} aria-label={t("缩小")}
-              disabled={zoom <= ZOOM_STEPS[0]} onClick={() => stepZoom(-1)}>
-              <Minus className="size-3.5" />
-            </Button>
-            <button type="button" className="hover:bg-accent min-w-12 rounded px-1 text-xs tabular-nums"
-              title={t("恢复原始大小")} onClick={() => stepZoom(0)}>
-              {Math.round(zoom * 100)} %
-            </button>
-            <Button size="icon" variant="ghost" className="size-7" title={t("放大")} aria-label={t("放大")}
-              disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} onClick={() => stepZoom(1)}>
-              <Plus className="size-3.5" />
-            </Button>
-          </div>
-        </div>
-      )}
-
       {/* 亮色正文放进白底圆角容器：应用是暗色时，它看起来是一张纸，而不是一块刺眼的洞。 */}
       <div
         className={
-          mode === "light"
+          (mode === "light"
             ? "bg-paper overflow-hidden rounded-md p-4"
-            : "overflow-hidden rounded-md"
+            : "overflow-hidden rounded-md") + (contentWidth ? " w-max min-w-full" : "")
         }
       >
         <iframe
@@ -328,7 +332,7 @@ export function EmailBody({
           className="block w-full border-0 bg-transparent"
           // iframe 里的 prefers-color-scheme 取自 iframe 元素自己的 color-scheme，
           // 不写就继承应用根上的 dark：邮件自带的暗色 @media 会在亮色纸面上生效。
-          style={{ height, colorScheme: mode }}
+          style={{ height, colorScheme: mode, ...(contentWidth ? { width: contentWidth } : {}) }}
         />
       </div>
 
@@ -417,6 +421,11 @@ function bridgeScript(nonce: string): string {
   var zoomed = [];
   // 用户手动缩放(Ctrl+滚轮、Ctrl+加减), 由父页面送来, 乘在自动缩放之上。
   var userZoom = 1;
+  // 阅读栏给正文的宽度, 由父页面送来。正文比阅读栏宽时 iframe 会跟着变宽,
+  // 那时 iframe 自己的视口已经不是阅读栏, 不能再拿它算。
+  var parentView = 0;
+  // 比阅读栏宽的部分交给阅读栏横向滚动, iframe 里不出现自己的横向滚动条。
+  document.documentElement.style.overflowX = "hidden";
   var fontCache = new WeakMap();
   // 这一块里大部分文字的字号: 按字数加权的中位数, 页脚小字和大标题都不左右结果。
   function mainFontSize(el) {
@@ -447,6 +456,18 @@ function bridgeScript(nonce: string): string {
     var px = mainFontSize(el);
     return px ? Math.min(1, Math.max(MIN_ZOOM, READABLE_PX / px)) : MIN_ZOOM;
   }
+  var found = false;
+  // 正文实际伸到多宽(视口坐标): 只往内容溢出的元素里找, 和 shrink 一样。
+  function extent(el) {
+    var right = el.getBoundingClientRect().right;
+    if (el.scrollWidth <= el.clientWidth + 1 || getComputedStyle(el).overflowX !== "visible") return right;
+    for (var c = el.firstElementChild; c; c = c.nextElementSibling) {
+      var cr = c.getBoundingClientRect();
+      right = Math.max(right, cr.right);
+      if (c.scrollWidth > c.clientWidth + 1) right = Math.max(right, extent(c));
+    }
+    return right;
+  }
   function shrink(el, view) {
     for (var c = el.firstElementChild; c; c = c.nextElementSibling) {
       var r = c.getBoundingClientRect();
@@ -455,6 +476,7 @@ function bridgeScript(nonce: string): string {
           (c.scrollWidth <= c.clientWidth + 1 || getComputedStyle(c).overflowX !== "visible")) continue;
       var avail = view - Math.max(r.left, 0);
       if (c.offsetWidth > avail + 1 && avail > 0) {
+        found = true;
         var z = Math.max(avail / c.offsetWidth, minZoom(c));
         if (z < 0.999) {
           c.style.zoom = String(z);
@@ -470,32 +492,39 @@ function bridgeScript(nonce: string): string {
     if (!body) return;
     for (var i = 0; i < zoomed.length; i++) zoomed[i].style.zoom = "";
     zoomed = [];
-    // 先按原大量, 自动缩放算好后再乘上用户缩放。
+    found = false;
+    // 先按原大、阅读栏宽度量, 自动缩放算好后再乘上用户缩放。
+    // body 限宽为阅读栏: 能折行的文字始终在阅读栏里折行, 只有固定宽度的版式伸出去。
+    var view = parentView || root.clientWidth;
     body.style.zoom = "";
+    body.style.display = "flow-root";
+    body.style.maxWidth = view + "px";
     var auto = 1;
-    var view = root.clientWidth;
-    var w = Math.max(root.scrollWidth, body.scrollWidth);
+    var w = extent(body);
     if (view > 0 && w > view + 1) {
       shrink(body, view);
       // 找不到具体是哪一块撑宽的(比如不换行的长文字直接在 body 里), 照旧整体缩小。
-      if (!zoomed.length) auto = Math.max(view / w, minZoom(body));
+      if (!found) auto = Math.max(view / w, minZoom(body));
     }
     var total = auto * userZoom;
+    // zoom 也作用在 body 自己的宽度上, 限宽要换算回缩放前的值。
+    body.style.maxWidth = view / total + "px";
     if (Math.abs(total - 1) > 0.001) body.style.zoom = String(total);
   }
   function report() {
     fit();
-    var h = Math.max(
-      document.documentElement.scrollHeight,
-      document.body ? document.body.scrollHeight : 0
-    );
+    // 量 body 自己的高度, 不用 documentElement.scrollHeight: 后者至少是视口高,
+    // 缩小或折行变短以后报不出更小的值, iframe 只会变高不会变矮。
+    // body 是 flow-root: 浮动与首尾 margin 都算在它里面。
+    var body = document.body;
+    var h = body ? Math.ceil(body.getBoundingClientRect().bottom + (window.scrollY || 0)) : 0;
     var view = window.innerHeight;
     // 版式高度跟随视口(height:100%、100vh)的邮件: iframe 变高后内容也等量变高,
     // 再上报就会无限增长。视口变了而"内容 - 视口"的差值没变, 说明是被视口撑开的, 不上报。
     if (lastView && view !== lastView && h - view === lastH - lastView) return;
     lastH = h;
     lastView = view;
-    parent.postMessage({ type: "height", height: h }, "*");
+    parent.postMessage({ type: "height", height: h, width: body ? extent(body) : 0 }, "*");
   }
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest ? e.target.closest("a[data-external-href]") : null;
@@ -548,6 +577,14 @@ function bridgeScript(nonce: string): string {
     if (!d || d.type !== "czl-zoom" || typeof d.value !== "number" || !(d.value >= 0.25 && d.value <= 5)) return;
     if (d.value === userZoom) return;
     userZoom = d.value;
+    report();
+  });
+  window.addEventListener("message", function (e) {
+    if (e.source !== parent) return;
+    var d = e.data;
+    if (!d || d.type !== "czl-view" || typeof d.width !== "number" || !(d.width > 0)) return;
+    if (d.width === parentView) return;
+    parentView = d.width;
     report();
   });
   // 父窗口送来的译文: 按 data-czl-tr 找到片段, 只写 textContent(不解析 HTML)。
