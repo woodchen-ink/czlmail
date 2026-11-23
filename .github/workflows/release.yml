@@ -82,7 +82,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Wails CLI installation failed' }
           if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
             choco install nsis -y --no-progress
-            if ($LASTEXITCODE -ne 0) {
+            # choco 源不可用 (如 503) 时可能装了 0 个包却返回 0: 按 makensis.exe 是否存在判断, 不看退出码。
+            $nsisDirs = @("${env:ProgramFiles(x86)}\NSIS", "$env:ProgramFiles\NSIS")
+            if (-not ($nsisDirs | Where-Object { Test-Path (Join-Path $_ 'makensis.exe') })) {
               # Fixed upstream installer and checksum from microsoft/winget-pkgs NSIS.NSIS 3.13.
               $installer = Join-Path $env:RUNNER_TEMP 'nsis-3.13-setup.exe'
               curl.exe --fail --location --retry 3 --output $installer 'https://sourceforge.net/projects/nsis/files/NSIS%203/3.13/nsis-3.13-setup.exe/download'
