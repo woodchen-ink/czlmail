@@ -98,7 +98,13 @@ export function EmailBody({
   // 正文实际需要的宽度; 不比阅读栏宽时为 0, iframe 跟着容器宽。
   const [contentWidth, setContentWidth] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  // 正文文字折行的宽度(阅读栏里的正文栏)。
   const viewRef = useRef(0);
+  // 固定宽度的版式最多能用多宽: 正文栏两侧的空白也算上(全屏时正文栏居中, 左右各留一大块)。
+  const wideRef2 = useRef(0);
+  // 正文栏左右离阅读栏边缘还有多少空白, 宽版式先往这里伸, 伸不下才横向滚动。
+  // col = 正文栏宽(含纸面内边距)。
+  const [space, setSpace] = useState({ left: 0, right: 0, col: 0 });
   const zoomRef = useRef(zoom);
   const stepRef = useRef(onZoomStep);
   const wideRef = useRef(onWideChange);
@@ -163,8 +169,11 @@ export function EmailBody({
     frameRef.current?.contentWindow?.postMessage({ type: "czl-zoom", value }, "*");
   };
   // 阅读栏给正文的宽度。iframe 变宽以后它自己的视口不再是阅读栏, 缩放按这个宽度算。
-  const sendView = (width: number) => {
-    frameRef.current?.contentWindow?.postMessage({ type: "czl-view", width }, "*");
+  const sendView = () => {
+    frameRef.current?.contentWindow?.postMessage(
+      { type: "czl-view", width: wideRef2.current, text: viewRef.current },
+      "*",
+    );
   };
 
   useEffect(() => {
@@ -172,25 +181,49 @@ export function EmailBody({
     if (readyRef.current) sendZoom(zoom);
   }, [zoom]);
 
-  useEffect(() => {
-    wideRef.current?.(contentWidth > 0);
-  }, [contentWidth]);
-  useEffect(() => () => wideRef.current?.(false), []);
-
   // 纸面有 p-4 内边距(亮色), 正文可用宽度 = 外层宽度 - 内边距。
   const padding = mode === "light" ? 32 : 0;
+  // 比正文栏宽时纸面的宽度与左移量: 先占左右两侧的空白(左右各一半, 右边不够再多占左边),
+  // 两侧都用完还放不下, 才交给阅读栏横向滚动。
+  const columnWidth = space.col;
+  const cardWidth = contentWidth ? contentWidth + padding : 0;
+  const excess = Math.max(cardWidth - columnWidth, 0);
+  const shift = Math.min(space.left, Math.max(excess / 2, excess - space.right));
+  const scrolls = cardWidth > 0 && excess - shift > space.right + 1;
+
+  useEffect(() => {
+    wideRef.current?.(scrolls);
+  }, [scrolls]);
+  useEffect(() => () => wideRef.current?.(false), []);
+
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
+    // 阅读栏本身(滚动容器), 正文栏两侧的空白相对它来量。
+    const pane = root.closest<HTMLElement>("[data-slot=scroll-area]");
+    // 离阅读栏边缘至少留这么多。
+    const GUTTER = 16;
     const measure = () => {
-      const width = Math.max(root.clientWidth - padding, 0);
-      if (width === viewRef.current) return;
-      viewRef.current = width;
-      if (readyRef.current) sendView(width);
+      const text = Math.max(root.clientWidth - padding, 0);
+      let left = 0;
+      let right = 0;
+      if (pane) {
+        const offset = root.getBoundingClientRect().left - pane.getBoundingClientRect().left + pane.scrollLeft;
+        left = Math.max(Math.floor(offset - GUTTER), 0);
+        right = Math.max(Math.floor(pane.clientWidth - offset - root.clientWidth - GUTTER), 0);
+      }
+      const col = root.clientWidth;
+      setSpace((s) => (s.left === left && s.right === right && s.col === col ? s : { left, right, col }));
+      const wide = text + left + right;
+      if (text === viewRef.current && wide === wideRef2.current) return;
+      viewRef.current = text;
+      wideRef2.current = wide;
+      if (readyRef.current) sendView();
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(root);
+    if (pane) ro.observe(pane);
     return () => ro.disconnect();
   }, [padding]);
 
@@ -248,7 +281,7 @@ export function EmailBody({
 
       if (msg.type === "ready") {
         readyRef.current = true;
-        if (viewRef.current) sendView(viewRef.current);
+        if (viewRef.current) sendView();
         sendZoom(zoomRef.current);
         sendImages();
         const queued = pendingRef.current;
@@ -322,6 +355,7 @@ export function EmailBody({
             ? "bg-paper overflow-hidden rounded-md p-4"
             : "overflow-hidden rounded-md") + (contentWidth ? " w-max min-w-full" : "")
         }
+        style={shift ? { marginLeft: -shift } : undefined}
       >
         <iframe
           ref={frameRef}
@@ -423,7 +457,7 @@ function bridgeScript(nonce: string): string {
   var userZoom = 1;
   // 阅读栏给正文的宽度, 由父页面送来。正文比阅读栏宽时 iframe 会跟着变宽,
   // 那时 iframe 自己的视口已经不是阅读栏, 不能再拿它算。
-  var parentView = 0;
+  var parentView = 0, parentText = 0;
   // 比阅读栏宽的部分交给阅读栏横向滚动, iframe 里不出现自己的横向滚动条。
   document.documentElement.style.overflowX = "hidden";
   var fontCache = new WeakMap();
@@ -493,12 +527,14 @@ function bridgeScript(nonce: string): string {
     for (var i = 0; i < zoomed.length; i++) zoomed[i].style.zoom = "";
     zoomed = [];
     found = false;
-    // 先按原大、阅读栏宽度量, 自动缩放算好后再乘上用户缩放。
-    // body 限宽为阅读栏: 能折行的文字始终在阅读栏里折行, 只有固定宽度的版式伸出去。
+    // 先按原大量, 自动缩放算好后再乘上用户缩放。
+    // body 限宽为正文栏: 能折行的文字始终在正文栏里折行, 只有固定宽度的版式伸出去;
+    // 伸出去的版式最宽可以用到 view(正文栏加两侧空白), 超过才缩小。
     var view = parentView || root.clientWidth;
+    var text = Math.min(parentText || view, view);
     body.style.zoom = "";
     body.style.display = "flow-root";
-    body.style.maxWidth = view + "px";
+    body.style.maxWidth = text + "px";
     var auto = 1;
     var w = extent(body);
     if (view > 0 && w > view + 1) {
@@ -508,7 +544,7 @@ function bridgeScript(nonce: string): string {
     }
     var total = auto * userZoom;
     // zoom 也作用在 body 自己的宽度上, 限宽要换算回缩放前的值。
-    body.style.maxWidth = view / total + "px";
+    body.style.maxWidth = text / total + "px";
     if (Math.abs(total - 1) > 0.001) body.style.zoom = String(total);
   }
   function report() {
@@ -583,8 +619,10 @@ function bridgeScript(nonce: string): string {
     if (e.source !== parent) return;
     var d = e.data;
     if (!d || d.type !== "czl-view" || typeof d.width !== "number" || !(d.width > 0)) return;
-    if (d.width === parentView) return;
+    var text = typeof d.text === "number" && d.text > 0 ? d.text : d.width;
+    if (d.width === parentView && text === parentText) return;
     parentView = d.width;
+    parentText = text;
     report();
   });
   // 父窗口送来的译文: 按 data-czl-tr 找到片段, 只写 textContent(不解析 HTML)。
