@@ -83,22 +83,22 @@ const (
 	restoreMaxDelay = 5 * time.Minute
 )
 
-// restoreWithRetry 在启动时恢复会话。凭据被拒就提示重新登录; 其它失败(开机时网络还没好、
+// restoreWithRetry 在启动时恢复一个登录的会话。凭据被拒就提示重新登录; 其它失败(开机时网络还没好、
 // 服务器在维护)退避重试, 直到连上 —— 否则离线启动的程序要等到重启才会开始同步。
-func (a *App) restoreWithRetry(cfg config.Config) {
+func (a *App) restoreWithRetry(si *signIn, cfg config.Config) {
 	delay := restoreMinDelay
 	for {
-		a.restoring.Store(true)
-		err := a.restoreSession(cfg)
-		a.restoring.Store(false)
+		si.restoring.Store(true)
+		err := a.restoreSession(si, cfg)
+		si.restoring.Store(false)
 		if err == nil {
 			return
 		}
 		if isCredentialError(err) {
-			a.requireSignIn(nil, err)
+			a.requireSignIn(si, nil, err)
 			return
 		}
-		a.log.Warn("restore session failed, will retry", "err", err, "retry_in", delay)
+		a.log.Warn("restore session failed, will retry", "signin", si.id, "err", err, "retry_in", delay)
 
 		select {
 		case <-a.ctx.Done():
@@ -111,8 +111,8 @@ func (a *App) restoreWithRetry(cfg config.Config) {
 
 		// 等待期间用户可能已经自己登录、退出或换了账号, 这时不该再拿旧配置去连。
 		a.mu.RLock()
-		superseded := a.client != nil || a.signInReason != "" ||
-			a.cfg.SessionEndpoint != cfg.SessionEndpoint || a.cfg.AuthMethod != cfg.AuthMethod
+		superseded := si.client != nil || si.reason != "" ||
+			si.cfg.SessionEndpoint != cfg.SessionEndpoint || si.cfg.AuthMethod != cfg.AuthMethod
 		a.mu.RUnlock()
 		if superseded {
 			return
@@ -124,48 +124,43 @@ func (a *App) restoreWithRetry(cfg config.Config) {
 //
 // 由请求协程调用, 核实放到后台。OAuth 先强制续期: 令牌可能只是被服务端提前作废,
 // 刷新令牌还能用; 续期也被拒才算失效。
-func (a *App) suspectCredentials(client *jmap.Client, cfg config.Config, httpClient *http.Client, tokens *auth.TokenSource) {
+func (a *App) suspectCredentials(si *signIn, client *jmap.Client, cfg config.Config, httpClient *http.Client, tokens *auth.TokenSource) {
 	a.mu.RLock()
-	current := a.client == client
+	current := si.client == client
 	a.mu.RUnlock()
 	// 登录过程中的 401(密码填错)由登录流程自己报错, 不归这里管。
-	if !current || !a.verifying.CompareAndSwap(false, true) {
+	if !current || !si.verifying.CompareAndSwap(false, true) {
 		return
 	}
 	go func() {
-		defer a.verifying.Store(false)
+		defer si.verifying.Store(false)
 		if tokens != nil {
 			tokens.MarkStale()
 		}
 		err := a.probeSession(cfg, httpClient)
 		if isCredentialError(err) {
-			a.requireSignIn(client, err)
+			a.requireSignIn(si, client, err)
 			return
 		}
 		a.log.Info("credentials still accepted after a rejected request", "probe_err", err)
 	}()
 }
 
-// requireSignIn 停掉同步并提示用户重新登录。client 非空时只在它仍是当前会话时生效。
-func (a *App) requireSignIn(client *jmap.Client, reason error) {
+// requireSignIn 停掉这个登录的同步并提示用户重新登录。client 非空时只在它仍是该登录的当前会话时生效。
+func (a *App) requireSignIn(si *signIn, client *jmap.Client, reason error) {
 	a.mu.Lock()
-	if client != nil && a.client != client {
+	if client != nil && si.client != client {
 		a.mu.Unlock()
 		return
 	}
-	if a.cancelSync != nil {
-		a.cancelSync()
-		a.cancelSync = nil
-	}
-	a.client = nil
-	a.sync = nil
-	first := a.signInReason == ""
-	a.signInReason = reason.Error()
-	username := a.cfg.Username
+	si.stopLocked()
+	first := si.reason == ""
+	si.reason = reason.Error()
+	username := si.cfg.Username
 	n := a.notifier
 	a.mu.Unlock()
 
-	a.log.Warn("credentials rejected, sign-in required", "reason", reason)
+	a.log.Warn("credentials rejected, sign-in required", "signin", si.id, "reason", reason)
 	a.emit(EventSignInRequired, reason.Error())
 
 	// 窗口多半缩在托盘里, 只在界面上提示用户看不到。
@@ -178,7 +173,7 @@ func (a *App) requireSignIn(client *jmap.Client, reason error) {
 	}
 }
 
-// RetrySession 用已保存的凭据再连一次。供"登录已失效"提示里的重试用:
+// RetrySession 用已保存的凭据再连一次主登录。供"登录已失效"提示里的重试用:
 // 服务器迁移、维护期间的拒绝可能是暂时的。
 func (a *App) RetrySession() error {
 	// 从磁盘读配置: 内存里的用户名已换成服务器返回的写法, 与密钥库条目名可能不一致。
@@ -189,5 +184,5 @@ func (a *App) RetrySession() error {
 	if !cfg.Configured() {
 		return errNotSignedIn
 	}
-	return a.restoreSession(cfg)
+	return a.restoreSession(&a.primary, cfg)
 }

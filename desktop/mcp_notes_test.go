@@ -23,7 +23,8 @@ func TestNoteMCPGates(t *testing.T) {
 	cfg := config.Config{SessionEndpoint: "https://invalid.example/jmap", Username: "test", AuthMethod: config.AuthPassword}
 	sum := sha256.Sum256([]byte(cfg.SessionEndpoint + "\x00" + cfg.Username))
 	key := hex.EncodeToString(sum[:])
-	a := &App{ctx: ctx, cfg: cfg, store: &store.Store{}}
+	a := &App{ctx: ctx, store: &store.Store{}}
+	a.primary.cfg = cfg
 	a.notes.services = map[string]*notes.Service{key: service}
 	service.Configure(notes.Config{Enabled: true, AllowRead: true, AllowWrite: true})
 	ct, st := mcp.NewInMemoryTransports()

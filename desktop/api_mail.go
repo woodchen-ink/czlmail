@@ -11,30 +11,9 @@ import (
 // 邮件的写操作。全部转交 syncer 走服务端 Email/set, 本地不先改 ——
 // 服务端接受后会推 StateChange, 增量同步把结果带回来, 只有一份真相。
 
-// currentSyncer 返回当前会话的同步器。
-//
-// 启动时会话在后台恢复 (要打网络, 几秒), 这期间界面已经能操作: 点通知冷启动后立刻打开邮件、
-// 刚启动就点同步, 都会先于会话到达。恢复正在进行时等它连上 (最多 20 秒), 而不是直接报未登录;
-// 离线退避的间隙里不等, 免得每个操作都卡住。
-func (a *App) currentSyncer() (*syncer.Syncer, error) {
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		a.mu.RLock()
-		s := a.sync
-		a.mu.RUnlock()
-		if s != nil {
-			return s, nil
-		}
-		if !a.restoring.Load() || time.Now().After(deadline) {
-			return nil, errNotSignedIn
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-}
-
 // FetchBody 拉取并缓存单封邮件的正文, 返回带正文的完整邮件。
 func (a *App) FetchBody(accountID, emailID string) (*store.EmailDetail, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +31,7 @@ func (a *App) FetchBody(accountID, emailID string) (*store.EmailDetail, error) {
 }
 
 func (a *App) MarkRead(accountID string, emailIDs []string, read bool) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -60,7 +39,7 @@ func (a *App) MarkRead(accountID string, emailIDs []string, read bool) error {
 }
 
 func (a *App) MarkFlagged(accountID string, emailIDs []string, flagged bool) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -68,7 +47,7 @@ func (a *App) MarkFlagged(accountID string, emailIDs []string, flagged bool) err
 }
 
 func (a *App) MoveEmails(accountID string, emailIDs []string, targetMailboxID string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -77,7 +56,7 @@ func (a *App) MoveEmails(accountID string, emailIDs []string, targetMailboxID st
 
 // SetPinned 置顶或取消置顶。置顶即 $pinned 关键字, 与 Bulwark 共用。
 func (a *App) SetPinned(accountID string, emailIDs []string, pinned bool) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -86,7 +65,7 @@ func (a *App) SetPinned(accountID string, emailIDs []string, pinned bool) error 
 
 // MarkMailboxRead 把整个文件夹标为已读(含本地未缓存的邮件), 返回处理的封数。
 func (a *App) MarkMailboxRead(accountID, mailboxID string) (int, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return 0, err
 	}
@@ -95,7 +74,7 @@ func (a *App) MarkMailboxRead(accountID, mailboxID string) (int, error) {
 
 // EmptyMailbox 彻底删除文件夹里的全部邮件, 不可撤销; 界面负责确认。返回删除的封数。
 func (a *App) EmptyMailbox(accountID, mailboxID string) (int, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return 0, err
 	}
@@ -126,7 +105,7 @@ func (a *App) TrashEmails(accountID string, emailIDs []string) error {
 
 // DeleteEmails 彻底销毁邮件, 不可撤销。
 func (a *App) DeleteEmails(accountID string, emailIDs []string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -143,7 +122,7 @@ type Identity struct {
 }
 
 func (a *App) ListIdentities(accountID string) ([]Identity, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +182,7 @@ type AttachmentRef struct {
 
 // SendEmail 发送一封邮件。
 func (a *App) SendEmail(req ComposeRequest) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(req.AccountID)
 	if err != nil {
 		return err
 	}
@@ -259,7 +238,7 @@ const maxSeparateRecipients = 100
 
 // SaveDraft 保存草稿, 返回新的草稿 id(每次保存都会换 id)。
 func (a *App) SaveDraft(req ComposeRequest) (string, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(req.AccountID)
 	if err != nil {
 		return "", err
 	}
@@ -289,7 +268,7 @@ func (a *App) DiscardDraft(accountID, draftID string) error {
 
 // MaxDelayedSend 返回账号允许的最长定时发送秒数, 0 表示不支持定时发送。
 func (a *App) MaxDelayedSend(accountID string) int {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return 0
 	}
@@ -340,7 +319,7 @@ func toSyncerAttachments(in []AttachmentRef) []syncer.Attachment {
 
 // UpdateSignature 修改发件身份的签名。
 func (a *App) UpdateSignature(accountID, identityID, textSignature string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -350,7 +329,7 @@ func (a *App) UpdateSignature(accountID, identityID, textSignature string) error
 
 // UpdateSignatureHTML 同时保存 HTML 签名与由它生成的纯文本签名。
 func (a *App) UpdateSignatureHTML(accountID, identityID, html, text string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -367,7 +346,7 @@ type ScheduledItem struct {
 
 // ListScheduledSends 列出等待发出的定时邮件。
 func (a *App) ListScheduledSends(accountID string) ([]ScheduledItem, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +370,7 @@ func (a *App) ListScheduledSends(accountID string) ([]ScheduledItem, error) {
 
 // CancelScheduledSend 取消定时发送, 邮件回到草稿箱。
 func (a *App) CancelScheduledSend(accountID, submissionID, emailID string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}

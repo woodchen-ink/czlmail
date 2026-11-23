@@ -475,7 +475,7 @@ var (
 
 // SaveContact 新建或修改联系人, 返回 id。
 func (a *App) SaveContact(f ContactForm) (string, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(f.AccountID)
 	if err != nil {
 		return "", err
 	}
@@ -815,7 +815,7 @@ func (a *App) resolveMembers(f *ContactForm) error {
 	if err != nil {
 		return err
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(f.AccountID)
 	if err != nil {
 		return err
 	}
@@ -854,7 +854,7 @@ func newUUID() string {
 
 // DeleteContacts 删除联系人。
 func (a *App) DeleteContacts(accountID string, ids []string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -864,7 +864,7 @@ func (a *App) DeleteContacts(accountID string, ids []string) error {
 
 // MoveContacts 把联系人移到同账号的另一个通讯录。
 func (a *App) MoveContacts(accountID string, ids []string, addressBookID string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -878,7 +878,7 @@ func (a *App) MoveContacts(accountID string, ids []string, addressBookID string)
 
 // SaveAddressBook 新建或重命名通讯录, 返回 id。
 func (a *App) SaveAddressBook(accountID, id, name string) (string, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return "", err
 	}
@@ -900,7 +900,7 @@ func (a *App) SaveAddressBook(accountID, id, name string) (string, error) {
 
 // DeleteAddressBook 删除通讯录及其中的联系人。
 func (a *App) DeleteAddressBook(accountID, id string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -946,7 +946,7 @@ func (a *App) EmailsWith(addresses []string, direction string, limit, offset int
 	}
 	var serverTotal int
 	complete := false
-	if s, err := a.currentSyncer(); err == nil {
+	if a.signedIn() {
 		accounts, err := st.Accounts(a.ctx)
 		if err != nil {
 			return CorrespondencePage{}, err
@@ -956,6 +956,11 @@ func (a *App) EmailsWith(addresses []string, direction string, limit, offset int
 		ctx, cancel := context.WithTimeout(a.ctx, fillPageTimeout)
 		for i, acc := range accounts {
 			wg.Go(func() {
+				s, err := a.syncerFor(acc.ID)
+				if err != nil {
+					totals[i] = -1
+					return
+				}
 				n, err := s.FillCorrespondencePage(ctx, acc.ID, addresses, direction, offset, limit)
 				if err != nil {
 					a.log.Warn("fill correspondence page", "account", acc.ID, "err", err)
@@ -1055,7 +1060,7 @@ func (a *App) serveContactPhoto(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case strings.HasPrefix(f.PhotoURL, "blob:"):
-		s, err := a.currentSyncer()
+		s, err := a.syncerFor(q.Get("account"))
 		if err != nil {
 			http.NotFound(w, r)
 			return

@@ -48,7 +48,7 @@ func (a *App) prefetchRecent(accountID string) {
 		if err != nil {
 			return
 		}
-		s, err := a.currentSyncer()
+		s, err := a.syncerFor(accountID)
 		if err != nil {
 			return
 		}
@@ -84,7 +84,7 @@ func (a *App) PrefetchBodies(accountID string, emailIDs []string) {
 				missing = append(missing, id)
 			}
 		}
-		s, err := a.currentSyncer()
+		s, err := a.syncerFor(accountID)
 		if err != nil || len(missing) == 0 {
 			return
 		}

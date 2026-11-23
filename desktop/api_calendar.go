@@ -302,7 +302,7 @@ type Attendee struct {
 
 // SaveEvent 新建或修改事件, 返回事件 id。
 func (a *App) SaveEvent(in EventInput) (string, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(in.AccountID)
 	if err != nil {
 		return "", err
 	}
@@ -444,7 +444,7 @@ func recurrenceRule(r *Recurrence) any {
 // patchOverride 修改重复事件的单次。事件还没有 recurrenceOverrides 时必须整体写入:
 // Stalwart 对不存在的父路径做 JSON Pointer 补丁会报 invalidProperties。
 func (a *App) patchOverride(accountID, eventID, recurrenceID string, override map[string]any) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -476,7 +476,7 @@ func (a *App) DeleteEvent(accountID, eventID, recurrenceID, scope string) error 
 	if scope == "this" && recurrenceID != "" {
 		return a.patchOverride(accountID, eventID, recurrenceID, map[string]any{"excluded": true})
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -511,7 +511,7 @@ func (a *App) MoveEvent(accountID, eventID, recurrenceID, newStart string) error
 	if recurrenceID != "" {
 		return a.patchOverride(accountID, eventID, recurrenceID, map[string]any{"start": target.Format(pim.LocalDateTime)})
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -522,7 +522,7 @@ func (a *App) MoveEvent(accountID, eventID, recurrenceID, newStart string) error
 
 // SetCalendarVisible 切换日历在视图中是否显示。存服务端 isVisible, 多端一致。
 func (a *App) SetCalendarVisible(accountID, calendarID string, visible bool) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}

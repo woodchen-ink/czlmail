@@ -12,7 +12,6 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
-	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
 func TestIntegrationFiltersVacation(t *testing.T) {
@@ -30,7 +29,7 @@ func TestIntegrationFiltersVacation(t *testing.T) {
 	st, _ := store.Open(ctx, filepath.Join(t.TempDir(), "f.db"))
 	defer st.Close()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	a := &App{ctx: ctx, log: log, store: st, client: client, sync: syncer.New(client, st, log)}
+	a := sessionTestApp(ctx, log, st, client)
 
 	f, err := a.GetFilters("c")
 	if err != nil {
@@ -76,8 +75,8 @@ func TestIntegrationMailboxAdmin(t *testing.T) {
 	st, _ := store.Open(ctx, filepath.Join(t.TempDir(), "m.db"))
 	defer st.Close()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	a := &App{ctx: ctx, log: log, store: st, client: client, sync: syncer.New(client, st, log)}
-	if err := a.sync.SyncAccount(ctx, "c"); err != nil {
+	a := sessionTestApp(ctx, log, st, client)
+	if err := a.primary.sync.SyncAccount(ctx, "c"); err != nil {
 		t.Fatal(err)
 	}
 	find := func(name string) string {

@@ -48,12 +48,6 @@ func (a *App) directory() []store.Recipient {
 	if directoryCache.list != nil && time.Since(directoryCache.at) < directoryTTL {
 		return directoryCache.list
 	}
-	a.mu.RLock()
-	client := a.client
-	a.mu.RUnlock()
-	if client == nil || client.Session == nil {
-		return nil
-	}
 	accountID := ""
 	if st, err := a.currentStore(); err == nil {
 		accountID = a.personalAccountID(st)
@@ -61,14 +55,19 @@ func (a *App) directory() []store.Recipient {
 	if accountID == "" {
 		return nil
 	}
+	// 不等启动时的会话恢复: 这里持有目录缓存的锁, 填收件人时不该卡住。
+	rt, err := a.routeWithin(accountID, 0)
+	if err != nil || rt.client.Session == nil {
+		return nil
+	}
 
 	req := &jmap.Request{Context: a.ctx}
 	req.Invoke(&jmapx.Call{Method: "Principal/get", Args: map[string]any{
-		"accountId":  accountID,
+		"accountId":  rt.serverID,
 		"ids":        nil,
 		"properties": []string{"id", "type", "name", "email", "description"},
 	}})
-	resp, err := a.doJMAP(req)
+	resp, err := rt.do(req)
 	if err != nil {
 		a.log.Warn("load principal directory", "err", err)
 		return nil

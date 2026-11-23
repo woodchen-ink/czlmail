@@ -56,15 +56,16 @@ func (a *App) GetSessionStatus() SessionStatus {
 	})
 	a.mu.RLock()
 	defer a.mu.RUnlock()
+	si := &a.primary
 	return SessionStatus{
-		Configured: a.cfg.Configured(),
-		Connected:  a.client != nil,
-		Username:   a.cfg.Username,
-		Server:     a.cfg.ServerHost,
-		AuthMethod: a.cfg.AuthMethod,
+		Configured: si.cfg.Configured(),
+		Connected:  si.client != nil,
+		Username:   si.cfg.Username,
+		Server:     si.cfg.ServerHost,
+		AuthMethod: si.cfg.AuthMethod,
 
-		SignInRequired: a.signInReason != "",
-		SignInReason:   a.signInReason,
+		SignInRequired: si.reason != "",
+		SignInReason:   si.reason,
 	}
 }
 
@@ -77,14 +78,10 @@ func (a *App) SignOut() error {
 	a.stopPush()
 
 	a.mu.Lock()
-	cfg := a.cfg
-	if a.cancelSync != nil {
-		a.cancelSync()
-		a.cancelSync = nil
-	}
-	a.client = nil
-	a.sync = nil
-	a.signInReason = ""
+	si := &a.primary
+	cfg := si.cfg
+	si.stopLocked()
+	si.reason = ""
 	a.mu.Unlock()
 
 	var err error
@@ -100,7 +97,7 @@ func (a *App) SignOut() error {
 	// 配置一并清掉, 否则下次启动 Configured() 仍为真, 界面会进入一个
 	// 连不上服务器的邮件页, 而不是回到登录页。
 	a.mu.Lock()
-	a.cfg = config.Config{}
+	si.cfg = config.Config{}
 	a.mu.Unlock()
 	// 系统里登记的日程提醒 (移动端) 跟着清掉: 退出后不该再替这个账号弹通知。
 	a.planRemindersSoon(true)
@@ -154,7 +151,7 @@ func (a *App) fillMailboxPage(st *store.Store, accountID, mailboxID string, limi
 	if err != nil || local >= total {
 		return
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return
 	}
@@ -217,7 +214,7 @@ func (a *App) SearchEmailsOnServer(accountID, query string, limit int) ([]store.
 // searchAccountOnServer 合并某账号的服务端与本地检索结果, 按时间倒序取前 limit 封。
 func (a *App) searchAccountOnServer(st *store.Store, accountID, query string, limit int) ([]store.EmailSummary, error) {
 	var remote []string
-	if s, err := a.currentSyncer(); err == nil {
+	if s, err := a.syncerFor(accountID); err == nil {
 		ctx, cancel := context.WithTimeout(a.ctx, fillPageTimeout)
 		remote, err = s.SearchServer(ctx, accountID, query, limit)
 		cancel()
@@ -268,7 +265,7 @@ func (a *App) LocateEmail(accountID, emailID, preferMailboxID string) (store.Ema
 // ensureEmail 在本机缓存没有某封邮件时向服务器取它的元数据, 返回取到没有。
 // 按 id 打开邮件的入口 (通知、czlmail:// 链接、通讯录往来) 都先查本地, 查不到再走这里, 不直接报"找不到"。
 func (a *App) ensureEmail(accountID, emailID string) bool {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return false
 	}
@@ -283,7 +280,7 @@ func (a *App) ensureEmail(accountID, emailID string) bool {
 
 // SyncNow 立即同步一个账号, 供界面上的手动刷新使用。
 func (a *App) SyncNow(accountID string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -294,7 +291,7 @@ func (a *App) SyncNow(accountID string) error {
 
 // resyncPIM 增量同步某账号的一类日历/通讯录/文件对象, 供按 id 读取时本机缺失的兜底; 返回是否已同步。
 func (a *App) resyncPIM(accountID, typeName string) bool {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return false
 	}

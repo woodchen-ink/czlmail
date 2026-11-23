@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
@@ -16,6 +15,7 @@ import (
 	_ "git.sr.ht/~rockorager/go-jmap/mail" // 注册 Mail capability 与方法
 	"golang.org/x/oauth2"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
@@ -39,32 +39,16 @@ type App struct {
 	ctx         context.Context
 	log         *slog.Logger
 
-	mu     sync.RWMutex
-	store  *store.Store
-	client *jmap.Client
-	sync   *syncer.Syncer
-	cfg    config.Config
+	mu    sync.RWMutex
+	store *store.Store
+	// primary 是主登录 (见 signins.go)。
+	primary signIn
 
 	notifier notify.Notifier
 	// uiLocale 是界面当前语言 (SetUILocale), 用于后端自己发出的通知文案。
 	uiLocale string
 	// reminders 是移动端交给系统的定时日程提醒 (reminders_schedule.go)。
 	reminders reminderSchedule
-
-	// signInReason 非空表示服务器已明确拒绝保存的凭据, 同步已停, 等用户重新登录。
-	// 内容是带错误码的原因, 会话重新建立时清空。
-	signInReason string
-	// verifying 保证同一时刻只有一次"凭据是否真的失效"的核实在跑。
-	verifying atomic.Bool
-	// restoring 在启动时恢复会话的那次连接进行中为 true, 期间需要会话的调用等它连上 (见 currentSyncer)。
-	restoring atomic.Bool
-
-	// cancelSync 停掉后台同步循环, 用于重新登录时重建会话。
-	cancelSync context.CancelFunc
-	// cancelSignIn 中止正在进行的浏览器授权流程。
-	// signInGen 标识当前流程, 使收尾时能分辨句柄归属。
-	cancelSignIn context.CancelFunc
-	signInGen    uint64
 
 	// ready 在启动时读完配置后关闭。界面启动时查询会话状态要等它,
 	// 否则会在库还没打开时读到"未配置", 把已登录的用户显示成登录页。
@@ -94,7 +78,7 @@ func (a *App) startup(ctx context.Context) {
 		a.log.Error("load config", "err", err)
 	}
 	a.mu.Lock()
-	a.cfg = cfg
+	a.primary.cfg = cfg
 	a.mu.Unlock()
 
 	dbPath, err := config.DatabasePath()
@@ -140,7 +124,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// 已有凭据就静默恢复会话。放后台是因为它要打网络,
 	// 挡在这里会让窗口迟迟不出现。
-	go a.restoreWithRetry(cfg)
+	go a.restoreWithRetry(&a.primary, cfg)
 }
 
 // processStart 记进程启动时刻, 启动各阶段的日志带上距此的耗时, 排查白屏用。
@@ -157,8 +141,10 @@ func (a *App) shutdown(ctx context.Context) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if a.cancelSync != nil {
-		a.cancelSync()
+	for _, si := range a.signInsLocked() {
+		if si.cancelSync != nil {
+			si.cancelSync()
+		}
 	}
 	if a.notifier != nil {
 		if err := a.notifier.Close(); err != nil {
@@ -172,8 +158,8 @@ func (a *App) shutdown(ctx context.Context) {
 	}
 }
 
-// restoreSession 用已保存的凭据重建会话, 按登录方式分派。
-func (a *App) restoreSession(cfg config.Config) error {
+// restoreSession 用已保存的凭据重建这个登录的会话, 按登录方式分派。
+func (a *App) restoreSession(si *signIn, cfg config.Config) error {
 	if cfg.AuthMethod == config.AuthPassword {
 		pass, err := config.LoadPassword(cfg.SessionEndpoint, cfg.Username)
 		if err != nil {
@@ -182,12 +168,12 @@ func (a *App) restoreSession(cfg config.Config) error {
 		if pass == "" {
 			return errNoStoredCredential
 		}
-		return a.connect(cfg, basicAuthClient(cfg.Username, pass), nil)
+		return a.connect(si, cfg, basicAuthClient(cfg.Username, pass), nil)
 	}
-	return a.restoreOAuthSession(cfg)
+	return a.restoreOAuthSession(si, cfg)
 }
 
-func (a *App) restoreOAuthSession(cfg config.Config) error {
+func (a *App) restoreOAuthSession(si *signIn, cfg config.Config) error {
 	tok, err := config.LoadToken(cfg.Issuer)
 	if err != nil {
 		return err
@@ -211,7 +197,7 @@ func (a *App) restoreOAuthSession(cfg config.Config) error {
 		meta = cachedMetadata(cfg)
 	}
 	httpClient, src := a.oauthClient(cfg, meta, tok)
-	return a.connect(cfg, httpClient, src)
+	return a.connect(si, cfg, httpClient, src)
 }
 
 // oauthClient 构造自动续期的 Bearer 客户端。一并返回令牌源, 供服务器拒绝令牌时强制续期。
@@ -254,9 +240,9 @@ func (a *App) waitReady(timeout time.Duration) {
 	}
 }
 
-// connect 用已认证的 HTTP 客户端建立 JMAP 会话并启动后台同步。
+// connect 用已认证的 HTTP 客户端为这个登录建立 JMAP 会话并启动后台同步。
 // tokens 是 OAuth 的令牌源, 密码登录传 nil。
-func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.TokenSource) error {
+func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, tokens *auth.TokenSource) error {
 	a.waitReady(30 * time.Second)
 	if _, err := a.currentStore(); err != nil {
 		return err
@@ -265,7 +251,7 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.T
 	// 会话建立后的每个请求(同步、推送、附件)都经过这层: 凭据中途失效时没有哪一处会主动报告,
 	// 同步循环只会当成断线一直重连。
 	client.HttpClient = auth.Watch(httpClient, func() {
-		a.suspectCredentials(client, cfg, httpClient, tokens)
+		a.suspectCredentials(si, client, cfg, httpClient, tokens)
 	})
 	// go-jmap 的 Authenticate 不接受 context, 客户端又不能设全局超时(推送连接是长连接),
 	// 在这里单独限时, 服务器无响应时报错而不是让登录界面一直转圈。
@@ -291,12 +277,12 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.T
 
 	a.mu.Lock()
 	st := a.store
-	if a.cancelSync != nil {
-		a.cancelSync()
+	if si.cancelSync != nil {
+		si.cancelSync()
 	}
-	a.client = client
-	a.cfg = cfg
-	a.signInReason = ""
+	si.client = client
+	si.cfg = cfg
+	si.reason = ""
 	s := syncer.New(client, st, a.log)
 	s.OnNewMail = a.onNewMail
 	s.OnChanged = func(accountID string) {
@@ -320,15 +306,15 @@ func (a *App) connect(cfg config.Config, httpClient *http.Client, tokens *auth.T
 			a.syncDriveSoon()
 		}
 	}
-	a.sync = s
+	si.sync = s
 
 	// 同步循环的生命周期跟随应用而不是跟随某次调用, 因此从 a.ctx 派生。
 	syncCtx, cancel := context.WithCancel(a.ctx)
-	s.OnAccountsChanged = func(diff syncer.AccountDiff) { a.onAccountsChanged(syncCtx, client, st, diff) }
-	a.cancelSync = cancel
+	s.OnAccountsChanged = func(diff syncer.AccountDiff) { a.onAccountsChanged(syncCtx, si, client, st, diff) }
+	si.cancelSync = cancel
 	a.mu.Unlock()
 
-	if err := a.persistAccounts(syncCtx, client, st); err != nil {
+	if err := a.persistAccounts(syncCtx, si, client, st); err != nil {
 		a.log.Error("persist accounts", "err", err)
 	}
 	// 程序关着时被撤销的共享: 缓存里有、会话里没有。这里只记下, 之后的重读会话确认了再删。
@@ -365,13 +351,15 @@ func (a *App) classifyAuthFailure(cfg config.Config, httpClient *http.Client, ca
 }
 
 // persistAccounts 把会话里发现的账号写进缓存, 供界面在离线时也能列出账号。
-func (a *App) persistAccounts(ctx context.Context, client *jmap.Client, st *store.Store) error {
+// 缓存里存本机账号 id (带这个登录的前缀)。
+func (a *App) persistAccounts(ctx context.Context, si *signIn, client *jmap.Client, st *store.Store) error {
 	accounts := make([]store.Account, 0, len(client.Session.Accounts))
 	caps := make(map[string][]string, len(client.Session.Accounts))
 
 	for id, acc := range client.Session.Accounts {
+		local := accountid.Join(si.id, string(id))
 		accounts = append(accounts, store.Account{
-			ID:         string(id),
+			ID:         local,
 			Name:       acc.Name,
 			IsPersonal: acc.IsPersonal,
 		})
@@ -379,7 +367,7 @@ func (a *App) persistAccounts(ctx context.Context, client *jmap.Client, st *stor
 		for uri := range acc.RawCapabilities {
 			list = append(list, string(uri))
 		}
-		caps[string(id)] = list
+		caps[local] = list
 	}
 
 	return st.WithTx(ctx, func(tx *sql.Tx) error {
@@ -390,11 +378,11 @@ func (a *App) persistAccounts(ctx context.Context, client *jmap.Client, st *stor
 // onAccountsChanged 在运行中重读会话发现账号变化时更新缓存并通知界面。
 // 失去访问的账号缓存已由 syncer 删掉; 新账号的邮件随后由 syncer 引导, 落库后照常发 mail:changed。
 // ctx 是这次会话的同步上下文: 退出登录后迟到的回调不再写库。
-func (a *App) onAccountsChanged(ctx context.Context, client *jmap.Client, st *store.Store, diff syncer.AccountDiff) {
+func (a *App) onAccountsChanged(ctx context.Context, si *signIn, client *jmap.Client, st *store.Store, diff syncer.AccountDiff) {
 	if ctx.Err() != nil {
 		return
 	}
-	if err := a.persistAccounts(ctx, client, st); err != nil {
+	if err := a.persistAccounts(ctx, si, client, st); err != nil {
 		a.log.Error("persist accounts", "err", err)
 	}
 	a.emit(EventAccountsChanged)

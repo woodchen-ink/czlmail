@@ -11,10 +11,14 @@ import (
 // 文件夹管理: 新建、重命名、移动、删除。
 
 func (a *App) setMailbox(accountID string, set *mailbox.Set) error {
+	rt, err := a.route(accountID)
+	if err != nil {
+		return err
+	}
 	req := &jmap.Request{Context: a.ctx}
-	set.Account = jmap.ID(accountID)
+	set.Account = jmap.ID(rt.serverID)
 	req.Invoke(set)
-	resp, err := a.doJMAP(req)
+	resp, err := rt.do(req)
 	if err != nil {
 		return err
 	}
@@ -38,10 +42,7 @@ func (a *App) setMailbox(accountID string, set *mailbox.Set) error {
 			}
 		}
 	}
-	if s, err := a.currentSyncer(); err == nil {
-		return s.SyncAccount(a.ctx, accountID)
-	}
-	return nil
+	return rt.sync.SyncAccount(a.ctx, accountID)
 }
 
 // CreateMailbox 新建文件夹, parentID 为空表示顶层。

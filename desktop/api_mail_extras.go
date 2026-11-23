@@ -20,7 +20,7 @@ import (
 
 // LoadListHeaders 补查正文早已缓存、还没有退订信息的邮件。
 func (a *App) LoadListHeaders(accountID, emailID string) (store.Unsubscribe, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return store.Unsubscribe{}, err
 	}
@@ -29,7 +29,7 @@ func (a *App) LoadListHeaders(accountID, emailID string) (store.Unsubscribe, err
 
 // GetHeaderInfo 取阅读栏「显示详情」要的邮件头信息: 发件认证、垃圾评分、投递地址等。
 func (a *App) GetHeaderInfo(accountID, emailID string) (syncer.HeaderInfo, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return syncer.HeaderInfo{}, err
 	}
@@ -172,11 +172,15 @@ func (a *App) parseInvite(accountID, emailID string) (map[string]any, error) {
 	if blobID == "" {
 		return nil, nil
 	}
+	rt, err := a.route(accountID)
+	if err != nil {
+		return nil, err
+	}
 	req := &jmap.Request{Context: a.ctx}
 	req.Invoke(&jmapx.Call{Method: jmapx.CalendarEvent + "/parse", Args: map[string]any{
-		"accountId": accountID, "blobIds": []string{blobID},
+		"accountId": rt.serverID, "blobIds": []string{blobID},
 	}})
-	resp, err := a.doJMAP(req)
+	resp, err := rt.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +272,7 @@ func (a *App) AddInviteToCalendar(accountID, emailID, status string) (string, er
 		}
 		delete(obj, "id")
 		obj["calendarIds"] = map[string]bool{calID: true}
-		s, err := a.currentSyncer()
+		s, err := a.syncerFor(accountID)
 		if err != nil {
 			return "", err
 		}
@@ -398,7 +402,7 @@ func (a *App) SendReadReceipt(accountID, emailID string) error {
 
 // IgnoreReadReceipt 不发回执, 只打标记, 以后不再提示。
 func (a *App) IgnoreReadReceipt(accountID, emailID string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}

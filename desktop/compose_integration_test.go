@@ -13,7 +13,6 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
-	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
 func TestIntegrationDraftAndScheduled(t *testing.T) {
@@ -31,11 +30,11 @@ func TestIntegrationDraftAndScheduled(t *testing.T) {
 	st, _ := store.Open(ctx, filepath.Join(t.TempDir(), "d.db"))
 	defer st.Close()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	a := &App{ctx: ctx, log: log, store: st, client: client, sync: syncer.New(client, st, log)}
-	a.cfg.Username = user
-	_ = a.persistAccounts(ctx, client, st)
+	a := sessionTestApp(ctx, log, st, client)
+	a.primary.cfg.Username = user
+	_ = a.persistAccounts(ctx, &a.primary, client, st)
 	acc := a.personalAccountID(st)
-	if err := a.sync.SyncAccount(ctx, acc); err != nil {
+	if err := a.primary.sync.SyncAccount(ctx, acc); err != nil {
 		t.Fatal(err)
 	}
 	ids, _ := a.ListIdentities(acc)

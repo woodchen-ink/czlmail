@@ -31,7 +31,7 @@ var (
 // PullMailbox 在后台开始拉取, 立即返回。同一文件夹正在拉取时返回错误,
 // 避免用户连点两次跑出两条互相重复下载的任务。
 func (a *App) PullMailbox(accountID, mailboxID string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}

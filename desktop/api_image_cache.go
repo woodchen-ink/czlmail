@@ -135,7 +135,7 @@ func (a *App) cachedBlob(ctx context.Context, accountID, blobID string) ([]byte,
 			return data, nil
 		}
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, err
 	}

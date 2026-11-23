@@ -133,9 +133,7 @@ func (a *App) TemplatePlaceholders(id string) (map[string][]string, error) {
 }
 
 func (a *App) displayName() string {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.cfg.Username
+	return a.primaryConfig().Username
 }
 
 func newID() (string, error) {

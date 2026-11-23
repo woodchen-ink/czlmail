@@ -11,7 +11,6 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
-	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
 func TestIntegrationDirectory(t *testing.T) {
@@ -28,8 +27,8 @@ func TestIntegrationDirectory(t *testing.T) {
 	st, _ := store.Open(ctx, filepath.Join(t.TempDir(), "d.db"))
 	defer st.Close()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	a := &App{ctx: ctx, log: log, store: st, client: client, sync: syncer.New(client, st, log)}
-	_ = a.persistAccounts(ctx, client, st)
+	a := sessionTestApp(ctx, log, st, client)
+	_ = a.persistAccounts(ctx, &a.primary, client, st)
 	got, err := a.SearchDirectory("zn")
 	t.Logf("directory size=%d result=%v err=%v", len(a.directory()), got, err)
 	if len(got) == 0 {
