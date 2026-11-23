@@ -53,7 +53,7 @@ func (a *App) imageStore() (*imgcache.Cache, *http.Client) {
 func (a *App) serveRemoteImage(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("url")
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" {
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -66,7 +66,7 @@ func (a *App) serveRemoteImage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	data, typ, err := fetchRemoteImage(r.Context(), client, u.String())
+	data, typ, err := fetchRemoteImageUpgrading(r.Context(), client, u)
 	if err != nil {
 		// 只记主机: 完整地址里常带收件人标识。
 		a.log.Warn("fetch remote image", "host", u.Host, "err", err)
@@ -84,6 +84,24 @@ func (a *App) serveRemoteImage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeCachedImage(w, typ, data)
+}
+
+// fetchRemoteImageUpgrading 下载远程图片。http 地址先试同一地址的 https,
+// 只有它失败(证书不对、站点不支持 https、不是图片)才退回原来的 http:
+// 很多新闻信只写 http 地址, 站点本身却早已支持 https。
+func fetchRemoteImageUpgrading(ctx context.Context, client *http.Client, u *url.URL) ([]byte, string, error) {
+	if u.Scheme == "https" {
+		return fetchRemoteImage(ctx, client, u.String())
+	}
+	secure := *u
+	secure.Scheme = "https"
+	if data, typ, err := fetchRemoteImage(ctx, client, secure.String()); err == nil && typ != "" {
+		return data, typ, nil
+	}
+	if ctx.Err() != nil {
+		return nil, "", ctx.Err()
+	}
+	return fetchRemoteImage(ctx, client, u.String())
 }
 
 func fetchRemoteImage(ctx context.Context, client *http.Client, target string) ([]byte, string, error) {
