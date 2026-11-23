@@ -14,6 +14,7 @@ import {
   MailCheck,
   Paperclip,
   Send,
+  ShieldCheck,
   Sparkles,
   Users,
   X,
@@ -144,6 +145,8 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
   const [attachments, setAttachments] = useState<UploadedAttachment[]>(draft.attachments ?? []);
   const [receipt, setReceipt] = useState(false);
   const [separately, setSeparately] = useState(false);
+  // 用户对 S/MIME 签名开关的选择, 只对选择时的发件地址有效; 换了发件人就回到该地址的默认值。
+  const [signChoice, setSignChoice] = useState<{ email: string; on: boolean } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [maxDelay, setMaxDelay] = useState(0);
@@ -252,6 +255,10 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
     return "";
   }, [identity]);
   const separator = settings?.signatureSeparator ?? true;
+  const smime = identity ? settings?.smimeSigning?.[identity.email.toLowerCase()] : undefined;
+  // S/MIME 签名开关只在所选发件地址配置了证书时出现, 默认值取该地址的「写信时默认签名」。
+  const canSign = !!smime?.thumbprint;
+  const sign = canSign && (signChoice && signChoice.email === identity?.email ? signChoice.on : !!smime?.auto);
 
   const markDirty = useCallback(() => {
     dirty.current = true;
@@ -281,6 +288,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       requestReadReceipt: receipt,
       sendAt: "",
       sendSeparately: separately,
+      sign: canSign && sign,
     });
   }
 
@@ -703,6 +711,11 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
         <IconBtn label={receipt ? t("已请求已读回执") : t("请求已读回执")} active={receipt} onClick={() => (setReceipt(!receipt), markDirty())}>
           <MailCheck />
         </IconBtn>
+        {canSign && (
+          <IconBtn label={sign ? t("加数字签名：这封邮件将带数字签名") : t("加数字签名")} active={sign} onClick={() => identity && setSignChoice({ email: identity.email, on: !sign })}>
+            <ShieldCheck />
+          </IconBtn>
+        )}
         <IconBtn
           label={separately ? t("分开发送：每位收件人单独收到一封") : t("分开发送")}
           active={separately}

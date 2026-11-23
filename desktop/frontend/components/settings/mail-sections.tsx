@@ -4,7 +4,7 @@ import { dateLocale, t, tContext } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarClock, Folder, FolderPlus, Loader2, MoreHorizontal, Star, X } from "lucide-react";
+import { CalendarClock, Folder, FolderPlus, Loader2, MoreHorizontal, ShieldCheck, Star, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { RichEditor } from "@/components/compose/rich-editor";
@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { api, errorMessage, type Account, type Identity, type Mailbox, type ScheduledItem, type Vacation } from "@/lib/api";
+import { api, errorMessage, type Account, type Identity, type Mailbox, type ScheduledItem, type SigningCertificate, type Vacation } from "@/lib/api";
 import { htmlToText, isHtmlEmpty, sanitizeInline, textToHtml } from "@/lib/html";
 import { main } from "@/wailsjs/go/models";
 
@@ -31,6 +31,9 @@ export function IdentitiesSection({ active }: { active: boolean }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [identities, setIdentities] = useState<Record<string, Identity[]>>({});
   const [editing, setEditing] = useState<{ accountId: string; identity: Identity } | null>(null);
+  // null = 系统不支持证书存储 (非 Windows), 不显示签名设置。
+  const [certs, setCerts] = useState<SigningCertificate[] | null>(null);
+  const [smimeFor, setSmimeFor] = useState<Identity | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -46,6 +49,14 @@ export function IdentitiesSection({ active }: { active: boolean }) {
   useEffect(() => {
     if (active) load();
   }, [active, load]);
+
+  useEffect(() => {
+    if (!active) return;
+    api
+      .listSigningCertificates()
+      .then((list) => setCerts(list ?? []))
+      .catch(() => setCerts(null));
+  }, [active]);
 
   return (
     <>
@@ -77,6 +88,7 @@ export function IdentitiesSection({ active }: { active: boolean }) {
                     ) : (
                       <p className="text-muted-foreground mt-1 line-clamp-3 text-xs whitespace-pre-wrap">{id.textSignature || t("未设置签名")}</p>
                     )}
+                    {certs && <SmimeSummary identity={id} certs={certs} choice={settings?.smimeSigning?.[id.email.toLowerCase()]} />}
                   </div>
                   <div className="flex shrink-0 gap-1">
                     {!isDefault && list.length > 1 && (
@@ -91,6 +103,11 @@ export function IdentitiesSection({ active }: { active: boolean }) {
                     )}
                     <Button variant="outline" size="sm" onClick={() => setEditing({ accountId: acc.id, identity: id })}>
                       {t("编辑签名")}</Button>
+                    {certs && (
+                      <Button variant="outline" size="sm" disabled={!settings} onClick={() => setSmimeFor(id)}>
+                        <ShieldCheck className="size-4" />
+                        {t("数字签名")}</Button>
+                    )}
                   </div>
                 </div>
               );
@@ -98,6 +115,23 @@ export function IdentitiesSection({ active }: { active: boolean }) {
           </Card>
         );
       })}
+
+      {smimeFor && certs && settings && (
+        <SmimeDialog
+          identity={smimeFor}
+          certs={certs}
+          choice={settings.smimeSigning?.[smimeFor.email.toLowerCase()]}
+          onClose={() => setSmimeFor(null)}
+          onSave={(choice) => {
+            const next = { ...(settings.smimeSigning ?? {}) };
+            const key = smimeFor.email.toLowerCase();
+            if (choice) next[key] = main.SmimeChoice.createFrom(choice);
+            else delete next[key];
+            save({ smimeSigning: next });
+            setSmimeFor(null);
+          }}
+        />
+      )}
 
       {editing && (
         <SignatureDialog
@@ -111,6 +145,107 @@ export function IdentitiesSection({ active }: { active: boolean }) {
         />
       )}
     </>
+  );
+}
+
+/** 证书能否给这个地址签名: 没有问题码且证书上有这个地址。 */
+function certFits(c: SigningCertificate, email: string) {
+  return !c.problem && (c.emails ?? []).some((e) => e.toLowerCase() === email.toLowerCase());
+}
+
+function certDate(v: unknown) {
+  return new Date(String(v)).toLocaleDateString(dateLocale());
+}
+
+function SmimeSummary({ identity, certs, choice }: { identity: Identity; certs: SigningCertificate[]; choice?: main.SmimeChoice }) {
+  useI18n();
+  if (!choice?.thumbprint) return null;
+  const cert = certs.find((c) => c.thumbprint === choice.thumbprint);
+  const ok = !!cert && certFits(cert, identity.email);
+  return (
+    <p className={cn("mt-1.5 flex items-center gap-1.5 text-xs", ok ? "text-muted-foreground" : "text-destructive")}>
+      <ShieldCheck className="size-3.5 shrink-0" />
+      <span className="truncate">
+        {!cert
+          ? t("签名证书已不在系统证书存储中")
+          : !ok
+            ? t("签名证书不能用于这个地址：{0}", cert.subject)
+            : choice.auto
+              ? t("数字签名：{0}，有效期至 {1}，默认签名", cert.subject, certDate(cert.notAfter))
+              : t("数字签名：{0}，有效期至 {1}", cert.subject, certDate(cert.notAfter))}
+      </span>
+    </p>
+  );
+}
+
+function SmimeDialog({
+  identity,
+  certs,
+  choice,
+  onClose,
+  onSave,
+}: {
+  identity: Identity;
+  certs: SigningCertificate[];
+  choice?: main.SmimeChoice;
+  onClose: () => void;
+  onSave: (choice: { thumbprint: string; auto: boolean } | null) => void;
+}) {
+  useI18n();
+  const usable = certs.filter((c) => certFits(c, identity.email));
+  const others = certs.length - usable.length;
+  const [thumbprint, setThumbprint] = useState(
+    choice?.thumbprint && usable.some((c) => c.thumbprint === choice.thumbprint) ? choice.thumbprint : (usable[0]?.thumbprint ?? ""),
+  );
+  const [auto, setAuto] = useState(choice?.auto ?? false);
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t("数字签名 (S/MIME)")}</DialogTitle>
+        </DialogHeader>
+        <p className="text-muted-foreground text-sm">
+          {t("用系统证书存储里的证书给 {0} 发出的邮件签名。收件人能确认邮件确实来自你、途中没有被改动。", identity.email)}
+        </p>
+        {usable.length === 0 ? (
+          <p className="text-sm">{t("系统证书存储里没有可用于这个地址的签名证书（需要带私钥、包含这个邮箱地址且仍在有效期内）。")}</p>
+        ) : (
+          <div className="grid gap-1.5" role="radiogroup" aria-label={t("签名证书")}>
+            {usable.map((c) => (
+              <label
+                key={c.thumbprint}
+                className={cn("border-border flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2", thumbprint === c.thumbprint && "border-primary")}
+              >
+                <input type="radio" name="smime-cert" className="mt-1" checked={thumbprint === c.thumbprint} onChange={() => setThumbprint(c.thumbprint)} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{c.subject}</span>
+                  <span className="text-muted-foreground block truncate text-xs">{t("颁发者：{0}，有效期至 {1}", c.issuer, certDate(c.notAfter))}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+        {others > 0 && <p className="text-muted-foreground text-xs">{t("另有 {0} 张证书不能用于这个地址（已过期、不含这个地址或不能签名邮件）。", others)}</p>}
+        {usable.length > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="smime-auto" className="text-sm font-normal">
+              {t("写信时默认签名")}</Label>
+            <Switch id="smime-auto" checked={auto} onCheckedChange={setAuto} />
+          </div>
+        )}
+        <DialogFooter>
+          {choice?.thumbprint && (
+            <Button variant="ghost" className="sm:mr-auto" onClick={() => onSave(null)}>
+              {t("不再签名")}</Button>
+          )}
+          <Button variant="outline" onClick={onClose}>
+            {t("取消")}</Button>
+          <Button disabled={!thumbprint} onClick={() => onSave({ thumbprint, auto })}>
+            {t("保存")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

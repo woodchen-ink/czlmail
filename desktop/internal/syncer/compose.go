@@ -1,6 +1,7 @@
 package syncer
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -50,6 +51,9 @@ type Draft struct {
 	SendAt time.Time
 	// ReplaceDraftID 是被这次发送/保存取代的旧草稿, 成功后删除。
 	ReplaceDraftID string
+	// Sign 非空时发送前给整封邮件加签名 (S/MIME): 收到服务器组装好的 RFC 5322 原文,
+	// 返回签过名的原文。签不了就不发 —— 绝不在用户要求签名时发出未签名的邮件。
+	Sign func(raw []byte) ([]byte, error)
 }
 
 // Attachment 是对一个已上传 blob 的引用。
@@ -121,6 +125,10 @@ func (s *Syncer) Send(ctx context.Context, d Draft, draftMailboxID, sentMailboxI
 		}
 	}
 
+	if d.Sign != nil {
+		return s.sendSigned(ctx, d, msg, envelope, draftMailboxID, sentMailboxID)
+	}
+
 	const createID = jmap.ID("draft")
 	req := &jmap.Request{Context: ctx}
 
@@ -175,6 +183,144 @@ func (s *Syncer) Send(ctx context.Context, d Draft, draftMailboxID, sentMailboxI
 		}
 	}
 	return s.SyncMail(ctx, d.AccountID)
+}
+
+// sendSigned 发送签名邮件。签名必须覆盖发出去的每个字节, 所以不能让服务器在提交时再组装:
+//
+//  1. Email/set 建一封临时草稿, 让服务器照常组装 MIME (结构与未签名发送完全一致), 取回原文;
+//  2. d.Sign 把原文改成 multipart/signed, 上传后 Email/import 进草稿箱;
+//  3. 提交导入的那封, 成功后照常移到已发送, 同时删除临时草稿。
+//
+// 任何一步失败都清理已建的临时邮件并返回错误; 用户原来的草稿 (ReplaceDraftID) 只在成功后删除。
+func (s *Syncer) sendSigned(ctx context.Context, d Draft, msg *email.Email, envelope *emailsubmission.Envelope, draftMailboxID, sentMailboxID string) error {
+	tmpID, blobID, err := s.createForSigning(ctx, d, msg)
+	if err != nil {
+		return err
+	}
+	var leftovers []jmap.ID
+	leftovers = append(leftovers, tmpID)
+	defer func() {
+		if len(leftovers) == 0 {
+			return
+		}
+		// 用独立的 context: 发送被取消时也要把临时邮件删掉。
+		cctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := s.setEmails(cctx, &email.Set{Account: s.server(d.AccountID), Destroy: leftovers}); err != nil {
+			s.log.Warn("destroy temporary signing copies", "err", err)
+		}
+	}()
+
+	raw, err := s.RawMessage(ctx, d.AccountID, blobID)
+	if err != nil {
+		return err
+	}
+	signed, err := d.Sign(raw)
+	if err != nil {
+		return err
+	}
+	up, err := s.uploadBlob(ctx, d.AccountID, "message/rfc822", bytes.NewReader(signed))
+	if err != nil {
+		return wrap(CodeRequest, "upload signed message", err)
+	}
+
+	imp := &jmap.Request{Context: ctx}
+	imp.Invoke(&email.Import{
+		Account: s.server(d.AccountID),
+		Emails: map[string]*email.EmailImport{
+			"signed": {
+				BlobID:     up.ID,
+				MailboxIDs: map[jmap.ID]bool{jmap.ID(draftMailboxID): true},
+				Keywords:   map[string]bool{"$draft": true, "$seen": true},
+			},
+		},
+	})
+	resp, err := s.do(imp)
+	if err != nil {
+		return err
+	}
+	res, ok := resp.Responses[0].Args.(*email.ImportResponse)
+	if !ok {
+		return &Error{Code: CodeUnhandled, Msg: "unexpected response to Email/import"}
+	}
+	if err := firstSetError(res.NotCreated); err != nil {
+		return err
+	}
+	created := res.Created["signed"]
+	if created == nil || created.ID == "" {
+		return &Error{Code: CodeUnhandled, Msg: "signed message not imported"}
+	}
+	leftovers = append(leftovers, created.ID)
+
+	req := &jmap.Request{Context: ctx}
+	req.Invoke(&emailsubmission.Set{
+		Account: s.server(d.AccountID),
+		Create: map[jmap.ID]*emailsubmission.EmailSubmission{
+			"sub": {IdentityID: jmap.ID(d.IdentityID), EmailID: created.ID, Envelope: envelope},
+		},
+		OnSuccessUpdateEmail: map[jmap.ID]jmap.Patch{
+			"#sub": onSendPatch(draftMailboxID, sentMailboxID),
+		},
+	})
+	resp, err = s.do(req)
+	if err != nil {
+		return err
+	}
+	sent, ok := resp.Responses[0].Args.(*emailsubmission.SetResponse)
+	if !ok {
+		return &Error{Code: CodeUnhandled, Msg: "unexpected response to EmailSubmission/set"}
+	}
+	if err := firstSetError(sent.NotCreated); err != nil {
+		return err
+	}
+	// 已提交: 签名的那封留下 (移到已发送), 只删临时草稿。
+	leftovers = leftovers[:1]
+
+	if d.ReplaceDraftID != "" {
+		if err := s.destroyEmail(ctx, d.AccountID, d.ReplaceDraftID); err != nil {
+			s.log.Warn("destroy replaced draft", "err", err)
+		}
+	}
+	return s.SyncMail(ctx, d.AccountID)
+}
+
+// createForSigning 建临时草稿并返回它的 id 与原文 blob id。
+func (s *Syncer) createForSigning(ctx context.Context, d Draft, msg *email.Email) (jmap.ID, string, error) {
+	req := &jmap.Request{Context: ctx}
+	createArgs, err := s.emailCreate(d, msg)
+	if err != nil {
+		return "", "", err
+	}
+	req.Invoke(createArgs)
+	resp, err := s.do(req)
+	if err != nil {
+		return "", "", err
+	}
+	set, ok := resp.Responses[0].Args.(*email.SetResponse)
+	if !ok {
+		return "", "", &Error{Code: CodeUnhandled, Msg: "unexpected response to Email/set"}
+	}
+	if err := firstSetError(set.NotCreated); err != nil {
+		return "", "", err
+	}
+	created := set.Created["draft"]
+	if created == nil || created.ID == "" {
+		return "", "", &Error{Code: CodeUnhandled, Msg: "draft not created"}
+	}
+	if created.BlobID != "" {
+		return created.ID, string(created.BlobID), nil
+	}
+	// RFC 8621 要求 created 里带 blobId; 服务器没给时再查一次。
+	get := &jmap.Request{Context: ctx}
+	get.Invoke(&email.Get{Account: s.server(d.AccountID), IDs: []jmap.ID{created.ID}, Properties: []string{"blobId"}})
+	resp, err = s.do(get)
+	if err == nil {
+		if got, ok := resp.Responses[0].Args.(*email.GetResponse); ok && len(got.List) == 1 && got.List[0].BlobID != "" {
+			return created.ID, string(got.List[0].BlobID), nil
+		}
+	}
+	_ = s.destroyEmail(ctx, d.AccountID, string(created.ID))
+	return "", "", &Error{Code: CodeUnhandled, Msg: "server did not return the draft's blob id"}
 }
 
 // SaveDraft 把邮件存进草稿箱并返回新草稿 id; ReplaceDraftID 指向的旧版本随后删除。

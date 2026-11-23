@@ -169,6 +169,8 @@ type ComposeRequest struct {
 	SendAt string `json:"sendAt"`
 	// SendSeparately 为真时给每个收件人单独发一封, 收件人之间互相看不到。
 	SendSeparately bool `json:"sendSeparately"`
+	// Sign 为真时用发件地址配置的证书加 S/MIME 签名; 签不了就不发。
+	Sign bool `json:"sign"`
 }
 
 // AttachmentRef 引用服务器上已存在的 blob。
@@ -203,6 +205,14 @@ func (a *App) SendEmail(req ComposeRequest) error {
 	d, err := a.draftFrom(req)
 	if err != nil {
 		return err
+	}
+	if req.Sign {
+		if d.FromEmail == "" {
+			return fmt.Errorf("1126 sending identity not found")
+		}
+		if d.Sign, err = a.smimeSigner(st, d.FromEmail); err != nil {
+			return err
+		}
 	}
 	if !req.SendSeparately {
 		return s.Send(a.ctx, d, drafts, sent)
