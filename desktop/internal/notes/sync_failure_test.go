@@ -13,6 +13,7 @@ type flakyRemote struct {
 	*fakeRemote
 	rejectName   string // Set refuses this name, like a server that dislikes the object
 	setErr       error  // returned by the next Set
+	setErrName   string // with setErr: only a Set of this name gets it
 	applyLost    bool   // with setErr: the write took effect anyway and the server renamed the blob
 	uploadErr    error  // returned by every Upload while set
 	downloadFail string // Download of the blob holding this text fails
@@ -65,7 +66,7 @@ func (r *flakyRemote) Set(ctx context.Context, a, state, id string, n Node) (Nod
 	if r.rejectName != "" && n.Name == r.rejectName {
 		return Node{}, fmt.Errorf("%w: invalidProperties: Invalid property. (type)", ErrRejected)
 	}
-	if r.setErr != nil {
+	if r.setErr != nil && (r.setErrName == "" || n.Name == r.setErrName) {
 		err := r.setErr
 		r.setErr = nil
 		if r.applyLost {
@@ -211,12 +212,17 @@ func TestRejectedEntryDoesNotBlockOthers(t *testing.T) {
 // A create whose response was lost and that never reached the server is simply sent again.
 func TestLostCreateNotApplied(t *testing.T) {
 	s, r, v := flakyService(t)
-	r.setErr = ErrUncertain
+	// Both notes can carry the same modification time, so which one is pushed first is not fixed:
+	// aim the lost write at "n".
+	r.setErr, r.setErrName = ErrUncertain, "n.md"
 	e := mustCreate(t, s, v, "", "n", "x", false)
 	later := mustCreate(t, s, v, "", "later", "y", false)
 	rounds(t, s, 1)
 	if got := mustRead(t, s, v, later.ID); got.Status != "synced" {
 		t.Fatalf("lost create blocked a later note: %s", got.Status)
+	}
+	if got := mustRead(t, s, v, e.ID); !got.Uncertain {
+		t.Fatalf("expected an unverified create: %+v", got)
 	}
 	s.RetryAll() // skip the backoff
 	rounds(t, s, 2)
