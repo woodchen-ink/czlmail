@@ -395,6 +395,48 @@ function bridgeScript(nonce: string): string {
     }
     report();
   });
+  // 预览摘要(preheader)没闭合时整封正文都落进它的 display:none 里, 显示一片空白
+  // (实测 Sendy 模板把 "$12.88" 里的 "$1" 当成替换, 吞掉了 </div>)。
+  // 正文绝大部分文字都看不见时, 把装着大半文字、又含版式元素的隐藏元素放出来;
+  // 真正的摘要只有一句话, 占不到一半, 照旧隐藏。可能嵌套几层, 逐层放出。
+  function revealSwallowedBody() {
+    var body = document.body;
+    if (!body) return;
+    var total = (body.textContent || "").replace(/\\s+/g, "").length;
+    if (total < 200) return;
+    for (var round = 0; round < 5; round++) {
+      if ((body.innerText || "").replace(/\\s+/g, "").length > total * 0.2) return;
+      var found = null, all = body.querySelectorAll("*");
+      for (var i = 0; i < all.length && !found; i++) {
+        var el = all[i];
+        if (getComputedStyle(el).display !== "none") continue;
+        if ((el.textContent || "").replace(/\\s+/g, "").length < total * 0.5) continue;
+        if (el.querySelector("table, img, p, a")) found = el;
+      }
+      if (!found) return;
+      var s = found.style;
+      s.setProperty("display", "block", "important");
+      s.setProperty("visibility", "visible", "important");
+      s.setProperty("opacity", "1", "important");
+      s.setProperty("height", "auto", "important");
+      s.setProperty("max-height", "none", "important");
+      s.setProperty("width", "auto", "important");
+      s.setProperty("overflow", "visible", "important");
+      s.setProperty("color", "inherit", "important");
+      s.setProperty("font-size", "inherit", "important");
+      s.setProperty("line-height", "inherit", "important");
+      // 它自己直接带的文字是摘要残句, 仍然藏起来。
+      for (var n = found.firstChild; n; n = n.nextSibling) {
+        if (n.nodeType !== 3 || !n.nodeValue.trim()) continue;
+        var wrap = document.createElement("span");
+        wrap.style.setProperty("display", "none", "important");
+        found.insertBefore(wrap, n);
+        wrap.appendChild(n);
+        n = wrap;
+      }
+    }
+  }
+  revealSwallowedBody();
   window.addEventListener("load", report);
   parent.postMessage({ type: "ready" }, "*");
   // 图片加载完成会改变高度，需要再报一次。
