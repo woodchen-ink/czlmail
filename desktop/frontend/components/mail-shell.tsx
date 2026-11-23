@@ -925,6 +925,23 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     [mutate],
   );
 
+  /**
+   * 回复、回复全部、转发一封未读邮件时把它标为已读 (与 Outlook 一样)。设置为「从不 (手动标记)」时也标:
+   * 那个设置管的是打开邮件时的自动标记, 回复是用户对这封邮件的明确操作。
+   * 不占 Ctrl+Z: 已读只是回复的附带结果。
+   */
+  const markReadOnReply = useCallback(
+    (email: EmailSummary | EmailDetail) => {
+      const key = emailKey(email);
+      const shown = currentEmail.current;
+      const unread =
+        emailsRef.current.find((e) => emailKey(e) === key)?.isUnread ??
+        (shown && emailKey(shown) === key ? shown.isUnread : email.isUnread);
+      if (unread) markReadIds([key], true, false);
+    },
+    [markReadIds],
+  );
+
   const flagIds = useCallback(
     (keys: string[], flagged: boolean) =>
       mutate({ keys, patch: { isFlagged: flagged }, op: (acc, ids) => api.markFlagged(acc, ids, flagged) }),
@@ -1155,11 +1172,16 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
   const menuActions = useMemo<EmailMenuActions>(
     () => ({
-      reply: (email, all) => withDetail(email, (d) => setDraft(replyDraft(email.accountId, d, all))),
+      reply: (email, all) =>
+        withDetail(email, (d) => {
+          setDraft(replyDraft(email.accountId, d, all));
+          markReadOnReply(email);
+        }),
       forward: (email, asAttachment) =>
-        withDetail(email, (d) =>
-          setDraft(asAttachment ? forwardAsAttachmentDraft(d, email.accountId) : forwardDraft(d, email.accountId)),
-        ),
+        withDetail(email, (d) => {
+          setDraft(asAttachment ? forwardAsAttachmentDraft(d, email.accountId) : forwardDraft(d, email.accountId));
+          markReadOnReply(email);
+        }),
       archive: archiveIds,
       trash: trashIds,
       move: moveIds,
@@ -1169,7 +1191,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       togglePin,
       setLabel: setLabelIds,
     }),
-    [withDetail, setDraft, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, togglePin, setLabelIds],
+    [withDetail, setDraft, markReadOnReply, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, togglePin, setLabelIds],
   );
 
   /**
@@ -1194,11 +1216,15 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       const remember = () => {
         openThread.current = { key, accountId: acc, threadId: email.threadId };
       };
+      const startFrom = (d: ComposeDraft) => {
+        setDraft(d);
+        markReadOnReply(email);
+      };
       return {
-        reply: () => setDraft(replyDraft(acc, email, false)),
-        replyAll: () => setDraft(replyDraft(acc, email, true)),
-        forward: () => setDraft(forwardDraft(email, acc)),
-        forwardAsAttachment: () => setDraft(forwardAsAttachmentDraft(email, acc)),
+        reply: () => startFrom(replyDraft(acc, email, false)),
+        replyAll: () => startFrom(replyDraft(acc, email, true)),
+        forward: () => startFrom(forwardDraft(email, acc)),
+        forwardAsAttachment: () => startFrom(forwardAsAttachmentDraft(email, acc)),
         archive: () => {
           remember();
           archiveIds([key]);
@@ -1237,7 +1263,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         toggleBodyLight: () => setBodyAppearance(bodyAppearance === "light" ? "follow" : "light"),
       };
     },
-    [archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, leaveAfterUnread, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft],
+    [archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, markReadOnReply, leaveAfterUnread, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft],
   );
 
   /* ---------- 键盘快捷键 ---------- */
