@@ -66,13 +66,11 @@ func purgeAll() error {
 		return errors.Join(removeDirs()...)
 	}
 
-	// 凭据的条目名取决于配置里的登录方式, 必须先读配置再删目录。
-	if cfg, err := config.Load(); err == nil {
-		if cfg.Username != "" && cfg.SessionEndpoint != "" {
-			ignoreNotFound(&errs, keychain.Delete(config.KeyringService, config.PasswordKey(cfg.SessionEndpoint, cfg.Username)))
-		}
-		if cfg.Issuer != "" {
-			ignoreNotFound(&errs, keychain.Delete(config.KeyringService, config.TokenKey(cfg.Issuer)))
+	// 凭据的条目名取决于配置里的登录方式, 必须先读配置再删目录。每个登录各有一份。
+	if f, err := config.LoadFile(); err == nil {
+		signIns := append([]config.SignIn{{Config: f.Config}}, f.SignIns...)
+		for _, s := range signIns {
+			errs = append(errs, deleteCredentials(s.ID, s.Config)...)
 		}
 	}
 	ignoreNotFound(&errs, keychain.Delete(config.KeyringService, aiKeyringKey))
@@ -86,6 +84,18 @@ func purgeAll() error {
 
 	errs = append(errs, removeDirs()...)
 	return errors.Join(errs...)
+}
+
+// deleteCredentials 删掉一个登录在系统钥匙串里的凭据 (应用专用密码与 OAuth 令牌)。
+func deleteCredentials(signIn string, cfg config.Config) []error {
+	var errs []error
+	if cfg.Username != "" && cfg.SessionEndpoint != "" {
+		ignoreNotFound(&errs, keychain.Delete(config.KeyringService, config.PasswordKey(cfg.SessionEndpoint, cfg.Username)))
+	}
+	if cfg.Issuer != "" {
+		ignoreNotFound(&errs, keychain.Delete(config.KeyringService, config.TokenKey(signIn, cfg.Issuer)))
+	}
+	return errs
 }
 
 func ignoreNotFound(errs *[]error, err error) {

@@ -25,7 +25,7 @@ func (s *Syncer) ReconcileEmails(ctx context.Context, accountID string) (int, er
 	for position := uint64(0); ; {
 		req := &jmap.Request{Context: ctx}
 		req.Invoke(&email.Query{
-			Account:        jmap.ID(accountID),
+			Account:        s.server(accountID),
 			Position:       int64(position),
 			Limit:          reconcilePage,
 			CalculateTotal: true,

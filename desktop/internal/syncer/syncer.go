@@ -14,6 +14,7 @@ import (
 	"git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/core"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -35,6 +36,8 @@ const bootstrapWindow = 500
 // (个人账号与共享账号)共用同一个 Syncer。
 type Syncer struct {
 	client *jmap.Client
+	// prefix 是这个会话在本机账号 id 里的前缀, 主登录为空 (见 SetSignIn)。
+	prefix string
 	store  *store.Store
 	log    *slog.Logger
 
@@ -114,14 +117,14 @@ func (s *Syncer) readCoreLimits() {
 		"maxCallsInRequest", s.maxCallsInRequest)
 }
 
-// Accounts 列出会话下全部账号 ID。
+// Accounts 列出会话下全部账号的本机账号 id。
 func (s *Syncer) Accounts() []string {
 	if s.client.Session == nil {
 		return nil
 	}
 	out := make([]string, 0, len(s.client.Session.Accounts))
 	for id := range s.client.Session.Accounts {
-		out = append(out, string(id))
+		out = append(out, s.local(id))
 	}
 	return out
 }
@@ -160,7 +163,7 @@ func (s *Syncer) isPersonal(accountID string) bool {
 	if s.client.Session == nil {
 		return false
 	}
-	acc, ok := s.client.Session.Accounts[jmap.ID(accountID)]
+	acc, ok := s.client.Session.Accounts[s.server(accountID)]
 	return ok && acc.IsPersonal
 }
 
@@ -209,7 +212,7 @@ func (s *Syncer) applyStateChange(ctx context.Context, change *jmap.StateChange)
 				continue
 			}
 
-			localState, err := s.store.State(ctx, string(accountID), dt)
+			localState, err := s.store.State(ctx, s.local(accountID), dt)
 			if err != nil {
 				s.log.Error("read local state", "account", accountID, "type", typeName, "err", err)
 				continue
@@ -218,7 +221,7 @@ func (s *Syncer) applyStateChange(ctx context.Context, change *jmap.StateChange)
 				continue
 			}
 
-			if err := s.syncType(ctx, string(accountID), dt); err != nil {
+			if err := s.syncType(ctx, s.local(accountID), dt); err != nil {
 				s.log.Error("sync type", "account", accountID, "type", typeName, "err", err)
 			}
 		}
@@ -312,4 +315,38 @@ func chunk(ids []jmap.ID, size int) [][]jmap.ID {
 		out = append(out, ids[start:end])
 	}
 	return out
+}
+
+// SetSignIn 设定这个会话在本机账号 id 里的前缀 (见 internal/accountid), 须在 Run 之前调用。
+// 主登录不用调用: 前缀为空, 本机账号 id 与服务器一致。
+//
+// 同步器对外收发的一律是本机账号 id (缓存库里的行按它存), 只在拼 JMAP 请求、读会话时换成服务器的账号 id。
+func (s *Syncer) SetSignIn(prefix string) { s.prefix = prefix }
+
+// server 把本机账号 id 换成服务器的账号 id。别的登录的账号 id 换成空 id: 前缀去掉后可能正好撞上
+// 本会话里的某个账号 (Stalwart 的账号 id 只有一个字母), 宁可让请求失败也不能读写错账号。
+func (s *Syncer) server(local string) jmap.ID {
+	prefix, id := accountid.Split(local)
+	if prefix != s.prefix {
+		return ""
+	}
+	return jmap.ID(id)
+}
+
+// ServerID 返回本机账号 id 在服务器上的账号 id, 不属于这个会话时为空。
+func (s *Syncer) ServerID(local string) string { return s.sid(local) }
+
+// sid 同 server, 返回字符串, 供以 map 写参数的请求用。
+func (s *Syncer) sid(local string) string { return string(s.server(local)) }
+
+// local 把服务器的账号 id 换成本机账号 id。
+func (s *Syncer) local(id jmap.ID) string { return accountid.Join(s.prefix, string(id)) }
+
+// Owns 报告本机账号 id 是否属于这个会话。
+func (s *Syncer) Owns(local string) bool { return s.owns(local) }
+
+// owns 报告本机账号 id 是否属于这个会话。
+func (s *Syncer) owns(local string) bool {
+	prefix, _ := accountid.Split(local)
+	return prefix == s.prefix
 }

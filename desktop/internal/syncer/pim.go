@@ -55,7 +55,7 @@ func (s *Syncer) accountSupports(accountID string, uri jmap.URI) bool {
 	if s.client.Session == nil {
 		return false
 	}
-	acc, ok := s.client.Session.Accounts[jmap.ID(accountID)]
+	acc, ok := s.client.Session.Accounts[s.server(accountID)]
 	if !ok {
 		return false
 	}
@@ -91,7 +91,7 @@ func (s *Syncer) syncPIMKind(ctx context.Context, accountID string, k pimKind) e
 
 	for {
 		req := &jmap.Request{Context: ctx}
-		req.Invoke(jmapx.Changes(k.typeName, accountID, local, s.maxObjectsInGet))
+		req.Invoke(jmapx.Changes(k.typeName, s.sid(accountID), local, s.maxObjectsInGet))
 		resp, err := s.do(req)
 		if err != nil {
 			if methodErrorType(err) == errCannotCalculateChanges {
@@ -133,10 +133,10 @@ func (s *Syncer) syncPIMKind(ctx context.Context, accountID string, k pimKind) e
 func (s *Syncer) bootstrapPIM(ctx context.Context, accountID string, k pimKind) error {
 	req := &jmap.Request{Context: ctx}
 	if k.container {
-		req.Invoke(jmapx.Get(k.typeName, accountID, nil))
+		req.Invoke(jmapx.Get(k.typeName, s.sid(accountID), nil))
 	} else {
-		req.Invoke(jmapx.Get(k.typeName, accountID, []string{}))
-		req.Invoke(&jmapx.Call{Method: k.typeName + "/query", Args: map[string]any{"accountId": accountID}})
+		req.Invoke(jmapx.Get(k.typeName, s.sid(accountID), []string{}))
+		req.Invoke(&jmapx.Call{Method: k.typeName + "/query", Args: map[string]any{"accountId": s.sid(accountID)}})
 	}
 	resp, err := s.do(req)
 	if err != nil {
@@ -159,7 +159,7 @@ func (s *Syncer) bootstrapPIM(ctx context.Context, accountID string, k pimKind) 
 		for len(ids) < q.Total {
 			more := &jmap.Request{Context: ctx}
 			more.Invoke(&jmapx.Call{Method: k.typeName + "/query", Args: map[string]any{
-				"accountId": accountID, "position": len(ids),
+				"accountId": s.sid(accountID), "position": len(ids),
 			}})
 			r, err := s.do(more)
 			if err != nil {
@@ -197,7 +197,7 @@ func (s *Syncer) getPIM(ctx context.Context, accountID, typeName string, ids []s
 	for start := 0; start < len(ids); start += size {
 		end := min(start+size, len(ids))
 		req := &jmap.Request{Context: ctx}
-		req.Invoke(jmapx.Get(typeName, accountID, ids[start:end]))
+		req.Invoke(jmapx.Get(typeName, s.sid(accountID), ids[start:end]))
 		resp, err := s.do(req)
 		if err != nil {
 			return nil, err

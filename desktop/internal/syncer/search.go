@@ -58,7 +58,7 @@ func (s *Syncer) QueryServer(ctx context.Context, accountID string, f EmailFilte
 
 	req := &jmap.Request{Context: ctx}
 	req.Invoke(&email.Query{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Filter:  cond,
 		Sort:    []*email.SortComparator{{Property: "receivedAt", IsAscending: false}},
 		Limit:   uint64(limit),

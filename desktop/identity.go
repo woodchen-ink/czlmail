@@ -7,6 +7,7 @@ import (
 
 	"git.sr.ht/~rockorager/go-jmap"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/keychain"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
@@ -59,6 +60,10 @@ func (a *App) cacheFromOtherIdentity(ctx context.Context, st *store.Store, clien
 		return false
 	}
 	for _, acc := range cached {
+		// 附加登录的账号 (带前缀) 本来就不在主登录的会话里。
+		if prefix, _ := accountid.Split(acc.ID); prefix != accountid.Primary {
+			continue
+		}
 		if _, ok := client.Session.Accounts[jmap.ID(acc.ID)]; !ok {
 			return true
 		}

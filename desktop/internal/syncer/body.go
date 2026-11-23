@@ -45,7 +45,7 @@ func (s *Syncer) FetchBodies(ctx context.Context, accountID string, emailIDs []s
 		}
 		req := &jmap.Request{Context: ctx}
 		req.Invoke(&email.Get{
-			Account:             jmap.ID(accountID),
+			Account:             s.server(accountID),
 			IDs:                 ids,
 			Properties:          []string{"id", "bodyStructure", "textBody", "htmlBody", "bodyValues", "attachments", "headers"},
 			FetchTextBodyValues: true,
@@ -161,7 +161,7 @@ func joinBodyValues(msg *email.Email, parts []*email.BodyPart, onlyType string) 
 // FetchListHeaders 只取邮件头来补齐退订信息, 用于正文在加这项功能之前就已缓存的邮件。
 func (s *Syncer) FetchListHeaders(ctx context.Context, accountID, emailID string) (store.Unsubscribe, error) {
 	req := &jmap.Request{Context: ctx}
-	req.Invoke(&email.Get{Account: jmap.ID(accountID), IDs: []jmap.ID{jmap.ID(emailID)}, Properties: []string{"id", "headers"}})
+	req.Invoke(&email.Get{Account: s.server(accountID), IDs: []jmap.ID{jmap.ID(emailID)}, Properties: []string{"id", "headers"}})
 	resp, err := s.do(req)
 	if err != nil {
 		return store.Unsubscribe{}, err

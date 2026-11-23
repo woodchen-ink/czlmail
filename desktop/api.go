@@ -88,7 +88,7 @@ func (a *App) SignOut() error {
 	if cfg.AuthMethod == config.AuthPassword {
 		err = config.DeletePassword(cfg.SessionEndpoint, cfg.Username)
 	} else if cfg.Issuer != "" {
-		err = config.DeleteToken(cfg.Issuer)
+		err = config.DeleteToken(si.id, cfg.Issuer)
 	}
 	if err != nil {
 		return err

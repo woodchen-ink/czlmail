@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -10,13 +14,14 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
+	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
 // 登录 (sign-in) 是一组服务器地址 + 凭据, 对应一个 JMAP 会话; 一个会话里可以有多个账号 (个人 + 共享)。
 //
 // 会话的状态 (客户端、同步器、凭据失效、授权流程) 都挂在 signIn 上, 不直接挂在 App 上。
-// 目前只有主登录; 访问服务器的调用一律经 route 按账号 id 找到所属登录与服务器上的账号 id,
+// 主登录之外的登录 (config.json 的 signIns) 在启动时各自恢复会话; 访问服务器的调用一律经 route 按账号 id 找到所属登录与服务器上的账号 id,
 // 不自己拼或拆账号 id 的前缀 (格式见 internal/accountid)。
 
 // signIn 是一个登录的运行时状态。除两个原子标记外, 字段都由 App.mu 保护。
@@ -50,12 +55,17 @@ func (a *App) signInLocked(id string) *signIn {
 	if id == accountid.Primary {
 		return &a.primary
 	}
+	for _, si := range a.extra {
+		if si.id == id {
+			return si
+		}
+	}
 	return nil
 }
 
 // signInsLocked 列出全部登录, 主登录在前。调用方须持有 a.mu。
 func (a *App) signInsLocked() []*signIn {
-	return []*signIn{&a.primary}
+	return append([]*signIn{&a.primary}, a.extra...)
 }
 
 // primaryConfig 返回主登录的配置。
@@ -180,4 +190,111 @@ func (a *App) signedIn() bool {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+// removeSignIn 删掉一个附加登录: 停掉它的同步, 删掉它的配置、钥匙串里的凭据、账号缓存与按账号记的设置。
+// 服务器上的数据不受影响。它的前缀不会再分配给以后的登录 (见 config.File.AddSignIn)。
+func (a *App) removeSignIn(id string) error {
+	err := a.dropSignIn(id)
+	if id != accountid.Primary && !errors.Is(err, errNotSignedIn) {
+		a.emit(EventAccountsChanged)
+		a.refreshTrayUnreadSoon()
+	}
+	return err
+}
+
+// dropSignIn 是 removeSignIn 中不通知界面的部分。
+func (a *App) dropSignIn(id string) error {
+	if id == accountid.Primary {
+		return fmt.Errorf("2022 the primary sign-in cannot be removed this way")
+	}
+	a.mu.Lock()
+	si := a.signInLocked(id)
+	if si == nil {
+		a.mu.Unlock()
+		return errNotSignedIn
+	}
+	si.stopLocked()
+	if si.cancelFlow != nil {
+		si.cancelFlow()
+		si.cancelFlow = nil
+	}
+	a.extra = slices.DeleteFunc(a.extra, func(x *signIn) bool { return x == si })
+	cfg := si.cfg
+	primary := a.primary.cfg
+	st := a.store
+	a.mu.Unlock()
+
+	// 钥匙串条目按配置文件里的用户名存 (登录时输入的写法), 内存里的已换成服务器返回的写法。
+	var errs []error
+	if err := config.UpdateFile(func(f *config.File) error {
+		if saved, ok := f.RemoveSignIn(id); ok {
+			cfg = saved
+		}
+		return nil
+	}); err != nil {
+		errs = append(errs, err)
+	}
+	// 同一个身份不会登录两次 (config.File.Find); 万一配置被手改成那样, 不能连主登录的密码一起删。
+	if !(cfg.SessionEndpoint == primary.SessionEndpoint && strings.EqualFold(cfg.Username, primary.Username)) {
+		errs = append(errs, deleteCredentials(id, cfg)...)
+	}
+	if st != nil {
+		if err := a.forgetSignInData(st, id); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	a.log.Info("sign-in removed", "signin", id)
+	return errors.Join(errs...)
+}
+
+// forgetSignInData 删掉某个登录的全部账号缓存, 并把这些账号从按账号 id 记的设置里去掉。
+func (a *App) forgetSignInData(st *store.Store, id string) error {
+	accounts, err := st.Accounts(a.ctx)
+	if err != nil {
+		return err
+	}
+	gone := map[string]bool{}
+	for _, acc := range accounts {
+		if prefix, _ := accountid.Split(acc.ID); prefix == id {
+			gone[acc.ID] = true
+			if err := st.RemoveAccount(a.ctx, acc.ID); err != nil {
+				return err
+			}
+		}
+	}
+	// 账号行可能已被清理掉 (撤销共享), 设置里却还留着: 按前缀而不是按上面的列表判断。
+	owned := func(acc string) bool {
+		prefix, _ := accountid.Split(acc)
+		return gone[acc] || prefix == id
+	}
+	for _, key := range []string{"mutedMailAccounts", settingUnifiedExcluded} {
+		list := a.accountListSetting(st, key)
+		kept := slices.DeleteFunc(slices.Clone(list), owned)
+		if len(kept) == len(list) {
+			continue
+		}
+		raw, _ := json.Marshal(kept)
+		if err := st.SetStringSetting(a.ctx, key, string(raw)); err != nil {
+			return err
+		}
+	}
+	ids := map[string]string{}
+	if v, err := st.StringSetting(a.ctx, "defaultIdentities"); err == nil && v != "" {
+		_ = json.Unmarshal([]byte(v), &ids)
+	}
+	changed := false
+	for acc := range ids {
+		if owned(acc) {
+			delete(ids, acc)
+			changed = true
+		}
+	}
+	if changed {
+		raw, _ := json.Marshal(ids)
+		if err := st.SetStringSetting(a.ctx, "defaultIdentities", string(raw)); err != nil {
+			return err
+		}
+	}
+	return nil
 }

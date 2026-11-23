@@ -122,7 +122,7 @@ func (s *Syncer) downloadBlob(ctx context.Context, accountID, blobID string) (io
 	// 类型与文件名只影响服务器回给我们的响应头, 调用方自己决定怎么展示,
 	// 所以沿用 go-jmap 的取值, 只是按模板规则编码。
 	target := expandBlobURL(session.DownloadURL, map[string]string{
-		"accountId": accountID,
+		"accountId": s.sid(accountID),
 		"blobId":    blobID,
 		"type":      "application/octet-stream",
 		"name":      "filename",
@@ -168,7 +168,7 @@ func (s *Syncer) uploadBlob(ctx context.Context, accountID, contentType string, 
 	if err != nil {
 		return nil, err
 	}
-	target := expandBlobURL(session.UploadURL, map[string]string{"accountId": accountID})
+	target := expandBlobURL(session.UploadURL, map[string]string{"accountId": s.sid(accountID)})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, r)
 	if err != nil {
 		return nil, err

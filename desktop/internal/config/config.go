@@ -116,46 +116,27 @@ func DatabasePath() (string, error) {
 	return filepath.Join(dir, "cache.db"), nil
 }
 
-// Load 读取配置。首次启动时文件不存在, 返回零值且 err 为 nil,
+// Load 读取主登录的配置。首次启动时文件不存在, 返回零值且 err 为 nil,
 // 由界面引导用户登录, 而不是在这里失败。
 func Load() (Config, error) {
-	var cfg Config
-
-	path, err := filePath()
-	if err != nil {
-		return cfg, err
-	}
-
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return cfg, nil
-	}
-	if err != nil {
-		return cfg, fmt.Errorf("2012 read config: %w", err)
-	}
-
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("2013 parse config: %w", err)
-	}
-	return cfg, nil
+	f, err := LoadFile()
+	return f.Config, err
 }
 
-// Save 写入配置。权限 0600: 虽不含凭据, 但暴露了邮箱地址与服务器。
+// Save 写入主登录的配置, 其余登录原样保留。
 func Save(cfg Config) error {
-	path, err := filePath()
-	if err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("2014 encode config: %w", err)
-	}
-	return os.WriteFile(path, data, 0o600)
+	return UpdateFile(func(f *File) error {
+		f.Config = cfg
+		return nil
+	})
 }
 
 // TokenKey 是 OAuth 令牌在密钥库里的条目名, 让同一台机器上的多个服务器各自持有独立条目。
-func TokenKey(issuer string) string {
+// 附加登录的条目名带上它的前缀: 同一个授权服务器上的两个用户各有各的令牌。主登录沿用旧条目名。
+func TokenKey(signIn, issuer string) string {
+	if signIn != "" {
+		return "oauth:" + signIn + "|" + issuer
+	}
 	return "oauth:" + issuer
 }
 
@@ -163,8 +144,8 @@ func TokenKey(issuer string) string {
 //
 // 刻意不提供"存到配置文件"的回落路径: 有回落就一定会在密钥库不可用时被静默使用,
 // 而一个明文躺在磁盘上的长期刷新令牌, 比一次明确的登录失败危险得多。
-func LoadToken(issuer string) (*oauth2.Token, error) {
-	raw, err := keychain.Get(KeyringService, TokenKey(issuer))
+func LoadToken(signIn, issuer string) (*oauth2.Token, error) {
+	raw, err := keychain.Get(KeyringService, TokenKey(signIn, issuer))
 	if errors.Is(err, keychain.ErrNotFound) {
 		return nil, nil
 	}
@@ -180,20 +161,20 @@ func LoadToken(issuer string) (*oauth2.Token, error) {
 }
 
 // SaveToken 把令牌写入系统密钥库。刷新令牌轮换时也走这里。
-func SaveToken(issuer string, tok *oauth2.Token) error {
+func SaveToken(signIn, issuer string, tok *oauth2.Token) error {
 	raw, err := json.Marshal(tok)
 	if err != nil {
 		return fmt.Errorf("2017 encode credential: %w", err)
 	}
-	if err := keychain.Set(KeyringService, TokenKey(issuer), string(raw)); err != nil {
+	if err := keychain.Set(KeyringService, TokenKey(signIn, issuer), string(raw)); err != nil {
 		return fmt.Errorf("2018 write credential to system keyring: %w", err)
 	}
 	return nil
 }
 
 // DeleteToken 清除已保存的令牌, 用于退出登录。
-func DeleteToken(issuer string) error {
-	err := keychain.Delete(KeyringService, TokenKey(issuer))
+func DeleteToken(signIn, issuer string) error {
+	err := keychain.Delete(KeyringService, TokenKey(signIn, issuer))
 	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		return fmt.Errorf("2019 delete credential from system keyring: %w", err)
 	}

@@ -24,7 +24,7 @@ func (s *Syncer) FileSnapshot(ctx context.Context, account string) (notes.Snapsh
 	queryState := ""
 	for {
 		req := &jmap.Request{Context: ctx}
-		req.Invoke(&jmapx.Call{Method: "FileNode/query", Args: map[string]any{"accountId": account, "position": len(ids), "limit": 500, "calculateTotal": true}})
+		req.Invoke(&jmapx.Call{Method: "FileNode/query", Args: map[string]any{"accountId": s.sid(account), "position": len(ids), "limit": 500, "calculateTotal": true}})
 		resp, err := s.do(req)
 		if err != nil {
 			return notes.Snapshot{}, notes.ErrUnavailable
@@ -77,7 +77,7 @@ func (s *Syncer) FileChanges(ctx context.Context, account, since string) (notes.
 	touched := map[string]bool{}
 	for {
 		req := &jmap.Request{Context: ctx}
-		req.Invoke(jmapx.Changes(jmapx.FileNode, account, out.State, s.maxObjectsInGet))
+		req.Invoke(jmapx.Changes(jmapx.FileNode, s.sid(account), out.State, s.maxObjectsInGet))
 		resp, err := s.do(req)
 		if err != nil || len(resp.Responses) != 1 {
 			return notes.Delta{}, notes.ErrUnavailable
@@ -134,7 +134,7 @@ func (s *Syncer) FileChanges(ctx context.Context, account, since string) (notes.
 // fileState fetches the account-level state even when there are no objects.
 func (s *Syncer) fileState(ctx context.Context, account string) (string, error) {
 	req := &jmap.Request{Context: ctx}
-	req.Invoke(jmapx.Get(jmapx.FileNode, account, []string{}))
+	req.Invoke(jmapx.Get(jmapx.FileNode, s.sid(account), []string{}))
 	resp, err := s.do(req)
 	if err != nil || len(resp.Responses) != 1 {
 		return "", notes.ErrUnavailable
@@ -162,7 +162,7 @@ func (s *Syncer) verifyFileConditions(ctx context.Context, account string) error
 	if state == probeState {
 		probeState = "sae"
 	}
-	req.Invoke(jmapx.Set(jmapx.FileNode, account, nil, nil, nil, map[string]any{"ifInState": probeState}))
+	req.Invoke(jmapx.Set(jmapx.FileNode, s.sid(account), nil, nil, nil, map[string]any{"ifInState": probeState}))
 	_, err = s.do(req)
 	if methodErrorType(err) != "stateMismatch" {
 		return notes.ErrUnavailable
@@ -178,7 +178,7 @@ func (s *Syncer) InspectFile(ctx context.Context, account, id string) (notes.Sna
 		ids = append(ids, id)
 	}
 	req := &jmap.Request{Context: ctx}
-	req.Invoke(jmapx.Get(jmapx.FileNode, account, ids))
+	req.Invoke(jmapx.Get(jmapx.FileNode, s.sid(account), ids))
 	resp, err := s.do(req)
 	if err != nil || len(resp.Responses) != 1 {
 		return notes.Snapshot{}, notes.ErrUnavailable
@@ -202,7 +202,7 @@ func (s *Syncer) InspectFile(ctx context.Context, account, id string) (notes.Sna
 func (s *Syncer) setFileOnce(ctx context.Context, account, state string, typed bool, create map[string]any, update map[string]map[string]any) (*jmap.Response, error) {
 	c, u := adaptFileNodeWrite(typed, create, update)
 	req := &jmap.Request{Context: ctx}
-	req.Invoke(jmapx.Set(jmapx.FileNode, account, c, u, nil, map[string]any{"ifInState": state}))
+	req.Invoke(jmapx.Set(jmapx.FileNode, s.sid(account), c, u, nil, map[string]any{"ifInState": state}))
 	return s.do(req)
 }
 

@@ -96,6 +96,7 @@ func (s *Syncer) refreshSession(ctx context.Context) error {
 	s.client.Unlock()
 
 	diff := diffAccounts(before.Accounts, fresh.Accounts)
+	diff.Added, diff.Renamed = s.locals(diff.Added), s.locals(diff.Renamed)
 	// 会话里少了的账号先不删缓存, 交给 pruneAccounts 连续两次确认; diff.Removed 只放确认删掉的。
 	diff.Removed = s.pruneAccounts(ctx)
 	if diff.Empty() {
@@ -167,8 +168,12 @@ func (s *Syncer) pruneAccounts(ctx context.Context) []string {
 	var removed []string
 	seen := map[string]bool{}
 	for _, acc := range cached {
+		// 缓存库里还有别的登录的账号, 它们不在这个会话里是正常的。
+		if !s.owns(acc.ID) {
+			continue
+		}
 		seen[acc.ID] = true
-		if _, ok := sess.Accounts[jmap.ID(acc.ID)]; ok {
+		if _, ok := sess.Accounts[s.server(acc.ID)]; ok {
 			delete(s.missing, acc.ID)
 			continue
 		}
@@ -196,7 +201,16 @@ func (s *Syncer) pruneAccounts(ctx context.Context) []string {
 	return removed
 }
 
-// diffAccounts 对比两份会话账号表。
+// locals 把一组服务器账号 id 换成本机账号 id。
+func (s *Syncer) locals(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, s.local(jmap.ID(id)))
+	}
+	return out
+}
+
+// diffAccounts 对比两份会话账号表, 返回服务器账号 id。
 func diffAccounts(before, after map[jmap.ID]jmap.Account) AccountDiff {
 	var d AccountDiff
 	for id, acc := range after {

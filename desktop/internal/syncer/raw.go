@@ -54,7 +54,7 @@ func (s *Syncer) ImportMessage(ctx context.Context, accountID, mailboxID string,
 	// 导入的是历史邮件, 默认标记已读, 否则一次导入几百封会让未读数暴涨。
 	req := &jmap.Request{Context: ctx}
 	req.Invoke(&email.Import{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Emails: map[string]*email.EmailImport{
 			"imp": {
 				BlobID:     up.ID,
@@ -111,7 +111,7 @@ func (s *Syncer) MarkJunk(ctx context.Context, accountID string, emailIDs []stri
 		}
 	}
 	return s.applySet(ctx, accountID, &email.Set{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Update:  updates,
 	})
 }

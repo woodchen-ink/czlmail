@@ -64,7 +64,7 @@ type Attachment struct {
 // Identities 列出该账号可用的发件身份。
 func (s *Syncer) Identities(ctx context.Context, accountID string) ([]*identity.Identity, error) {
 	req := &jmap.Request{Context: ctx}
-	req.Invoke(&identity.Get{Account: jmap.ID(accountID)})
+	req.Invoke(&identity.Get{Account: s.server(accountID)})
 
 	resp, err := s.do(req)
 	if err != nil {
@@ -124,7 +124,7 @@ func (s *Syncer) Send(ctx context.Context, d Draft, draftMailboxID, sentMailboxI
 	const createID = jmap.ID("draft")
 	req := &jmap.Request{Context: ctx}
 
-	createArgs, err := emailCreate(d, msg)
+	createArgs, err := s.emailCreate(d, msg)
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (s *Syncer) Send(ctx context.Context, d Draft, draftMailboxID, sentMailboxI
 	// onSuccessUpdateEmail 让服务端在提交成功后原子地改邮件:
 	// 去掉 $draft 标志, 从草稿箱移到已发送。
 	submission := &emailsubmission.Set{
-		Account: jmap.ID(d.AccountID),
+		Account: s.server(d.AccountID),
 		Create: map[jmap.ID]*emailsubmission.EmailSubmission{
 			"sub": {
 				IdentityID: jmap.ID(d.IdentityID),
@@ -185,7 +185,7 @@ func (s *Syncer) SaveDraft(ctx context.Context, d Draft, draftMailboxID string) 
 	}
 	msg := buildEmail(d, draftMailboxID)
 	req := &jmap.Request{Context: ctx}
-	createArgs, err := emailCreate(d, msg)
+	createArgs, err := s.emailCreate(d, msg)
 	if err != nil {
 		return "", err
 	}
@@ -215,7 +215,7 @@ func (s *Syncer) SaveDraft(ctx context.Context, d Draft, draftMailboxID string) 
 
 // emailCreate 构造 Email/set 的创建调用。go-jmap 的 Email 结构体表达不了
 // "header:Xxx:asText" 这类按名写入的头(Stalwart 拒绝 headers 数组), 这里转成 map 再补字段。
-func emailCreate(d Draft, msg *email.Email) (*jmapx.Call, error) {
+func (s *Syncer) emailCreate(d Draft, msg *email.Email) (*jmapx.Call, error) {
 	raw, err := json.Marshal(msg)
 	if err != nil {
 		return nil, err
@@ -228,14 +228,14 @@ func emailCreate(d Draft, msg *email.Email) (*jmapx.Call, error) {
 		obj["header:Disposition-Notification-To:asText"] = d.FromEmail
 	}
 	return &jmapx.Call{Method: "Email/set", Args: map[string]any{
-		"accountId": d.AccountID,
+		"accountId": s.sid(d.AccountID),
 		"create":    map[string]any{"draft": obj},
 	}}, nil
 }
 
 // destroyEmail 删除一封邮件; 服务端放进 notDestroyed 的拒绝也作为错误返回。
 func (s *Syncer) destroyEmail(ctx context.Context, accountID, id string) error {
-	_, err := s.setEmails(ctx, &email.Set{Account: jmap.ID(accountID), Destroy: []jmap.ID{jmap.ID(id)}})
+	_, err := s.setEmails(ctx, &email.Set{Account: s.server(accountID), Destroy: []jmap.ID{jmap.ID(id)}})
 	return err
 }
 
@@ -244,7 +244,7 @@ func (s *Syncer) MaxDelayedSend(accountID string) int {
 	if s.client.Session == nil {
 		return 0
 	}
-	acc, ok := s.client.Session.Accounts[jmap.ID(accountID)]
+	acc, ok := s.client.Session.Accounts[s.server(accountID)]
 	if !ok {
 		return 0
 	}
@@ -349,7 +349,7 @@ func toJMAPAddresses(in []store.Address) []*mail.Address {
 func (s *Syncer) UpdateSignature(ctx context.Context, accountID, identityID, text, html string) error {
 	req := &jmap.Request{Context: ctx}
 	req.Invoke(&identity.Set{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Update: map[jmap.ID]jmap.Patch{
 			jmap.ID(identityID): {"textSignature": text, "htmlSignature": html},
 		},
@@ -383,11 +383,11 @@ type ScheduledSend struct {
 func (s *Syncer) ScheduledSends(ctx context.Context, accountID string) ([]ScheduledSend, error) {
 	req := &jmap.Request{Context: ctx}
 	q := req.Invoke(&emailsubmission.Query{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Filter:  &emailsubmission.FilterCondition{UndoStatus: "pending"},
 	})
 	req.Invoke(&emailsubmission.Get{
-		Account:      jmap.ID(accountID),
+		Account:      s.server(accountID),
 		ReferenceIDs: &jmap.ResultReference{ResultOf: q, Name: "EmailSubmission/query", Path: "/ids"},
 	})
 	resp, err := s.do(req)
@@ -413,7 +413,7 @@ func (s *Syncer) ScheduledSends(ctx context.Context, accountID string) ([]Schedu
 func (s *Syncer) CancelScheduledSend(ctx context.Context, accountID, submissionID, emailID, draftMailboxID string) error {
 	req := &jmap.Request{Context: ctx}
 	req.Invoke(&emailsubmission.Set{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Update:  map[jmap.ID]jmap.Patch{jmap.ID(submissionID): {"undoStatus": "canceled"}},
 	})
 	resp, err := s.do(req)
@@ -428,7 +428,7 @@ func (s *Syncer) CancelScheduledSend(ctx context.Context, accountID, submissionI
 	if emailID != "" && draftMailboxID != "" {
 		move := &jmap.Request{Context: ctx}
 		move.Invoke(&email.Set{
-			Account: jmap.ID(accountID),
+			Account: s.server(accountID),
 			Update: map[jmap.ID]jmap.Patch{jmap.ID(emailID): {
 				"mailboxIds":      map[jmap.ID]bool{jmap.ID(draftMailboxID): true},
 				"keywords/$draft": true,
