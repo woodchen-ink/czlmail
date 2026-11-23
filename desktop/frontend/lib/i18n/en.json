@@ -430,7 +430,6 @@
   "删除群组": "Delete group",
   "群组里还没有成员": "This group has no members yet",
   "纪念日": "Anniversary",
-  "最近往来邮件": "Recent emails",
   "没有往来邮件": "No email history",
   "(无主题)": "(No subject)",
   "近期日程": "Upcoming events",
@@ -1249,5 +1248,10 @@
   "写邮件时跳到格式工具条": "Go to the formatting toolbar (while writing)",
   "已撤销": "Undone",
   "无法撤销": "Cannot undo",
-  "撤销上一步操作": "Undo last action"
+  "撤销上一步操作": "Undo last action",
+  "资料": "Details",
+  "往来邮件": "Emails",
+  "对方发来": "Received",
+  "我发出的": "Sent",
+  "共 {0} 封": "{0} emails"
 }

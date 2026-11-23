@@ -430,7 +430,6 @@
   "删除群组": "Smazat skupinu",
   "群组里还没有成员": "Skupina zatím nemá žádné členy",
   "纪念日": "Výročí",
-  "最近往来邮件": "Nedávné zprávy",
   "没有往来邮件": "Žádná e‑mailová komunikace",
   "(无主题)": "(bez předmětu)",
   "近期日程": "Nadcházející události",
@@ -1249,5 +1248,10 @@
   "写邮件时跳到格式工具条": "Přejít na panel formátování (při psaní zprávy)",
   "已撤销": "Vráceno zpět",
   "无法撤销": "Nelze vrátit zpět",
-  "撤销上一步操作": "Vrátit poslední akci zpět"
+  "撤销上一步操作": "Vrátit poslední akci zpět",
+  "资料": "Údaje",
+  "往来邮件": "E‑maily",
+  "对方发来": "Přijaté",
+  "我发出的": "Odeslané",
+  "共 {0} 封": "{0} e‑mailů"
 }

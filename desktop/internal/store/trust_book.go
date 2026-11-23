@@ -81,27 +81,6 @@ func (s *Store) AddressBookByName(ctx context.Context, accountID, name string) (
 	return nil, ErrNotFound
 }
 
-// RecentEmailsWith 返回与某地址往来的最近邮件(发件人或收件人含该地址), 跨全部账号。
-func (s *Store) RecentEmailsWith(ctx context.Context, address string, limit int) ([]EmailSummary, error) {
-	addr := NormalizeAddress(address)
-	if addr == "" {
-		return nil, nil
-	}
-	// 地址在 JSON 里以 "email":"x" 出现, 带上引号避免子串误中。
-	like := `%"email":"` + escapeLike(addr) + `"%`
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT `+summaryColumns+`
-		FROM emails e
-		WHERE LOWER(e.from_json) LIKE ? ESCAPE '\' OR LOWER(e.to_json) LIKE ? ESCAPE '\' OR LOWER(e.cc_json) LIKE ? ESCAPE '\'
-		ORDER BY e.received_at DESC
-		LIMIT ?`, like, like, like, limit)
-	if err != nil {
-		return nil, wrap(CodeQuery, "recent emails with", err)
-	}
-	defer rows.Close()
-	return scanSummaries(rows)
-}
-
 // SearchFileNodes 按名称检索文件。
 func (s *Store) SearchFileNodes(ctx context.Context, accountID, query string, limit int) ([]FileNode, error) {
 	return s.scanFileNodes(ctx, `SELECT `+fileNodeColumns+` FROM file_nodes

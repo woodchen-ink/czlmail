@@ -3,13 +3,14 @@
 import { dateLocale, t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookPlus,
   BookUser,
   Building2,
   CalendarDays,
   Cake,
+  Check,
   FolderInput,
   Globe,
   Loader2,
@@ -33,7 +34,8 @@ import {
 import { toast } from "sonner";
 
 import { ContactEditor, bookLabel, emptyContact } from "@/components/contacts/contact-editor";
-import { PaneLayout } from "@/components/pane-layout";
+import { Correspondence } from "@/components/contacts/correspondence";
+import { PaneLayout, type MobilePane } from "@/components/pane-layout";
 import { SenderAvatar } from "@/components/sender-avatar";
 import {
   AlertDialog,
@@ -62,6 +64,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   Events,
@@ -72,12 +75,10 @@ import {
   type AddressBook,
   type ContactForm,
   type ContactSummary,
-  type EmailSummary,
   type EventOccurrence,
   type PIMChange,
 } from "@/lib/api";
-import { requestOpenEmail, send } from "@/lib/app-bus";
-import { displayAddressList, listDate } from "@/lib/format";
+import { send } from "@/lib/app-bus";
 import { hm, shortDate } from "@/lib/date";
 import { localUrl } from "@/lib/native-bridge";
 
@@ -88,6 +89,8 @@ type Scope =
   | { kind: "keyword"; keyword: string };
 
 type Pane = { kind: "none" } | { kind: "view"; accountId: string; id: string } | { kind: "edit"; form: ContactForm };
+
+type DetailTab = "info" | "emails";
 
 type BookDialog = { accountId: string; book?: AddressBook } | null;
 
@@ -101,12 +104,21 @@ export function ContactsShell({ active }: { active: boolean }) {
   const [contacts, setContacts] = useState<ContactSummary[]>([]);
   const [scope, setScope] = useState<Scope>({ kind: "all" });
   const [query, setQuery] = useState("");
-  const [pane, setPane] = useState<Pane>({ kind: "none" });
+  const [pane, setPaneState] = useState<Pane>({ kind: "none" });
+  // 窄屏下当前显示的那一栏: 打开或新建联系人就进详情, 关掉 (删除后) 回列表。
+  const [mobileView, setMobileView] = useState<MobilePane>("list");
+  const setPane = (p: Pane) => {
+    setPaneState(p);
+    setMobileView(p.kind === "none" ? "list" : "detail");
+  };
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const lastChecked = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [bookDialog, setBookDialog] = useState<BookDialog>(null);
   const [deleteBook, setDeleteBook] = useState<AddressBook | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  // 详情的标签页跟着用户走: 在看往来邮件时换一位联系人, 仍停在往来邮件。
+  const [detailTab, setDetailTab] = useState<DetailTab>("info");
 
   const loadBooks = useCallback(async () => {
     try {
@@ -480,8 +492,8 @@ export function ContactsShell({ active }: { active: boolean }) {
                     role="button"
                     tabIndex={0}
                     onClick={(e) => {
-                      if (e.ctrlKey || e.metaKey || checked.size > 0) {
-                        toggleChecked(k);
+                      if (e.ctrlKey || e.metaKey || e.shiftKey || checked.size > 0) {
+                        toggleChecked(k, e.shiftKey);
                         return;
                       }
                       setPane({ kind: "view", accountId: c.accountId, id: c.id });
@@ -490,26 +502,45 @@ export function ContactsShell({ active }: { active: boolean }) {
                       if (e.key === "Enter") setPane({ kind: "view", accountId: c.accountId, id: c.id });
                     }}
                     className={cn(
-                      "group border-border flex w-full cursor-default items-center gap-3 border-b px-3 py-2 text-left",
+                      "border-border flex w-full cursor-default items-center gap-2 border-b px-3 py-2 text-left",
                       "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
                       (isSelected || isChecked) && "bg-muted",
                     )}
                   >
-                    <div className="relative size-9 shrink-0">
-                      <ContactAvatar c={c} className={cn("size-9", (isChecked || checked.size > 0) && "invisible", "group-hover:invisible")} />
+                    {checked.size > 0 && (
                       <span
-                        className={cn(
-                          "absolute inset-0 flex items-center justify-center",
-                          isChecked || checked.size > 0 ? "visible" : "invisible group-hover:visible",
-                        )}
+                        className="-ml-1 shrink-0"
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleChecked(k);
+                          toggleChecked(k, e.shiftKey);
                         }}
                       >
-                        <Checkbox checked={isChecked} aria-label={t("选择")} />
+                        <Checkbox checked={isChecked} aria-label={t("选择")} tabIndex={-1} />
                       </span>
-                    </div>
+                    )}
+                    {/* 头像就是选择按钮 (与邮件列表相同): 鼠标移到头像上才变成对勾, 选中的保持对勾,
+                        进入多选后左侧再出现一列勾选框。 */}
+                    <button
+                      type="button"
+                      title={t("选择")}
+                      aria-label={t("选择")}
+                      aria-pressed={isChecked}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleChecked(k, e.shiftKey);
+                      }}
+                      className="group/avatar relative mr-1 block size-9 shrink-0 rounded-full"
+                    >
+                      <ContactAvatar c={c} className="size-9" />
+                      <span
+                        className={cn(
+                          "bg-accent text-accent-foreground absolute inset-0 flex items-center justify-center rounded-full transition-opacity",
+                          isChecked ? "opacity-100" : "opacity-0 group-hover/avatar:opacity-100",
+                        )}
+                      >
+                        <Check className="size-5" strokeWidth={2.5} />
+                      </span>
+                    </button>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
                         <span className="truncate text-sm font-medium">{c.displayName || c.email || t("(未命名)")}</span>
@@ -528,9 +559,18 @@ export function ContactsShell({ active }: { active: boolean }) {
     </div>
   );
 
-  function toggleChecked(k: string) {
+  /** 勾选 / 取消一位联系人; range 为真 (Shift) 时把上次点的那位到这位之间按列表顺序全部勾上。 */
+  function toggleChecked(k: string, range = false) {
+    const order = sections.flatMap(([, items]) => items.map(key));
+    const from = lastChecked.current ? order.indexOf(lastChecked.current) : -1;
+    const to = order.indexOf(k);
+    lastChecked.current = k;
     setChecked((prev) => {
       const next = new Set(prev);
+      if (range && from >= 0 && to >= 0) {
+        for (const x of order.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(x);
+        return next;
+      }
       if (next.has(k)) next.delete(k);
       else next.add(k);
       return next;
@@ -564,6 +604,8 @@ export function ContactsShell({ active }: { active: boolean }) {
         books={books}
         accounts={accounts}
         all={all}
+        tab={detailTab}
+        onTab={setDetailTab}
         onOpen={(accountId, id) => setPane({ kind: "view", accountId, id })}
         onEdit={() => edit(pane.accountId, pane.id)}
         onDeleted={() => {
@@ -583,7 +625,21 @@ export function ContactsShell({ active }: { active: boolean }) {
 
   return (
     <>
-      <PaneLayout id="contacts" sidebar={sidebar} list={list} detail={detail} listWidth={340} />
+      <PaneLayout
+        id="contacts"
+        sidebar={sidebar}
+        list={list}
+        detail={detail}
+        listWidth={340}
+        mobilePane={pane.kind === "none" && mobileView === "detail" ? "list" : mobileView}
+        onMobilePaneChange={(p) => {
+          // 编辑中按返回等于取消编辑, 回到列表时详情栏不留一个看不见的表单。
+          if (p !== "detail" && pane.kind === "edit") {
+            setPaneState(pane.form.id ? { kind: "view", accountId: pane.form.accountId, id: pane.form.id } : { kind: "none" });
+          }
+          setMobileView(p);
+        }}
+      />
 
       <BookNameDialog
         target={bookDialog}
@@ -773,6 +829,8 @@ function ContactDetailPane({
   books,
   accounts,
   all,
+  tab,
+  onTab,
   onOpen,
   onEdit,
   onDeleted,
@@ -782,13 +840,14 @@ function ContactDetailPane({
   books: AddressBook[];
   accounts: Account[];
   all: ContactSummary[];
+  tab: DetailTab;
+  onTab: (tab: DetailTab) => void;
   onOpen: (accountId: string, id: string) => void;
   onEdit: () => void;
   onDeleted: () => void;
 }) {
   useI18n();
   const [detail, setDetail] = useState<ContactForm | null>(null);
-  const [emails, setEmails] = useState<EmailSummary[]>([]);
   const [events, setEvents] = useState<EventOccurrence[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -797,14 +856,7 @@ function ContactDetailPane({
       const d = await api.getContact(accountId, id);
       setDetail(d);
       const primary = d?.emails?.[0]?.value;
-      if (primary) {
-        const [recent, upcoming] = await Promise.all([api.recentEmailsWith(primary), api.upcomingEventsWith(primary)]);
-        setEmails(recent ?? []);
-        setEvents(upcoming ?? []);
-      } else {
-        setEmails([]);
-        setEvents([]);
-      }
+      setEvents(primary ? ((await api.upcomingEventsWith(primary)) ?? []) : []);
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -851,173 +903,164 @@ function ContactDetailPane({
     send("compose", { to });
   }
 
+  const addresses = (detail.emails ?? []).map((e) => e.value).filter(Boolean);
+  const showEmails = !isGroup && addresses.length > 0;
+  const current = showEmails ? tab : "info";
+
   return (
-    <div className="czl-scroll h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
-        <header className="flex flex-wrap items-center gap-4">
-          {detail.photoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={detail.photoUrl} alt="" className="size-16 rounded-full object-cover" />
-          ) : (
-            <SenderAvatar email={primary} name={detail.displayName} className="size-16 text-lg" />
-          )}
-          <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-2 truncate text-xl font-semibold">
-              {detail.displayName || t("(未命名)")}
-              {isGroup && <UsersRound className="text-muted-foreground size-4" />}
-            </h1>
-            {subtitle && <p className="text-muted-foreground truncate text-sm">{subtitle}</p>}
-            {detail.nickname && <p className="text-muted-foreground truncate text-sm">{t("昵称：{0}", detail.nickname)}</p>}
-            <p className="text-muted-foreground truncate text-xs">
-              {accountName} · {book ? bookLabel(book) : ""}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {(primary || memberAddresses.length > 0) && (
-              <Button variant="outline" size="sm" onClick={() => compose(isGroup ? memberAddresses.join(", ") : detail.displayName ? `${detail.displayName} <${primary}>` : primary)}>
-                <Mail className="size-4" />
-                {isGroup ? t("群发邮件") : t("写邮件")}
-              </Button>
+    <Tabs value={current} onValueChange={(v) => onTab(v as DetailTab)} className="flex h-full min-h-0 flex-col gap-0">
+      <div className="border-border @container shrink-0 border-b">
+        <div className="mx-auto flex max-w-4xl flex-col gap-3 px-4 pt-4 @xl:gap-4 @xl:px-6 @xl:pt-6">
+          <header className="flex flex-wrap items-center gap-x-4 gap-y-3">
+            {detail.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={detail.photoUrl} alt="" className="size-12 rounded-full object-cover @xl:size-16" />
+            ) : (
+              <SenderAvatar email={primary} name={detail.displayName} className="size-12 text-base @xl:size-16 @xl:text-lg" />
             )}
-            {!detail.readOnly && (
-              <Button variant="outline" size="sm" onClick={onEdit}>
-                <Pencil className="size-4" />
-                {t("编辑")}</Button>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="size-8" aria-label={t("更多")}>
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuItem
-                  onSelect={() => navigator.clipboard?.writeText(primary).then(() => toast.success(t("已复制邮箱")))}
-                  disabled={!primary}
-                >
+            <div className="min-w-0 flex-1">
+              <h1 className="flex items-center gap-2 truncate text-xl font-semibold">
+                {detail.displayName || t("(未命名)")}
+                {isGroup && <UsersRound className="text-muted-foreground size-4" />}
+              </h1>
+              {subtitle && <p className="text-muted-foreground truncate text-sm">{subtitle}</p>}
+              {detail.nickname && <p className="text-muted-foreground truncate text-sm">{t("昵称：{0}", detail.nickname)}</p>}
+              <p className="text-muted-foreground truncate text-xs">
+                {accountName} · {book ? bookLabel(book) : ""}
+              </p>
+            </div>
+            {/* 详情栏窄 (手机) 时按钮换到姓名下面一行, 不跟姓名抢宽度。 */}
+            <div className="flex w-full gap-2 @xl:w-auto">
+              {(primary || memberAddresses.length > 0) && (
+                <Button variant="outline" size="sm" onClick={() => compose(isGroup ? memberAddresses.join(", ") : detail.displayName ? `${detail.displayName} <${primary}>` : primary)}>
                   <Mail className="size-4" />
-                  {t("复制邮箱")}</DropdownMenuItem>
-                {!detail.readOnly && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem variant="destructive" onSelect={() => setConfirmDelete(true)}>
-                      <Trash2 className="size-4" />
-                      {isGroup ? t("删除群组") : t("删除联系人")}
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
-
-        {(detail.keywords ?? []).length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {detail.keywords.map((k) => (
-              <span key={k} className="bg-muted flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs">
-                <Tag className="size-3" />
-                {k}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {isGroup ? (
-          <section className="border-border flex flex-col gap-1 border-t pt-5">
-            <h2 className="text-muted-foreground mb-1 text-xs font-medium">{t("成员（{0}）", members.length)}</h2>
-            {members.length === 0 && <p className="text-muted-foreground text-sm">{t("群组里还没有成员")}</p>}
-            {members.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => onOpen(m.accountId, m.id)}
-                className="hover:bg-secondary -mx-2 flex items-center gap-3 rounded-md px-2 py-1.5 text-left"
-              >
-                <ContactAvatar c={m} className="size-8" />
-                <span className="min-w-0 flex-1 truncate text-sm">{m.displayName || m.email}</span>
-                <span className="text-muted-foreground truncate text-xs">{m.email}</span>
-              </button>
-            ))}
-          </section>
-        ) : (
-          <section className="border-border grid gap-4 border-t pt-5 sm:grid-cols-2">
-            {detail.emails?.map((e, i) => (
-              <InfoRow key={`e${i}`} icon={Mail} label={e.label || getContextLabel()[e.context] || t("邮箱")}>
-                <button type="button" className="text-accent truncate text-left hover:underline" onClick={() => compose(e.value)}>
-                  {e.value}
-                </button>
-              </InfoRow>
-            ))}
-            {detail.phones?.map((p, i) => (
-              <InfoRow key={`p${i}`} icon={Phone} label={p.label || getPhoneLabel()[p.feature] || t("电话")}>
-                <span className="select-text">{p.value}</span>
-              </InfoRow>
-            ))}
-            {detail.organization && detail.kind !== "org" && (
-              <InfoRow icon={Building2} label={t("公司")}>
-                {detail.organization}
-              </InfoRow>
-            )}
-            {detail.anniversaries?.map((d, i) => (
-              <InfoRow key={`d${i}`} icon={d.kind === "birth" ? Cake : CalendarDays} label={getDateLabel()[d.kind] || d.kind || t("纪念日")}>
-                {d.date.replace(/^--/, "")}
-              </InfoRow>
-            ))}
-            {detail.addresses?.map((a, i) => (
-              <InfoRow key={`a${i}`} icon={MapPin} label={getContextLabel()[a.context] ? t("{0}地址", getContextLabel()[a.context]) : t("地址")}>
-                <span className="whitespace-pre-wrap select-text">
-                  {a.full || [a.street, [a.locality, a.region, a.postcode].filter(Boolean).join(" "), a.country].filter(Boolean).join("\n")}
-                </span>
-              </InfoRow>
-            ))}
-            {detail.onlineServices?.map((s, i) => (
-              <InfoRow key={`s${i}`} icon={Globe} label={s.service || s.label || t("在线服务")}>
-                <span className="select-text">{s.uri}</span>
-              </InfoRow>
-            ))}
-            {detail.personalInfo?.map((p, i) => (
-              <InfoRow key={`i${i}`} icon={UserRound} label={getInfoLabel()[p.kind] || t("个人信息")}>
-                {p.value}
-              </InfoRow>
-            ))}
-            {detail.notes && (
-              <InfoRow icon={StickyNote} label={t("备注")} wide>
-                <span className="whitespace-pre-wrap select-text">{detail.notes}</span>
-              </InfoRow>
-            )}
-          </section>
-        )}
-
-        {!isGroup && (
-          <div className="border-border grid gap-6 border-t pt-5 lg:grid-cols-2">
-            <section className="flex flex-col gap-2">
-              <h2 className="text-muted-foreground text-xs font-medium">{t("最近往来邮件")}</h2>
-              {emails.length === 0 ? (
-                <p className="text-muted-foreground text-sm">{t("没有往来邮件")}</p>
-              ) : (
-                emails.map((e) => (
-                  <button
-                    key={`${e.accountId}/${e.id}`}
-                    type="button"
-                    onClick={() => {
-                      send("navigate", { module: "mail" });
-                      requestOpenEmail({ accountId: e.accountId, emailId: e.id });
-                    }}
-                    className="hover:bg-secondary -mx-2 flex flex-col rounded-md px-2 py-1.5 text-left"
+                  {isGroup ? t("群发邮件") : t("写邮件")}
+                </Button>
+              )}
+              {!detail.readOnly && (
+                <Button variant="outline" size="sm" onClick={onEdit}>
+                  <Pencil className="size-4" />
+                  {t("编辑")}</Button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="size-8" aria-label={t("更多")}>
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem
+                    onSelect={() => navigator.clipboard?.writeText(primary).then(() => toast.success(t("已复制邮箱")))}
+                    disabled={!primary}
                   >
-                    <span className="flex items-baseline gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{e.subject || t("(无主题)")}</span>
-                      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{listDate(e.receivedAt)}</span>
-                    </span>
-                    <span className="text-muted-foreground truncate text-xs">
-                      {displayAddressList(e.from)} · {e.preview}
-                    </span>
+                    <Mail className="size-4" />
+                    {t("复制邮箱")}</DropdownMenuItem>
+                  {!detail.readOnly && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onSelect={() => setConfirmDelete(true)}>
+                        <Trash2 className="size-4" />
+                        {isGroup ? t("删除群组") : t("删除联系人")}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </header>
+
+          {(detail.keywords ?? []).length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {detail.keywords.map((k) => (
+                <span key={k} className="bg-muted flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs">
+                  <Tag className="size-3" />
+                  {k}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {showEmails ? (
+            <TabsList variant="line" className="-mb-px h-9">
+              <TabsTrigger value="info">{t("资料")}</TabsTrigger>
+              <TabsTrigger value="emails">{t("往来邮件")}</TabsTrigger>
+            </TabsList>
+          ) : (
+            <div className="h-2" />
+          )}
+        </div>
+      </div>
+
+      <TabsContent value="info" className="czl-scroll @container min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-4xl flex-col gap-6 p-4 @xl:p-6">
+          {isGroup ? (
+            <section className="flex flex-col gap-1">
+              <h2 className="text-muted-foreground mb-1 text-xs font-medium">{t("成员（{0}）", members.length)}</h2>
+              {members.length === 0 && <p className="text-muted-foreground text-sm">{t("群组里还没有成员")}</p>}
+              {members.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => onOpen(m.accountId, m.id)}
+                  className="hover:bg-secondary -mx-2 flex items-center gap-3 rounded-md px-2 py-1.5 text-left"
+                >
+                  <ContactAvatar c={m} className="size-8" />
+                  <span className="min-w-0 flex-1 truncate text-sm">{m.displayName || m.email}</span>
+                  <span className="text-muted-foreground truncate text-xs">{m.email}</span>
+                </button>
+              ))}
+            </section>
+          ) : (
+            <section className="grid gap-4 sm:grid-cols-2">
+              {detail.emails?.map((e, i) => (
+                <InfoRow key={`e${i}`} icon={Mail} label={e.label || getContextLabel()[e.context] || t("邮箱")}>
+                  <button type="button" className="text-accent truncate text-left hover:underline" onClick={() => compose(e.value)}>
+                    {e.value}
                   </button>
-                ))
+                </InfoRow>
+              ))}
+              {detail.phones?.map((p, i) => (
+                <InfoRow key={`p${i}`} icon={Phone} label={p.label || getPhoneLabel()[p.feature] || t("电话")}>
+                  <span className="select-text">{p.value}</span>
+                </InfoRow>
+              ))}
+              {detail.organization && detail.kind !== "org" && (
+                <InfoRow icon={Building2} label={t("公司")}>
+                  {detail.organization}
+                </InfoRow>
+              )}
+              {detail.anniversaries?.map((d, i) => (
+                <InfoRow key={`d${i}`} icon={d.kind === "birth" ? Cake : CalendarDays} label={getDateLabel()[d.kind] || d.kind || t("纪念日")}>
+                  {d.date.replace(/^--/, "")}
+                </InfoRow>
+              ))}
+              {detail.addresses?.map((a, i) => (
+                <InfoRow key={`a${i}`} icon={MapPin} label={getContextLabel()[a.context] ? t("{0}地址", getContextLabel()[a.context]) : t("地址")}>
+                  <span className="whitespace-pre-wrap select-text">
+                    {a.full || [a.street, [a.locality, a.region, a.postcode].filter(Boolean).join(" "), a.country].filter(Boolean).join("\n")}
+                  </span>
+                </InfoRow>
+              ))}
+              {detail.onlineServices?.map((s, i) => (
+                <InfoRow key={`s${i}`} icon={Globe} label={s.service || s.label || t("在线服务")}>
+                  <span className="select-text">{s.uri}</span>
+                </InfoRow>
+              ))}
+              {detail.personalInfo?.map((p, i) => (
+                <InfoRow key={`i${i}`} icon={UserRound} label={getInfoLabel()[p.kind] || t("个人信息")}>
+                  {p.value}
+                </InfoRow>
+              ))}
+              {detail.notes && (
+                <InfoRow icon={StickyNote} label={t("备注")} wide>
+                  <span className="whitespace-pre-wrap select-text">{detail.notes}</span>
+                </InfoRow>
               )}
             </section>
+          )}
 
-            <section className="flex flex-col gap-2">
+          {!isGroup && (
+            <section className="border-border flex flex-col gap-2 border-t pt-5">
               <h2 className="text-muted-foreground text-xs font-medium">{t("近期日程")}</h2>
               {events.length === 0 ? (
                 <p className="text-muted-foreground text-sm">{t("没有即将到来的日程")}</p>
@@ -1038,9 +1081,15 @@ function ContactDetailPane({
                 ))
               )}
             </section>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </TabsContent>
+
+      {showEmails && (
+        <TabsContent value="emails" className="min-h-0 flex-1">
+          <Correspondence key={addresses.join(",")} addresses={addresses} />
+        </TabsContent>
+      )}
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
@@ -1057,7 +1106,7 @@ function ContactDetailPane({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </Tabs>
   );
 }
 

@@ -214,7 +214,7 @@ export const api = {
   attachPaths: guard(App.AttachPaths),
   discoverSignIn: guard(App.DiscoverSignIn),
   deleteAllData: guard(App.DeleteAllData),
-  recentEmailsWith: guard(App.RecentEmailsWith),
+  emailsWith: guard(App.EmailsWith),
   upcomingEventsWith: guard(App.UpcomingEventsWith),
   importContactsFile: guard(App.ImportContactsFile),
 

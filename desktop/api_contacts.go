@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	cryptorand "crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
@@ -910,13 +912,79 @@ func (a *App) DeleteAddressBook(accountID, id string) error {
 	return err
 }
 
-// RecentEmailsWith 返回与联系人最近的往来邮件。
+// RecentEmailsWith 返回与联系人最近的往来邮件 (MCP 用)。
 func (a *App) RecentEmailsWith(address string) ([]store.EmailSummary, error) {
+	page, err := a.EmailsWith([]string{address}, store.DirectionAll, 10, 0)
+	return page.Emails, err
+}
+
+// CorrespondencePage 是与某人往来邮件的一页。Total 是全部账号合计的封数:
+// 各账号服务端都答复时取服务端总数, 否则 (离线、超时) 取本地缓存里的。
+type CorrespondencePage struct {
+	Emails []store.EmailSummary `json:"emails"`
+	Total  int                  `json:"total"`
+}
+
+// EmailsWith 分页列出与这些地址(联系人的全部邮箱)往来的邮件, 跨全部账号按收件时间倒序。
+// direction: "" 全部 / "from" 对方发来的 / "to" 发给对方的。
+//
+// 本地只缓存了最近一批邮件, 与 ListUnified 一样先让每个账号的服务端补齐自己的 [offset, offset+limit):
+// 界面从第一页依次翻下来时, 各账号的前 offset+limit 封都已在本地, 合并出的这一页不会漏掉中间的邮件。
+func (a *App) EmailsWith(addresses []string, direction string, limit, offset int) (CorrespondencePage, error) {
 	st, err := a.currentStore()
 	if err != nil {
-		return nil, err
+		return CorrespondencePage{}, err
 	}
-	return st.RecentEmailsWith(a.ctx, address, 10)
+	if direction != store.DirectionAll && direction != store.DirectionFrom && direction != store.DirectionTo {
+		return CorrespondencePage{}, fmt.Errorf("2251 unknown direction %q", direction)
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	var serverTotal int
+	complete := false
+	if s, err := a.currentSyncer(); err == nil {
+		accounts, err := st.Accounts(a.ctx)
+		if err != nil {
+			return CorrespondencePage{}, err
+		}
+		totals := make([]int, len(accounts))
+		var wg sync.WaitGroup
+		ctx, cancel := context.WithTimeout(a.ctx, fillPageTimeout)
+		for i, acc := range accounts {
+			wg.Go(func() {
+				n, err := s.FillCorrespondencePage(ctx, acc.ID, addresses, direction, offset, limit)
+				if err != nil {
+					a.log.Warn("fill correspondence page", "account", acc.ID, "err", err)
+					totals[i] = -1
+					return
+				}
+				totals[i] = n
+			})
+		}
+		wg.Wait()
+		cancel()
+		complete, serverTotal = true, 0
+		for _, n := range totals {
+			if n < 0 {
+				complete = false
+				break
+			}
+			serverTotal += n
+		}
+	}
+	list, localTotal, err := st.EmailsWith(a.ctx, addresses, direction, limit, offset)
+	if err != nil {
+		return CorrespondencePage{}, err
+	}
+	total := localTotal
+	if complete {
+		total = serverTotal
+	}
+	return CorrespondencePage{Emails: list, Total: total}, nil
 }
 
 // UpcomingEventsWith 返回未来 90 天内含该邮箱参与人的日程。

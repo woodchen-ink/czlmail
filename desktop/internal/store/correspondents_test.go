@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 )
@@ -31,5 +32,50 @@ func TestCorrespondentQueries(t *testing.T) {
 
 	if _, err := s.SearchCorrespondents(ctx, "zhang_", 10); err != nil {
 		t.Fatalf("search correspondents: %v", err)
+	}
+}
+
+// 往来邮件按方向筛选: 对方发来的只看发件人, 发给对方的看收件人/抄送/密送; 联系人的多个邮箱一起算。
+func TestEmailsWithDirection(t *testing.T) {
+	ctx := context.Background()
+	s := openTemp(t)
+	me := Address{Email: "me@example.com"}
+	msgs := []Email{
+		{ID: "in1", From: []Address{{Email: "Bob@Example.com"}}, To: []Address{me}, ReceivedAt: time.Unix(1700000005, 0)},
+		{ID: "out1", From: []Address{me}, To: []Address{{Email: "bob@example.com"}}, ReceivedAt: time.Unix(1700000004, 0)},
+		{ID: "out2", From: []Address{me}, BCC: []Address{{Email: "bob@work.example"}}, ReceivedAt: time.Unix(1700000003, 0)},
+		{ID: "in2", From: []Address{{Email: "bob@work.example"}}, To: []Address{me}, ReceivedAt: time.Unix(1700000002, 0)},
+		{ID: "other", From: []Address{{Email: "alice@example.com"}}, To: []Address{me}, ReceivedAt: time.Unix(1700000001, 0)},
+	}
+	if err := s.WithTx(ctx, func(tx *sql.Tx) error { return UpsertEmails(ctx, tx, "c", msgs) }); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	addrs := []string{"bob@example.com", "bob@work.example"}
+	ids := func(list []EmailSummary) string {
+		var out []string
+		for _, e := range list {
+			out = append(out, e.ID)
+		}
+		return strings.Join(out, ",")
+	}
+	for _, tc := range []struct {
+		dir, want string
+		total     int
+	}{
+		{DirectionAll, "in1,out1,out2,in2", 4},
+		{DirectionFrom, "in1,in2", 2},
+		{DirectionTo, "out1,out2", 2},
+	} {
+		got, total, err := s.EmailsWith(ctx, addrs, tc.dir, 10, 0)
+		if err != nil {
+			t.Fatalf("%q: %v", tc.dir, err)
+		}
+		if ids(got) != tc.want || total != tc.total {
+			t.Errorf("%q = %s (%d), want %s (%d)", tc.dir, ids(got), total, tc.want, tc.total)
+		}
+	}
+	page, total, _ := s.EmailsWith(ctx, addrs, DirectionAll, 2, 2)
+	if ids(page) != "out2,in2" || total != 4 {
+		t.Errorf("page 2 = %s (%d)", ids(page), total)
 	}
 }
