@@ -310,7 +310,8 @@ export function EmailBody({
       }
       if (msg.type === "height" && typeof msg.height === "number") {
         // 留一点余量，避免因为四舍五入出现一条内部滚动条。
-        setHeight(Math.min(Math.max(msg.height + 16, 120), 20000));
+        // 上限只防失控; 长邮件放大到 300% 能有几万像素高, 封顶太低会在正文里多出一条滚动条。
+        setHeight(Math.min(Math.max(msg.height + 16, 120), 200000));
         if (typeof msg.width === "number") {
           const view = viewRef.current;
           setContentWidth(view && msg.width > view + 1 ? Math.min(Math.ceil(msg.width), 20000) : 0);
@@ -453,6 +454,8 @@ function bridgeScript(nonce: string): string {
   // 缩小以字看得清为限: 这一块里大部分文字缩完至少 READABLE_PX, 到下限后保留横向滚动。
   var READABLE_PX = 11, MIN_ZOOM = 0.5;
   var zoomed = [];
+  // 图片放大后的最小宽度(见 fit 末尾): [img, 原 minWidth, 原 height], 每次重算前还原。
+  var sized = [];
   // 用户手动缩放(Ctrl+滚轮、Ctrl+加减), 由父页面送来, 乘在自动缩放之上。
   var userZoom = 1;
   // 阅读栏给正文的宽度, 由父页面送来。正文比阅读栏宽时 iframe 会跟着变宽,
@@ -526,15 +529,22 @@ function bridgeScript(nonce: string): string {
     if (!body) return;
     for (var i = 0; i < zoomed.length; i++) zoomed[i].style.zoom = "";
     zoomed = [];
+    for (var k = 0; k < sized.length; k++) {
+      sized[k][0].style.minWidth = sized[k][1];
+      sized[k][0].style.height = sized[k][2];
+    }
+    sized = [];
     found = false;
-    // 先按原大量, 自动缩放算好后再乘上用户缩放。
-    // body 限宽为正文栏: 能折行的文字始终在正文栏里折行, 只有固定宽度的版式伸出去;
-    // 伸出去的版式最宽可以用到 view(正文栏加两侧空白), 超过才缩小。
+    // 缩放的模型: 先按 100% 排版(body 宽 = 正文栏), 比阅读栏还宽的固定版式按阅读栏缩小
+    // (不小于看得清的下限), 再整体乘上用户缩放。
+    // 放大时正文栏跟着变宽, 像放大镜一样整页变大、每行字数不变; 宽到整个阅读栏后按阅读栏重新折行,
+    // 与浏览器缩放一样。固定宽度的版式放大后比阅读栏宽, 由阅读栏横向滚动。
     var view = parentView || root.clientWidth;
-    var text = Math.min(parentText || view, view);
+    var col = Math.min(parentText || view, view);
+    var target = userZoom >= 1 ? Math.min(col * userZoom, view) : col;
     body.style.zoom = "";
     body.style.display = "flow-root";
-    body.style.maxWidth = text + "px";
+    body.style.width = col + "px";
     var auto = 1;
     var w = extent(body);
     if (view > 0 && w > view + 1) {
@@ -542,10 +552,42 @@ function bridgeScript(nonce: string): string {
       // 找不到具体是哪一块撑宽的(比如不换行的长文字直接在 body 里), 照旧整体缩小。
       if (!found) auto = Math.max(view / w, minZoom(body));
     }
+    // 放大后按阅读栏重新折行时, 宽度跟着容器走的图片(width:100%)会随容器变窄,
+    // 放得越大图越小。先记下 100% 时的宽度, 放大后至少保持这个宽度(按比例跟文字一起变大),
+    // 最多到阅读栏右边缘。
+    var natural = [];
+    if (userZoom > 1 && target < col * userZoom - 1) {
+      var imgs = body.getElementsByTagName("img");
+      for (var n = 0; n < imgs.length; n++) {
+        var im = imgs[n], iw = im.getBoundingClientRect().width;
+        if (iw < 24 || inZoomed(im)) continue;
+        natural.push([im, iw]);
+      }
+    }
     var total = auto * userZoom;
-    // zoom 也作用在 body 自己的宽度上, 限宽要换算回缩放前的值。
-    body.style.maxWidth = text / total + "px";
+    // zoom 也作用在 body 自己的宽度上, 宽度要换算回缩放前的值。
+    body.style.width = target / total + "px";
     if (Math.abs(total - 1) > 0.001) body.style.zoom = String(total);
+    if (natural.length) {
+      var left0 = body.getBoundingClientRect().left;
+      for (var q = 0; q < natural.length; q++) {
+        var img = natural[q][0], r = img.getBoundingClientRect();
+        var cur = r.width / total;
+        var room = (view - (r.left - left0)) / total;
+        var min = Math.min(natural[q][1], room);
+        if (min > cur + 0.5) {
+          // 记下邮件自己写的值, 下次重算时还原。
+          sized.push([img, img.style.minWidth, img.style.height]);
+          img.style.minWidth = min + "px";
+          // 写死的 height 属性会把图拉变形; 已经知道原始比例的图改成按宽度算高。
+          if (img.naturalWidth) img.style.height = "auto";
+        }
+      }
+    }
+  }
+  function inZoomed(el) {
+    for (var i = 0; i < zoomed.length; i++) if (zoomed[i].contains(el)) return true;
+    return false;
   }
   function report() {
     fit();
