@@ -329,7 +329,7 @@ export function FilesShell({ active }: { active: boolean }) {
     selected.has(n.id) && selectedNodes.length > 1 ? selectedNodes : [n];
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="@container flex h-full min-h-0 flex-col">
       <div className="border-border flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">
         <HardDrive className="text-muted-foreground size-4" />
         {accounts.length > 1 ? (
@@ -521,7 +521,7 @@ export function FilesShell({ active }: { active: boolean }) {
 
       <div
         className={cn(
-          "border-border text-muted-foreground grid shrink-0 grid-cols-[40px_minmax(0,1fr)_110px_170px_40px] items-center border-b px-2 py-1.5 text-xs",
+          "border-border text-muted-foreground grid shrink-0 grid-cols-[40px_minmax(0,1fr)_40px] @lg:grid-cols-[40px_minmax(0,1fr)_110px_170px_40px] items-center border-b px-2 py-1.5 text-xs",
           layout === "grid" && "hidden",
         )}
       >
@@ -536,8 +536,8 @@ export function FilesShell({ active }: { active: boolean }) {
           className="justify-self-center"
         />
         <span>{t("名称")}</span>
-        <span className="text-right">{t("大小")}</span>
-        <span className="pl-6">{t("修改时间")}</span>
+        <span className="hidden text-right @lg:block">{t("大小")}</span>
+        <span className="hidden pl-6 @lg:block">{t("修改时间")}</span>
         <span />
       </div>
 
@@ -721,7 +721,7 @@ export function FilesShell({ active }: { active: boolean }) {
                       onDoubleClick={() => openNode(n)}
                       onKeyDown={(e) => e.key === "Enter" && openNode(n)}
                       className={cn(
-                        "border-border grid cursor-default grid-cols-[40px_minmax(0,1fr)_110px_170px_40px] items-center border-b px-2 py-2 text-sm",
+                        "border-border grid cursor-default grid-cols-[40px_minmax(0,1fr)_40px] @lg:grid-cols-[40px_minmax(0,1fr)_110px_170px_40px] items-center border-b px-2 py-2 text-sm",
                         "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
                         selected.has(n.id) && "bg-muted",
                       )}
@@ -751,15 +751,23 @@ export function FilesShell({ active }: { active: boolean }) {
                             )}
                           />
                         )}
-                        <span className="truncate">{n.name}</span>
+                        {/* 列表窄 (手机) 时大小与时间不占列, 放在名称下面一行, 名称才有地方显示。 */}
+                        <span className="min-w-0">
+                          <span className="block truncate">{n.name}</span>
+                          <span className="text-muted-foreground block truncate text-xs tabular-nums @lg:hidden">
+                            {n.isDirectory
+                              ? formatTime(n.modified)
+                              : `${fileSize(n.size) || "0 B"} · ${formatTime(n.modified)}`}
+                          </span>
+                        </span>
                         {favKeys.has(`${n.accountId}/${n.id}`) && (
                           <Star className="text-chart-4 fill-chart-4 size-3 shrink-0" />
                         )}
                       </button>
-                      <span className="text-muted-foreground text-right text-xs tabular-nums">
+                      <span className="text-muted-foreground hidden text-right text-xs tabular-nums @lg:block">
                         {n.isDirectory ? "—" : fileSize(n.size) || "0 B"}
                       </span>
-                      <span className="text-muted-foreground pl-6 text-xs tabular-nums">
+                      <span className="text-muted-foreground hidden pl-6 text-xs tabular-nums @lg:block">
                         {formatTime(n.modified)}
                       </span>
                       <DropdownMenu>
