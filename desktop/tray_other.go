@@ -20,6 +20,7 @@ func (a *App) showWindow() {
 	if a.ctx == nil {
 		return
 	}
+	mainWindow.markSeen()
 	wruntime.WindowShow(a.ctx)
 	wruntime.WindowUnminimise(a.ctx)
 }

@@ -91,6 +91,7 @@ func (a *App) showWindow() {
 	if a.ctx == nil {
 		return
 	}
+	mainWindow.markSeen()
 	wruntime.WindowShow(a.ctx)
 	wruntime.WindowUnminimise(a.ctx)
 	// 抢前台交给 raiseToForeground(见 window_windows.go)。

@@ -4,6 +4,7 @@ package platform
 
 import (
 	"runtime"
+	"sync"
 	"syscall"
 	"unsafe"
 )
@@ -49,6 +50,8 @@ var (
 	enumFound    uintptr
 
 	mainHWND uintptr
+	// 托盘、窗口位置记忆等会从不同 goroutine 查找窗口, enumPID/enumFound 是共享的。
+	findMu sync.Mutex
 )
 
 func enumProc(hwnd, _ uintptr) uintptr {
@@ -69,6 +72,8 @@ func enumProc(hwnd, _ uintptr) uintptr {
 // findMainWindow 找出本进程的主窗口句柄。Wails v2 的运行时不对外暴露 HWND,
 // 只能按进程 + 窗口类名找。找到后缓存, 窗口在进程生命周期内不会重建。
 func findMainWindow() uintptr {
+	findMu.Lock()
+	defer findMu.Unlock()
 	if mainHWND != 0 {
 		return mainHWND
 	}
