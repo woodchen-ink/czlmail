@@ -322,18 +322,41 @@ function bridgeScript(nonce: string): string {
   return `<script nonce="${nonce}">
 (function () {
   var lastH = 0, lastView = 0;
-  // 固定宽度的版式(600~800px 的 table)比阅读栏宽时整体按比例缩小, 不用拉宽窗口或横向滚动。
+  // 固定宽度的版式(600~800px 的 table)比阅读栏宽时按比例缩小, 不用拉宽窗口或横向滚动。
+  // 只缩放比阅读栏宽的那一块, 不缩整个 body: 回复里引用了一封宽新闻信时,
+  // 上面的回复文字保持原大, 只有引用部分变小。
   // 用 zoom 而不是 transform: zoom 参与排版, scrollHeight 直接是缩放后的高度。
   // 每次先还原再量自然宽度, 阅读栏变宽后能缩回原大; 结果不变时 ResizeObserver 不会再触发, 不会循环。
   // 缩到 0.5 以下字已经看不清, 到下限后保留横向滚动。
+  var zoomed = [];
+  function shrink(el, view) {
+    for (var c = el.firstElementChild; c; c = c.nextElementSibling) {
+      var r = c.getBoundingClientRect();
+      // 自己没超出阅读栏时, 只有内容溢出且没被裁掉(overflow: visible)才往里找。
+      if (r.right <= view + 1 &&
+          (c.scrollWidth <= c.clientWidth + 1 || getComputedStyle(c).overflowX !== "visible")) continue;
+      var avail = view - Math.max(r.left, 0);
+      if (c.offsetWidth > avail + 1 && avail > 0) {
+        c.style.zoom = String(Math.max(avail / c.offsetWidth, 0.5));
+        zoomed.push(c);
+      } else {
+        shrink(c, view);
+      }
+    }
+  }
   function fit() {
     var root = document.documentElement;
     if (!document.body) return;
-    document.body.style.zoom = "";
+    for (var i = 0; i < zoomed.length; i++) zoomed[i].style.zoom = "";
+    zoomed = [];
     var view = root.clientWidth;
     var w = Math.max(root.scrollWidth, document.body.scrollWidth);
-    if (view > 0 && w > view + 1) {
+    if (!(view > 0 && w > view + 1)) return;
+    shrink(document.body, view);
+    // 找不到具体是哪一块撑宽的(比如不换行的长文字直接在 body 里), 照旧整体缩小。
+    if (!zoomed.length) {
       document.body.style.zoom = String(Math.max(view / w, 0.5));
+      zoomed.push(document.body);
     }
   }
   function report() {

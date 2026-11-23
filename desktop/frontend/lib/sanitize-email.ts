@@ -80,6 +80,8 @@ export function sanitizeEmailHtml(
   purify.addHook("afterSanitizeAttributes", (node) => {
     if (!(node instanceof Element)) return;
 
+    relaxFrozenWidth(node);
+
     if (node.tagName === "A") {
       rewriteLink(node);
       return;
@@ -189,6 +191,23 @@ function rewriteLink(node: Element) {
 
   node.setAttribute("data-external-href", href);
   node.setAttribute("rel", "noopener noreferrer");
+}
+
+/**
+ * 还原被冻结的百分比宽度。
+ *
+ * Apple Mail 回复或转发 HTML 邮件时把每个元素的计算样式写进内联 style, 于是
+ * `<table width="100%">` 变成 `<table width="100%" style="width: 2145px">` ——
+ * 2145 是发件人当时窗口的宽度。这样的引用比阅读栏宽好几倍, 整封信被缩到看不清。
+ * 宽度属性写的是百分比、内联宽度却是像素时, 以百分比为准。
+ */
+function relaxFrozenWidth(node: Element) {
+  const pct = (node.getAttribute("width") ?? "").trim();
+  if (!/^\d+(\.\d+)?%$/.test(pct)) return;
+  const style = node.getAttribute("style");
+  if (!style) return;
+  const relaxed = style.replace(/(^|;)(\s*)width\s*:\s*[\d.]+px\s*(?=;|$)/gi, `$1$2width: ${pct}`);
+  if (relaxed !== style) node.setAttribute("style", relaxed);
 }
 
 /** 返回是否真的拦下了一张远程图片。 */
