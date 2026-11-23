@@ -35,9 +35,13 @@ type sieveScript struct {
 
 // activeScript 返回当前生效的脚本(没有时返回同名脚本或 nil)及其内容。
 func (a *App) activeScript(accountID string) (*sieveScript, string, error) {
+	rt, err := a.route(accountID)
+	if err != nil {
+		return nil, "", err
+	}
 	req := &jmap.Request{Context: a.ctx}
-	req.Invoke(jmapx.Get("SieveScript", accountID, nil))
-	resp, err := a.doJMAP(req)
+	req.Invoke(jmapx.Get("SieveScript", rt.serverID, nil))
+	resp, err := rt.do(req)
 	if err != nil {
 		return nil, "", err
 	}
@@ -62,11 +66,7 @@ func (a *App) activeScript(accountID string) (*sieveScript, string, error) {
 	if chosen == nil {
 		return nil, "", nil
 	}
-	syncer, err := a.currentSyncer()
-	if err != nil {
-		return nil, "", err
-	}
-	rc, err := syncer.DownloadBlob(a.ctx, accountID, chosen.BlobID)
+	rc, err := rt.sync.DownloadBlob(a.ctx, accountID, chosen.BlobID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -105,18 +105,18 @@ func (a *App) SaveFilters(accountID string, rules []sieve.Rule) error {
 
 // SaveSieveScript 校验并保存原始脚本, 保存后立即生效。
 func (a *App) SaveSieveScript(accountID, script string) error {
-	s, err := a.currentSyncer()
+	rt, err := a.route(accountID)
 	if err != nil {
 		return err
 	}
-	blobID, _, _, err := s.UploadBlobType(a.ctx, accountID, "application/sieve", bytes.NewReader([]byte(script)))
+	blobID, _, _, err := rt.sync.UploadBlobType(a.ctx, accountID, "application/sieve", bytes.NewReader([]byte(script)))
 	if err != nil {
 		return err
 	}
 
 	check := &jmap.Request{Context: a.ctx}
-	check.Invoke(&jmapx.Call{Method: "SieveScript/validate", Args: map[string]any{"accountId": accountID, "blobId": blobID}})
-	resp, err := a.doJMAP(check)
+	check.Invoke(&jmapx.Call{Method: "SieveScript/validate", Args: map[string]any{"accountId": rt.serverID, "blobId": blobID}})
+	resp, err := rt.do(check)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (a *App) SaveSieveScript(accountID, script string) error {
 		return err
 	}
 	req := &jmap.Request{Context: a.ctx}
-	args := map[string]any{"accountId": accountID}
+	args := map[string]any{"accountId": rt.serverID}
 	if existing != nil {
 		args["update"] = map[string]any{existing.ID: map[string]any{"blobId": blobID}}
 		args["onSuccessActivateScript"] = existing.ID
@@ -138,7 +138,7 @@ func (a *App) SaveSieveScript(accountID, script string) error {
 		args["onSuccessActivateScript"] = "#s"
 	}
 	req.Invoke(&jmapx.Call{Method: "SieveScript/set", Args: args})
-	resp, err = a.doJMAP(req)
+	resp, err = rt.do(req)
 	if err != nil {
 		return err
 	}
@@ -161,9 +161,13 @@ type Vacation struct {
 }
 
 func (a *App) GetVacation(accountID string) (Vacation, error) {
+	rt, err := a.route(accountID)
+	if err != nil {
+		return Vacation{}, err
+	}
 	req := &jmap.Request{Context: a.ctx}
-	req.Invoke(&vacationresponse.Get{Account: jmap.ID(accountID)})
-	resp, err := a.doJMAP(req)
+	req.Invoke(&vacationresponse.Get{Account: jmap.ID(rt.serverID)})
+	resp, err := rt.do(req)
 	if err != nil {
 		return Vacation{}, err
 	}
@@ -191,9 +195,13 @@ func (a *App) SaveVacation(accountID string, v Vacation) error {
 		"fromDate":  nilIfBlank(v.FromDate),
 		"toDate":    nilIfBlank(v.ToDate),
 	}
+	rt, err := a.route(accountID)
+	if err != nil {
+		return err
+	}
 	req := &jmap.Request{Context: a.ctx}
-	req.Invoke(&vacationresponse.Set{Account: jmap.ID(accountID), Update: map[jmap.ID]jmap.Patch{"singleton": patch}})
-	resp, err := a.doJMAP(req)
+	req.Invoke(&vacationresponse.Set{Account: jmap.ID(rt.serverID), Update: map[jmap.ID]jmap.Patch{"singleton": patch}})
+	resp, err := rt.do(req)
 	if err != nil {
 		return err
 	}

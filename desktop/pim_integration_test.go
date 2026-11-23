@@ -13,7 +13,6 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
-	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
 // 日历、通讯录、文件的写操作端到端: 在真实服务器上建、改、删, 全部用测试专用的名字并清理。
@@ -40,9 +39,9 @@ func TestIntegrationPIMWrites(t *testing.T) {
 	defer st.Close()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	a := &App{ctx: ctx, log: log, store: st, client: client, sync: syncer.New(client, st, log)}
+	a := sessionTestApp(ctx, log, st, client)
 	acc := string(client.Session.PrimaryAccounts[jmap.URI("urn:ietf:params:jmap:calendars")])
-	if err := a.sync.SyncAccount(ctx, acc); err != nil {
+	if err := a.primary.sync.SyncAccount(ctx, acc); err != nil {
 		t.Fatal(err)
 	}
 
@@ -159,7 +158,7 @@ func TestIntegrationPIMWrites(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := a.sync.SetPIM(ctx, acc, "CalendarEvent", nil,
+		if _, err := a.primary.sync.SetPIM(ctx, acc, "CalendarEvent", nil,
 			map[string]map[string]any{evID: {"participants": parts, "organizerCalendarAddress": org}}, nil,
 			map[string]any{"sendSchedulingMessages": false}); err != nil {
 			t.Fatalf("participants rejected: %v", err)

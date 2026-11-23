@@ -18,9 +18,7 @@ import (
 // myAddresses 返回当前用户在该账号下可用的发件地址(小写), 用于识别"我"是组织者还是受邀者。
 func (a *App) myAddresses(accountID string) map[string]bool {
 	out := map[string]bool{}
-	a.mu.RLock()
-	user := strings.ToLower(a.cfg.Username)
-	a.mu.RUnlock()
+	user := strings.ToLower(a.usernameFor(accountID))
 	if user != "" {
 		out[user] = true
 	}
@@ -60,9 +58,7 @@ func (a *App) buildParticipants(accountID string, attendees []Attendee) (any, an
 		orgName, orgEmail = ids[0].Name, ids[0].Email
 	}
 	if orgEmail == "" {
-		a.mu.RLock()
-		orgEmail = a.cfg.Username
-		a.mu.RUnlock()
+		orgEmail = a.usernameFor(accountID)
 	}
 	if orgEmail == "" {
 		return nil, nil, fmt.Errorf("2106 cannot determine organizer address")
@@ -110,7 +106,7 @@ func (a *App) RespondEvent(accountID, eventID, status string) error {
 	if partID == "" {
 		return fmt.Errorf("2108 you are not an attendee of this event")
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -221,7 +217,7 @@ type TaskInput struct {
 
 // SaveTask 新建或修改任务。Stalwart 把任务存为 @type=Task 的 CalendarEvent。
 func (a *App) SaveTask(in TaskInput) (string, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(in.AccountID)
 	if err != nil {
 		return "", err
 	}
@@ -275,7 +271,7 @@ func (a *App) SaveTask(in TaskInput) (string, error) {
 
 // SetTaskCompleted 勾选或取消完成。
 func (a *App) SetTaskCompleted(accountID, id string, completed bool) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -298,7 +294,7 @@ func setTaskProgress(props map[string]any, completed bool) {
 
 // DeleteTask 删除任务。
 func (a *App) DeleteTask(accountID, id string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -311,7 +307,7 @@ func (a *App) DeleteTask(accountID, id string) error {
 
 // SaveCalendar 新建或修改日历(名称、颜色), 返回 id。
 func (a *App) SaveCalendar(accountID, id, name, color string) (string, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return "", err
 	}
@@ -341,7 +337,7 @@ func (a *App) SaveCalendar(accountID, id, name, color string) (string, error) {
 
 // DeleteCalendar 删除日历及其中的全部日程。
 func (a *App) DeleteCalendar(accountID, id string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}

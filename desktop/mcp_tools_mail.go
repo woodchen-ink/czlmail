@@ -371,7 +371,7 @@ func (a *App) mcpSearch(ctx context.Context, accountID string, f syncer.EmailFil
 	}
 	var ids []string
 	serverErr := errors.New("offline")
-	if s, err := a.currentSyncer(); err == nil {
+	if s, err := a.syncerFor(accountID); err == nil {
 		qctx, cancel := context.WithTimeout(ctx, fillPageTimeout)
 		ids, serverErr = s.QueryServer(qctx, accountID, f, limit)
 		cancel()
@@ -494,7 +494,7 @@ func (a *App) readTextBlob(ctx context.Context, accountID, blobID, name, content
 	if !isTextual(name, contentType) {
 		return "", fmt.Errorf("%s (%s) is not a text file; only text-like attachments and files can be read", name, contentType)
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return "", err
 	}
@@ -532,7 +532,7 @@ func isImage(name, contentType string) bool {
 
 // readImageBlob 下载图片并以图片内容返回。类型按内容嗅探, 不信附件声明的类型。
 func (a *App) readImageBlob(ctx context.Context, accountID, blobID, name string) (*mcp.CallToolResult, any, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, nil, err
 	}

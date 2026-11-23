@@ -36,17 +36,21 @@ type driveSyncFile struct {
 
 // openDriveSyncFile 定位个人网盘里的 CZL Mail/<name>, 返回文件句柄与当前内容(不存在时为 nil)。
 func (a *App) openDriveSyncFile(ctx context.Context, name string) (*driveSyncFile, []byte, error) {
-	s, err := a.currentSyncer()
-	if err != nil {
-		return nil, nil, err
-	}
 	st, err := a.currentStore()
 	if err != nil {
 		return nil, nil, err
 	}
 	accountID := a.personalAccountID(st)
 	if accountID == "" {
+		// 先报未登录: 会话还没建立时缓存里也可能还没有账号。
+		if !a.signedIn() {
+			return nil, nil, errNotSignedIn
+		}
 		return nil, nil, errors.New("2160 no personal account")
+	}
+	s, err := a.syncerFor(accountID)
+	if err != nil {
+		return nil, nil, err
 	}
 	if !s.SupportsFiles(accountID) {
 		return nil, nil, errNoDriveSync

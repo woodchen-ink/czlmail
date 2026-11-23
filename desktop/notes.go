@@ -30,7 +30,7 @@ type noteState struct {
 // noteService lazily opens the durable profile store independently of network availability.
 func (a *App) noteService() (*notes.Service, error) {
 	a.mu.RLock()
-	cfg := a.cfg
+	cfg := a.primary.cfg
 	st := a.store
 	a.mu.RUnlock()
 	if st == nil || !cfg.Configured() {

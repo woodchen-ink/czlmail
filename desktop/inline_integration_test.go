@@ -13,7 +13,6 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
-	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
 // 回复/转发带内嵌图片: 草稿存到服务器后, 读回的附件里应有带 cid 的内嵌部件。
@@ -32,17 +31,17 @@ func TestIntegrationInlineParts(t *testing.T) {
 	st, _ := store.Open(ctx, filepath.Join(t.TempDir(), "d.db"))
 	defer st.Close()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	a := &App{ctx: ctx, log: log, store: st, client: client, sync: syncer.New(client, st, log)}
-	a.cfg.Username = user
-	_ = a.persistAccounts(ctx, client, st)
+	a := sessionTestApp(ctx, log, st, client)
+	a.primary.cfg.Username = user
+	_ = a.persistAccounts(ctx, &a.primary, client, st)
 	acc := a.personalAccountID(st)
-	if err := a.sync.SyncAccount(ctx, acc); err != nil {
+	if err := a.primary.sync.SyncAccount(ctx, acc); err != nil {
 		t.Fatal(err)
 	}
 	ids, _ := a.ListIdentities(acc)
 
 	png := badgeIcon(1)[22:]
-	blobID, _, size, err := a.sync.UploadBlob(ctx, acc, bytes.NewReader(png))
+	blobID, _, size, err := a.primary.sync.UploadBlob(ctx, acc, bytes.NewReader(png))
 	if err != nil || size == 0 {
 		t.Fatalf("upload: %v", err)
 	}
@@ -56,7 +55,7 @@ func TestIntegrationInlineParts(t *testing.T) {
 	}
 	defer a.DiscardDraft(acc, draftID)
 
-	if err := a.sync.FetchBody(ctx, acc, draftID); err != nil {
+	if err := a.primary.sync.FetchBody(ctx, acc, draftID); err != nil {
 		t.Fatal(err)
 	}
 	d, err := st.Email(ctx, acc, draftID)

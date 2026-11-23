@@ -71,7 +71,7 @@ func (a *App) serveBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		http.Error(w, "not signed in", http.StatusServiceUnavailable)
 		return
@@ -105,7 +105,7 @@ func (a *App) serveBlob(w http.ResponseWriter, r *http.Request) {
 
 // SaveAttachment 把附件保存到用户选择的位置。返回保存路径, 用户取消时返回空串。
 func (a *App) SaveAttachment(accountID, blobID, name string) (string, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return "", err
 	}
@@ -171,7 +171,7 @@ func (a *App) AddAttachments(accountID string) ([]UploadedAttachment, error) {
 
 // AttachPaths 上传本地文件作为附件, 供从资源管理器拖进写信窗口时使用。目录会被跳过。
 func (a *App) AttachPaths(accountID string, paths []string) ([]UploadedAttachment, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, err
 	}

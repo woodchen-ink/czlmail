@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sort"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
@@ -89,10 +90,6 @@ func (a *App) ListTrustedSenders(accountID string) ([]string, error) {
 // syncTrustToServer 把信任变更写进个人账号的「Trusted Senders」通讯录, 与 Bulwark 共用。
 // 通讯录不存在时新建。失败只记日志: 本地名单已经生效。
 func (a *App) syncTrustToServer(address string, trusted bool) {
-	s, err := a.currentSyncer()
-	if err != nil {
-		return
-	}
 	st, err := a.currentStore()
 	if err != nil {
 		return
@@ -109,6 +106,10 @@ func (a *App) syncTrustToServer(address string, trusted bool) {
 			byAccount[e.AccountID] = append(byAccount[e.AccountID], e.CardID)
 		}
 		for acc, ids := range byAccount {
+			s, err := a.syncerFor(acc)
+			if err != nil {
+				continue
+			}
 			if _, err := s.SetPIM(a.ctx, acc, jmapx.ContactCard, nil, nil, ids, nil); err != nil {
 				a.log.Warn("untrust on server", "address", addr, "err", err)
 			}
@@ -121,6 +122,10 @@ func (a *App) syncTrustToServer(address string, trusted bool) {
 	}
 	accountID := a.personalAccountID(st)
 	if accountID == "" {
+		return
+	}
+	s, err := a.syncerFor(accountID)
+	if err != nil {
 		return
 	}
 	book, err := st.AddressBookByName(a.ctx, accountID, store.TrustedSendersBook)
@@ -152,7 +157,8 @@ func (a *App) personalAccountID(st *store.Store) string {
 		return ""
 	}
 	for _, acc := range accounts {
-		if acc.IsPersonal {
+		// 只看主登录: 网盘里的模板、AI 设置、受信发件人通讯录都跟主登录走。
+		if prefix, _ := accountid.Split(acc.ID); acc.IsPersonal && prefix == accountid.Primary {
 			return acc.ID
 		}
 	}

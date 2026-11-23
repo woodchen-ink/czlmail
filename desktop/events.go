@@ -89,9 +89,7 @@ type newMailNotice struct {
 }
 
 func (a *App) username() string {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.cfg.Username
+	return a.primaryConfig().Username
 }
 
 func hasKeyword(keywords []string, want string) bool {

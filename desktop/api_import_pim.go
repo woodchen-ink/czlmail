@@ -89,10 +89,11 @@ func readImportSource(source string) ([]byte, error) {
 }
 
 func (a *App) importPIMData(accountID, typeName string, data []byte, assign func(map[string]any)) (int, error) {
-	s, err := a.currentSyncer()
+	rt, err := a.route(accountID)
 	if err != nil {
 		return 0, err
 	}
+	s := rt.sync
 	mediaType := "text/calendar"
 	if typeName == jmapx.ContactCard {
 		mediaType = "text/vcard"
@@ -104,9 +105,9 @@ func (a *App) importPIMData(accountID, typeName string, data []byte, assign func
 
 	req := &jmap.Request{Context: a.ctx}
 	req.Invoke(&jmapx.Call{Method: typeName + "/parse", Args: map[string]any{
-		"accountId": accountID, "blobIds": []string{blobID},
+		"accountId": rt.serverID, "blobIds": []string{blobID},
 	}})
-	resp, err := a.doJMAP(req)
+	resp, err := rt.do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -158,24 +159,4 @@ func (a *App) importPIMData(accountID, typeName string, data []byte, assign func
 		}
 	}
 	return count, flush()
-}
-
-// doJMAP 直接发起一次请求并把方法错误转成 error。
-func (a *App) doJMAP(req *jmap.Request) (*jmap.Response, error) {
-	a.mu.RLock()
-	client := a.client
-	a.mu.RUnlock()
-	if client == nil {
-		return nil, errNotSignedIn
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("2133 jmap request: %w", err)
-	}
-	for _, inv := range resp.Responses {
-		if me, ok := inv.Args.(*jmap.MethodError); ok {
-			return nil, fmt.Errorf("2134 %s failed: %s", inv.Name, me.Type)
-		}
-	}
-	return resp, nil
 }

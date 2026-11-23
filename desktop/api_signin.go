@@ -71,10 +71,11 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 		return err
 	}
 
-	ctx, cancel, gen := a.beginSignIn()
+	si := &a.primary
+	ctx, cancel, gen := a.beginSignIn(si)
 	// 无论成功失败都要释放 context, 否则每次登录都漏一个。
 	defer cancel()
-	defer a.endSignIn(gen)
+	defer a.endSignIn(si, gen)
 
 	idp, clientID = strings.TrimSpace(idp), strings.TrimSpace(clientID)
 	if (idp == "") != (clientID == "") {
@@ -140,13 +141,13 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 
 	// 先连通再落盘, 避免把一组用不了的凭据写进密钥库。
 	httpClient, src := a.oauthClient(cfg, meta, tok)
-	if err := a.connect(cfg, httpClient, src); err != nil {
+	if err := a.connect(si, cfg, httpClient, src); err != nil {
 		a.log.Warn("oauth session connect failed", "err", err)
 		return err
 	}
 
 	a.mu.RLock()
-	connected := a.cfg
+	connected := si.cfg
 	a.mu.RUnlock()
 
 	if err := config.Save(connected); err != nil {
@@ -165,28 +166,33 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 // 必须有这个出口: 授权流程会等用户在浏览器里操作, 上限数分钟。用户关掉浏览器
 // 标签页、或者发现服务器地址填错了, 没有取消的话界面会一直卡在等待里。
 func (a *App) CancelSignIn() {
+	var cancels []context.CancelFunc
 	a.mu.Lock()
-	cancel := a.cancelSignIn
-	a.cancelSignIn = nil
+	for _, si := range a.signInsLocked() {
+		if si.cancelFlow != nil {
+			cancels = append(cancels, si.cancelFlow)
+			si.cancelFlow = nil
+		}
+	}
 	a.mu.Unlock()
 
-	if cancel != nil {
+	for _, cancel := range cancels {
 		cancel()
 	}
 }
 
-// beginSignIn 登记一次登录流程的取消句柄, 同时中止上一次未结束的流程。
+// beginSignIn 为这个登录登记一次登录流程的取消句柄, 同时中止它上一次未结束的流程。
 //
 // 返回的代次用于收尾时判断句柄是否仍属于本次流程。被中止的旧流程随后也会走到
 // endSignIn, 不比对代次的话它会把刚登记的新句柄擦掉, 导致新流程无法取消。
-func (a *App) beginSignIn() (context.Context, context.CancelFunc, uint64) {
+func (a *App) beginSignIn(si *signIn) (context.Context, context.CancelFunc, uint64) {
 	ctx, cancel := context.WithCancel(a.ctx)
 
 	a.mu.Lock()
-	previous := a.cancelSignIn
-	a.signInGen++
-	gen := a.signInGen
-	a.cancelSignIn = cancel
+	previous := si.cancelFlow
+	si.flowGen++
+	gen := si.flowGen
+	si.cancelFlow = cancel
 	a.mu.Unlock()
 
 	// 用户改了地址重新点登录时, 上一次还挂着的流程要先停掉,
@@ -198,11 +204,11 @@ func (a *App) beginSignIn() (context.Context, context.CancelFunc, uint64) {
 }
 
 // endSignIn 只清理仍属于本次流程的句柄。
-func (a *App) endSignIn(gen uint64) {
+func (a *App) endSignIn(si *signIn, gen uint64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.signInGen == gen {
-		a.cancelSignIn = nil
+	if si.flowGen == gen {
+		si.cancelFlow = nil
 	}
 }
 
@@ -225,15 +231,16 @@ func (a *App) SignInWithPassword(mailHost, username, password string) error {
 	}
 
 	// 先连通再落盘, 避免把错的密码写进密钥库。
-	if err := a.connect(cfg, basicAuthClient(username, password), nil); err != nil {
+	si := &a.primary
+	if err := a.connect(si, cfg, basicAuthClient(username, password), nil); err != nil {
 		return err
 	}
 
 	// 密钥库条目按登录时输入的用户名存, 而不是服务器返回的 username:
 	// 两者大小写或别名可能不同, 恢复会话时手里只有配置里的这个值。
 	a.mu.Lock()
-	a.cfg.Username = username
-	saved := a.cfg
+	si.cfg.Username = username
+	saved := si.cfg
 	a.mu.Unlock()
 
 	if err := config.Save(saved); err != nil {

@@ -63,7 +63,7 @@ func (a *App) CreateFolder(accountID, parentID, name string) error {
 
 // UploadFiles 选择本地文件上传到目录, 返回上传数量。
 func (a *App) UploadFiles(accountID, parentID string) (int, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return 0, err
 	}
@@ -191,7 +191,7 @@ func (a *App) localFile(accountID, id string) (string, error) {
 }
 
 func (a *App) setFiles(accountID string, create map[string]any, update map[string]map[string]any, destroy []string) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func (a *App) uploadPath(accountID, parentID, path string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return 0, err
 	}
@@ -365,7 +365,7 @@ func (a *App) copyNode(st *store.Store, accountID, id, parentID string, depth in
 	if err != nil {
 		return err
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -406,7 +406,7 @@ func (a *App) CreateTextFile(accountID, parentID, name string) error {
 	if name, err = a.freeName(st, accountID, parentID, name); err != nil {
 		return err
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}

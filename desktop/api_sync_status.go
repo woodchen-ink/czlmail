@@ -13,10 +13,10 @@ type MailSyncStatus struct {
 	Pending []string `json:"pending"`
 }
 
-// GetMailSyncStatus 返回当前的同步进度。未登录时为空状态。
+// GetMailSyncStatus 返回主登录当前的同步进度。未登录时为空状态。
 func (a *App) GetMailSyncStatus() MailSyncStatus {
 	a.mu.RLock()
-	s, st := a.sync, a.store
+	s, st := a.primary.sync, a.store
 	a.mu.RUnlock()
 	if s == nil || st == nil {
 		return MailSyncStatus{Pending: []string{}}

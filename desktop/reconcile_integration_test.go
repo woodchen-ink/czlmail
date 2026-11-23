@@ -13,7 +13,6 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
-	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
 // 对账只删除服务器上已不存在的邮件, 不误删真实邮件。
@@ -32,10 +31,10 @@ func TestIntegrationReconcileEmails(t *testing.T) {
 	st, _ := store.Open(ctx, filepath.Join(t.TempDir(), "d.db"))
 	defer st.Close()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	a := &App{ctx: ctx, log: log, store: st, client: client, sync: syncer.New(client, st, log)}
-	_ = a.persistAccounts(ctx, client, st)
+	a := sessionTestApp(ctx, log, st, client)
+	_ = a.persistAccounts(ctx, &a.primary, client, st)
 	acc := a.personalAccountID(st)
-	if err := a.sync.SyncAccount(ctx, acc); err != nil {
+	if err := a.primary.sync.SyncAccount(ctx, acc); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := st.LocalEmailIDs(ctx, acc)
@@ -44,7 +43,7 @@ func TestIntegrationReconcileEmails(t *testing.T) {
 	if err := st.WithTx(ctx, func(tx *sql.Tx) error { return store.UpsertEmails(ctx, tx, acc, []store.Email{fake}) }); err != nil {
 		t.Fatal(err)
 	}
-	removed, err := a.sync.ReconcileEmails(ctx, acc)
+	removed, err := a.primary.sync.ReconcileEmails(ctx, acc)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -142,8 +142,8 @@ func reminderTestApp(t *testing.T) (*App, *store.Store) {
 		ctx:   ctx,
 		log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 		store: st,
-		cfg:   config.Config{SessionEndpoint: "https://mail.example/jmap/session", Username: "wood@example", AuthMethod: config.AuthPassword},
 	}
+	a.primary.cfg = config.Config{SessionEndpoint: "https://mail.example/jmap/session", Username: "wood@example", AuthMethod: config.AuthPassword}
 	return a, st
 }
 
@@ -199,7 +199,7 @@ func TestReminderPlan(t *testing.T) {
 	if err := st.WithTx(ctx, func(tx *sql.Tx) error { return store.SetBoolSetting(ctx, tx, "notifyEvents", true) }); err != nil {
 		t.Fatal(err)
 	}
-	a.cfg = config.Config{}
+	a.primary.cfg = config.Config{}
 	if list, err := a.reminderPlan(now); err != nil || len(list) != 0 {
 		t.Fatalf("signed out: %+v, %v", list, err)
 	}

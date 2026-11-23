@@ -408,7 +408,7 @@ func relayCall(ctx context.Context, method, path, secret string, in, out any) er
 // stopPush 在退出登录时撤掉推送 (会话还在, 能删服务器上的订阅), 否则退出后这台手机仍会收到该账号的新邮件通知。
 func (a *App) stopPush() {
 	a.mu.RLock()
-	s, st := a.sync, a.store
+	s, st := a.primary.sync, a.store
 	a.mu.RUnlock()
 	if s == nil || st == nil {
 		return

@@ -28,7 +28,7 @@ func (a *App) ArchiveEmails(accountID string, emailIDs []string) error {
 
 // MarkJunk 标记为垃圾邮件(移入垃圾箱), 或从垃圾箱里标记为正常(移回收件箱)。
 func (a *App) MarkJunk(accountID string, emailIDs []string, junk bool) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (a *App) EmailPlacements(accountID string, emailIDs []string) ([]store.Emai
 
 // RestoreEmails 把邮件放回 EmailPlacements 记下的位置, 撤销一次移动类操作。
 func (a *App) RestoreEmails(accountID string, places []store.EmailPlacement) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func (a *App) RestoreEmails(accountID string, places []store.EmailPlacement) err
 
 // SetLabel 给邮件加上或去掉标签。标签即 JMAP 的自定义关键字。
 func (a *App) SetLabel(accountID string, emailIDs []string, label string, set bool) error {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ const (
 // 单封失败不中断整批: 一个几百封的归档包里夹着一两封格式损坏的邮件很常见,
 // 为此放弃整批只会逼用户手工拆包。失败数随结果一并返回。
 func (a *App) ImportEmails(accountID, mailboxID string) (*ImportResult, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +274,7 @@ func readLimited(path string, limit int64) ([]byte, error) {
 }
 
 func (a *App) rawMessage(accountID, emailID string) ([]byte, error) {
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, err
 	}

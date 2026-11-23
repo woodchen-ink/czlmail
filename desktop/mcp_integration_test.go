@@ -17,7 +17,6 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 	"github.com/woodchen-ink/czlmail/desktop/internal/mcpbridge"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
-	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
 // 本地 MCP 端点: 无令牌被拒, 带令牌能列工具并调用读工具; 未开启发信时 send_email 被拒。
@@ -44,13 +43,13 @@ func TestIntegrationMCP(t *testing.T) {
 	}
 	defer st.Close()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	a := &App{ctx: ctx, log: log, store: st, client: client, sync: syncer.New(client, st, log)}
-	for _, acc := range a.sync.Accounts() {
-		if err := a.sync.SyncAccount(ctx, acc); err != nil {
+	a := sessionTestApp(ctx, log, st, client)
+	for _, acc := range a.primary.sync.Accounts() {
+		if err := a.primary.sync.SyncAccount(ctx, acc); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := a.persistAccounts(ctx, client, st); err != nil {
+	if err := a.persistAccounts(ctx, &a.primary, client, st); err != nil {
 		t.Fatal(err)
 	}
 
@@ -172,7 +171,7 @@ func TestIntegrationMCP(t *testing.T) {
 	if !strings.HasPrefix(strings.ToLower(draft.Subject), "re") {
 		t.Errorf("reply subject = %q (original %q)", draft.Subject, orig.Subject)
 	}
-	if err := a.sync.SyncMail(ctx, draft.AccountID); err != nil {
+	if err := a.primary.sync.SyncMail(ctx, draft.AccountID); err != nil {
 		t.Fatal(err)
 	}
 	d, err := a.GetEmail(draft.AccountID, draft.DraftID)

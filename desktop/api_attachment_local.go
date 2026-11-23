@@ -175,7 +175,7 @@ func (a *App) ensureDownloaded(accountID, blobID, path string) (string, error) {
 	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
 		return path, nil
 	}
-	s, err := a.currentSyncer()
+	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return "", err
 	}
