@@ -399,10 +399,21 @@ function bridgeScript(nonce: string): string {
   // (实测 Sendy 模板把 "$12.88" 里的 "$1" 当成替换, 吞掉了 </div>)。
   // 正文绝大部分文字都看不见时, 把装着大半文字、又含版式元素的隐藏元素放出来;
   // 真正的摘要只有一句话, 占不到一半, 照旧隐藏。可能嵌套几层, 逐层放出。
+  // 字数不算 <style> 与 <script>: 消毒时 head 里的样式挪进了正文, 本脚本也在 body 里,
+  // 两者的文字比邮件正文还多, 算进去就永远到不了"大半"。
+  function textLen(root) {
+    var n = 0, w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (var t = w.nextNode(); t; t = w.nextNode()) {
+      var tag = t.parentNode && t.parentNode.nodeName;
+      if (tag === "STYLE" || tag === "SCRIPT") continue;
+      n += t.nodeValue.replace(/\\s+/g, "").length;
+    }
+    return n;
+  }
   function revealSwallowedBody() {
     var body = document.body;
     if (!body) return;
-    var total = (body.textContent || "").replace(/\\s+/g, "").length;
+    var total = textLen(body);
     if (total < 200) return;
     for (var round = 0; round < 5; round++) {
       if ((body.innerText || "").replace(/\\s+/g, "").length > total * 0.2) return;
@@ -410,7 +421,7 @@ function bridgeScript(nonce: string): string {
       for (var i = 0; i < all.length && !found; i++) {
         var el = all[i];
         if (getComputedStyle(el).display !== "none") continue;
-        if ((el.textContent || "").replace(/\\s+/g, "").length < total * 0.5) continue;
+        if (textLen(el) < total * 0.5) continue;
         if (el.querySelector("table, img, p, a")) found = el;
       }
       if (!found) return;
