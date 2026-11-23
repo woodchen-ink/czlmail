@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
 	"os"
@@ -35,8 +36,10 @@ func main() {
 	}
 
 	app := NewApp()
+	// 开机自启时直接留在托盘。
+	startHidden := hideOnClose && slices.Contains(os.Args[1:], platform.BackgroundFlag)
 
-	err := wails.Run(&options.App{
+	opts := &options.App{
 		Title:     "CZL Mail",
 		Width:     1400,
 		Height:    900,
@@ -54,8 +57,7 @@ func main() {
 
 		// 关闭窗口时缩到托盘(macOS 为菜单栏)继续收信; 真正退出走托盘菜单(macOS 另有 ⌘Q)。
 		HideWindowOnClose: hideOnClose,
-		// 开机自启时直接留在托盘。
-		StartHidden: hideOnClose && slices.Contains(os.Args[1:], platform.BackgroundFlag),
+		StartHidden:       startHidden,
 		// 程序已在托盘里运行时再次启动, 唤出已有窗口而不是开第二个实例 ——
 		// 两个实例会争用同一个缓存库与推送连接。
 		SingleInstanceLock: &options.SingleInstanceLock{
@@ -71,9 +73,20 @@ func main() {
 		// macOS 顶部菜单栏, 提供 ⌘Q/⌘W 及编辑快捷键; 其他平台为 nil。见 menu_darwin.go。
 		Menu: appMenu(app),
 
-		OnStartup:  app.startup,
+		OnStartup: func(ctx context.Context) {
+			// 先把窗口挪回上次的位置: 这时窗口已创建, 通常还没显示。见 window_state.go。
+			mainWindow.restore(ctx)
+			app.startup(ctx)
+		},
+		OnBeforeClose: func(ctx context.Context) bool {
+			mainWindow.save(ctx, true)
+			return false
+		},
 		OnShutdown: app.shutdown,
-		OnDomReady: app.domReady,
+		OnDomReady: func(ctx context.Context) {
+			mainWindow.domReady(startHidden)
+			app.domReady(ctx)
+		},
 
 		Bind: []any{app},
 
@@ -90,8 +103,11 @@ func main() {
 			OnUrlOpen:  func(url string) { app.handleArgs([]string{url}) },
 			OnFileOpen: func(path string) { app.handleArgs([]string{path}) },
 		},
-	})
-	if err != nil {
+	}
+	// 上次关闭时的窗口大小与是否最大化。
+	mainWindow.load(app.log).startOptions(opts)
+
+	if err := wails.Run(opts); err != nil {
 		log.Fatalf("1 run application: %v", err)
 	}
 }

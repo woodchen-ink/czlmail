@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState } from "react";
 import { ChevronLeft, ChevronRight, Menu } from "lucide-react";
-import { useDefaultLayout } from "react-resizable-panels";
+import { usePanelRef, type LayoutChangedMeta } from "react-resizable-panels";
 
 import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
@@ -69,13 +69,66 @@ const storage = {
       // 忽略
     }
   },
+  removeItem(key: string) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // 忽略
+    }
+  },
 };
+
+function legacyLayoutKey(id: string, panelIds: string[]) {
+  return `czlmail.layout.${id}:${panelIds.join(":")}`;
+}
+
+/** 侧栏与列表记住的宽度 (像素)。详情栏没有自己的宽度, 占剩下的部分。 */
+type PaneWidths = { sidebar?: number; list?: number };
+
+function readWidths(key: string): PaneWidths | null {
+  const raw = storage.getItem(key);
+  if (!raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return null;
+    const out: PaneWidths = {};
+    for (const pane of ["sidebar", "list"] as const) {
+      const px = (value as Record<string, unknown>)[pane];
+      if (typeof px === "number" && Number.isFinite(px) && px > 0) out[pane] = Math.round(px);
+    }
+    return out.sidebar === undefined && out.list === undefined ? null : out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 旧版本按百分比存的布局 (react-resizable-panels 的 useDefaultLayout, 键为 `czlmail.layout.<模块>:<各栏 id>`)。
+ * 只在还没有像素宽度时读一次, 让升级后的第一次启动仍是用户调好的样子, 随后即改存像素并删掉旧记录。
+ */
+function readLegacyLayout(id: string, panelIds: string[]): Record<string, number> | undefined {
+  const raw = storage.getItem(legacyLayoutKey(id, panelIds));
+  if (!raw) return undefined;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return undefined;
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length !== panelIds.length || !entries.every(([, v]) => typeof v === "number")) return undefined;
+    return value as Record<string, number>;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * 侧栏 / 列表 / 详情三栏，分隔线可拖动，宽度按模块记忆。
  *
  * 侧栏与列表按像素保持宽度（preserve-pixel-size）：拉伸窗口时只有详情栏变宽，
  * 否则侧栏会跟着窗口按比例变胖。
+ *
+ * 记忆也按像素：存百分比的话，下次启动窗口大小一变 (先以默认大小创建再最大化、换了显示器)，
+ * 侧栏与列表就按比例变宽变窄，拖好的宽度每次启动都在漂。
+ * 只记用户亲手拖出来的宽度：窗口缩小时库为了给详情栏腾地方会临时压窄侧栏，那不算数。
  */
 export function PaneLayout(props: Props) {
   const compact = useCompact();
@@ -95,19 +148,37 @@ function WidePanes({
     ? ["detail"]
     : [sidebar ? "sidebar" : "", list ? "list" : "", "detail"].filter(Boolean);
 
-  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: `czlmail.layout.${id}`,
-    panelIds,
-    storage,
-  });
+  const key = `czlmail.panes.${id}`;
+  // 每次渲染都读: 专注阅读时侧栏与列表会卸载, 回来重新挂载时要拿到期间保存的宽度。
+  const saved = readWidths(key);
+  const legacy = saved ? undefined : readLegacyLayout(id, panelIds);
+
+  const sidebarPanel = usePanelRef();
+  const listPanel = usePanelRef();
+
+  const onLayoutChanged = (_layout: unknown, meta: LayoutChangedMeta) => {
+    const current = readWidths(key);
+    // 还没有像素记录时 (首次启动、刚从百分比升级) 也记一次当前宽度;
+    // 窗口最小化时页面宽度不可信, 那时不记。
+    if (!meta.isUserInteraction && (current || document.visibilityState !== "visible")) return;
+    const next: PaneWidths = { ...current };
+    const sidebarPx = sidebarPanel.current?.getSize().inPixels;
+    const listPx = listPanel.current?.getSize().inPixels;
+    if (sidebarPx) next.sidebar = Math.round(sidebarPx);
+    if (listPx) next.list = Math.round(listPx);
+    if (next.sidebar === undefined && next.list === undefined) return;
+    storage.setItem(key, JSON.stringify(next));
+    if (!current) storage.removeItem(legacyLayoutKey(id, panelIds));
+  };
 
   return (
-    <ResizablePanelGroup orientation="horizontal" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
+    <ResizablePanelGroup orientation="horizontal" defaultLayout={legacy} onLayoutChanged={onLayoutChanged}>
       {!collapsed && sidebar && (
         <>
           <ResizablePanel
             id="sidebar"
-            defaultSize={sidebarWidth}
+            panelRef={sidebarPanel}
+            defaultSize={saved?.sidebar ?? sidebarWidth}
             minSize={180}
             maxSize={480}
             groupResizeBehavior="preserve-pixel-size"
@@ -122,7 +193,8 @@ function WidePanes({
         <>
           <ResizablePanel
             id="list"
-            defaultSize={listWidth}
+            panelRef={listPanel}
+            defaultSize={saved?.list ?? listWidth}
             minSize={260}
             maxSize={720}
             groupResizeBehavior="preserve-pixel-size"
