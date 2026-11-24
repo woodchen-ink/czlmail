@@ -275,6 +275,8 @@ export function EmailList({
           const key = emailKey(email);
           const tk = threadKey(email);
           const count = flat ? 0 : (email.threadCount ?? 0);
+          // 会话里有草稿 (多半是没写完的回复, 可能在草稿箱里) 时会话行标红, 同 Outlook; 草稿数含本行自己。
+          const drafts = Math.max(flat ? 0 : (email.draftCount ?? 0), email.isDraft ? 1 : 0);
           const isOpen = !flat && !!email.threadId && expanded === tk;
           const members = isOpen ? [...(threads[tk] ?? [])].reverse() : [];
           const where = whereOf?.(email) ?? "";
@@ -435,7 +437,11 @@ export function EmailList({
                           unread ? "text-foreground" : "text-muted-foreground",
                         )}
                       >
-                        {email.isDraft && <span className="text-destructive">{t("[草稿]")} </span>}
+                        {drafts > 0 && (
+                          <span className="text-destructive">
+                            {drafts > 1 ? t("[草稿：{0}]", drafts) : t("[草稿]")}{" "}
+                          </span>
+                        )}
                         {email.subject || t("(无主题)")}
                       </span>
                       {where && (

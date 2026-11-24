@@ -31,6 +31,9 @@ type EmailSummary struct {
 	IsPinned bool `json:"isPinned"`
 	// ThreadCount 是同一会话的邮件总数(跨文件夹); 只有列表查询会填, 其它查询为 0。
 	ThreadCount int `json:"threadCount"`
+	// DraftCount 是同一会话里的草稿数(跨文件夹, 筛选同 ThreadCount, 含本行自己); 只有列表查询会填。
+	// 界面据此在收件箱、已发送等文件夹的会话行上标出还有没写完的回复。
+	DraftCount int `json:"draftCount"`
 	// MailboxIDs 是邮件所在的文件夹; 只有搜索结果与会话成员会填, 界面据此标出邮件在哪、「移动到」排除所在文件夹。
 	MailboxIDs []string `json:"mailboxIds,omitempty"`
 }
@@ -163,8 +166,13 @@ func discardedSQL(alias string) string {
 // threadCountColumn 附加在列表查询末尾, scanSummaries 按列数识别。
 // 删掉的往来不计: 收件箱里的会话行不该因为回收站里的几封而显示成多封; 行本身在回收站/垃圾邮件里时全部计入。
 // 与 ThreadEmails 的筛选一致, 封数才对得上展开后的行数。
+// 第二列是会话里的草稿数, 筛选相同 (删到回收站的草稿不算), 展开后标着「[草稿]」的行数与它一致。
 var threadCountColumn = `,
 	(SELECT COUNT(*) FROM emails t WHERE t.account_id = e.account_id AND t.thread_id = e.thread_id AND e.thread_id != ''
+	   AND (` + discardedSQL("e") + ` OR NOT ` + discardedSQL("t") + `)),
+	(SELECT COUNT(*) FROM emails t
+	   JOIN email_keywords dk ON dk.account_id = t.account_id AND dk.email_id = t.id AND dk.keyword = '$draft'
+	   WHERE t.account_id = e.account_id AND t.thread_id = e.thread_id AND e.thread_id != ''
 	   AND (` + discardedSQL("e") + ` OR NOT ` + discardedSQL("t") + `))`
 
 func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
@@ -183,7 +191,7 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 			&unread, &flagged, &draft, &pinned,
 		}
 		if withThread {
-			dest = append(dest, &e.ThreadCount)
+			dest = append(dest, &e.ThreadCount, &e.DraftCount)
 		}
 		if err := rows.Scan(dest...); err != nil {
 			return nil, wrap(CodeQuery, "scan email summary", err)
