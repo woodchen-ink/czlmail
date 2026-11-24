@@ -472,6 +472,10 @@ function bridgeScript(nonce: string): string {
   var parentView = 0, parentText = 0;
   // 比阅读栏宽的部分交给阅读栏横向滚动, iframe 里不出现自己的横向滚动条。
   document.documentElement.style.overflowX = "hidden";
+  // 邮件模板会给 html/body 设 height:100%，把正文盒子锁成 iframe 的视口高。
+  // 阅读栏负责纵向滚动，这两个外层盒子必须随内容撑开；不改邮件内部元素的高度。
+  document.documentElement.style.setProperty("height", "auto", "important");
+  if (document.body) document.body.style.setProperty("height", "auto", "important");
   var fontCache = new WeakMap();
   // 这一块里大部分文字的字号: 按字数加权的中位数, 页脚小字和大标题都不左右结果。
   function mainFontSize(el) {
