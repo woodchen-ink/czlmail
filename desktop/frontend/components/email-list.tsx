@@ -314,7 +314,7 @@ export function EmailList({
                     dragging.has(key) && "opacity-40",
                   )}
                 >
-                  {/* 展开的会话: 从头像下方引出一条点线, 串起下面的成员卡片 (见 ThreadRail)。 */}
+                  {/* 展开的会话: 从头像下方引出一条点线, 串起下面的成员行 (见 ThreadRail)。 */}
                   {isOpen && (
                     <span
                       aria-hidden
@@ -498,7 +498,7 @@ export function EmailList({
                   )}
                   {members.map((m, i) => (
                     <Fragment key={emailKey(m)}>
-                      <li className="relative py-1 pr-2 pl-11">
+                      <li className="relative">
                         <ThreadRail
                           first={i === 0}
                           last={i === members.length - 1}
@@ -524,10 +524,10 @@ export function EmailList({
                               emailKey(m) === selectedKey ? "true" : undefined
                             }
                             className={cn(
-                              "group/member border-border bg-card flex w-full cursor-default items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm shadow-xs",
+                              "group/member flex w-full cursor-default items-center gap-2 py-1.5 pr-3 pl-12 text-left text-sm",
                               "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
                               highlightSelected && emailKey(m) === selectedKey
-                                ? "bg-muted border-accent/60"
+                                ? "bg-muted"
                                 : "hover:bg-secondary",
                               dragging.has(emailKey(m)) && "opacity-40",
                             )}
@@ -548,7 +548,7 @@ export function EmailList({
                             </span>
                             <span
                               className={cn(
-                                "w-24 min-w-0 shrink truncate",
+                                "w-24 shrink-0 truncate",
                                 m.isUnread && "font-semibold",
                               )}
                             >
@@ -576,7 +576,7 @@ export function EmailList({
                                 }}
                                 aria-label={t("删除")}
                                 title={t("删除")}
-                                className="hover:bg-muted text-muted-foreground hover:text-destructive shrink-0 rounded-sm w-0 -ml-2 overflow-hidden p-0 opacity-0 group-hover/member:ml-0 group-hover/member:w-auto group-hover/member:p-0.5 group-hover/member:opacity-100 focus-visible:ml-0 focus-visible:w-auto focus-visible:p-0.5 focus-visible:opacity-100"
+                                className="hover:bg-muted text-muted-foreground hover:text-destructive shrink-0 rounded-sm p-0.5 opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100"
                               >
                                 <Trash2 className="size-3.5" />
                               </button>
@@ -632,6 +632,7 @@ export function EmailList({
 
 /**
  * 展开会话左侧的时间线: 点线接着会话行头像下方的那段往下走, 每封成员邮件一个圆点。
+ * 线和圆点只画在成员行原有的左内边距里, 不占额外的宽度或高度。
  * 每段线从本行圆点画到下一行圆点 (成员行等高, 所以高度正好是一行), 接缝都被圆点盖住,
  * 点线不会在行与行之间断开或叠点。选中的成员圆点填强调色。
  */
