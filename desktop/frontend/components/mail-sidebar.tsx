@@ -195,8 +195,11 @@ export function MailSidebar({
   const unifiedAccounts = accounts.filter((a) => !excluded.has(a.id));
   const unifiedBoxes = unifiedAccounts.flatMap((a) => mailboxesByAccount[a.id] ?? []);
   const countedBoxes = unifiedAccounts.flatMap((a) => (muted.has(a.id) ? [] : (mailboxesByAccount[a.id] ?? [])));
+  // 草稿是总数而不是未读数 (同账号文件夹), 也不是通知, 静音的账号照样算。
   const unreadOf = (kind: string) =>
-    countedBoxes.filter((m) => m.kind === kind).reduce((n, m) => n + m.unreadEmails, 0);
+    kind === "drafts"
+      ? unifiedBoxes.filter((m) => m.kind === kind).reduce((n, m) => n + m.totalEmails, 0)
+      : countedBoxes.filter((m) => m.kind === kind).reduce((n, m) => n + m.unreadEmails, 0);
   const unifiedRows = KIND_ORDER.filter((kind) => unifiedBoxes.some((m) => m.kind === kind)).map((kind) => ({
     view: kind,
     icon: mailboxIcon(kind),
