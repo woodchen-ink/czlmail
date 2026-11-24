@@ -186,10 +186,10 @@ export function EmailList({
       return;
     }
     setExpanded(key);
-    if (!threads[key]) {
-      const list = (await api.threadEmails(email.accountId, email.id).catch(() => [])) ?? [];
-      setThreads((prev) => ({ ...prev, [key]: applyOverlay(list) }));
-    }
+    // 先显示上次读到的成员, 再重新读一次: 会话收起期间可能多了往来 (例如离开写信面板时存下的草稿),
+    // 那时的列表刷新不会重读收起的会话。
+    const list = (await api.threadEmails(email.accountId, email.id).catch(() => [])) ?? [];
+    setThreads((prev) => ({ ...prev, [key]: applyOverlay(list) }));
   }
 
   // 从通讯录、通知或链接打开的邮件可能在屏幕外, 选中变化后把那一行滚进视野。
