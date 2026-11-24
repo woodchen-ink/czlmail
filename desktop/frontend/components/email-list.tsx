@@ -314,11 +314,11 @@ export function EmailList({
                     dragging.has(key) && "opacity-40",
                   )}
                 >
-                  {/* 展开的会话: 从头像下方引出一条点线, 串起下面的成员行 (见 ThreadRail)。 */}
+                  {/* 展开的会话: 从头像下方的条数按钮引出一条点线, 串起下面的成员行 (见 ThreadRail)。 */}
                   {isOpen && (
                     <span
                       aria-hidden
-                      className="border-muted-foreground/40 pointer-events-none absolute top-[52px] bottom-0 left-[29px] border-l-2 border-dotted"
+                      className="border-muted-foreground/40 pointer-events-none absolute top-[72px] bottom-0 left-[29px] border-l-2 border-dotted"
                     />
                   )}
                   {/* 未读用头像旁的色点而不是整行加粗：整行加粗在长列表里显得噪杂，
@@ -338,44 +338,79 @@ export function EmailList({
                       />
                     </span>
                   )}
-                  <div className="relative mt-0.5 shrink-0">
-                    {/* 头像就是选择按钮(同 Bulwark): 鼠标移到头像上才变成对勾, 移到行的其它位置头像照常显示;
-                        选中的邮件头像保持对勾, 进入多选后左侧再出现一列勾选框。 */}
-                    <button
-                      type="button"
-                      title={onCheck ? t("选择") : undefined}
-                      aria-label={t("选择邮件")}
-                      aria-pressed={isChecked}
-                      disabled={!onCheck}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCheck?.(key, e.shiftKey);
-                      }}
-                      className="group/avatar relative block size-9 rounded-full"
-                    >
-                      <SenderAvatar
-                        email={party?.[0]?.email ?? ""}
-                        name={party?.[0]?.name}
-                        className="size-9"
-                      />
-                      {onCheck && (
+                  {/* 会话的条数按钮放在头像正下方: 展开后时间线的点线就从它下面接出来,
+                      发件人一行也不再被按钮挤占。 */}
+                  <div className="mt-0.5 flex w-9 shrink-0 flex-col items-center gap-0.5">
+                    <div className="relative shrink-0">
+                      {/* 头像就是选择按钮(同 Bulwark): 鼠标移到头像上才变成对勾, 移到行的其它位置头像照常显示;
+                          选中的邮件头像保持对勾, 进入多选后左侧再出现一列勾选框。 */}
+                      <button
+                        type="button"
+                        title={onCheck ? t("选择") : undefined}
+                        aria-label={t("选择邮件")}
+                        aria-pressed={isChecked}
+                        disabled={!onCheck}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCheck?.(key, e.shiftKey);
+                        }}
+                        className="group/avatar relative block size-9 rounded-full"
+                      >
+                        <SenderAvatar
+                          email={party?.[0]?.email ?? ""}
+                          name={party?.[0]?.name}
+                          className="size-9"
+                        />
+                        {onCheck && (
+                          <span
+                            className={cn(
+                              "bg-accent text-accent-foreground absolute inset-0 flex items-center justify-center rounded-full transition-opacity",
+                              isChecked
+                                ? "opacity-100"
+                                : "opacity-0 group-hover/avatar:opacity-100",
+                            )}
+                          >
+                            <Check className="size-5" strokeWidth={2.5} />
+                          </span>
+                        )}
+                      </button>
+                      {unread && (
                         <span
-                          className={cn(
-                            "bg-accent text-accent-foreground absolute inset-0 flex items-center justify-center rounded-full transition-opacity",
-                            isChecked
-                              ? "opacity-100"
-                              : "opacity-0 group-hover/avatar:opacity-100",
-                          )}
-                        >
-                          <Check className="size-5" strokeWidth={2.5} />
-                        </span>
+                          className="bg-accent ring-background absolute -top-0.5 -left-0.5 size-2.5 rounded-full ring-2"
+                          aria-label={t("未读")}
+                        />
                       )}
-                    </button>
-                    {unread && (
-                      <span
-                        className="bg-accent ring-background absolute -top-0.5 -left-0.5 size-2.5 rounded-full ring-2"
-                        aria-label={t("未读")}
-                      />
+                    </div>
+                    {count > 1 && (
+                      <button
+                        type="button"
+                        aria-label={
+                          isOpen ? t("收起会话") : t("展开会话，共 {0} 封", count)
+                        }
+                        aria-expanded={isOpen}
+                        title={
+                          isOpen ? t("收起会话") : t("展开会话（共 {0} 封）", count)
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleThread(email);
+                        }}
+                        className={cn(
+                          "flex h-5 shrink-0 items-center gap-0.5 rounded-md border px-1 text-[11px] leading-none tabular-nums transition-colors",
+                          isOpen
+                            ? "border-accent bg-card text-foreground"
+                            : "border-border text-muted-foreground hover:border-accent hover:text-foreground",
+                        )}
+                      >
+                        <MessagesSquare className="size-3" />
+                        {count}
+                        <ChevronDown
+                          className={cn(
+                            "size-3 transition-transform",
+                            isOpen && "rotate-180",
+                          )}
+                        />
+                      </button>
                     )}
                   </div>
 
@@ -391,37 +426,6 @@ export function EmailList({
                           ? t("致：{0}", displayAddressList(email.to))
                           : displayAddressList(email.from) || t("(无发件人)")}
                       </span>
-                      {count > 1 && (
-                        <button
-                          type="button"
-                          aria-label={
-                            isOpen ? t("收起会话") : t("展开会话，共 {0} 封", count)
-                          }
-                          aria-expanded={isOpen}
-                          title={
-                            isOpen ? t("收起会话") : t("展开会话（共 {0} 封）", count)
-                          }
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleThread(email);
-                          }}
-                          className={cn(
-                            "flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-xs tabular-nums transition-colors",
-                            isOpen
-                              ? "border-accent bg-card text-foreground"
-                              : "border-border text-muted-foreground hover:border-accent hover:text-foreground",
-                          )}
-                        >
-                          <MessagesSquare className="size-3.5" />
-                          {count}
-                          <ChevronDown
-                            className={cn(
-                              "size-3.5 transition-transform",
-                              isOpen && "rotate-180",
-                            )}
-                          />
-                        </button>
-                      )}
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                         {listDate(email.receivedAt)}
                       </span>
