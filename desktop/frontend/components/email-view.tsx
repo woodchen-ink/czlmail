@@ -9,6 +9,7 @@ import { ChevronDown, Languages, Loader2, ShieldCheck, Sparkles, Undo2 } from "l
 import { toast } from "sonner";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { MessageZoomControl, useMessageZoom } from "@/components/message-zoom";
 import { Separator } from "@/components/ui/separator";
 import { AddressChip } from "@/components/address-chip";
 import { AttachmentList } from "@/components/attachment-list";
@@ -59,6 +60,8 @@ interface Props {
   onOpenEmail?: (id: string) => void;
   /** 自动标记已读。由外壳乐观更新列表后在后台提交, 不阻塞正文显示。 */
   onMarkRead: (id: string) => void;
+  /** 邮件模块是否在前台; 切走时只是隐藏, 正文缩放快捷键要跟着停。 */
+  active: boolean;
 }
 
 export function EmailView({
@@ -75,6 +78,7 @@ export function EmailView({
   revision,
   onOpenEmail,
   onMarkRead,
+  active,
 }: Props) {
   useI18n();
   const [email, setEmail] = useState<EmailDetail | null>(null);
@@ -127,6 +131,11 @@ export function EmailView({
   function toggleDetails() {
     setDetailsFor(showDetails ? "" : `${accountId}/${emailId}`);
   }
+
+  // 正文手动缩放, 每封邮件单独, 换邮件回到 100%。
+  const [zoom, stepZoom] = useMessageZoom(`${accountId}/${emailId}`);
+  // 正文比阅读栏宽时阅读栏横向滚动(滚动条在底部始终可见), 平时不横向滚动。
+  const [bodyWide, setBodyWide] = useState(false);
 
   useEffect(() => {
     api
@@ -443,7 +452,7 @@ export function EmailView({
         actions={actions(email)}
       />
 
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className={bodyWide ? "min-h-0 flex-1 overflow-x-auto" : "min-h-0 flex-1"}>
         <div className="mx-auto flex max-w-4xl flex-col gap-4 p-5">
           <h1 className="text-lg leading-snug font-semibold">
             {translation?.subject || email.subject || t("(无主题)")}
@@ -511,7 +520,7 @@ export function EmailView({
           <Separator />
 
           {/* AI、退订与信任状态合成一行：各占一行时，正文要往下推三四行。 */}
-          {email.bodyFetched && (aiReady || canUnsubscribe || senderTrusted) && (
+          {email.bodyFetched && (aiReady || canUnsubscribe || senderTrusted || zoom !== 1) && (
             <div className="-my-1 flex flex-wrap items-center gap-2 text-sm">
               {aiReady && (
                 <>
@@ -589,6 +598,7 @@ export function EmailView({
               )}
 
               <div className="ml-auto flex items-center gap-1">
+                {zoom !== 1 && <MessageZoomControl zoom={zoom} onStep={stepZoom} />}
                 {senderTrusted && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -643,6 +653,10 @@ export function EmailView({
                   html={translation ? translation.html : email.bodyHtml}
                   text={translation?.text || email.bodyText}
                   translated={translation?.translated}
+                  zoom={zoom}
+                  onZoomStep={stepZoom}
+                  zoomShortcuts={active}
+                  onWideChange={setBodyWide}
                   senderEmail={sender?.email ?? ""}
                   senderTrusted={senderTrusted}
                   mode={bodyMode}

@@ -1672,6 +1672,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 revision={revision}
                 onOpenEmail={(id) => setSelectedKey(emailKey({ accountId: selected.accountId, id }))}
                 onMarkRead={(id) => markReadIds([emailKey({ accountId: selected.accountId, id })], true, false)}
+                active={active}
               />
             ) : (
               <div className="text-muted-foreground flex h-full items-center justify-center text-sm">{t("选择一封邮件")}</div>

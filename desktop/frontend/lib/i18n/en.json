@@ -1253,5 +1253,8 @@
   "往来邮件": "Emails",
   "对方发来": "Received",
   "我发出的": "Sent",
-  "共 {0} 封": "{0} emails"
+  "共 {0} 封": "{0} emails",
+  "缩小": "Zoom out",
+  "放大": "Zoom in",
+  "恢复原始大小": "Reset zoom"
 }
