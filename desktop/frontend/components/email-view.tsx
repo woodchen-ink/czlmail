@@ -60,6 +60,8 @@ interface Props {
   onOpenEmail?: (id: string) => void;
   /** 自动标记已读。由外壳乐观更新列表后在后台提交, 不阻塞正文显示。 */
   onMarkRead: (id: string) => void;
+  /** 邮件模块是否在前台; 切走时只是隐藏, 正文缩放快捷键要跟着停。 */
+  active: boolean;
 }
 
 export function EmailView({
@@ -76,6 +78,7 @@ export function EmailView({
   revision,
   onOpenEmail,
   onMarkRead,
+  active,
 }: Props) {
   useI18n();
   const [email, setEmail] = useState<EmailDetail | null>(null);
@@ -652,6 +655,7 @@ export function EmailView({
                   translated={translation?.translated}
                   zoom={zoom}
                   onZoomStep={stepZoom}
+                  zoomShortcuts={active}
                   onWideChange={setBodyWide}
                   senderEmail={sender?.email ?? ""}
                   senderTrusted={senderTrusted}

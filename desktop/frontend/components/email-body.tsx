@@ -49,6 +49,11 @@ interface Props {
   /** 缩放快捷键与 Ctrl+滚轮: 1 放大, -1 缩小, 0 还原。 */
   onZoomStep?: (step: number) => void;
   /**
+   * 焦点在正文外时是否响应缩放快捷键。邮件模块切走时只是隐藏不卸载,
+   * 不关掉的话在日历、通讯录里按 Ctrl+0 / Ctrl+- 会缩放看不见的邮件并吞掉按键。
+   */
+  zoomShortcuts?: boolean;
+  /**
    * 正文比阅读栏宽(放大了, 或缩到看得清的下限仍放不下)。这时正文按实际宽度显示,
    * 由阅读栏横向滚动, 滚动条在窗口底部始终看得到, 而不是藏在长邮件的末尾。
    */
@@ -82,6 +87,7 @@ export function EmailBody({
   translated,
   zoom = 1,
   onZoomStep,
+  zoomShortcuts = false,
   onWideChange,
 }: Props) {
   useI18n();
@@ -229,8 +235,11 @@ export function EmailBody({
 
   // 焦点在应用里(不在正文里)时的缩放快捷键; 正文里的按键由 iframe 上报。
   useEffect(() => {
+    if (!zoomShortcuts) return;
     function onKey(e: KeyboardEvent) {
       if (!stepRef.current || e.defaultPrevented || isEditable(e.target)) return;
+      // 对话框、菜单打开时按键属于它们。
+      if (e.target instanceof Element && e.target.closest("[role=dialog], [role=menu]")) return;
       const step = zoomStepOf(e);
       if (step === null) return;
       e.preventDefault();
@@ -238,7 +247,7 @@ export function EmailBody({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [zoomShortcuts]);
 
   const sendTranslated = (items: [number, string][]) => {
     frameRef.current?.contentWindow?.postMessage({ type: "czl-translate", items }, "*");
