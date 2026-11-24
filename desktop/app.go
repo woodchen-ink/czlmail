@@ -285,6 +285,11 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 	}
 
 	a.mu.Lock()
+	// 认证期间登录被删掉了: 放弃这次连接, 不启动同步、不写账号缓存。
+	if si.removed {
+		a.mu.Unlock()
+		return errNotSignedIn
+	}
 	st := a.store
 	if si.cancelSync != nil {
 		si.cancelSync()

@@ -39,6 +39,10 @@ type signIn struct {
 	// 内容是带错误码的原因, 会话重新建立时清空。
 	reason string
 
+	// removed 表示这个登录已被 removeSignIn 删掉。删除时可能还有一次连接在路上 (启动恢复、退避重试),
+	// 它认证完回来时据此放弃, 不能把会话、同步循环和账号缓存重新建起来。
+	removed bool
+
 	// cancelFlow 中止这个登录正在进行的浏览器授权流程。
 	// flowGen 标识当前流程, 使收尾时能分辨句柄归属。
 	cancelFlow context.CancelFunc
@@ -214,6 +218,7 @@ func (a *App) dropSignIn(id string) error {
 		a.mu.Unlock()
 		return errNotSignedIn
 	}
+	si.removed = true
 	si.stopLocked()
 	if si.cancelFlow != nil {
 		si.cancelFlow()

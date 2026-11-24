@@ -94,6 +94,10 @@ func (a *App) restoreWithRetry(si *signIn, cfg config.Config) {
 		if err == nil {
 			return
 		}
+		// 登录在连接途中被删掉了 (connect 放弃时报 2002), 不再重试。
+		if errors.Is(err, errNotSignedIn) {
+			return
+		}
 		if isCredentialError(err) {
 			a.requireSignIn(si, nil, err)
 			return
@@ -111,7 +115,7 @@ func (a *App) restoreWithRetry(si *signIn, cfg config.Config) {
 
 		// 等待期间用户可能已经自己登录、退出或换了账号, 这时不该再拿旧配置去连。
 		a.mu.RLock()
-		superseded := si.client != nil || si.reason != "" ||
+		superseded := si.removed || si.client != nil || si.reason != "" ||
 			si.cfg.SessionEndpoint != cfg.SessionEndpoint || si.cfg.AuthMethod != cfg.AuthMethod
 		a.mu.RUnlock()
 		if superseded {
