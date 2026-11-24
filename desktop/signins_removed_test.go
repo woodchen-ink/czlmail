@@ -45,7 +45,7 @@ func TestConnectAfterRemoveSignInGivesUp(t *testing.T) {
 	defer srv.Close()
 
 	cfg := config.Config{SessionEndpoint: srv.URL, AuthMethod: config.AuthPassword, Username: "me@b"}
-	err = a.connect(si, cfg, basicAuthClient("me@b", "pw"), nil)
+	err = a.connect(si, cfg, basicAuthClient("me@b", "pw"), nil, nil)
 	if !errors.Is(err, errNotSignedIn) {
 		t.Fatalf("connect after removal = %v, want errNotSignedIn", err)
 	}

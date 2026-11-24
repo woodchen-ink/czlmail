@@ -23,6 +23,19 @@ func TestAddSignInNeverReusesPrefix(t *testing.T) {
 	if id := f.AddSignIn(Config{Username: "c"}); id != "s4" {
 		t.Fatalf("after removing s3 got %q, want s4", id)
 	}
+	// 先分配前缀、连通后再登记; 没登记的前缀同样作废。
+	reserved := f.ReserveSignIn()
+	if reserved != "s5" || len(f.SignIns) != 2 {
+		t.Fatalf("reserve = %q, sign-ins %d", reserved, len(f.SignIns))
+	}
+	f.PutSignIn(reserved, Config{Username: "d"})
+	f.PutSignIn(reserved, Config{Username: "e"})
+	if c, ok := f.SignIn(reserved); !ok || c.Username != "e" || len(f.SignIns) != 3 {
+		t.Fatalf("put reserved sign-in: %+v %v (%d)", c, ok, len(f.SignIns))
+	}
+	if id := f.AddSignIn(Config{}); id != "s6" {
+		t.Fatalf("after reserving s5 got %q, want s6", id)
+	}
 	// 序号落后于已有前缀 (手改过的文件) 时跳过它们。
 	g := File{SignIns: []SignIn{{ID: "s7"}}}
 	if id := g.AddSignIn(Config{}); id != "s8" {

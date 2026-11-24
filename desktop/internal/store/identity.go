@@ -67,3 +67,31 @@ func (s *Store) RemoveAccount(ctx context.Context, accountID string) error {
 		return nil
 	})
 }
+
+// ResetPrimaryIdentityData 是 ResetIdentityData 在还有别的登录 (#15) 时的版本: 只清主登录的账号
+// (没有登录前缀的账号 id) 与不分账号的模板, 以及 settingKeys; 其余登录的缓存与设置不动。
+// 按账号记的列表类设置 (静音、统一视图排除、默认身份) 由上层只去掉主登录的条目, 不在这里整个删。
+func (s *Store) ResetPrimaryIdentityData(ctx context.Context, settingKeys []string) error {
+	return s.WithTx(ctx, func(tx *sql.Tx) error {
+		for _, t := range accountTables {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+t+` WHERE instr(account_id, '~') = 0`); err != nil {
+				return wrap(CodeQuery, "reset "+t, err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM accounts WHERE instr(id, '~') = 0`); err != nil {
+			return wrap(CodeQuery, "reset accounts", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM email_templates`); err != nil {
+			return wrap(CodeQuery, "reset email_templates", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM app_settings WHERE key LIKE 'reconciledAt:%' AND instr(key, '~') = 0`); err != nil {
+			return wrap(CodeQuery, "reset reconcile marks", err)
+		}
+		for _, k := range settingKeys {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM app_settings WHERE key = ?`, k); err != nil {
+				return wrap(CodeQuery, "reset setting", err)
+			}
+		}
+		return nil
+	})
+}

@@ -38,6 +38,14 @@ const signInPrefix = "s"
 
 // AddSignIn 登记一个附加登录, 返回分配的前缀。前缀不会与任何用过的重复。
 func (f *File) AddSignIn(cfg Config) string {
+	id := f.ReserveSignIn()
+	f.SignIns = append(f.SignIns, SignIn{ID: id, Config: cfg})
+	return id
+}
+
+// ReserveSignIn 分配一个新前缀但还不登记登录: 添加登录要先连通再落盘, 连通之前就得知道前缀。
+// 连不通时前缀作废, 不会再分配给别的登录。
+func (f *File) ReserveSignIn() string {
 	if f.LastSignIn < 1 {
 		f.LastSignIn = 1
 	}
@@ -48,9 +56,14 @@ func (f *File) AddSignIn(cfg Config) string {
 		}
 	}
 	f.LastSignIn++
-	id := signInPrefix + strconv.Itoa(f.LastSignIn)
-	f.SignIns = append(f.SignIns, SignIn{ID: id, Config: cfg})
-	return id
+	return signInPrefix + strconv.Itoa(f.LastSignIn)
+}
+
+// PutSignIn 改写某个登录的配置, 附加登录不存在时登记它 (用 ReserveSignIn 分到的前缀)。空 id 是主登录。
+func (f *File) PutSignIn(id string, cfg Config) {
+	if f.SetSignIn(id, cfg) != nil {
+		f.SignIns = append(f.SignIns, SignIn{ID: id, Config: cfg})
+	}
 }
 
 // RemoveSignIn 删掉一个附加登录, 返回它原来的配置。LastSignIn 不回退。

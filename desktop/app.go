@@ -129,6 +129,13 @@ func (a *App) startup(ctx context.Context) {
 	// 已有凭据就静默恢复会话。放后台是因为它要打网络,
 	// 挡在这里会让窗口迟迟不出现。
 	for _, si := range signIns {
+		if si.cfg.SignedOut {
+			// 用户退出的登录: 凭据已删, 不连, 也不提示登录失效。
+			a.mu.Lock()
+			si.signedOut = true
+			a.mu.Unlock()
+			continue
+		}
 		if si.cfg.Configured() {
 			go a.restoreWithRetry(si, si.cfg)
 		}
@@ -176,7 +183,7 @@ func (a *App) restoreSession(si *signIn, cfg config.Config) error {
 		if pass == "" {
 			return errNoStoredCredential
 		}
-		return a.connect(si, cfg, basicAuthClient(cfg.Username, pass), nil)
+		return a.connect(si, cfg, basicAuthClient(cfg.Username, pass), nil, nil)
 	}
 	return a.restoreOAuthSession(si, cfg)
 }
@@ -205,7 +212,7 @@ func (a *App) restoreOAuthSession(si *signIn, cfg config.Config) error {
 		meta = cachedMetadata(cfg)
 	}
 	httpClient, src := a.oauthClient(si, cfg, meta, tok)
-	return a.connect(si, cfg, httpClient, src)
+	return a.connect(si, cfg, httpClient, src, nil)
 }
 
 // oauthClient 构造自动续期的 Bearer 客户端。一并返回令牌源, 供服务器拒绝令牌时强制续期。
@@ -249,8 +256,9 @@ func (a *App) waitReady(timeout time.Duration) {
 }
 
 // connect 用已认证的 HTTP 客户端为这个登录建立 JMAP 会话并启动后台同步。
-// tokens 是 OAuth 的令牌源, 密码登录传 nil。
-func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, tokens *auth.TokenSource) error {
+// tokens 是 OAuth 的令牌源, 密码登录传 nil。accept 非空时在会话建立后、开始同步前检查登录到的身份,
+// 返回错误则放弃这次会话 (重复登录同一个人、重新登录时换了人), 缓存里不会留下它的数据。
+func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, tokens *auth.TokenSource, accept func(config.Config) error) error {
 	a.waitReady(30 * time.Second)
 	if _, err := a.currentStore(); err != nil {
 		return err
@@ -275,6 +283,11 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 	}
 
 	cfg.Username = client.Session.Username
+	if accept != nil {
+		if err := accept(cfg); err != nil {
+			return err
+		}
+	}
 
 	// 换了人登录就先清掉上一个人的缓存, 再开始同步 (见 identity.go)。
 	// 只有主登录需要: 附加登录的前缀从不复用, 缓存里不会有上一个人留下的同前缀数据。
@@ -295,8 +308,10 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 		si.cancelSync()
 	}
 	si.client = client
+	cfg.SignedOut = false
 	si.cfg = cfg
 	si.reason = ""
+	si.signedOut = false
 	s := syncer.New(client, st, a.log)
 	s.SetSignIn(si.id)
 	s.OnNewMail = a.onNewMail

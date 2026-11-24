@@ -62,6 +62,11 @@ func (a *App) ProbeServer(host string) (*ProbeResult, error) {
 //
 // 本方法会打开系统浏览器并阻塞到用户完成授权、取消或超时。
 func (a *App) SignIn(mailHost, idp, clientID string) error {
+	return a.oauthSignIn(&a.primary, false, mailHost, idp, clientID)
+}
+
+// oauthSignIn 为一个登录走 OAuth 授权: 主登录、重新登录某个附加登录, 或 isNew 时添加新的附加登录。
+func (a *App) oauthSignIn(si *signIn, isNew bool, mailHost, idp, clientID string) error {
 	if mailHost == "" {
 		return fmt.Errorf("2050 mail server address is required")
 	}
@@ -71,7 +76,6 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 		return err
 	}
 
-	si := &a.primary
 	ctx, cancel, gen := a.beginSignIn(si)
 	// 无论成功失败都要释放 context, 否则每次登录都漏一个。
 	defer cancel()
@@ -99,7 +103,7 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 	}
 	defer listener.Close()
 
-	cfg, err := config.Load()
+	cfg, err := a.oauthStartConfig(si, isNew, meta.Issuer, redirectURI)
 	if err != nil {
 		return err
 	}
@@ -140,8 +144,9 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 	a.log.Info("oauth token received", "refreshToken", tok.RefreshToken != "", "expiry", tok.Expiry)
 
 	// 先连通再落盘, 避免把一组用不了的凭据写进密钥库。
+	// 令牌刷新时的落盘回调要等登录登记好才有意义, 新登录在连通前不存在于配置里, 但钥匙串条目只按前缀与 issuer 命名, 先写无妨。
 	httpClient, src := a.oauthClient(si, cfg, meta, tok)
-	if err := a.connect(si, cfg, httpClient, src); err != nil {
+	if err := a.connect(si, cfg, httpClient, src, a.acceptIdentity(si, isNew, "")); err != nil {
 		a.log.Warn("oauth session connect failed", "err", err)
 		return err
 	}
@@ -150,15 +155,42 @@ func (a *App) SignIn(mailHost, idp, clientID string) error {
 	connected := si.cfg
 	a.mu.RUnlock()
 
-	if err := config.Save(connected); err != nil {
+	if err := a.finishSignIn(si, isNew, connected); err != nil {
 		return err
 	}
 	if err := config.SaveToken(si.id, connected.Issuer, tok); err != nil {
 		a.log.Error("oauth save token failed", "err", err)
 		return err
 	}
-	a.log.Info("oauth sign-in complete", "username", connected.Username)
+	a.log.Info("oauth sign-in complete", "signin", si.id, "username", connected.Username)
 	return nil
+}
+
+// oauthStartConfig 返回 OAuth 授权起步用的配置: 已有登录用它自己的 (复用注册过的客户端);
+// 新登录从空配置开始, 但借用已有登录在同一授权服务器、同一回调地址上注册过的客户端, 免得重复注册。
+func (a *App) oauthStartConfig(si *signIn, isNew bool, issuer, redirectURI string) (config.Config, error) {
+	f, err := config.LoadFile()
+	if err != nil {
+		return config.Config{}, err
+	}
+	if !isNew {
+		cfg, _ := f.SignIn(si.id)
+		return cfg, nil
+	}
+	for _, c := range append([]config.Config{f.Config}, signInConfigs(f.SignIns)...) {
+		if c.Issuer == issuer && c.RedirectURI == redirectURI && c.ClientID != "" {
+			return config.Config{Issuer: c.Issuer, ClientID: c.ClientID, RedirectURI: c.RedirectURI}, nil
+		}
+	}
+	return config.Config{}, nil
+}
+
+func signInConfigs(list []config.SignIn) []config.Config {
+	out := make([]config.Config, 0, len(list))
+	for _, s := range list {
+		out = append(out, s.Config)
+	}
+	return out
 }
 
 // CancelSignIn 中止正在进行的登录。
@@ -189,7 +221,14 @@ func (a *App) beginSignIn(si *signIn) (context.Context, context.CancelFunc, uint
 	ctx, cancel := context.WithCancel(a.ctx)
 
 	a.mu.Lock()
-	previous := si.cancelFlow
+	var previous []context.CancelFunc
+	// 同一时刻只跑一个授权流程, 不论属于哪个登录: 回环端口与注册过的回调地址是共用的。
+	for _, other := range append(a.signInsLocked(), si) {
+		if other.cancelFlow != nil {
+			previous = append(previous, other.cancelFlow)
+			other.cancelFlow = nil
+		}
+	}
 	si.flowGen++
 	gen := si.flowGen
 	si.cancelFlow = cancel
@@ -197,8 +236,8 @@ func (a *App) beginSignIn(si *signIn) (context.Context, context.CancelFunc, uint
 
 	// 用户改了地址重新点登录时, 上一次还挂着的流程要先停掉,
 	// 否则两个回环监听器会抢同一个端口。
-	if previous != nil {
-		previous()
+	for _, p := range previous {
+		p()
 	}
 	return ctx, cancel, gen
 }
@@ -214,6 +253,11 @@ func (a *App) endSignIn(si *signIn, gen uint64) {
 
 // SignInWithPassword 用邮箱与应用专用密码登录。
 func (a *App) SignInWithPassword(mailHost, username, password string) error {
+	return a.passwordSignIn(&a.primary, false, mailHost, username, password)
+}
+
+// passwordSignIn 用应用专用密码登录: 主登录、重新登录某个附加登录, 或 isNew 时添加新的附加登录。
+func (a *App) passwordSignIn(si *signIn, isNew bool, mailHost, username, password string) error {
 	if mailHost == "" || username == "" || password == "" {
 		return fmt.Errorf("2051 server, email and app password are all required")
 	}
@@ -230,9 +274,12 @@ func (a *App) SignInWithPassword(mailHost, username, password string) error {
 		Username:        username,
 	}
 
+	if err := a.checkSignInTarget(si, isNew, sessionEndpoint, username); err != nil {
+		return err
+	}
+
 	// 先连通再落盘, 避免把错的密码写进密钥库。
-	si := &a.primary
-	if err := a.connect(si, cfg, basicAuthClient(username, password), nil); err != nil {
+	if err := a.connect(si, cfg, basicAuthClient(username, password), nil, a.acceptIdentity(si, isNew, username)); err != nil {
 		return err
 	}
 
@@ -243,7 +290,7 @@ func (a *App) SignInWithPassword(mailHost, username, password string) error {
 	saved := si.cfg
 	a.mu.Unlock()
 
-	if err := config.Save(saved); err != nil {
+	if err := a.finishSignIn(si, isNew, saved); err != nil {
 		return err
 	}
 	return config.SavePassword(sessionEndpoint, username, password)

@@ -374,6 +374,8 @@ type Account struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	IsPersonal bool   `json:"isPersonal"`
+	// SignIn 是账号所属登录的前缀 (主登录为空), 由上层按账号 id 填写, 不存库。
+	SignIn string `json:"signIn"`
 }
 
 // Accounts 读出已缓存的账号, 个人账号排在共享账号前面。
