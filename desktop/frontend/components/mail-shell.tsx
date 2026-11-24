@@ -180,7 +180,10 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   const [draft, setDraftState] = useState<ComposeDraft | null>(null);
   // 每次打开写信面板都换一个 key, 让面板重新挂载而不是沿用上一封的状态。
   const [draftKey, setDraftKey] = useState(0);
+  // 写信面板里正开着的那封, 供回复判断是不是已经在写这封的回复。
+  const openDraft = useRef<ComposeDraft | null>(null);
   const setDraft = useCallback((d: ComposeDraft | null) => {
+    openDraft.current = d;
     setDraftState(d);
     if (d) setDraftKey((k) => k + 1);
   }, []);
@@ -1159,6 +1162,32 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     [unified, showsMailbox, importInto, loadMailboxes, reload, adjustUnread],
   );
 
+  /**
+   * 回复、回复全部。已经有一封回复这封邮件的草稿时接着写那封 (同 Outlook), 不另起一封;
+   * 找不到或读不到就照旧新建。转发不走这里, 总是新建。
+   */
+  const startReply = useCallback(
+    async (email: EmailDetail, all: boolean) => {
+      const acc = email.accountId;
+      // 这封的回复已经开在写信面板里 (面板里可能有还没存下的改动): 留在那里, 不重开。
+      const open = openDraft.current?.replyTo;
+      if (open?.accountId === acc && open.emailId === email.id) return;
+      const existing = await findReplyDraft(email, mailboxesByAccount[acc] ?? []).catch(() => null);
+      if (existing) {
+        setDraft({
+          ...draftFromEmail(existing, acc),
+          references: [email.inReplyTo, email.messageId].filter(Boolean) as string[],
+          replyTo: { accountId: acc, emailId: email.id },
+        });
+        toast(t("继续编辑未发送的回复"));
+      } else {
+        setDraft(replyDraft(acc, email, all));
+      }
+      markReadOnReply(email);
+    },
+    [mailboxesByAccount, setDraft, markReadOnReply],
+  );
+
   /** 列表右键的回复、转发要用完整邮件(正文、附件): 先读缓存, 没有正文时再拉。 */
   const withDetail = useCallback(async (e: EmailSummary, fn: (email: EmailDetail) => void) => {
     try {
@@ -1172,11 +1201,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
   const menuActions = useMemo<EmailMenuActions>(
     () => ({
-      reply: (email, all) =>
-        withDetail(email, (d) => {
-          setDraft(replyDraft(email.accountId, d, all));
-          markReadOnReply(email);
-        }),
+      reply: (email, all) => withDetail(email, (d) => startReply(d, all)),
       forward: (email, asAttachment) =>
         withDetail(email, (d) => {
           setDraft(asAttachment ? forwardAsAttachmentDraft(d, email.accountId) : forwardDraft(d, email.accountId));
@@ -1191,7 +1216,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       togglePin,
       setLabel: setLabelIds,
     }),
-    [withDetail, setDraft, markReadOnReply, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, togglePin, setLabelIds],
+    [withDetail, startReply, setDraft, markReadOnReply, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, togglePin, setLabelIds],
   );
 
   /**
@@ -1221,8 +1246,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         markReadOnReply(email);
       };
       return {
-        reply: () => startFrom(replyDraft(acc, email, false)),
-        replyAll: () => startFrom(replyDraft(acc, email, true)),
+        reply: () => startReply(email, false),
+        replyAll: () => startReply(email, true),
         forward: () => startFrom(forwardDraft(email, acc)),
         forwardAsAttachment: () => startFrom(forwardAsAttachmentDraft(email, acc)),
         archive: () => {
@@ -1263,7 +1288,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         toggleBodyLight: () => setBodyAppearance(bodyAppearance === "light" ? "follow" : "light"),
       };
     },
-    [archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, markReadOnReply, leaveAfterUnread, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft],
+    [archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, markReadOnReply, leaveAfterUnread, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft, startReply],
   );
 
   /* ---------- 键盘快捷键 ---------- */
@@ -1815,6 +1840,33 @@ function forwardAsAttachmentDraft(email: EmailDetail, accountId: string): Compos
     attachments: [{ blobId: email.blobId, type: "message/rfc822", name: `${email.subject || "email"}.eml`, size: email.size }],
     fromCandidates: fromCandidatesOf(email),
   };
+}
+
+/** Message-ID 去掉尖括号与空白后比较; 解析后的邮件头一般已不带尖括号。 */
+function normalizeMessageId(id: string | undefined): string {
+  return (id ?? "").trim().replace(/^<|>$/g, "");
+}
+
+/**
+ * 回复这封邮件、还没发出的草稿: 同一会话里 In-Reply-To 等于这封 Message-ID 的草稿,
+ * 不在回收站/垃圾邮件里, 有多封时取最新的。没有返回 null。
+ * 草稿正文读不到时抛错: 空正文接着写, 自动保存会把草稿里写好的内容冲掉, 调用方应改为新建回复。
+ */
+async function findReplyDraft(email: EmailDetail, boxes: Mailbox[]): Promise<EmailDetail | null> {
+  const target = normalizeMessageId(email.messageId);
+  if (!target || !email.threadId || email.isDraft) return null;
+  const discarded = new Set(boxes.filter((m) => m.kind === "trash" || m.kind === "junk").map((m) => m.id));
+  const candidates = ((await api.threadEmails(email.accountId, email.id)) ?? [])
+    .filter((m) => m.isDraft && m.id !== email.id && !(m.mailboxIds ?? []).some((id) => discarded.has(id)))
+    .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+  for (const c of candidates) {
+    let d = await api.getEmail(c.accountId, c.id);
+    if (normalizeMessageId(d.inReplyTo) !== target) continue;
+    if (!d.bodyFetched) d = await api.fetchBody(c.accountId, c.id);
+    if (!d.bodyFetched) throw new Error("draft body not available");
+    return d;
+  }
+  return null;
 }
 
 /** 打开已有草稿继续编辑。 */
