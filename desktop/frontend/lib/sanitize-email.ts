@@ -205,11 +205,12 @@ function stripRemoteImage(node: Element): boolean {
 /**
  * 允许加载的远程图片改走本地代理 /czl-remote: 由 Go 下载并存进磁盘缓存,
  * 再次打开同一封邮件不必重新下载。代理只连公网、只返回嗅探得出的图片。
- * 只接管 https —— http 图片 CSP 本来就不放行。背景图仍直连。
+ * http 图片也走代理: CSP 不放行 http, 直连必然裂图, 而不少新闻信至今只写 http 地址。
+ * 代理先试同一地址的 https, 不行才退回 http。背景图仍直连。
  */
 function proxyRemoteImage(node: Element): boolean {
   const src = (node.getAttribute("src") ?? "").trim();
-  if (!/^https:\/\//i.test(src)) return false;
+  if (!/^https?:\/\//i.test(src)) return false;
   node.setAttribute("src", `${localOrigin()}/czl-remote?url=${encodeURIComponent(src)}`);
   return true;
 }
