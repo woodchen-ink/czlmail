@@ -32,7 +32,7 @@ func (s *Syncer) FillCorrespondencePage(ctx context.Context, accountID string, a
 	}
 	req := &jmap.Request{Context: ctx}
 	req.Invoke(&email.Query{
-		Account:        jmap.ID(accountID),
+		Account:        s.server(accountID),
 		Filter:         &email.FilterOperator{Operator: jmap.OperatorOR, Conditions: conds},
 		Sort:           []*email.SortComparator{{Property: "receivedAt", IsAscending: false}},
 		Position:       int64(position),

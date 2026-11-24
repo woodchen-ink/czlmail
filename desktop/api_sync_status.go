@@ -13,23 +13,42 @@ type MailSyncStatus struct {
 	Pending []string `json:"pending"`
 }
 
-// GetMailSyncStatus 返回主登录当前的同步进度。未登录时为空状态。
+// GetMailSyncStatus 返回全部登录当前的同步进度。未登录时为空状态。
 func (a *App) GetMailSyncStatus() MailSyncStatus {
-	a.mu.RLock()
-	s, st := a.primary.sync, a.store
-	a.mu.RUnlock()
-	if s == nil || st == nil {
-		return MailSyncStatus{Pending: []string{}}
-	}
-	return a.mailSyncStatus(s, st, s.Round())
+	return a.mailSyncStatusWith(nil, syncer.RoundStatus{})
 }
 
-func (a *App) mailSyncStatus(s *syncer.Syncer, st *store.Store, round syncer.RoundStatus) MailSyncStatus {
-	out := MailSyncStatus{RoundStatus: round, Pending: []string{}}
-	for _, id := range s.Accounts() {
-		// 读不出来时不算进去: 宁可显示空列表, 也不把界面卡在「正在同步」上。
-		if state, err := st.State(a.ctx, id, store.TypeEmail); err == nil && state == "" {
-			out.Pending = append(out.Pending, id)
+// mailSyncStatusWith 合并各登录的同步进度。cur 非空时它的进度取 round (回调里刚发生的那一轮), 其余取各自的当前值。
+func (a *App) mailSyncStatusWith(cur *syncer.Syncer, round syncer.RoundStatus) MailSyncStatus {
+	out := MailSyncStatus{Pending: []string{}}
+	a.mu.RLock()
+	st := a.store
+	var syncers []*syncer.Syncer
+	for _, si := range a.signInsLocked() {
+		if si.sync != nil {
+			syncers = append(syncers, si.sync)
+		}
+	}
+	a.mu.RUnlock()
+	if st == nil {
+		return out
+	}
+	for _, s := range syncers {
+		r := s.Round()
+		if s == cur {
+			r = round
+		}
+		out.Running = out.Running || r.Running
+		out.Done += r.Done
+		out.Total += r.Total
+		if out.Error == "" {
+			out.Error = r.Error
+		}
+		for _, id := range s.Accounts() {
+			// 读不出来时不算进去: 宁可显示空列表, 也不把界面卡在「正在同步」上。
+			if state, err := st.State(a.ctx, id, store.TypeEmail); err == nil && state == "" {
+				out.Pending = append(out.Pending, id)
+			}
 		}
 	}
 	return out

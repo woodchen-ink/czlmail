@@ -24,7 +24,7 @@ func (s *Syncer) MarkMailboxRead(ctx context.Context, accountID, mailboxID strin
 		for _, id := range ids {
 			updates[id] = jmap.Patch{"keywords/$seen": true}
 		}
-		return &email.Set{Account: jmap.ID(accountID), Update: updates}
+		return &email.Set{Account: s.server(accountID), Update: updates}
 	})
 	return n, s.finishBulk(ctx, accountID, n, err)
 }
@@ -33,7 +33,7 @@ func (s *Syncer) MarkMailboxRead(ctx context.Context, accountID, mailboxID strin
 func (s *Syncer) EmptyMailbox(ctx context.Context, accountID, mailboxID string) (int, error) {
 	filter := &email.FilterCondition{InMailbox: jmap.ID(mailboxID)}
 	n, err := s.bulkMailbox(ctx, accountID, filter, func(ids []jmap.ID) *email.Set {
-		return &email.Set{Account: jmap.ID(accountID), Destroy: ids}
+		return &email.Set{Account: s.server(accountID), Destroy: ids}
 	})
 	return n, s.finishBulk(ctx, accountID, n, err)
 }
@@ -47,7 +47,7 @@ func (s *Syncer) bulkMailbox(
 	total := 0
 	for {
 		req := &jmap.Request{Context: ctx}
-		req.Invoke(&email.Query{Account: jmap.ID(accountID), Filter: filter, Limit: uint64(batch)})
+		req.Invoke(&email.Query{Account: s.server(accountID), Filter: filter, Limit: uint64(batch)})
 		resp, err := s.do(req)
 		if err != nil {
 			return total, err

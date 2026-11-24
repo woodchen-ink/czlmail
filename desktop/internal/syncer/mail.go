@@ -36,7 +36,7 @@ func (s *Syncer) syncMailboxes(ctx context.Context, accountID string) error {
 	}
 
 	req := &jmap.Request{Context: ctx}
-	req.Invoke(&mailbox.Changes{Account: jmap.ID(accountID), SinceState: localState})
+	req.Invoke(&mailbox.Changes{Account: s.server(accountID), SinceState: localState})
 
 	resp, err := s.do(req)
 	if err != nil {
@@ -74,7 +74,7 @@ func (s *Syncer) syncMailboxes(ctx context.Context, accountID string) error {
 
 func (s *Syncer) bootstrapMailboxes(ctx context.Context, accountID string) error {
 	req := &jmap.Request{Context: ctx}
-	req.Invoke(&mailbox.Get{Account: jmap.ID(accountID)})
+	req.Invoke(&mailbox.Get{Account: s.server(accountID)})
 
 	resp, err := s.do(req)
 	if err != nil {
@@ -103,7 +103,7 @@ func (s *Syncer) fetchMailboxes(ctx context.Context, accountID string, ids []jma
 	var out []store.Mailbox
 	for _, batch := range chunk(ids, s.maxObjectsInGet) {
 		req := &jmap.Request{Context: ctx}
-		req.Invoke(&mailbox.Get{Account: jmap.ID(accountID), IDs: batch})
+		req.Invoke(&mailbox.Get{Account: s.server(accountID), IDs: batch})
 
 		resp, err := s.do(req)
 		if err != nil {
@@ -136,7 +136,7 @@ func (s *Syncer) syncEmails(ctx context.Context, accountID string) error {
 	for {
 		req := &jmap.Request{Context: ctx}
 		req.Invoke(&email.Changes{
-			Account:    jmap.ID(accountID),
+			Account:    s.server(accountID),
 			SinceState: localState,
 			MaxChanges: uint64(s.maxObjectsInGet),
 		})
@@ -207,7 +207,7 @@ func (s *Syncer) syncEmails(ctx context.Context, accountID string) error {
 func (s *Syncer) bootstrapEmails(ctx context.Context, accountID string) error {
 	req := &jmap.Request{Context: ctx}
 	queryID := req.Invoke(&email.Query{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Sort: []*email.SortComparator{
 			{Property: "receivedAt", IsAscending: false},
 		},
@@ -215,7 +215,7 @@ func (s *Syncer) bootstrapEmails(ctx context.Context, accountID string) error {
 	})
 	// 用 back-reference 把 query 的结果直接喂给 get, 省掉一轮往返。
 	req.Invoke(&email.Get{
-		Account:      jmap.ID(accountID),
+		Account:      s.server(accountID),
 		ReferenceIDs: &jmap.ResultReference{ResultOf: queryID, Name: "Email/query", Path: "/ids"},
 		Properties:   emailMetaProperties,
 	})
@@ -256,7 +256,7 @@ func (s *Syncer) fetchEmails(ctx context.Context, accountID string, ids []jmap.I
 	for _, batch := range chunk(ids, s.maxObjectsInGet) {
 		req := &jmap.Request{Context: ctx}
 		req.Invoke(&email.Get{
-			Account:    jmap.ID(accountID),
+			Account:    s.server(accountID),
 			IDs:        batch,
 			Properties: emailMetaProperties,
 		})

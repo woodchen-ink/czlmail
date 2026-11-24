@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"git.sr.ht/~rockorager/go-jmap"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 )
 
@@ -35,7 +34,7 @@ func (s *Syncer) fileSchemaTyped(ctx context.Context, account string) bool {
 // 都判断不了 (网盘是空的) 时按旧写法发送, 被拒后由 SetPIM / SetFileConditional 换写法重试。
 func (s *Syncer) detectFileSchema(ctx context.Context, account string) (typed, known bool) {
 	if s.client.Session != nil {
-		if acc, ok := s.client.Session.Accounts[jmap.ID(account)]; ok {
+		if acc, ok := s.client.Session.Accounts[s.server(account)]; ok {
 			if raw, ok := acc.RawCapabilities[jmapx.FileNodeURI]; ok {
 				var capability map[string]json.RawMessage
 				if json.Unmarshal(raw, &capability) == nil {

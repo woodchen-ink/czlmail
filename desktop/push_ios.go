@@ -158,7 +158,7 @@ func (a *App) syncPush(ctx context.Context, s *syncer.Syncer, st *store.Store) e
 
 	emailPush := map[string]any{}
 	for _, id := range accounts {
-		emailPush[id] = syncer.EmailPushConfig{Filter: filters[id], Properties: pushEmailProperties, Urgency: "high"}
+		emailPush[s.ServerID(id)] = syncer.EmailPushConfig{Filter: filters[id], Properties: pushEmailProperties, Urgency: "high"}
 	}
 	expires := time.Now().Add(pushTTL).UTC().Format(time.RFC3339)
 
@@ -241,7 +241,8 @@ func (a *App) pushTargets(ctx context.Context, s *syncer.Syncer, st *store.Store
 	var ids []string
 	filters := map[string]any{}
 	for _, acc := range list {
-		if a.mailMuted(acc.ID) || !s.SupportsEmailPush(acc.ID) {
+		// 推送订阅属于一个会话, 只登记这个会话自己的账号。
+		if !s.Owns(acc.ID) || a.mailMuted(acc.ID) || !s.SupportsEmailPush(acc.ID) {
 			continue
 		}
 		inbox, err := mailboxByRole(st, ctx, acc.ID, "inbox")

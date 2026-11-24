@@ -41,8 +41,9 @@ type App struct {
 
 	mu    sync.RWMutex
 	store *store.Store
-	// primary 是主登录 (见 signins.go)。
+	// primary 是主登录, extra 是其余登录, 按添加顺序 (见 signins.go)。
 	primary signIn
+	extra   []*signIn
 
 	notifier notify.Notifier
 	// uiLocale 是界面当前语言 (SetUILocale), 用于后端自己发出的通知文案。
@@ -73,12 +74,16 @@ func (a *App) startup(ctx context.Context) {
 	defer a.markReady()
 
 	// 配置先读: 缓存库打不开时也要知道用户已经登录过, 不能把人赶回登录页。
-	cfg, err := config.Load()
+	file, err := config.LoadFile()
 	if err != nil {
 		a.log.Error("load config", "err", err)
 	}
 	a.mu.Lock()
-	a.primary.cfg = cfg
+	a.primary.cfg = file.Config
+	for _, s := range file.SignIns {
+		a.extra = append(a.extra, &signIn{id: s.ID, cfg: s.Config})
+	}
+	signIns := a.signInsLocked()
 	a.mu.Unlock()
 
 	dbPath, err := config.DatabasePath()
@@ -117,14 +122,17 @@ func (a *App) startup(ctx context.Context) {
 	a.initNotifier()
 	a.log.Info("startup done", "since_start", time.Since(processStart).Round(time.Millisecond))
 
-	if !cfg.Configured() {
+	if !file.Configured() {
 		a.log.Info("not configured yet, waiting for sign-in")
-		return
 	}
 
 	// 已有凭据就静默恢复会话。放后台是因为它要打网络,
 	// 挡在这里会让窗口迟迟不出现。
-	go a.restoreWithRetry(&a.primary, cfg)
+	for _, si := range signIns {
+		if si.cfg.Configured() {
+			go a.restoreWithRetry(si, si.cfg)
+		}
+	}
 }
 
 // processStart 记进程启动时刻, 启动各阶段的日志带上距此的耗时, 排查白屏用。
@@ -174,7 +182,7 @@ func (a *App) restoreSession(si *signIn, cfg config.Config) error {
 }
 
 func (a *App) restoreOAuthSession(si *signIn, cfg config.Config) error {
-	tok, err := config.LoadToken(cfg.Issuer)
+	tok, err := config.LoadToken(si.id, cfg.Issuer)
 	if err != nil {
 		return err
 	}
@@ -196,12 +204,12 @@ func (a *App) restoreOAuthSession(si *signIn, cfg config.Config) error {
 		a.log.Warn("rediscover authorization server, using cached endpoints", "err", err)
 		meta = cachedMetadata(cfg)
 	}
-	httpClient, src := a.oauthClient(cfg, meta, tok)
+	httpClient, src := a.oauthClient(si, cfg, meta, tok)
 	return a.connect(si, cfg, httpClient, src)
 }
 
 // oauthClient 构造自动续期的 Bearer 客户端。一并返回令牌源, 供服务器拒绝令牌时强制续期。
-func (a *App) oauthClient(cfg config.Config, meta *auth.Metadata, tok *oauth2.Token) (*http.Client, *auth.TokenSource) {
+func (a *App) oauthClient(si *signIn, cfg config.Config, meta *auth.Metadata, tok *oauth2.Token) (*http.Client, *auth.TokenSource) {
 	authCfg := &auth.Config{
 		Metadata:    meta,
 		ClientID:    cfg.ClientID,
@@ -211,7 +219,7 @@ func (a *App) oauthClient(cfg config.Config, meta *auth.Metadata, tok *oauth2.To
 	// 令牌刷新时同步落盘 —— 服务器可能启用刷新令牌轮换, 不存新值会导致
 	// 应用重启后只剩一个已作废的令牌。
 	save := func(t *oauth2.Token) error {
-		if err := config.SaveToken(cfg.Issuer, t); err != nil {
+		if err := config.SaveToken(si.id, cfg.Issuer, t); err != nil {
 			a.log.Error("persist refreshed token", "err", err)
 			return err
 		}
@@ -269,13 +277,19 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 	cfg.Username = client.Session.Username
 
 	// 换了人登录就先清掉上一个人的缓存, 再开始同步 (见 identity.go)。
-	if st, err := a.currentStore(); err == nil {
+	// 只有主登录需要: 附加登录的前缀从不复用, 缓存里不会有上一个人留下的同前缀数据。
+	if st, err := a.currentStore(); err == nil && si.id == accountid.Primary {
 		if err := a.ensureCacheOwner(a.ctx, st, cfg, client); err != nil {
 			return fmt.Errorf("2003 reset local cache for new account: %w", err)
 		}
 	}
 
 	a.mu.Lock()
+	// 认证期间登录被删掉了: 放弃这次连接, 不启动同步、不写账号缓存。
+	if si.removed {
+		a.mu.Unlock()
+		return errNotSignedIn
+	}
 	st := a.store
 	if si.cancelSync != nil {
 		si.cancelSync()
@@ -284,6 +298,7 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 	si.cfg = cfg
 	si.reason = ""
 	s := syncer.New(client, st, a.log)
+	s.SetSignIn(si.id)
 	s.OnNewMail = a.onNewMail
 	s.OnChanged = func(accountID string) {
 		a.emit(EventMailChanged, accountID)
@@ -291,7 +306,7 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 		a.prefetchRecent(accountID)
 	}
 	s.OnRound = func(round syncer.RoundStatus) {
-		a.emit(EventSyncStatus, a.mailSyncStatus(s, st, round))
+		a.emit(EventSyncStatus, a.mailSyncStatusWith(s, round))
 	}
 	s.OnPIMChanged = func(accountID, typeName string) {
 		if typeName == "" || typeName == "FileNode" {
@@ -320,20 +335,24 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 	// 程序关着时被撤销的共享: 缓存里有、会话里没有。这里只记下, 之后的重读会话确认了再删。
 	s.PruneAccounts(syncCtx)
 
-	go a.runNotes(syncCtx, s)
-	go a.runReminders(syncCtx)
-	go a.runReconcile(syncCtx, s, st)
-	go a.runBodyTextBackfill(syncCtx, st)
-	// 先恢复「推送已生效」的标记, 第一轮同步据此不重复弹推送已经通知过的新信。
-	a.primePush(syncCtx, st)
-	go a.runPush(syncCtx, s, st)
+	go a.runReconcile(syncCtx, si, s, st)
+	// 笔记、提醒、正文回填与 iOS 推送目前只跟主登录走: 笔记与网盘设置在主登录的个人网盘里,
+	// 提醒与回填覆盖整个缓存库, 推送登记暂时只有一份 (附加登录的推送见 #15 后续)。
+	if si.id == accountid.Primary {
+		go a.runNotes(syncCtx, s)
+		go a.runReminders(syncCtx)
+		go a.runBodyTextBackfill(syncCtx, st)
+		// 先恢复「推送已生效」的标记, 第一轮同步据此不重复弹推送已经通知过的新信。
+		a.primePush(syncCtx, st)
+		go a.runPush(syncCtx, s, st)
+	}
 	go func() {
 		if err := s.Run(syncCtx); err != nil {
 			a.log.Error("sync loop exited", "err", err)
 		}
 	}()
 
-	a.log.Info("connected", "username", cfg.Username, "accounts", len(client.Session.Accounts))
+	a.log.Info("connected", "signin", si.id, "username", cfg.Username, "accounts", len(client.Session.Accounts))
 	a.emit(EventConnected, cfg.Username)
 	return nil
 }
@@ -421,8 +440,8 @@ func (a *App) runBodyTextBackfill(ctx context.Context, st *store.Store) {
 // reconcileInterval 两次邮件对账的最小间隔。增量同步已经处理删除, 对账只是兜底, 一天一次足够。
 const reconcileInterval = 24 * time.Hour
 
-// runReconcile 启动一分钟后按账号对账, 清掉本地残留的、服务器上早已删除的邮件。
-func (a *App) runReconcile(ctx context.Context, s *syncer.Syncer, st *store.Store) {
+// runReconcile 启动一分钟后按账号对账, 清掉本地残留的、服务器上早已删除的邮件。只对账这个登录的账号。
+func (a *App) runReconcile(ctx context.Context, si *signIn, s *syncer.Syncer, st *store.Store) {
 	select {
 	case <-ctx.Done():
 		return
@@ -433,6 +452,9 @@ func (a *App) runReconcile(ctx context.Context, s *syncer.Syncer, st *store.Stor
 		return
 	}
 	for _, acc := range accounts {
+		if prefix, _ := accountid.Split(acc.ID); prefix != si.id {
+			continue
+		}
 		key := "reconciledAt:" + acc.ID
 		if v, _ := st.StringSetting(ctx, key); v != "" {
 			if t, err := time.Parse(time.RFC3339, v); err == nil && time.Since(t) < reconcileInterval {

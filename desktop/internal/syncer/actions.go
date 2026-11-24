@@ -53,7 +53,7 @@ func (s *Syncer) patchKeyword(ctx context.Context, accountID string, emailIDs []
 		}
 	}
 	return s.applySet(ctx, accountID, &email.Set{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Update:  updates,
 	})
 }
@@ -77,7 +77,7 @@ func (s *Syncer) Move(ctx context.Context, accountID string, emailIDs []string, 
 		}
 	}
 	return s.applySet(ctx, accountID, &email.Set{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Update:  updates,
 	})
 }
@@ -93,7 +93,7 @@ func (s *Syncer) Restore(ctx context.Context, accountID string, places []store.E
 		return nil
 	}
 	return s.applySet(ctx, accountID, &email.Set{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Update:  updates,
 	})
 }
@@ -140,7 +140,7 @@ func (s *Syncer) Delete(ctx context.Context, accountID string, emailIDs []string
 		ids = append(ids, jmap.ID(id))
 	}
 	return s.applySet(ctx, accountID, &email.Set{
-		Account: jmap.ID(accountID),
+		Account: s.server(accountID),
 		Destroy: ids,
 	})
 }

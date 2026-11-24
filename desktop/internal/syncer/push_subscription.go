@@ -35,7 +35,7 @@ func (s *Syncer) SupportsEmailPush(accountID string) bool {
 	if s.client.Session == nil {
 		return false
 	}
-	acc, ok := s.client.Session.Accounts[jmap.ID(accountID)]
+	acc, ok := s.client.Session.Accounts[s.server(accountID)]
 	if !ok {
 		return false
 	}

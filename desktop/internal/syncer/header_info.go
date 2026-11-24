@@ -49,7 +49,7 @@ type HeaderInfo struct {
 func (s *Syncer) FetchHeaderInfo(ctx context.Context, accountID, emailID string) (HeaderInfo, error) {
 	req := &jmap.Request{Context: ctx}
 	req.Invoke(&email.Get{
-		Account:    jmap.ID(accountID),
+		Account:    s.server(accountID),
 		IDs:        []jmap.ID{jmap.ID(emailID)},
 		Properties: []string{"id", "headers", "sentAt", "sender", "references"},
 	})
