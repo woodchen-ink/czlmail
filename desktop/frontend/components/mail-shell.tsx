@@ -972,10 +972,10 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     [refreshCurrent],
   );
 
-  /** 列表里点选邮件。草稿直接进入编辑。 */
+  /** 列表里点选邮件。草稿直接进入编辑; 展开的会话里的成员不在 emails 里, 由列表把摘要一并传来。 */
   const selectEmail = useCallback(
-    async (key: string) => {
-      const summary = emails.find((e) => emailKey(e) === key);
+    async (key: string, member?: EmailSummary) => {
+      const summary = emails.find((e) => emailKey(e) === key) ?? member;
       if (currentKind !== "drafts" && !summary?.isDraft) {
         setDraft(null);
         setSelectedKey(key);

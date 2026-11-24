@@ -37,7 +37,8 @@ interface Props {
   selectedKey: string;
   loading: boolean;
   hasMore: boolean;
-  onSelect: (key: string) => void;
+  /** member: 展开会话里的成员行传自己的摘要, 它不在 emails 里 (调用方要据此认出草稿)。 */
+  onSelect: (key: string, member?: EmailSummary) => void;
   onLoadMore: () => void;
   onToggleFlag: (email: EmailSummary) => void;
   onDelete?: (email: EmailSummary) => void;
@@ -427,6 +428,7 @@ export function EmailList({
                           unread ? "text-foreground" : "text-muted-foreground",
                         )}
                       >
+                        {email.isDraft && <span className="text-destructive">{t("[草稿]")} </span>}
                         {email.subject || t("(无主题)")}
                       </span>
                       {where && (
@@ -500,12 +502,12 @@ export function EmailList({
                             tabIndex={0}
                             data-email-key={emailKey(m)}
                             {...dragProps(m)}
-                            onClick={() => onSelect(emailKey(m))}
+                            onClick={() => onSelect(emailKey(m), m)}
                             onKeyDown={(e) => {
                               if (e.target !== e.currentTarget) return;
                               if (e.key === "Enter" || e.key === " ") {
                                 e.preventDefault();
-                                onSelect(emailKey(m));
+                                onSelect(emailKey(m), m);
                               }
                             }}
                             aria-current={
@@ -550,6 +552,7 @@ export function EmailList({
                                 m.isUnread ? "text-foreground" : "text-muted-foreground",
                               )}
                             >
+                              {m.isDraft && <span className="text-destructive">{t("[草稿]")} </span>}
                               {m.preview}
                             </span>
                             {m.hasAttachment && (

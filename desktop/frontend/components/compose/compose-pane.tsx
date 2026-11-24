@@ -313,21 +313,46 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
     return () => clearTimeout(t);
   }, [saveDraft]);
 
-  async function close() {
+  /**
+   * 离开写信面板时保留写好的内容: 有改动就存草稿, 从不发送。
+   * 用户关闭时 (dropEmpty) 内容被清空的草稿删掉; 面板被卸掉时只存不删。
+   */
+  async function keep(dropEmpty: boolean) {
     aiAbort.current?.abort();
+    if (sending) return;
     const hasContent = parseAddresses(to).length > 0 || subject.trim() || !isHtmlEmpty(html) || attachments.length > 0;
-    if (dirty.current && hasContent) {
+    if (dirty.current && hasContent && identityId) {
       await saveDraft();
       toast.success(t("已存为草稿"));
-    } else if (!hasContent && draftId.current) {
+    } else if (dropEmpty && !hasContent && draftId.current) {
       // 内容被清空的草稿不再保留。
       await saving.current;
       api.discardDraft(accountId, draftId.current).catch(() => {});
     }
+  }
+
+  // 面板被直接卸掉时 (在列表里点了别的邮件、开始另一封回复等), 同 Outlook 一样把没存的改动存成草稿,
+  // 否则自动保存的间隔里写的字会丢。关闭、丢弃、发送都会先置 finished, 不在卸载时重复处理。
+  const finished = useRef(false);
+  const keepRef = useRef(keep);
+  useEffect(() => {
+    keepRef.current = keep;
+  });
+  useEffect(
+    () => () => {
+      if (!finished.current) void keepRef.current(false);
+    },
+    [],
+  );
+
+  async function close() {
+    finished.current = true;
+    await keep(true);
     onClose();
   }
 
   async function discard() {
+    finished.current = true;
     aiAbort.current?.abort();
     await saving.current;
     if (draftId.current) {
@@ -417,6 +442,7 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       const req = buildRequest();
       req.sendAt = sendAt;
       await api.sendEmail(req);
+      finished.current = true;
       toast.success(sendAt ? t("已安排在 {0} 发送", new Date(sendAt).toLocaleString(dateLocale())) : separately ? t("已分别发送") : t("已发送"));
       onSent();
       onClose();
