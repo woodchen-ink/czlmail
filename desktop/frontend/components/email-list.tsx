@@ -307,13 +307,20 @@ export function EmailList({
                     }
                   }}
                   className={cn(
-                    "group border-border flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
+                    "group border-border relative flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
                     "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
                     ((highlightSelected && key === selectedKey) || isChecked) && "bg-muted",
                     childSelected && "bg-secondary",
                     dragging.has(key) && "opacity-40",
                   )}
                 >
+                  {/* 展开的会话: 从头像下方引出一条点线, 串起下面的成员卡片 (见 ThreadRail)。 */}
+                  {isOpen && (
+                    <span
+                      aria-hidden
+                      className="border-muted-foreground/40 pointer-events-none absolute top-[52px] bottom-0 left-[29px] border-l-2 border-dotted"
+                    />
+                  )}
                   {/* 未读用头像旁的色点而不是整行加粗：整行加粗在长列表里显得噪杂，
                     色点在扫视时反而更容易定位。 */}
                   {onCheck && (checked?.size ?? 0) > 0 && (
@@ -489,9 +496,14 @@ export function EmailList({
                     <li className="text-muted-foreground px-12 py-2 text-xs">
                       {t("载入中…")}</li>
                   )}
-                  {members.map((m) => (
+                  {members.map((m, i) => (
                     <Fragment key={emailKey(m)}>
-                      <li>
+                      <li className="relative py-1 pr-2 pl-11">
+                        <ThreadRail
+                          first={i === 0}
+                          last={i === members.length - 1}
+                          selected={highlightSelected && emailKey(m) === selectedKey}
+                        />
                         {/* 与会话行一样可以右键、加星标、删除; 行里有按钮, 所以外层不能是 button。 */}
                         {wrapRow(
                           m,
@@ -512,10 +524,10 @@ export function EmailList({
                               emailKey(m) === selectedKey ? "true" : undefined
                             }
                             className={cn(
-                              "group/member flex w-full cursor-default items-center gap-2 py-1.5 pr-3 pl-12 text-left text-sm",
+                              "group/member border-border bg-card flex w-full cursor-default items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm shadow-xs",
                               "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
                               highlightSelected && emailKey(m) === selectedKey
-                                ? "bg-muted"
+                                ? "bg-muted border-accent/60"
                                 : "hover:bg-secondary",
                               dragging.has(emailKey(m)) && "opacity-40",
                             )}
@@ -536,7 +548,7 @@ export function EmailList({
                             </span>
                             <span
                               className={cn(
-                                "w-24 shrink-0 truncate",
+                                "w-24 min-w-0 shrink truncate",
                                 m.isUnread && "font-semibold",
                               )}
                             >
@@ -564,7 +576,7 @@ export function EmailList({
                                 }}
                                 aria-label={t("删除")}
                                 title={t("删除")}
-                                className="hover:bg-muted text-muted-foreground hover:text-destructive shrink-0 rounded-sm p-0.5 opacity-0 group-hover/member:opacity-100 focus-visible:opacity-100"
+                                className="hover:bg-muted text-muted-foreground hover:text-destructive shrink-0 rounded-sm w-0 -ml-2 overflow-hidden p-0 opacity-0 group-hover/member:ml-0 group-hover/member:w-auto group-hover/member:p-0.5 group-hover/member:opacity-100 focus-visible:ml-0 focus-visible:w-auto focus-visible:p-0.5 focus-visible:opacity-100"
                               >
                                 <Trash2 className="size-3.5" />
                               </button>
@@ -615,6 +627,28 @@ export function EmailList({
 
       <div ref={sentinelRef} className="h-1" />
     </ScrollArea>
+  );
+}
+
+/**
+ * 展开会话左侧的时间线: 点线接着会话行头像下方的那段往下走, 每封成员邮件一个圆点。
+ * 每段线从本行圆点画到下一行圆点 (成员行等高, 所以高度正好是一行), 接缝都被圆点盖住,
+ * 点线不会在行与行之间断开或叠点。选中的成员圆点填强调色。
+ */
+function ThreadRail({ first, last, selected }: { first: boolean; last: boolean; selected: boolean }) {
+  const line = "border-muted-foreground/40 pointer-events-none absolute left-[29px] border-l-2 border-dotted";
+  return (
+    <>
+      {first && <span aria-hidden className={cn(line, "-top-1 bottom-1/2")} />}
+      {!last && <span aria-hidden className={cn(line, "top-1/2 h-full")} />}
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute top-1/2 left-[25px] z-10 size-2.5 -translate-y-1/2 rounded-full border-2",
+          selected ? "border-accent bg-accent" : "border-muted-foreground/50 bg-card",
+        )}
+      />
+    </>
   );
 }
 
