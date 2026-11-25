@@ -41,6 +41,7 @@ import {
 } from "@/lib/translate-html";
 import { htmlToText } from "@/lib/html";
 import { displayAddress, fullDate } from "@/lib/format";
+import { defaultTranslateLang } from "@/lib/ai-lang";
 
 interface Props {
   accountId: string;
@@ -111,7 +112,7 @@ export function EmailView({
   useEffect(() => {
     if (!ai?.enabled) return;
     api
-      .getTranslation(accountId, emailId, ai.translateLang || "简体中文")
+      .getTranslation(accountId, emailId, ai.translateLang || defaultTranslateLang())
       .then((c) => setHasCachedTranslation(!!c))
       .catch(() => {});
   }, [accountId, emailId, ai]);
@@ -174,7 +175,7 @@ export function EmailView({
       toast.info(t("没有需要翻译的文字"));
       return;
     }
-    const lang = ai?.translateLang || "简体中文";
+    const lang = ai?.translateLang || defaultTranslateLang();
     const result: (string | undefined)[] = new Array(texts.length);
 
     // 译过的邮件直接用缓存。片段数对不上(正文重新取回后结构变了)时正文重新翻译。
@@ -532,7 +533,7 @@ export function EmailView({
                     !isAlreadyInLanguage(
                       `${email.subject}
     ${email.bodyText || htmlToText(email.bodyHtml)}`,
-                      ai.translateLang || "简体中文",
+                      ai.translateLang || defaultTranslateLang(),
                     )) &&
                     (translation === null ? (
                       <Button
@@ -542,7 +543,7 @@ export function EmailView({
                         onClick={translate}
                       >
                         <Languages className="size-4" />
-                        {hasCachedTranslation ? t("显示译文") : t("翻译为{0}", t(ai.translateLang || "简体中文"))}
+                        {hasCachedTranslation ? t("显示译文") : t("翻译为{0}", t(ai.translateLang || defaultTranslateLang()))}
                       </Button>
                     ) : (
                       <>
@@ -554,7 +555,7 @@ export function EmailView({
                           )}
                           {translation.running
                             ? t("正在翻译… {0}/{1}", translation.done, translation.total)
-                            : t("已由 AI 翻译为{0}", t(ai.translateLang || "简体中文"))}
+                            : t("已由 AI 翻译为{0}", t(ai.translateLang || defaultTranslateLang()))}
                         </span>
                         <Button
                           variant="ghost"

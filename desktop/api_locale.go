@@ -52,10 +52,14 @@ func (a *App) locale() string {
 	return a.uiLocale
 }
 
+// currentLocale 是界面当前语言, 自己加锁。不能在持有 a.mu 时调用。
+func (a *App) currentLocale() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.locale()
+}
+
 // t 按界面当前语言翻译后端文案, 规则同界面的 t()。不能在持有 a.mu 时调用。
 func (a *App) t(source string, values ...any) string {
-	a.mu.RLock()
-	locale := a.locale()
-	a.mu.RUnlock()
-	return catalog.T(locale, source, values...)
+	return catalog.T(a.currentLocale(), source, values...)
 }

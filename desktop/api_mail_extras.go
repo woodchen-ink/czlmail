@@ -384,10 +384,7 @@ func (a *App) SendReadReceipt(accountID, emailID string) error {
 			break
 		}
 	}
-	a.mu.RLock()
-	locale := a.locale()
-	a.mu.RUnlock()
-	subject, body := readReceiptText(a.t, locale, d.Subject, identity.Email, time.Now().Format("2006-01-02 15:04"))
+	subject, body := readReceiptText(a.t, a.currentLocale(),d.Subject, identity.Email, time.Now().Format("2006-01-02 15:04"))
 	if err := a.SendEmail(ComposeRequest{
 		AccountID: accountID, IdentityID: identity.ID,
 		To:        []store.Address{{Email: d.Unsubscribe.ReceiptTo}},
