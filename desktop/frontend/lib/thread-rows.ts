@@ -16,7 +16,8 @@ export interface ThreadRow {
  * 邮件列表的可见行: 同一会话只占一行, 位置取它在 emails 里第一次出现处。
  * 列表渲染与键盘上下移动共用, 否则方向键会选中折叠在会话里、屏幕上没有的那封。
  */
-export function threadRows(emails: EmailSummary[]): ThreadRow[] {
+export function threadRows(emails: EmailSummary[], flat = false): ThreadRow[] {
+  if (flat) return emails.map((head) => ({ head, unread: head.isUnread }));
   const byThread = new Map<string, ThreadRow>();
   const out: ThreadRow[] = [];
   for (const e of emails) {

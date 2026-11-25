@@ -38,7 +38,8 @@ interface Props {
   selectedKey: string;
   loading: boolean;
   hasMore: boolean;
-  onSelect: (key: string) => void;
+  /** member: 展开会话里的成员行传自己的摘要, 它不在 emails 里 (调用方要据此认出草稿)。 */
+  onSelect: (key: string, member?: EmailSummary) => void;
   onLoadMore: () => void;
   onToggleFlag: (email: EmailSummary) => void;
   onDelete?: (email: EmailSummary) => void;
@@ -69,6 +70,11 @@ interface Props {
   emptyState?: React.ReactNode;
   /** 行可以拖到侧栏的文件夹上移动 (见 lib/email-drag)。 */
   draggable?: boolean;
+  /**
+   * 每封邮件各占一行, 不按会话合并、不能展开 (草稿、定时发送: 每封是一件单独待处理的事,
+   * 同 Outlook; 合并后较早的草稿藏在会话行下面, 展开区又混进收发的往来)。
+   */
+  flat?: boolean;
 }
 
 export function EmailList({
@@ -91,6 +97,7 @@ export function EmailList({
   showRecipients,
   emptyState,
   draggable = false,
+  flat = false,
 }: Props) {
   useI18n();
   // 正被拖走的邮件键: 这些行变淡, 看得出拖的是哪几封。
@@ -131,8 +138,8 @@ export function EmailList({
   const [expanded, setExpanded] = useState("");
   const [threads, setThreads] = useState<Record<string, EmailSummary[]>>({});
 
-  // 同一会话在列表里只占一行(最新那封), 其余收进展开区。
-  const rows = useMemo(() => threadRows(emails), [emails]);
+  const rows = useMemo(() => threadRows(emails, flat), [emails, flat]);
+
 
   // 列表刷新(新邮件到达、标记已读)后, 展开的会话重新读取。
   // 按会话行代表的那封读取: 它在回收站之外时, 删到回收站的往来不再列出。
@@ -164,15 +171,15 @@ export function EmailList({
   async function expandThread(email: EmailSummary) {
     const key = threadKey(email);
     if (expanded === key) return;
-    if (!email.threadId || (email.threadCount ?? 0) < 2) {
+    if (flat || !email.threadId || (email.threadCount ?? 0) < 2) {
       setExpanded("");
       return;
     }
     setExpanded(key);
-    if (!threads[key]) {
-      const list = (await api.threadEmails(email.accountId, email.id).catch(() => [])) ?? [];
-      setThreads((prev) => ({ ...prev, [key]: applyOverlay(list) }));
-    }
+    // 先显示上次读到的成员, 再重新读一次: 会话收起期间可能多了往来 (例如离开写信面板时存下的草稿),
+    // 那时的列表刷新不会重读收起的会话。
+    const list = (await api.threadEmails(email.accountId, email.id).catch(() => [])) ?? [];
+    setThreads((prev) => ({ ...prev, [key]: applyOverlay(list) }));
   }
 
   // 从通讯录、通知或链接打开的邮件可能在屏幕外, 选中变化后把那一行滚进视野。
@@ -250,8 +257,10 @@ export function EmailList({
         {rows.map(({ head: email, unread }) => {
           const key = emailKey(email);
           const tk = threadKey(email);
-          const count = email.threadCount ?? 0;
-          const isOpen = !!email.threadId && expanded === tk;
+          const count = flat ? 0 : (email.threadCount ?? 0);
+          // 会话里有草稿 (多半是没写完的回复, 可能在草稿箱里) 时会话行标红, 同 Outlook; 草稿数含本行自己。
+          const drafts = Math.max(flat ? 0 : (email.draftCount ?? 0), email.isDraft ? 1 : 0);
+          const isOpen = !flat && !!email.threadId && expanded === tk;
           const members = isOpen ? [...(threads[tk] ?? [])].reverse() : [];
           const where = whereOf?.(email) ?? "";
           const isChecked = checked?.has(key) ?? false;
@@ -411,6 +420,11 @@ export function EmailList({
                           unread ? "text-foreground" : "text-muted-foreground",
                         )}
                       >
+                        {drafts > 0 && (
+                          <span className="text-destructive">
+                            {drafts > 1 ? t("[草稿：{0}]", drafts) : t("[草稿]")}{" "}
+                          </span>
+                        )}
                         {email.subject || t("(无主题)")}
                       </span>
                       {where && (
@@ -484,12 +498,12 @@ export function EmailList({
                             tabIndex={0}
                             data-email-key={emailKey(m)}
                             {...dragProps(m)}
-                            onClick={() => onSelect(emailKey(m))}
+                            onClick={() => onSelect(emailKey(m), m)}
                             onKeyDown={(e) => {
                               if (e.target !== e.currentTarget) return;
                               if (e.key === "Enter" || e.key === " ") {
                                 e.preventDefault();
-                                onSelect(emailKey(m));
+                                onSelect(emailKey(m), m);
                               }
                             }}
                             aria-current={
@@ -534,6 +548,7 @@ export function EmailList({
                                 m.isUnread ? "text-foreground" : "text-muted-foreground",
                               )}
                             >
+                              {m.isDraft && <span className="text-destructive">{t("[草稿]")} </span>}
                               {m.preview}
                             </span>
                             {m.hasAttachment && (
