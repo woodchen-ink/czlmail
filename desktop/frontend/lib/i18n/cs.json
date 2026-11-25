@@ -1305,5 +1305,9 @@
   "您发送的邮件已被阅读。": "Vaše zpráva byla přečtena.",
   "阅读时间：{0}": "Čas přečtení: {0}",
   "已读：{0}": "Přečteno: {0}",
-  "Čeština": "čeština"
+  "Čeština": "čeština",
+  "CZL Mail 邮件链接": "CZL Mail – odkaz na zprávu",
+  "CZL Mail 日历文件": "CZL Mail – soubor kalendáře",
+  "CZL Mail 日历订阅": "CZL Mail – odběr kalendáře",
+  "JMAP 邮件、日历、通讯录客户端": "Klient JMAP pro poštu, kalendáře a kontakty"
 }

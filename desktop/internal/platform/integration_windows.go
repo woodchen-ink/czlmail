@@ -64,8 +64,9 @@ func SetAutostart(on bool) error {
 	return k.SetStringValue(appRegName, fmt.Sprintf(`"%s" %s`, exe, BackgroundFlag))
 }
 
-// RegisterHandlers 登记协议与文件关联的能力。每次启动都执行, 程序路径变化后自动更新。
-func RegisterHandlers() error {
+// RegisterHandlers 登记协议与文件关联的能力。每次启动都执行, 程序路径变化后自动更新;
+// 界面换了语言时再执行一次, 系统「默认应用」里显示的说明随之换成 t 给出的语言。
+func RegisterHandlers(t func(string, ...any) string) error {
 	exe, err := exePath()
 	if err != nil {
 		return err
@@ -74,10 +75,10 @@ func RegisterHandlers() error {
 	icon := fmt.Sprintf(`"%s",0`, exe)
 
 	progIDs := []struct{ id, name string }{
-		{progMailto, "CZL Mail 邮件链接"},
-		{progICS, "CZL Mail 日历文件"},
-		{progWebcal, "CZL Mail 日历订阅"},
-		{progLink, "URL:CZL Mail 邮件链接"},
+		{progMailto, t("CZL Mail 邮件链接")},
+		{progICS, t("CZL Mail 日历文件")},
+		{progWebcal, t("CZL Mail 日历订阅")},
+		{progLink, "URL:" + t("CZL Mail 邮件链接")},
 	}
 	for _, p := range progIDs {
 		if err := setValues(`Software\Classes\`+p.id, map[string]string{"": p.name}); err != nil {
@@ -98,7 +99,7 @@ func RegisterHandlers() error {
 
 	if err := setValues(capabilityKey, map[string]string{
 		"ApplicationName":        appRegName,
-		"ApplicationDescription": "JMAP 邮件、日历、通讯录客户端",
+		"ApplicationDescription": t("JMAP 邮件、日历、通讯录客户端"),
 		"ApplicationIcon":        icon,
 	}); err != nil {
 		return err

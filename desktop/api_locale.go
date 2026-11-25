@@ -41,6 +41,7 @@ func (a *App) SetUILocale(locale string) {
 		a.setTrayMenuText()
 		a.redrawTrayUnread()
 		a.planRemindersSoon(false)
+		go a.refreshHandlers()
 	}
 }
 
