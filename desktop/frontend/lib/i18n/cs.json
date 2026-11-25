@@ -1233,6 +1233,7 @@
   "这封邮件没有日历邀请。": "Tato zpráva neobsahuje pozvánku do kalendáře.",
   "这个账号没有日历。": "Tento účet nemá žádný kalendář.",
   "这封邮件没有请求已读回执。": "Tato zpráva nežádá o potvrzení o přečtení.",
+  "这个链接的协议不受支持，已拒绝打开。": "Tento odkaz používá nepodporovaný protokol, otevření bylo odmítnuto.",
   "接口地址必须以 http:// 或 https:// 开头。": "Adresa API musí začínat http:// nebo https://.",
   "AI 没有返回内容（模型可能把输出都用在了思考上），可以把思考档位调低后重试。": "AI nevrátila žádný text (model mohl celou odpověď spotřebovat na uvažování). Zkuste nižší úroveň uvažování.",
   "服务器地址必须使用 https。": "Adresa serveru musí používat https.",

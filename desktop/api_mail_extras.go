@@ -66,7 +66,11 @@ func (a *App) Unsubscribe(accountID, emailID string) (string, error) {
 		}
 		return "sent", nil
 	}
-	a.openURL(u.HTTP)
+	target, ok := externalURL(u.HTTP)
+	if !ok {
+		return "", fmt.Errorf("2227 unsubscribe link not allowed")
+	}
+	a.openURL(target)
 	return "opened", nil
 }
 
