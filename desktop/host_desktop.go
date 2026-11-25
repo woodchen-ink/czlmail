@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 
+	"github.com/pkg/browser"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -39,7 +40,20 @@ func (a *App) openDirectoryDialog(d fileDialog) (string, error) {
 	return wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{Title: d.Title})
 }
 
-func (a *App) openURL(url string) { wruntime.BrowserOpenURL(a.ctx, url) }
+// openURL 不用 wruntime.BrowserOpenURL, 原因见 OpenLink。pkg/browser 在 Windows 上
+// 直接 ShellExecute 这个地址, 不经过命令行解释器, 协议由 externalURL 限定。
+func (a *App) openURL(raw string) {
+	u, ok := externalURL(raw)
+	if !ok {
+		a.log.Warn("open url: rejected")
+		return
+	}
+	go func() {
+		if err := browser.OpenURL(u); err != nil {
+			a.log.Warn("open url", "err", err)
+		}
+	}()
+}
 
 func (a *App) quit() { wruntime.Quit(a.ctx) }
 
