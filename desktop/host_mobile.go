@@ -10,6 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/config"
+	"github.com/woodchen-ink/czlmail/desktop/internal/keychain"
+	"github.com/woodchen-ink/czlmail/desktop/internal/smime"
 )
 
 // 移动端的宿主能力由原生壳实现, 经 hostRequest 往返。请求类型 (kind) 与 iOS 壳的 Swift (私有仓库 czlmail-mobile)、
@@ -19,6 +23,13 @@ const isMobile = true
 
 // 日程提醒交给系统定时 (reminders_schedule.go): 原生壳清掉上一批定时通知, 登记这一批。
 func init() {
+	// 导入的 S/MIME 证书存进系统密钥库 (iOS 钥匙串 / Android Keystore 加密), 与登录凭据同一个服务名。
+	smime.SetSecretStore(smime.SecretStore{
+		Get:      func(key string) (string, error) { return keychain.Get(config.KeyringService, key) },
+		Set:      func(key, value string) error { return keychain.Set(config.KeyringService, key, value) },
+		Delete:   func(key string) error { return keychain.Delete(config.KeyringService, key) },
+		NotFound: keychain.ErrNotFound,
+	})
 	reminderHost = func(ctx context.Context, list []scheduledReminder) error {
 		_, err := hostRequest(ctx, "scheduleReminders", map[string]any{"items": list})
 		return err

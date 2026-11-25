@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -33,6 +34,64 @@ func (a *App) ListSigningCertificates() ([]smime.Certificate, error) {
 		list = []smime.Certificate{}
 	}
 	return list, err
+}
+
+// maxCertificateFile 是导入的 .p12 / .pfx 的大小上限; 正常的证书文件只有几 KB。
+const maxCertificateFile = 1 << 20
+
+// PickSigningCertificate 选择要导入的证书文件 (.p12 / .pfx), 取消时返回空串。
+// 只在手机上可用: 桌面端用系统证书存储里的证书。
+func (a *App) PickSigningCertificate() (string, error) {
+	return a.openFileDialog(fileDialog{
+		Title:   a.t("导入签名证书"),
+		Filters: []fileFilter{{Name: a.t("证书文件 (.p12, .pfx)"), Pattern: "*.p12;*.pfx"}},
+	})
+}
+
+// ImportSigningCertificate 导入 .p12 / .pfx: 私钥与证书链存进系统密钥库, 之后可在发件身份里选用。
+// 密码不对返回 2407, 文件不能用 2408, 证书不能签名邮件 2409。
+func (a *App) ImportSigningCertificate(path, password string) (smime.Certificate, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return smime.Certificate{}, fmt.Errorf("2408 read certificate file: %w", err)
+	}
+	if info.Size() > maxCertificateFile {
+		return smime.Certificate{}, fmt.Errorf("2408 certificate file is too large")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return smime.Certificate{}, fmt.Errorf("2408 read certificate file: %w", err)
+	}
+	c, err := smime.Import(data, password, time.Now())
+	switch {
+	case errors.Is(err, smime.ErrUnsupported):
+		return c, fmt.Errorf("2170 certificate import not supported on this platform")
+	case errors.Is(err, smime.ErrBadPassword):
+		return c, fmt.Errorf("2407 wrong certificate password")
+	case errors.Is(err, smime.ErrBadFile):
+		return c, fmt.Errorf("2408 not a usable PKCS#12 certificate file")
+	case errors.Is(err, smime.ErrNotSigning):
+		return c, fmt.Errorf("2409 certificate cannot sign email")
+	case err != nil:
+		return c, fmt.Errorf("2410 store certificate: %w", err)
+	}
+	// 手机上的文件选择器把文件复制进了本程序的缓存目录; 导入后私钥已在密钥库里, 删掉这份副本。
+	if isMobile {
+		_ = os.Remove(path)
+	}
+	return c, nil
+}
+
+// RemoveSigningCertificate 删除导入的证书 (私钥一并从密钥库删除)。
+func (a *App) RemoveSigningCertificate(thumbprint string) error {
+	err := smime.Remove(strings.ToUpper(strings.ReplaceAll(thumbprint, " ", "")))
+	switch {
+	case errors.Is(err, smime.ErrUnsupported):
+		return fmt.Errorf("2170 certificate import not supported on this platform")
+	case err != nil:
+		return fmt.Errorf("2410 remove certificate: %w", err)
+	}
+	return nil
 }
 
 func smimeSettings(raw string) map[string]SmimeChoice {

@@ -335,12 +335,19 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
    */
   async function keep(dropEmpty: boolean) {
     if (sending || uploading) return false;
+    // 写不到服务器 (多半是断网) 时问一次是否仍要离开, 否则面板关不掉也切不走。
+    // 选了离开就放弃这次没存下的改动, 同一次离开里再调 keep 不会重复问。
+    const leaveUnsaved = (message: string) => {
+      if (!window.confirm(message)) return false;
+      dirty.current = false;
+      return true;
+    };
     aiAbort.current?.abort();
     const beforeDelete = editRevision.current;
     return allowDraftLeave(async () => {
       if (dirty.current && !identityId && hasContent) {
         toast.error(t("没有可用的发件身份"));
-        return false;
+        return leaveUnsaved(t("草稿没能保存，离开会丢掉这次的改动。仍要离开？"));
       }
       if (dropEmpty && !hasContent) {
         await saving.current;
@@ -351,7 +358,7 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
             draftId.current = "";
           } catch (err) {
             toast.error(errorMessage(err));
-            return false;
+            return leaveUnsaved(t("服务器上的草稿没能删除，仍要关闭？"));
           }
         }
         return true;
@@ -359,14 +366,14 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
       const changed = dirty.current;
       if (!(await saveDraft())) {
         toast.error(t("保存失败"));
-        return false;
+        return leaveUnsaved(t("草稿没能保存，离开会丢掉这次的改动。仍要离开？"));
       }
       if (changed && hasContent) toast.success(t("已存为草稿"));
       return true;
     }, () => editRevision.current);
   }
 
-  // Ask before replacing the editor, not in unmount cleanup: offline edits remain editable.
+  // 在换掉写信面板之前问 keep, 而不是在卸载时才存: 存不上时面板还在, 改动还能接着编辑。
   useLayoutEffect(() => {
     leaveRef.current = () => keep(false);
     return () => { leaveRef.current = null; };
@@ -384,9 +391,11 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
         await api.discardDraft(accountId, draftId.current);
       } catch (err) {
         toast.error(errorMessage(err));
-        return;
+        // 断网时删不掉: 草稿留在服务器上, 用户仍可以关掉面板。
+        if (!window.confirm(t("服务器上的草稿没能删除，仍要关闭？"))) return;
       }
     }
+    dirty.current = false;
     onClose();
   }
 
