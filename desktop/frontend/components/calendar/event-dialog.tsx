@@ -66,7 +66,7 @@ import {
   toTimeInput,
 } from "@/lib/date";
 import { main } from "@/wailsjs/go/models";
-import { BrowserOpenURL } from "@/wailsjs/runtime/runtime";
+import { openExternal } from "@/lib/external";
 
 /** 打开面板的目标：已有事件（可能是重复事件的某一次），或新建时的初始时间。 */
 export type EventTarget =
@@ -452,7 +452,7 @@ export function EventPanel({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => BrowserOpenURL(form.virtualLocation.trim())}
+                    onClick={() => openExternal(form.virtualLocation.trim())}
                   >
                     {t("加入")}</Button>
                 )}

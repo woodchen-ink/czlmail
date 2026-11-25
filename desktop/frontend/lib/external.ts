@@ -12,6 +12,7 @@ const OPENABLE = /^(https?:|mailto:)/i;
  *
  * 交给后端的 OpenLink 而不是 Wails 的 BrowserOpenURL: 后者会静默丢弃含
  * ~ ! ( ) * ; 等合法字符的地址, 点了没有任何反应。后端同样只放行这三种协议。
+ * 笔记里的外部链接与日程的会议链接也走这里, 同样不直接调 BrowserOpenURL。
  */
 export function openExternal(url: string): void {
   if (!url || !OPENABLE.test(url)) return;
