@@ -1,4 +1,4 @@
-//go:build !windows && (!darwin || ios || !cgo)
+//go:build !windows && !ios && !android && (!darwin || !cgo)
 
 package smime
 

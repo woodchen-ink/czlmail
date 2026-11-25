@@ -4,7 +4,7 @@ import { dateLocale, t, tContext } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarClock, Folder, FolderPlus, Loader2, MoreHorizontal, ShieldCheck, Star, X } from "lucide-react";
+import { CalendarClock, Folder, FolderPlus, Loader2, MoreHorizontal, ShieldCheck, Star, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { RichEditor } from "@/components/compose/rich-editor";
@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { api, errorMessage, type Account, type Identity, type Mailbox, type ScheduledItem, type SigningCertificate, type Vacation } from "@/lib/api";
 import { htmlToText, isHtmlEmpty, sanitizeInline, textToHtml } from "@/lib/html";
+import { isNative } from "@/lib/native-bridge";
 import { main } from "@/wailsjs/go/models";
 
 /* ---------------- 发件身份与签名 ---------------- */
@@ -50,13 +51,17 @@ export function IdentitiesSection({ active }: { active: boolean }) {
     if (active) load();
   }, [active, load]);
 
+  const loadCerts = useCallback(
+    () =>
+      api
+        .listSigningCertificates()
+        .then((list) => setCerts(list ?? []))
+        .catch(() => setCerts(null)),
+    [],
+  );
   useEffect(() => {
-    if (!active) return;
-    api
-      .listSigningCertificates()
-      .then((list) => setCerts(list ?? []))
-      .catch(() => setCerts(null));
-  }, [active]);
+    if (active) loadCerts();
+  }, [active, loadCerts]);
 
   return (
     <>
@@ -121,6 +126,7 @@ export function IdentitiesSection({ active }: { active: boolean }) {
           identity={smimeFor}
           certs={certs}
           choice={settings.smimeSigning?.[smimeFor.email.toLowerCase()]}
+          onCertsChanged={loadCerts}
           onClose={() => setSmimeFor(null)}
           onSave={(choice) => {
             const next = { ...(settings.smimeSigning ?? {}) };
@@ -182,22 +188,70 @@ function SmimeDialog({
   identity,
   certs,
   choice,
+  onCertsChanged,
   onClose,
   onSave,
 }: {
   identity: Identity;
   certs: SigningCertificate[];
   choice?: main.SmimeChoice;
+  onCertsChanged: () => Promise<void>;
   onClose: () => void;
   onSave: (choice: { thumbprint: string; auto: boolean } | null) => void;
 }) {
   useI18n();
+  // 手机上没有可直接调用的系统证书存储: 证书由用户导入 (.p12 / .pfx), 私钥存进系统密钥库, 也可以在这里删掉。
+  const imported = isNative();
   const usable = certs.filter((c) => certFits(c, identity.email));
-  const others = certs.length - usable.length;
+  const unusable = certs.filter((c) => !certFits(c, identity.email));
+  const others = unusable.length;
   const [thumbprint, setThumbprint] = useState(
     choice?.thumbprint && usable.some((c) => c.thumbprint === choice.thumbprint) ? choice.thumbprint : (usable[0]?.thumbprint ?? ""),
   );
   const [auto, setAuto] = useState(choice?.auto ?? false);
+  // 选好文件后等输入密码; 空串表示没有待导入的文件。
+  const [importPath, setImportPath] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function pickFile() {
+    try {
+      const path = await api.pickSigningCertificate();
+      if (path) {
+        setImportPath(path);
+        setPassword("");
+      }
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  }
+
+  async function importFile() {
+    setBusy(true);
+    try {
+      const c = await api.importSigningCertificate(importPath, password);
+      setImportPath("");
+      setPassword("");
+      await onCertsChanged();
+      if (certFits(c, identity.email)) setThumbprint(c.thumbprint);
+      toast.success(t("已导入证书：{0}", c.subject));
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeCert(c: SigningCertificate) {
+    if (!window.confirm(t("删除证书「{0}」？删除后不能再用它签名，需要时重新导入。", c.subject))) return;
+    try {
+      await api.removeSigningCertificate(c.thumbprint);
+      if (thumbprint === c.thumbprint) setThumbprint("");
+      await onCertsChanged();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  }
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -206,10 +260,16 @@ function SmimeDialog({
           <DialogTitle>{t("数字签名 (S/MIME)")}</DialogTitle>
         </DialogHeader>
         <p className="text-muted-foreground text-sm">
-          {t("用系统证书存储里的证书给 {0} 发出的邮件签名。收件人能确认邮件确实来自你、途中没有被改动。", identity.email)}
+          {imported
+            ? t("用导入的证书给 {0} 发出的邮件签名。收件人能确认邮件确实来自你、途中没有被改动。", identity.email)
+            : t("用系统证书存储里的证书给 {0} 发出的邮件签名。收件人能确认邮件确实来自你、途中没有被改动。", identity.email)}
         </p>
         {usable.length === 0 ? (
-          <p className="text-sm">{t("系统证书存储里没有可用于这个地址的签名证书（需要带私钥、包含这个邮箱地址且仍在有效期内）。")}</p>
+          <p className="text-sm">
+            {imported
+              ? t("还没有可用于这个地址的签名证书。导入带私钥的 .p12 或 .pfx 文件，证书上要有这个邮箱地址且仍在有效期内。")
+              : t("系统证书存储里没有可用于这个地址的签名证书（需要带私钥、包含这个邮箱地址且仍在有效期内）。")}
+          </p>
         ) : (
           <div className="grid gap-1.5" role="radiogroup" aria-label={t("签名证书")}>
             {usable.map((c) => (
@@ -222,11 +282,56 @@ function SmimeDialog({
                   <span className="block truncate text-sm font-medium">{c.subject}</span>
                   <span className="text-muted-foreground block truncate text-xs">{t("颁发者：{0}，有效期至 {1}", c.issuer, certDate(c.notAfter))}</span>
                 </span>
+                {imported && <RemoveCertButton cert={c} onRemove={removeCert} />}
               </label>
             ))}
           </div>
         )}
-        {others > 0 && <p className="text-muted-foreground text-xs">{t("另有 {0} 张证书不能用于这个地址（已过期、不含这个地址或不能签名邮件）。", others)}</p>}
+        {imported && others > 0 && (
+          <div className="grid gap-1.5">
+            <p className="text-muted-foreground text-xs">{t("不能用于这个地址的证书（已过期、不含这个地址或不能签名邮件）：")}</p>
+            {unusable.map((c) => (
+              <div key={c.thumbprint} className="border-border text-muted-foreground flex items-start gap-2.5 rounded-md border border-dashed px-3 py-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm">{c.subject}</span>
+                  <span className="block truncate text-xs">{(c.emails ?? []).join(", ") || t("证书上没有邮箱地址")}</span>
+                </span>
+                <RemoveCertButton cert={c} onRemove={removeCert} />
+              </div>
+            ))}
+          </div>
+        )}
+        {!imported && others > 0 && <p className="text-muted-foreground text-xs">{t("另有 {0} 张证书不能用于这个地址（已过期、不含这个地址或不能签名邮件）。", others)}</p>}
+        {imported &&
+          (importPath ? (
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                importFile();
+              }}
+            >
+              <Input
+                type="password"
+                autoFocus
+                autoComplete="off"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t("证书密码")}
+                aria-label={t("证书密码")}
+                className="min-w-0 flex-1"
+              />
+              <Button type="button" variant="ghost" disabled={busy} onClick={() => setImportPath("")}>
+                {t("取消")}</Button>
+              <Button type="submit" disabled={busy}>
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                {t("导入")}</Button>
+            </form>
+          ) : (
+            <Button variant="outline" className="justify-self-start" onClick={pickFile}>
+              <Upload className="size-4" />
+              {t("导入证书 (.p12 / .pfx)")}</Button>
+          ))}
         {usable.length > 0 && (
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="smime-auto" className="text-sm font-normal">
@@ -586,5 +691,24 @@ export function ScheduledSection({ active }: { active: boolean }) {
         )}
       </Card>
     </>
+  );
+}
+
+function RemoveCertButton({ cert, onRemove }: { cert: SigningCertificate; onRemove: (c: SigningCertificate) => void }) {
+  useI18n();
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      aria-label={t("删除证书")}
+      onClick={(e) => {
+        // 按钮在可点选的行里, 不让这一下顺带选中证书。
+        e.preventDefault();
+        onRemove(cert);
+      }}
+    >
+      <Trash2 className="size-4" />
+    </Button>
   );
 }
