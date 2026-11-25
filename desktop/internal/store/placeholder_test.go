@@ -46,6 +46,11 @@ func TestApplyPlaceholdersBuiltins(t *testing.T) {
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
+	// 界面语言的星期名由调用方给出。
+	ctx.DayOfWeek = "středa"
+	if got := ApplyPlaceholders("dnes je {{day_of_week}}", nil, ctx); got != "dnes je středa" {
+		t.Errorf("localized weekday: %q", got)
+	}
 }
 
 // 未提供值的占位符必须原样保留 —— 替换成空串会让发出去的信悄悄少一段话。

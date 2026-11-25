@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/notes"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -87,6 +89,13 @@ func (a *App) ApplyTemplate(id string, values map[string]string, recipientName s
 		SenderName:    a.displayName(),
 		RecipientName: recipientName,
 		Now:           time.Now(),
+	}
+	// {{day_of_week}} 用界面语言; 中文保持原来的「周一」写法。
+	a.mu.RLock()
+	locale := a.locale()
+	a.mu.RUnlock()
+	if !strings.HasPrefix(locale, "zh") {
+		ctx.DayOfWeek = notes.FormatDate("dddd", ctx.Now, locale)
 	}
 
 	subject := store.ApplyPlaceholders(t.Subject, values, ctx)

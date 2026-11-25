@@ -1301,5 +1301,8 @@
   "有效期": "Platnost",
   "{0} 至 {1}": "od {0} do {1}",
   "签名时间": "Podepsáno",
-  "指纹": "Otisk"
+  "指纹": "Otisk",
+  "您发送的邮件已被阅读。": "Vaše zpráva byla přečtena.",
+  "阅读时间：{0}": "Čas přečtení: {0}",
+  "已读：{0}": "Přečteno: {0}"
 }

@@ -1301,5 +1301,8 @@
   "有效期": "Valid",
   "{0} 至 {1}": "{0} to {1}",
   "签名时间": "Signed at",
-  "指纹": "Thumbprint"
+  "指纹": "Thumbprint",
+  "您发送的邮件已被阅读。": "Your message has been read.",
+  "阅读时间：{0}": "Read at: {0}",
+  "已读：{0}": "Read: {0}"
 }
