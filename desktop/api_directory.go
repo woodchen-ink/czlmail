@@ -16,6 +16,8 @@ import (
 
 var directoryCache struct {
 	sync.Mutex
+	// key 是 会话地址 + 服务器账号 id: 换了登录 (另一个服务器或另一个用户) 不能沿用上一个邮局的目录。
+	key  string
 	at   time.Time
 	list []store.Recipient
 }
@@ -45,9 +47,6 @@ func (a *App) SearchDirectory(query string) ([]store.Recipient, error) {
 func (a *App) directory() []store.Recipient {
 	directoryCache.Lock()
 	defer directoryCache.Unlock()
-	if directoryCache.list != nil && time.Since(directoryCache.at) < directoryTTL {
-		return directoryCache.list
-	}
 	accountID := ""
 	if st, err := a.currentStore(); err == nil {
 		accountID = a.personalAccountID(st)
@@ -59,6 +58,10 @@ func (a *App) directory() []store.Recipient {
 	rt, err := a.routeWithin(accountID, 0)
 	if err != nil || rt.client.Session == nil {
 		return nil
+	}
+	key := rt.client.SessionEndpoint + " " + rt.serverID
+	if directoryCache.key == key && directoryCache.list != nil && time.Since(directoryCache.at) < directoryTTL {
+		return directoryCache.list
 	}
 
 	req := &jmap.Request{Context: a.ctx}
@@ -93,7 +96,7 @@ func (a *App) directory() []store.Recipient {
 		}
 		out = append(out, store.Recipient{Name: principalName(p.Name, p.Description, p.Email), Email: p.Email})
 	}
-	directoryCache.list, directoryCache.at = out, time.Now()
+	directoryCache.key, directoryCache.list, directoryCache.at = key, out, time.Now()
 	return out
 }
 

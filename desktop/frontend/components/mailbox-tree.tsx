@@ -189,7 +189,8 @@ function MailboxRow({
       selected={selected}
       onClick={() => onSelect(node.id)}
       depth={node.depth + indent}
-      unread={node.unreadEmails}
+      // 草稿箱显示草稿总数(同 Outlook): 草稿一般都是已读的, 未读数总是 0, 看不出还有几封没写完。
+      unread={node.kind === "drafts" ? node.totalEmails : node.unreadEmails}
       // 收件箱用醒目的角标; 其它文件夹(垃圾邮件、归档等)的未读多是不必处理的, 保持灰字。
       badge={node.kind === "inbox"}
       quiet={quiet}
