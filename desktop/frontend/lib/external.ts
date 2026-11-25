@@ -1,7 +1,13 @@
-import { OpenLink } from "@/wailsjs/go/main/App";
+import { toast } from "sonner";
+
+import { errorMessage } from "@/lib/api";
+import { OpenLink, OpenMeetingLink } from "@/wailsjs/go/main/App";
 
 /** 允许交给系统浏览器打开的协议。 */
 const OPENABLE = /^(https?:|mailto:)/i;
+
+/** 会议链接额外允许的会议程序协议, 与后端 meetingSchemes 一致。 */
+export const MEETING_LINK = /^(https?|msteams|zoommtg|zoomus|webex|wemeet|skype):/i;
 
 /**
  * 在系统默认浏览器里打开链接。
@@ -21,8 +27,18 @@ export function openExternal(url: string): void {
     // 再解析一次，拒绝畸形 URL。
     const parsed = new URL(url);
     if (!OPENABLE.test(parsed.protocol)) return;
-    void OpenLink(parsed.toString()).catch(() => {});
+    OpenLink(parsed.toString()).catch(reportOpenError);
   } catch {
     // 解析失败即丢弃，不做任何补救性猜测。
   }
+}
+
+/** 打开日程里的会议链接: 除网页外还能拉起 Teams / Zoom 等会议程序。 */
+export function openMeetingLink(url: string): void {
+  if (!MEETING_LINK.test(url)) return;
+  OpenMeetingLink(url).catch(reportOpenError);
+}
+
+function reportOpenError(err: unknown): void {
+  toast.error(errorMessage(err));
 }

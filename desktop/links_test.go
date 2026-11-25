@@ -41,3 +41,43 @@ func TestExternalURL(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalURLMailtoParams(t *testing.T) {
+	got, ok := externalURL("mailto:a@b.com?Subject=Hi&attach=C:/secret.txt&BODY=x&cc=c@d.com&ATTACH=y")
+	if !ok {
+		t.Fatal("mailto rejected")
+	}
+	want := "mailto:a@b.com?Subject=Hi&BODY=x&cc=c@d.com"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	got, ok = externalURL("mailto:a@b.com?attach=x")
+	if !ok || got != "mailto:a@b.com" {
+		t.Errorf("got %q %v, want bare mailto", got, ok)
+	}
+}
+
+func TestMeetingURL(t *testing.T) {
+	for _, raw := range []string{
+		"https://teams.microsoft.com/l/meetup-join/x",
+		"msteams://teams.microsoft.com/l/meetup-join/x",
+		"MSTEAMS:/l/meetup-join/x",
+		"zoommtg://zoom.us/join?confno=123",
+		"webex://meet/abc",
+	} {
+		if _, ok := meetingURL(raw); !ok {
+			t.Errorf("meetingURL(%q) rejected, want accepted", raw)
+		}
+	}
+	for _, raw := range []string{
+		"", "file:///C:/x.exe", "javascript:alert(1)", "data:text/html,x", "ms-settings:",
+		`\\server\share`, "msteams:", "zoommtg://", "msteams://a b",
+	} {
+		if u, ok := meetingURL(raw); ok {
+			t.Errorf("meetingURL(%q) = %q, want rejected", raw, u)
+		}
+	}
+	if _, ok := externalURL("msteams://x/y"); ok {
+		t.Error("externalURL must not accept meeting schemes")
+	}
+}

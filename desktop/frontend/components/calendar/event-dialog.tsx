@@ -66,7 +66,7 @@ import {
   toTimeInput,
 } from "@/lib/date";
 import { main } from "@/wailsjs/go/models";
-import { openExternal } from "@/lib/external";
+import { MEETING_LINK, openMeetingLink } from "@/lib/external";
 
 /** 打开面板的目标：已有事件（可能是重复事件的某一次），或新建时的初始时间。 */
 export type EventTarget =
@@ -447,12 +447,12 @@ export function EventPanel({
                   value={form.virtualLocation}
                   onChange={(e) => update("virtualLocation", e.target.value)}
                 />
-                {/^https?:\/\//i.test(form.virtualLocation.trim()) && (
+                {MEETING_LINK.test(form.virtualLocation.trim()) && (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => openExternal(form.virtualLocation.trim())}
+                    onClick={() => openMeetingLink(form.virtualLocation.trim())}
                   >
                     {t("加入")}</Button>
                 )}

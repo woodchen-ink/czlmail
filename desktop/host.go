@@ -26,6 +26,6 @@ type fileDialog struct {
 // a.openFileDialog(d) (string, error)
 // a.openFilesDialog(d) ([]string, error)
 // a.openDirectoryDialog(d) (string, error)
-// a.openURL(url)
+// a.openURL(url) (不做校验, 调用方先过 externalURL)
 // a.quit()
 // a.emit(name, data...)

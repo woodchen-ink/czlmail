@@ -41,13 +41,8 @@ func (a *App) openDirectoryDialog(d fileDialog) (string, error) {
 }
 
 // openURL 不用 wruntime.BrowserOpenURL, 原因见 OpenLink。pkg/browser 在 Windows 上
-// 直接 ShellExecute 这个地址, 不经过命令行解释器, 协议由 externalURL 限定。
-func (a *App) openURL(raw string) {
-	u, ok := externalURL(raw)
-	if !ok {
-		a.log.Warn("open url: rejected")
-		return
-	}
+// 直接 ShellExecute 这个地址, 不经过命令行解释器。调用方负责先过 externalURL / meetingURL。
+func (a *App) openURL(u string) {
 	go func() {
 		if err := browser.OpenURL(u); err != nil {
 			a.log.Warn("open url", "err", err)

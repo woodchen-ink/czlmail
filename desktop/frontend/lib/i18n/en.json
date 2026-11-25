@@ -1231,6 +1231,7 @@
   "这封邮件没有日历邀请。": "This email has no calendar invitation.",
   "这个账号没有日历。": "This account has no calendar.",
   "这封邮件没有请求已读回执。": "This email did not request a read receipt.",
+  "这个链接的协议不受支持，已拒绝打开。": "This link uses an unsupported protocol and was not opened.",
   "接口地址必须以 http:// 或 https:// 开头。": "The API address must start with http:// or https://.",
   "AI 没有返回内容（模型可能把输出都用在了思考上），可以把思考档位调低后重试。": "The AI returned no text (the model may have spent the whole reply on reasoning). Try a lower reasoning level.",
   "服务器地址必须使用 https。": "The server address must use https.",
