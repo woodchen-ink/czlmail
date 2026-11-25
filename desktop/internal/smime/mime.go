@@ -31,7 +31,7 @@ func SignMessage(raw []byte, sign SignFunc) ([]byte, error) {
 		switch name := strings.ToLower(headerName(h)); {
 		case strings.HasPrefix(name, "content-"):
 			content = append(content, h)
-		case name == "mime-version":
+		case name == "mime-version", name == "bcc", name == "resent-bcc":
 		default:
 			outer = append(outer, h)
 		}
@@ -222,19 +222,26 @@ func join(headers []string, body []byte) []byte {
 
 // splitMultipart 按 RFC 2046 5.1.1 拆分: 分隔线前的 CRLF 属于分隔线。
 func splitMultipart(body []byte, boundary string) (parts [][]byte, preamble, epilogue []byte, err error) {
+	if len(boundary) == 0 || len(boundary) > 70 || strings.ContainsAny(boundary, "\r\n") {
+		return nil, nil, nil, errors.New("smime: invalid boundary")
+	}
 	delim := []byte("--" + boundary)
-	// 找出所有位于行首的分隔线。
 	var starts []int
-	for i := 0; i <= len(body)-len(delim); {
-		j := bytes.Index(body[i:], delim)
-		if j < 0 {
+	for at := 0; at < len(body); {
+		line, _, more := bytes.Cut(body[at:], []byte("\r\n"))
+		if rest, ok := bytes.CutPrefix(line, delim); ok {
+			tail := bytes.TrimRight(rest, " \t")
+			if len(tail) == 0 || bytes.Equal(tail, []byte("--")) {
+				starts = append(starts, at)
+				if len(tail) > 0 {
+					break
+				}
+			}
+		}
+		if !more {
 			break
 		}
-		at := i + j
-		if at == 0 || (at >= 2 && body[at-2] == '\r' && body[at-1] == '\n') {
-			starts = append(starts, at)
-		}
-		i = at + len(delim)
+		at += len(line) + 2
 	}
 	if len(starts) == 0 {
 		return nil, nil, nil, errors.New("smime: multipart boundary not found")

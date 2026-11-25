@@ -295,3 +295,18 @@ func TestCheckUsable(t *testing.T) {
 		t.Fatalf("usage: %q", p)
 	}
 }
+
+func TestMultipartLineGrammar(t *testing.T) {
+	body := []byte("--unit \t\r\nfirst\r\n--unitSuffix\r\nordinary line\r\n--unit--suffix\r\nstill first\r\n--unit\t\r\nsecond\r\n--unit-- \t\r\n")
+	parts, _, _, err := splitMultipart(body, "unit")
+	if err != nil || len(parts) != 2 || !bytes.Contains(parts[0], []byte("still first")) || string(parts[1]) != "second" {
+		t.Fatalf("unexpected parts: %q %v", parts, err)
+	}
+}
+func TestSignedRequiresTwoParts(t *testing.T) {
+	raw := []byte("Content-Type: multipart/signed; protocol=\"application/pkcs7-signature\"; boundary=test\r\n\r\n--test\r\none\r\n--test\r\ntwo\r\n--test\r\nthree\r\n--test--\r\n")
+	v, err := VerifyMessage(raw, "", time.Now(), nil)
+	if err != nil || v == nil || v.Detail != "malformed multipart/signed" {
+		t.Fatalf("%+v %v", v, err)
+	}
+}

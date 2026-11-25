@@ -14,15 +14,17 @@ import (
 
 	"git.sr.ht/~rockorager/go-jmap"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/smime"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
 // fakeSignServer 模拟签名发送用到的几个方法, 记下调用顺序与上传的原文。
 type fakeSignServer struct {
-	mu        sync.Mutex
-	calls     []string
-	destroyed []string
-	uploaded  string
+	mu         sync.Mutex
+	calls      []string
+	destroyed  []string
+	uploaded   string
+	submission map[string]any
 }
 
 func (f *fakeSignServer) handler(t *testing.T) http.Handler {
@@ -33,7 +35,7 @@ func (f *fakeSignServer) handler(t *testing.T) http.Handler {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/download/"):
 			f.calls = append(f.calls, "download")
-			io.WriteString(w, "From: a@example.cz\r\nTo: b@example.cz\r\nSubject: x\r\nContent-Type: text/plain\r\n\r\nahoj\r\n")
+			io.WriteString(w, "From: a@example.cz\r\nTo: b@example.cz\r\nBcc: Hidden\r\n <blind@example.test>\r\nSubject: x\r\nContent-Type: text/plain\r\n\r\nahoj\r\n")
 		case strings.HasPrefix(r.URL.Path, "/upload/"):
 			b, _ := io.ReadAll(r.Body)
 			f.uploaded = string(b)
@@ -70,6 +72,7 @@ func (f *fakeSignServer) handler(t *testing.T) http.Handler {
 				case "Email/import":
 					out = map[string]any{"accountId": "acc", "newState": "3", "created": map[string]any{"signed": map[string]any{"id": "SIG", "blobId": "SIGNED", "threadId": "T", "size": 10}}}
 				case "EmailSubmission/set":
+					f.submission = args
 					out = map[string]any{"accountId": "acc", "newState": "1", "notCreated": map[string]any{"sub": map[string]any{"type": "forbiddenFrom"}}}
 				default:
 					t.Errorf("unexpected method %s", name)
@@ -153,5 +156,36 @@ func TestSendSignedSubmissionRejected(t *testing.T) {
 	}
 	if strings.Join(f.destroyed, ",") != "TMP,SIG" {
 		t.Fatalf("destroyed %v", f.destroyed)
+	}
+}
+
+func TestSignedBlindRecipientOnlyInEnvelope(t *testing.T) {
+	f := &fakeSignServer{}
+	server := httptest.NewServer(f.handler(t))
+	defer server.Close()
+	d := signDraft(func(raw []byte) ([]byte, error) {
+		return smime.SignMessage(raw, func([]byte) ([]byte, error) { return []byte("unit signature"), nil })
+	})
+	d.To = nil
+	d.BCC = []store.Address{{Email: "blind@example.test"}}
+	err := signSyncer(server).Send(context.Background(), d, "drafts", "sent")
+	if err == nil || !strings.Contains(err.Error(), "forbiddenFrom") {
+		t.Fatalf("mock submission: %v", err)
+	}
+	if f.uploaded == "" || strings.Contains(f.uploaded, "blind@example.test") || strings.Contains(strings.ToLower(f.uploaded), "bcc:") {
+		t.Fatal("unexpected message headers")
+	}
+	var submission struct {
+		Create map[string]struct {
+			Envelope struct{ RcptTo []struct{ Email string } }
+		}
+	}
+	b, _ := json.Marshal(f.submission)
+	if err := json.Unmarshal(b, &submission); err != nil {
+		t.Fatal(err)
+	}
+	recipients := submission.Create["sub"].Envelope.RcptTo
+	if len(recipients) != 1 || recipients[0].Email != "blind@example.test" {
+		t.Fatalf("wrong envelope %v", recipients)
 	}
 }

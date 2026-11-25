@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/smime"
@@ -107,15 +106,6 @@ func (a *App) smimeSigner(st *store.Store, from string) (func([]byte) ([]byte, e
 	}, nil
 }
 
-// verifyCache 记住已核对过的签名: 同一封邮件反复打开时不必每次下载原文。
-// 键是 账号/邮件 id/blob id, blob 不可变, 结果只在证书过期或信任库变化时才会变, 程序运行期内可以复用。
-var verifyCache = struct {
-	sync.Mutex
-	m map[string]*smime.Verification
-}{m: map[string]*smime.Verification{}}
-
-const verifyCacheMax = 500
-
 // VerifySignature 核对邮件的 S/MIME 签名。不是签名邮件时返回 nil。
 // 需要下载原文, 离线且原文不在服务器可达时返回错误, 界面不显示结果。
 func (a *App) VerifySignature(accountID, emailID string) (*smime.Verification, error) {
@@ -127,13 +117,6 @@ func (a *App) VerifySignature(accountID, emailID string) (*smime.Verification, e
 	if err != nil {
 		return nil, err
 	}
-	key := accountID + "/" + emailID + "/" + detail.BlobID
-	verifyCache.Lock()
-	cached, ok := verifyCache.m[key]
-	verifyCache.Unlock()
-	if ok {
-		return cached, nil
-	}
 	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, err
@@ -143,18 +126,8 @@ func (a *App) VerifySignature(accountID, emailID string) (*smime.Verification, e
 		return nil, err
 	}
 	from := ""
-	if len(detail.From) > 0 {
+	if len(detail.From) == 1 {
 		from = detail.From[0].Email
 	}
-	v, err := smime.VerifyMessage(raw, from, time.Now(), nil)
-	if err != nil {
-		return nil, err
-	}
-	verifyCache.Lock()
-	if len(verifyCache.m) >= verifyCacheMax {
-		verifyCache.m = map[string]*smime.Verification{}
-	}
-	verifyCache.m[key] = v
-	verifyCache.Unlock()
-	return v, nil
+	return smime.VerifyMessage(raw, from, time.Now(), nil)
 }

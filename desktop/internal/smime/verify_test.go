@@ -61,6 +61,21 @@ func TestVerifyMessage(t *testing.T) {
 		t.Fatalf("signer details: %+v", v)
 	}
 
+	for _, tc := range []struct {
+		name, from, want string
+		at               time.Time
+	}{
+		{"leaf expired", "martin@example.cz", StatusUntrusted, leaf.NotAfter.Add(time.Minute)},
+		{"not yet valid", "martin@example.cz", StatusUntrusted, leaf.NotBefore.Add(-time.Minute)},
+		{"unknown sender", "", "sender_unknown", now},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v, err := VerifyMessage(msg, tc.from, tc.at, roots)
+			if err != nil || v == nil || v.Status != tc.want {
+				t.Fatalf("want %s, got %+v (%v)", tc.want, v, err)
+			}
+		})
+	}
 	// 改动被签名部分的一个字母。
 	tampered := bytes.Replace(msg, []byte("<p>Ahoj</p>"), []byte("<p>Ahoi</p>"), 1)
 	if bytes.Equal(tampered, msg) {

@@ -118,6 +118,11 @@ func (s *Syncer) Send(ctx context.Context, d Draft, draftMailboxID, sentMailboxI
 		envelope = &emailsubmission.Envelope{
 			MailFrom: &emailsubmission.Address{Email: d.FromEmail, Parameters: map[string]string{"HOLDFOR": fmt.Sprint(hold)}},
 		}
+	}
+	if d.Sign != nil && len(d.BCC) > 0 && envelope == nil {
+		envelope = &emailsubmission.Envelope{MailFrom: &emailsubmission.Address{Email: d.FromEmail}}
+	}
+	if envelope != nil {
 		for _, list := range [][]store.Address{d.To, d.CC, d.BCC} {
 			for _, a := range list {
 				envelope.RcptTo = append(envelope.RcptTo, &emailsubmission.Address{Email: a.Email})

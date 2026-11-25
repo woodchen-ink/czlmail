@@ -40,6 +40,7 @@ function toneOf(status: string): Tone {
     case "invalid":
       return "bad";
     case "untrusted":
+    case "sender_unknown":
     case "address":
       return "warn";
     default:
@@ -52,14 +53,14 @@ function texts(r: SignatureCheck): { title: string; summary: string } {
     case "valid":
       return {
         title: t("数字签名有效"),
-        summary: r.expired
-          ? t("邮件来自签名者，签名后没有被改动。签名证书现已过期，但签名时有效。")
-          : t("邮件来自签名者，签名后没有被改动。"),
+        summary: t("签名与正文及发件地址一致；未检查证书吊销状态。"),
       };
     case "invalid":
       return { title: t("数字签名无效"), summary: t("邮件在签名后被改动过，内容可能不是发件人写的。") };
     case "untrusted":
       return { title: t("签名证书不受信任"), summary: t("签名与内容一致，但无法确认签名证书来自可信的颁发机构。") };
+    case "sender_unknown":
+      return { title: t("无法确认发件人"), summary: t("签名与内容一致，但没有唯一的发件地址可供核对。") };
     case "address":
       return { title: t("签名证书与发件人不符"), summary: t("签名与内容一致，但签名证书上没有这个发件地址。") };
     default:

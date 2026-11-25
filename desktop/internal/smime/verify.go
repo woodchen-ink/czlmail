@@ -18,11 +18,12 @@ import (
 
 // 验证结果。
 const (
-	StatusValid       = "valid"       // 签名有效, 证书可信, 地址相符
-	StatusInvalid     = "invalid"     // 签名对不上: 签名后内容被改动
-	StatusUntrusted   = "untrusted"   // 签名对得上, 但证书链不可信 (或不能用于邮件)
-	StatusAddress     = "address"     // 签名有效, 但证书上没有发件地址
-	StatusUnsupported = "unsupported" // 签名格式不支持 (不透明签名、RSA-PSS…)
+	StatusValid         = "valid"     // 签名有效, 证书可信, 地址相符
+	StatusInvalid       = "invalid"   // 签名对不上: 签名后内容被改动
+	StatusUntrusted     = "untrusted" // 签名对得上, 但证书链不可信 (或不能用于邮件)
+	StatusSenderUnknown = "sender_unknown"
+	StatusAddress       = "address"     // 签名有效, 但证书上没有发件地址
+	StatusUnsupported   = "unsupported" // 签名格式不支持 (不透明签名、RSA-PSS…)
 )
 
 // Verification 是一封签名邮件的核对结果。
@@ -32,7 +33,7 @@ type Verification struct {
 	Signer *Certificate `json:"signer"`
 	// SignedAt 是签名时间 (签名者自己声明的), 没有时为零值。
 	SignedAt time.Time `json:"signedAt"`
-	// Expired 表示证书现在已过期 (签名时有效)。
+	// Expired 表示证书现在已过期。
 	Expired bool `json:"expired"`
 	// Detail 是给技术人员看的原因 (英文), 界面按 Status 显示本地化文字。
 	Detail string `json:"detail"`
@@ -115,13 +116,17 @@ func VerifyMessage(raw []byte, from string, now time.Time, roots *x509.CertPool)
 	}
 
 	parts, _, _, err := splitMultipart(body, params["boundary"])
-	if err != nil || len(parts) < 2 {
+	if err != nil || len(parts) != 2 {
 		return &Verification{Status: StatusInvalid, Detail: "malformed multipart/signed"}, nil
 	}
 	content := parts[0]
 	sh, sb, err := splitEntity(parts[1])
 	if err != nil {
 		return &Verification{Status: StatusInvalid, Detail: "malformed signature part"}, nil
+	}
+	sigType, _, typeErr := mime.ParseMediaType(headerValue(sh, "Content-Type"))
+	if typeErr != nil || !strings.EqualFold(sigType, params["protocol"]) {
+		return &Verification{Status: StatusInvalid, Detail: "unexpected signature part type"}, nil
 	}
 	der := sb
 	if strings.EqualFold(headerValue(sh, "Content-Transfer-Encoding"), "base64") {
@@ -217,10 +222,6 @@ func verifyDetached(content, der []byte, from string, now time.Time, roots *x509
 		return result
 	}
 
-	at := now
-	if !result.SignedAt.IsZero() && result.SignedAt.Before(signer.NotAfter) && result.SignedAt.After(signer.NotBefore) {
-		at = result.SignedAt
-	}
 	pool := x509.NewCertPool()
 	for _, c := range certs {
 		if c != signer {
@@ -230,13 +231,17 @@ func verifyDetached(content, der []byte, from string, now time.Time, roots *x509
 	if _, err := signer.Verify(x509.VerifyOptions{
 		Roots:         roots,
 		Intermediates: pool,
-		CurrentTime:   at,
+		CurrentTime:   now,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection},
 	}); err != nil {
 		result.Status, result.Detail = StatusUntrusted, err.Error()
 		return result
 	}
-	if from != "" {
+	if strings.TrimSpace(from) == "" {
+		result.Status, result.Detail = StatusSenderUnknown, "no unambiguous sender"
+		return result
+	}
+	{
 		match := false
 		for _, e := range Emails(signer) {
 			match = match || strings.EqualFold(e, from)
