@@ -1195,6 +1195,10 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       const current = beginDraftIntent(intent);
       const open = openDraft.current?.replyTo;
       if (open?.accountId === acc && open.emailId === email.id) return;
+      // 先让写信面板把改动存好再找草稿: 面板里正开着的可能就是这封的回复, 没存之前本地缓存里是旧版本,
+      // 按旧版本续写会留下两封草稿, 面板里也是旧内容。
+      if (leaveDraft.current && !(await leaveDraft.current())) return;
+      if (!current()) return;
       const existing = await findReplyDraft(email, mailboxesByAccount[acc] ?? []).catch(() => null);
       if (!current()) return;
       if (existing) {

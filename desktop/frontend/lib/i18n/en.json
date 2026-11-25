@@ -245,6 +245,8 @@
   "简体中文": "Simplified Chinese",
   "日本語": "Japanese",
   "已存为草稿": "Saved as draft",
+  "草稿没能保存，离开会丢掉这次的改动。仍要离开？": "The draft could not be saved. Leaving will discard these changes. Leave anyway?",
+  "服务器上的草稿没能删除，仍要关闭？": "The draft could not be deleted on the server. Close anyway?",
   "[草稿]": "[Draft]",
   "[草稿：{0}]": "[Drafts: {0}]",
   "继续编辑未发送的回复": "Continuing your unsent reply",
