@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:i18n": "node --test lib/i18n/i18n.test.cjs",
+    "test:drafts": "node --experimental-strip-types --test lib/draft-transition.test.mjs",
     "test:mail-browser": "node components/email-body.browser.cjs",
     "test:notes-sync": "node --test lib/notes/use-note-sync.test.cjs",
     "test:notes-browser": "node lib/notes/browser-regression.cjs",

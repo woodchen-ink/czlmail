@@ -3,7 +3,7 @@
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ArrowUpToLine,
@@ -67,6 +67,7 @@ import { useAppearance } from "@/lib/theme";
 import { listen, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
+import { beginDraftIntent } from "@/lib/draft-transition";
 import { threadKey, threadRows } from "@/lib/thread-rows";
 import { formatKey, formatKeys, shortcutActionOf, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
 
@@ -183,11 +184,20 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   const [draftKey, setDraftKey] = useState(0);
   // 写信面板里正开着的那封, 供回复判断是不是已经在写这封的回复。
   const openDraft = useRef<ComposeDraft | null>(null);
-  const setDraft = useCallback((d: ComposeDraft | null) => {
+  const intent = useRef(0);
+  const leaveDraft = useRef<(() => Promise<boolean>) | null>(null);
+  const commitDraft = useCallback((d: ComposeDraft | null) => {
     openDraft.current = d;
     setDraftState(d);
     if (d) setDraftKey((k) => k + 1);
   }, []);
+  const setDraft = useCallback(async (d: ComposeDraft | null) => {
+    const current = beginDraftIntent(intent);
+    if (leaveDraft.current && !(await leaveDraft.current())) return false;
+    if (!current()) return false;
+    commitDraft(d);
+    return true;
+  }, [commitDraft]);
   const [focusMode, setFocusMode] = useState(false);
   // 窄屏下显示哪一栏。选中的邮件一变 (点了列表、通知或链接打开、删除后跳到下一封) 就进正文;
   // 返回列表时保留选中, 回来还能看到刚才那一行。用渲染期比较而不是 effect, 避免先闪一帧列表。
@@ -374,6 +384,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
   // 当前看的是哪个列表。撤销删除时只在同一个列表里把选中放回恢复的那封。
   const viewKey = `${unified}|${accountId}|${mailboxId}`;
+  useLayoutEffect(() => () => { ++intent.current; }, [viewKey, active, selectedKey, query]);
   const viewRef = useRef(viewKey);
   useEffect(() => {
     viewRef.current = viewKey;
@@ -987,18 +998,20 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   /** 列表里点选邮件。草稿直接进入编辑; 展开的会话里的成员不在 emails 里, 由列表把摘要一并传来。 */
   const selectEmail = useCallback(
     async (key: string, member?: EmailSummary) => {
+      const current = beginDraftIntent(intent);
       const summary = emails.find((e) => emailKey(e) === key) ?? member;
       if (currentKind !== "drafts" && !summary?.isDraft) {
-        setDraft(null);
+        if (!(await setDraft(null))) return;
         setSelectedKey(key);
         setMobileView("detail");
         return;
       }
       const { accountId: acc, id } = parseEmailKey(key);
       try {
-        const email = await api.getEmail(acc, id);
+        let email = await api.getEmail(acc, id);
+        if (!email.bodyFetched && current()) email = await api.fetchBody(acc, id);
+        if (!current() || !email.bodyFetched || !(await setDraft(draftFromEmail(email, acc)))) return;
         setSelectedKey(key);
-        setDraft(draftFromEmail(email, acc));
       } catch (err) {
         toast.error(errorMessage(err));
       }
@@ -1179,18 +1192,20 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     async (email: EmailDetail, all: boolean) => {
       const acc = email.accountId;
       // 这封的回复已经开在写信面板里 (面板里可能有还没存下的改动): 留在那里, 不重开。
+      const current = beginDraftIntent(intent);
       const open = openDraft.current?.replyTo;
       if (open?.accountId === acc && open.emailId === email.id) return;
       const existing = await findReplyDraft(email, mailboxesByAccount[acc] ?? []).catch(() => null);
+      if (!current()) return;
       if (existing) {
-        setDraft({
+        if (!(await setDraft({
           ...draftFromEmail(existing, acc),
           references: [email.inReplyTo, email.messageId].filter(Boolean) as string[],
           replyTo: { accountId: acc, emailId: email.id },
-        });
+        }))) return;
         toast(t("继续编辑未发送的回复"));
       } else {
-        setDraft(replyDraft(acc, email, all));
+        if (!(await setDraft(replyDraft(acc, email, all)))) return;
       }
       markReadOnReply(email);
     },
@@ -1199,10 +1214,11 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
   /** 列表右键的回复、转发要用完整邮件(正文、附件): 先读缓存, 没有正文时再拉。 */
   const withDetail = useCallback(async (e: EmailSummary, fn: (email: EmailDetail) => void) => {
+    const current = beginDraftIntent(intent);
     try {
       let email = await api.getEmail(e.accountId, e.id);
       if (!email.bodyFetched) email = await api.fetchBody(e.accountId, e.id);
-      fn(email);
+      if (current()) fn(email);
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -1434,9 +1450,9 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         collapsed={focusMode}
         mobilePane={mobilePane}
         ownMobileNav
-        onMobilePaneChange={(p) => {
+        onMobilePaneChange={async (p) => {
           // 写信面板占着正文栏: 返回即关闭 (草稿已自动保存)。
-          if (draft && p !== "detail") setDraft(null);
+          if (draft && p !== "detail" && !(await setDraft(null))) return;
           setMobileView(p);
         }}
         sidebar={
@@ -1688,7 +1704,12 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 key={draftKey}
                 accountId={draft.accountId ?? composeAccount}
                 draft={draft}
-                onClose={() => setDraft(null)}
+                leaveRef={leaveDraft}
+                onClose={() => {
+                  if (openDraft.current !== draft) return;
+                  ++intent.current;
+                  commitDraft(null);
+                }}
                 onSent={reload}
               />
             ) : selectedKey ? (
