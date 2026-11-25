@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card, Row, SectionTitle } from "@/components/settings/ui";
 import { errorMessage } from "@/lib/api";
 import { flushNotes, noteApi, type JournalConfig, type NoteConfig } from "@/lib/notes/api";
-import { t } from "@/lib/i18n";
+import { getLocale, t } from "@/lib/i18n";
 import { isNative } from "@/lib/native-bridge";
 
 /** Local module and MCP permissions are independent of mail settings and cross-device preferences. */
@@ -22,7 +22,7 @@ export function NotesSection({ active }: { active: boolean }) {
   useEffect(() => {
     if (!active) return;
     void noteApi.config().then(setConfig).catch((err) => toast.error(errorMessage(err)));
-    void noteApi.journalConfig().then(setJournal).catch((err) => toast.error(errorMessage(err)));
+    void noteApi.journalConfig(getLocale()).then(setJournal).catch((err) => toast.error(errorMessage(err)));
   }, [active]);
   /** Journal fields save shortly after typing stops, and again on blur where the backend fills defaults. */
   const journalTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
