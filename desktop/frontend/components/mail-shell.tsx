@@ -67,6 +67,7 @@ import { useAppearance } from "@/lib/theme";
 import { listen, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
+import { threadKey, threadRows } from "@/lib/thread-rows";
 import { formatKey, formatKeys, shortcutActionOf, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
 
 const PAGE_SIZE = 50;
@@ -750,7 +751,10 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       }
       // 移动类操作撤销时要把邮件放回原处: 提交前先从本地缓存记下各封所在的文件夹。
       const placements = new Map<string, Promise<EmailPlacement[] | null>>();
-      const job = Promise.all(
+      const accounts = [...groups.keys()];
+      // 各账号分别提交、分别记成败: 统一视图里可能一个账号成功、另一个失败,
+      // 撤销只能也只应改回成功的那几个账号。
+      const results = Promise.allSettled(
         [...groups].map(async ([acc, ids]) => {
           if (undoable && m.remove) {
             const snap = api.emailPlacements(acc, ids).catch(() => null);
@@ -760,19 +764,23 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
           await m.op(acc, ids);
         }),
       );
+      const job = results.then((rs) => {
+        const failed = rs.find((r): r is PromiseRejectedResult => r.status === "rejected");
+        if (failed) throw failed.reason;
+      });
       // 撤销要等原操作提交完, 否则两个请求可能颠倒顺序到达服务器。
-      const succeeded = job.then(
-        () => true,
-        () => false,
-      );
+      const succeededFor = (acc: string) => results.then((rs) => rs[accounts.indexOf(acc)]?.status === "fulfilled");
 
       /** 把移走的邮件放回原来的文件夹。 */
       const restore = async () => {
-        if (!(await succeeded)) return; // 原操作失败, 界面已经回到服务器的真实状态
+        // 原操作整体失败时界面已经回到服务器的真实状态, 没有可撤销的。
+        const done = (await Promise.all(accounts.map(succeededFor))).some(Boolean);
+        if (!done) return;
         try {
           let count = 0;
           await Promise.all(
             [...placements].map(async ([acc, snap]) => {
+              if (!(await succeededFor(acc))) return;
               const places = await snap;
               if (!places?.length) return;
               await api.restoreEmails(acc, places);
@@ -803,7 +811,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
             patch: old,
             undoable: false,
             op: async (acc, ids) => {
-              if (await succeeded) await patchOp(acc, ids, old);
+              if (await succeededFor(acc)) await patchOp(acc, ids, old);
             },
           });
         }
@@ -1286,16 +1294,18 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       const action = shortcutActionOf(e);
       if (!action) return;
 
+      // 按屏幕上的行移动: 同一会话的几封只占一行, 不能按 emails 逐封走, 否则会选中折叠起来的那封。
       const step = (delta: number) => {
-        let idx = emails.findIndex((m) => emailKey(m) === selectedKey);
-        // 选中的是展开会话里不在本列表的一封 (较早的、别的文件夹的): 从代表该会话的行起步,
+        const heads = threadRows(emails).map((r) => r.head);
+        let idx = heads.findIndex((m) => emailKey(m) === selectedKey);
+        // 选中的是展开区里的一封 (折叠在会话里的、别的文件夹的): 从代表该会话的行起步,
         // 否则会跳回列表第一封。
-        const cur = currentEmail.current;
-        if (idx < 0 && cur && emailKey(cur) === selectedKey) {
-          const tk = `${cur.accountId}/${cur.threadId || cur.id}`;
-          idx = emails.findIndex((m) => `${m.accountId}/${m.threadId || m.id}` === tk);
+        if (idx < 0) {
+          const cur = currentEmail.current;
+          const sel = emails.find((m) => emailKey(m) === selectedKey) ?? (cur && emailKey(cur) === selectedKey ? cur : null);
+          if (sel) idx = heads.findIndex((m) => threadKey(m) === threadKey(sel));
         }
-        const next = emails[idx < 0 ? 0 : idx + delta];
+        const next = heads[idx < 0 ? 0 : idx + delta];
         if (next) setSelectedKey(emailKey(next));
       };
 

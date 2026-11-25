@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { displayAddressList, listDate } from "@/lib/format";
 import { api, type EmailSummary } from "@/lib/api";
 import { emailKey } from "@/lib/email-key";
+import { threadKey, threadRows } from "@/lib/thread-rows";
 import { endEmailDrag, onEmailDrag, startEmailDrag } from "@/lib/email-drag";
 
 interface Props {
@@ -131,24 +132,7 @@ export function EmailList({
   const [threads, setThreads] = useState<Record<string, EmailSummary[]>>({});
 
   // 同一会话在列表里只占一行(最新那封), 其余收进展开区。
-  const rows = useMemo(() => {
-    const byThread = new Map<string, { head: EmailSummary; unread: boolean }>();
-    const out: { head: EmailSummary; unread: boolean }[] = [];
-    for (const e of emails) {
-      const key = threadKey(e);
-      const existing = byThread.get(key);
-      if (existing) {
-        existing.unread ||= e.isUnread;
-        // 会话行始终代表其中最新的一封。
-        if (new Date(e.receivedAt).getTime() > new Date(existing.head.receivedAt).getTime()) existing.head = e;
-        continue;
-      }
-      const row = { head: e, unread: e.isUnread };
-      byThread.set(key, row);
-      out.push(row);
-    }
-    return out;
-  }, [emails]);
+  const rows = useMemo(() => threadRows(emails), [emails]);
 
   // 列表刷新(新邮件到达、标记已读)后, 展开的会话重新读取。
   // 按会话行代表的那封读取: 它在回收站之外时, 删到回收站的往来不再列出。
@@ -616,9 +600,4 @@ export function EmailList({
       <div ref={sentinelRef} className="h-1" />
     </ScrollArea>
   );
-}
-
-/** 会话分组的键。没有会话 id 的邮件自成一组。 */
-function threadKey(e: EmailSummary): string {
-  return `${e.accountId}/${e.threadId || e.id}`;
 }
