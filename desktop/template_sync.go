@@ -96,6 +96,10 @@ func (a *App) SyncTemplates() error {
 	if len(localChanges) > 0 {
 		if err := st.WithTx(ctx, func(tx *sql.Tx) error {
 			for _, t := range localChanges {
+				// 同步文件里没有名字的模板在本机补一个界面语言的名字; 同步文件本身保持原样。
+				if t.Name == "" {
+					t.Name = a.t("(未命名模板)")
+				}
 				if err := store.PutSyncedTemplate(ctx, tx, t); err != nil {
 					return err
 				}
@@ -173,9 +177,6 @@ func entryToTemplate(e templateEntry) store.SyncedTemplate {
 		IsFavorite: e.IsFavorite, DefaultTo: e.DefaultTo, DefaultCC: e.DefaultCC, DefaultBCC: e.DefaultBCC,
 		CreatedAt: parseISO(e.CreatedAt), UpdatedAt: parseISO(e.UpdatedAt),
 	}}
-	if t.Name == "" {
-		t.Name = "(未命名模板)"
-	}
 	t.DeletedAt = parseISO(e.DeletedAt)
 	return t
 }

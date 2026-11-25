@@ -397,7 +397,7 @@ export function ContactEditor({ initial, books, accounts, candidates, allKeyword
                 <ListSection onAdd={() => addItem("onlineServices", { service: "", uri: "", label: "" })}>
                   {(f.onlineServices ?? []).map((s, i) => (
                     <Row key={i} onRemove={() => removeItem("onlineServices", i)}>
-                      <Input className="w-32 shrink-0" value={s.service} onChange={(e) => setItem("onlineServices", i, { service: e.target.value })} placeholder={t("服务名")} />
+                      <Input className="w-32 shrink-0" value={s.service} onChange={(e) => setItem("onlineServices", i, { service: e.target.value })} placeholder={s.link ? t("网站") : t("服务名")} />
                       <Input value={s.uri} onChange={(e) => setItem("onlineServices", i, { uri: e.target.value })} placeholder={t("网址或账号")} />
                     </Row>
                   ))}
