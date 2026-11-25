@@ -31,7 +31,7 @@ export function IdentitiesSection({ active }: { active: boolean }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [identities, setIdentities] = useState<Record<string, Identity[]>>({});
   const [editing, setEditing] = useState<{ accountId: string; identity: Identity } | null>(null);
-  // null = 系统不支持证书存储 (非 Windows), 不显示签名设置。
+  // null = 系统不支持签名证书存储, 不显示签名设置。
   const [certs, setCerts] = useState<SigningCertificate[] | null>(null);
   const [smimeFor, setSmimeFor] = useState<Identity | null>(null);
 
