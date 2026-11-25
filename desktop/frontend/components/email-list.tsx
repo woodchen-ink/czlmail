@@ -17,6 +17,7 @@ import {
   MessagesSquare,
   Paperclip,
   Pin,
+  Shield,
   Star,
   Trash2,
 } from "lucide-react";
@@ -438,6 +439,9 @@ export function EmailList({
                       {email.hasAttachment && (
                         <Paperclip className="text-muted-foreground size-3.5 shrink-0" />
                       )}
+                      {email.signed && (
+                        <Shield className="text-muted-foreground size-3.5 shrink-0" aria-label={t("数字签名")} />
+                      )}
                       {email.isPinned && (
                         <Pin className="text-accent size-3.5 shrink-0" aria-label={t("已固定")} />
                       )}
@@ -553,6 +557,9 @@ export function EmailList({
                             </span>
                             {m.hasAttachment && (
                               <Paperclip className="text-muted-foreground size-3 shrink-0" />
+                            )}
+                            {m.signed && (
+                              <Shield className="text-muted-foreground size-3 shrink-0" aria-label={t("数字签名")} />
                             )}
                             {onDelete && (
                               <button

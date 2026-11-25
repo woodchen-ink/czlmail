@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/mail"
@@ -18,7 +19,13 @@ var emailMetaProperties = []string{
 	"id", "blobId", "threadId", "mailboxIds", "keywords", "size",
 	"receivedAt", "sentAt", "from", "to", "cc", "bcc", "replyTo",
 	"subject", "preview", "hasAttachment", "messageId", "inReplyTo",
+	// bodyStructure 只取每个部件的类型与处置方式 (emailBodyProperties): 用来认出 S/MIME 签名邮件,
+	// 并让签名部件 smime.p7s 不算附件。
+	"bodyStructure",
 }
+
+// emailBodyProperties 限定 bodyStructure 里每个部件返回的字段, 让结构树只有几十个字节。
+var emailBodyProperties = []string{"type", "disposition"}
 
 // errCannotCalculateChanges 是服务端无法基于给定 state 计算增量时返回的类型。
 // 通常因为该 state 过旧已被服务端回收, 唯一出路是丢弃本地 state 重新引导。
@@ -215,9 +222,10 @@ func (s *Syncer) bootstrapEmails(ctx context.Context, accountID string) error {
 	})
 	// 用 back-reference 把 query 的结果直接喂给 get, 省掉一轮往返。
 	req.Invoke(&email.Get{
-		Account:      s.server(accountID),
-		ReferenceIDs: &jmap.ResultReference{ResultOf: queryID, Name: "Email/query", Path: "/ids"},
-		Properties:   emailMetaProperties,
+		Account:        s.server(accountID),
+		ReferenceIDs:   &jmap.ResultReference{ResultOf: queryID, Name: "Email/query", Path: "/ids"},
+		Properties:     emailMetaProperties,
+		BodyProperties: emailBodyProperties,
 	})
 
 	resp, err := s.do(req)
@@ -256,9 +264,10 @@ func (s *Syncer) fetchEmails(ctx context.Context, accountID string, ids []jmap.I
 	for _, batch := range chunk(ids, s.maxObjectsInGet) {
 		req := &jmap.Request{Context: ctx}
 		req.Invoke(&email.Get{
-			Account:    s.server(accountID),
-			IDs:        batch,
-			Properties: emailMetaProperties,
+			Account:        s.server(accountID),
+			IDs:            batch,
+			Properties:     emailMetaProperties,
+			BodyProperties: emailBodyProperties,
 		})
 
 		resp, err := s.do(req)
@@ -346,6 +355,11 @@ func toStoreEmail(e *email.Email) store.Email {
 		Preview:       e.Preview,
 		HasAttachment: e.HasAttachment,
 	}
+	if isSigned(e.BodyStructure) {
+		out.Signed = true
+		// 服务器把 smime.p7s 算作附件; 只有签名之外还有真正的附件时才显示回形针。
+		out.HasAttachment = e.HasAttachment && hasRealAttachment(e.BodyStructure)
+	}
 
 	if e.ReceivedAt != nil {
 		out.ReceivedAt = *e.ReceivedAt
@@ -387,4 +401,45 @@ func idsToStrings(ids []jmap.ID) []string {
 		out = append(out, string(id))
 	}
 	return out
+}
+
+func isSignaturePart(t string) bool {
+	t = strings.ToLower(t)
+	return t == "application/pkcs7-signature" || t == "application/x-pkcs7-signature"
+}
+
+// isSigned 判断邮件是否带 S/MIME 签名: 顶层是 multipart/signed, 或不透明签名 (application/pkcs7-mime)。
+func isSigned(p *email.BodyPart) bool {
+	if p == nil {
+		return false
+	}
+	t := strings.ToLower(p.Type)
+	return t == "multipart/signed" || t == "application/pkcs7-mime" || t == "application/x-pkcs7-mime"
+}
+
+// hasRealAttachment 判断结构树里除签名部件外还有没有附件: 标为 attachment 的部件,
+// 或没有标 inline 的非文本叶子 (内嵌图片标 inline, 不算)。
+func hasRealAttachment(p *email.BodyPart) bool {
+	if p == nil {
+		return false
+	}
+	if len(p.SubParts) > 0 {
+		for _, sp := range p.SubParts {
+			if hasRealAttachment(sp) {
+				return true
+			}
+		}
+		return false
+	}
+	t := strings.ToLower(p.Type)
+	if isSignaturePart(t) || strings.HasPrefix(t, "multipart/") {
+		return false
+	}
+	switch strings.ToLower(p.Disposition) {
+	case "attachment":
+		return true
+	case "inline":
+		return false
+	}
+	return !strings.HasPrefix(t, "text/")
 }

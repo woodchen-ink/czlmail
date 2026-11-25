@@ -10,7 +10,7 @@ import { t } from "@/lib/i18n";
 
 import * as App from "@/wailsjs/go/main/App";
 import { EventsOn } from "@/wailsjs/runtime/runtime";
-import type { main, store, syncer } from "@/wailsjs/go/models";
+import type { main, smime, store, syncer } from "@/wailsjs/go/models";
 import { localUrl } from "@/lib/native-bridge";
 
 export type Account = store.Account;
@@ -22,6 +22,8 @@ export type Identity = main.Identity;
 export type SessionStatus = main.SessionStatus;
 export type AppSettings = main.AppSettings;
 export type ComposeRequest = main.ComposeRequest;
+export type SigningCertificate = smime.Certificate;
+export type SignatureCheck = smime.Verification;
 export type Attachment = store.Attachment;
 export type UploadedAttachment = main.UploadedAttachment;
 export type Calendar = store.Calendar;
@@ -192,6 +194,8 @@ export const api = {
   untrustSender: guard(App.UntrustSender),
   listTrustedSenders: guard(App.ListTrustedSenders),
   getSettings: guard(App.GetSettings),
+  listSigningCertificates: guard(App.ListSigningCertificates),
+  verifySignature: guard(App.VerifySignature),
   saveSettings: guard(App.SaveSettings),
   getVersion: guard(App.GetVersion),
 
@@ -388,6 +392,13 @@ const ERROR_MESSAGES: Record<string, () => string> = {
   "2224": () => t("这封邮件没有日历邀请。"),
   "2225": () => t("这个账号没有日历。"),
   "2226": () => t("这封邮件没有请求已读回执。"),
+  "2400": () => t("这个发件地址还没有选择签名证书，请在设置 → 发件身份与签名中选择。"),
+  "2401": () => t("签名证书尚未生效。"),
+  "2402": () => t("签名证书已过期，邮件没有发送。"),
+  "2403": () => t("这张证书不能用于邮件签名。"),
+  "2404": () => t("签名证书上没有这个发件地址。"),
+  "2405": () => t("系统证书存储里找不到签名证书，请在设置中重新选择。"),
+  "2406": () => t("无法签名，邮件没有发送。"),
   "2300": () => t("接口地址必须以 http:// 或 https:// 开头。"),
   "2302": () => t("AI 还没有配置好：请填写接口地址、模型名称和 API Key 后保存。"),
   "2309": () => t("AI 没有返回内容（模型可能把输出都用在了思考上），可以把思考档位调低后重试。"),
