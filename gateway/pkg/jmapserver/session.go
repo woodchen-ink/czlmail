@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"strconv"
 )
@@ -68,8 +69,13 @@ func (s *Server) loadSession(ctx context.Context, userID string) (*session, erro
 	accounts := make(map[string]*Account, len(us.Accounts))
 	for id, a := range us.Accounts {
 		c := *a
+		c.AccountCapabilities = maps.Clone(c.AccountCapabilities)
 		if c.AccountCapabilities == nil {
 			c.AccountCapabilities = map[string]any{}
+		}
+		// New-mail push needs mail; every mail account gets it while push is on.
+		if s.push != nil && c.HasCapability(MailCapability) {
+			c.AccountCapabilities[EmailPushCapability] = emailPushAccountCapability()
 		}
 		accounts[id] = &c
 	}
@@ -136,18 +142,31 @@ func (s *Server) Session(w http.ResponseWriter, r *http.Request) {
 
 // authenticate writes 401 and returns false when the request has no valid credentials.
 func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (string, bool) {
-	userID, err := s.opts.Auth.Authenticate(r)
+	userID, _, ok := s.authenticateCredential(w, r)
+	return userID, ok
+}
+
+// authenticateCredential is authenticate that also returns the credential id
+// when the Authenticator is a CredentialAuthenticator.
+func (s *Server) authenticateCredential(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+	var userID, credentialID string
+	var err error
+	if ca, ok := s.opts.Auth.(CredentialAuthenticator); ok {
+		userID, credentialID, err = ca.AuthenticateWithCredential(r)
+	} else {
+		userID, err = s.opts.Auth.Authenticate(r)
+	}
 	if rl, ok := errors.AsType[RetryAfterError](err); ok {
 		w.Header().Set("Retry-After", strconv.Itoa(rl.RetryAfterSeconds()))
 		writeProblem(w, problemTooManyRequests())
-		return "", false
+		return "", "", false
 	}
 	if err != nil || userID == "" {
 		w.Header().Set("WWW-Authenticate", `Basic realm="czlmail gateway", charset="UTF-8"`)
 		writeProblem(w, problemUnauthorized())
-		return "", false
+		return "", "", false
 	}
-	return userID, true
+	return userID, credentialID, true
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

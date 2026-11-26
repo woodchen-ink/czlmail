@@ -9,3 +9,15 @@ func Subscribers(s *Server, userID string) int {
 	}
 	return 0
 }
+
+// Push internals for tests.
+var (
+	EncryptPushWith   = encryptPushWith
+	BuildEmailPushes  = buildEmailPushes
+	CheckPushURL      = checkPushURL
+	PublicAddr        = publicAddr
+	ErrPrivateAddress = errPrivateAddress
+)
+
+// NewPushClient is the push delivery client.
+var NewPushClient = newPushClient

@@ -26,6 +26,7 @@ const (
 	PurposeOAuthClient    = "oauth-client"    // Google / Microsoft client secrets
 	PurposeProxySecret    = "proxy-secret"    // SOCKS5 passwords
 	PurposeKeyCheck       = "key-check"       // proves at startup that the master key is the right one
+	PurposePushKey        = "push-key"        // push subscription URLs and auth secrets
 )
 
 const keySize = 32

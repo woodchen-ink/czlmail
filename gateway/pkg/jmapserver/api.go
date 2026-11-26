@@ -41,7 +41,7 @@ type apiResponse struct {
 
 // API serves POST /jmap/api.
 func (s *Server) API(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.authenticate(w, r)
+	userID, credentialID, ok := s.authenticateCredential(w, r)
 	if !ok {
 		return
 	}
@@ -75,7 +75,7 @@ func (s *Server) API(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := s.run(r.Context(), userID, sess, req)
+	resp := s.run(r.Context(), caller{userID: userID, credentialID: credentialID}, sess, req)
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -148,8 +148,14 @@ func (s *Server) checkUsing(using []string) *Problem {
 	return nil
 }
 
+// caller is who sent a request.
+type caller struct {
+	userID       string
+	credentialID string
+}
+
 // run processes the calls in order (RFC 8620 §3.3).
-func (s *Server) run(ctx context.Context, userID string, sess *session, req *apiRequest) apiResponse {
+func (s *Server) run(ctx context.Context, who caller, sess *session, req *apiRequest) apiResponse {
 	using := make(map[string]bool, len(req.using))
 	for _, u := range req.using {
 		using[u] = true
@@ -161,7 +167,7 @@ func (s *Server) run(ctx context.Context, userID string, sess *session, req *api
 	var out []invocation
 	var done []resolvedResponse
 	for _, rc := range req.calls {
-		for _, inv := range s.invoke(ctx, userID, sess, using, created, rc, done) {
+		for _, inv := range s.invoke(ctx, who, sess, using, created, rc, done) {
 			out = append(out, inv)
 			done = append(done, resolvedResponse{inv: inv})
 		}
@@ -176,7 +182,7 @@ func (s *Server) run(ctx context.Context, userID string, sess *session, req *api
 	return resp
 }
 
-func (s *Server) invoke(ctx context.Context, userID string, sess *session, using map[string]bool,
+func (s *Server) invoke(ctx context.Context, who caller, sess *session, using map[string]bool,
 	created map[string]string, rc rawCall, done []resolvedResponse) []invocation {
 	fail := func(err *MethodError) []invocation {
 		return []invocation{{name: "error", args: err, callID: rc.callID}}
@@ -192,15 +198,15 @@ func (s *Server) invoke(ctx context.Context, userID string, sess *session, using
 		return fail(merr)
 	}
 	call := &Call{
-		UserID: userID, Name: rc.name, CallID: rc.callID, Args: args, CreatedIDs: created,
-		capability: m.capability, session: sess,
+		UserID: who.userID, CredentialID: who.credentialID, Name: rc.name, CallID: rc.callID, Args: args,
+		CreatedIDs: created, capability: m.capability, session: sess, using: using,
 	}
 	result, err := m.fn(ctx, call)
 	if err != nil {
 		if me, ok := errors.AsType[*MethodError](err); ok {
 			return fail(me)
 		}
-		s.log.Error("method failed", "trace_id", s.traceID(ctx), "method", rc.name, "user", userID, "err", err)
+		s.log.Error("method failed", "trace_id", s.traceID(ctx), "method", rc.name, "user", who.userID, "err", err)
 		return fail(ErrServerFail)
 	}
 	return append([]invocation{{name: rc.name, args: result, callID: rc.callID}}, call.extra...)

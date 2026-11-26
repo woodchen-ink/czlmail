@@ -17,9 +17,9 @@ import (
 const (
 	// SettingRegistrationOpen lets anyone create a user account in the admin.
 	SettingRegistrationOpen = "site.registration_open"
-	// SettingAllowPrivateNetworks lets upstream and proxy hosts resolve to private,
-	// loopback and link-local addresses. Off, so the gateway cannot be used to probe
-	// the network it runs in.
+	// SettingAllowPrivateNetworks lets upstream and proxy hosts and JMAP push URLs
+	// resolve to private, loopback and link-local addresses. Off, so the gateway
+	// cannot be used to probe the network it runs in.
 	SettingAllowPrivateNetworks = "security.allow_private_networks"
 )
 
