@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,7 +21,7 @@ import (
 // 草稿在写信面板里打开时能正确拆出正文、签名与引用。
 
 type composeIn struct {
-	AccountID  string   `json:"accountId,omitempty" jsonschema:"发件账号, 省略时为个人账号; 回复/转发时应与原邮件所在账号一致"`
+	AccountID  string   `json:"accountId,omitempty" jsonschema:"原邮件或发件所在账号, 省略时为主登录的个人账号; 回复/转发时应与原邮件所在账号一致"`
 	Mode       string   `json:"mode,omitempty" jsonschema:"new(默认)、reply(回复发件人)、replyAll(回复全部)、forward(转发)"`
 	EmailID    string   `json:"emailId,omitempty" jsonschema:"reply/replyAll/forward 时的原邮件 id"`
 	To         []string `json:"to,omitempty" jsonschema:"收件人, 如 a@x.com 或 张三 <a@x.com>; 回复时省略则自动填原发件人"`
@@ -28,7 +29,7 @@ type composeIn struct {
 	BCC        []string `json:"bcc,omitempty"`
 	Subject    string   `json:"subject,omitempty" jsonschema:"主题; 回复/转发时省略则用 Re:/Fwd: 加原主题"`
 	Body       string   `json:"body" jsonschema:"纯文本正文(不含签名与引用, 会自动附上); 空行分段"`
-	IdentityID string   `json:"identityId,omitempty" jsonschema:"发件身份 id 或地址, 省略时用默认身份; 见 list_identities"`
+	IdentityID string   `json:"identityId,omitempty" jsonschema:"发件身份 id 或地址, 省略时用默认身份; 可以是别的登录的身份(见 list_identities), 邮件就在那个身份的账号里创建"`
 }
 
 func (a *App) addComposeTools(server *mcp.Server) {
@@ -101,12 +102,13 @@ func (a *App) mcpCompose(in composeIn) (ComposeRequest, error) {
 		return ComposeRequest{}, fmt.Errorf("unknown mode %q", in.Mode)
 	}
 
-	identity, err := a.pickIdentity(acc, in.IdentityID, replyFromCandidates(orig))
+	// 发件身份可以属于别的账号 (别的登录, #15): 邮件就在那个账号里创建, 引用的附件随之搬过去。
+	sendAcc, identity, err := a.mcpFindIdentity(acc, in.IdentityID, replyFromCandidates(orig))
 	if err != nil {
 		return ComposeRequest{}, err
 	}
 	req := ComposeRequest{
-		AccountID: acc, IdentityID: identity.ID,
+		AccountID: sendAcc, IdentityID: identity.ID,
 		To: parseAddressList(in.To), CC: parseAddressList(in.CC), BCC: parseAddressList(in.BCC),
 		Subject: strings.TrimSpace(in.Subject),
 	}
@@ -122,6 +124,11 @@ func (a *App) mcpCompose(in composeIn) (ComposeRequest, error) {
 			// 与界面的普通转发相同: 引用服务器上已有的附件 blob, 不需要重新上传。
 			for _, att := range visibleAttachments(orig) {
 				req.Attachments = append(req.Attachments, AttachmentRef{BlobID: att.BlobID, Type: att.Type, Name: att.Name})
+			}
+			if sendAcc != acc {
+				if req.Attachments, err = a.TransferAttachments(acc, sendAcc, req.Attachments); err != nil {
+					return ComposeRequest{}, err
+				}
 			}
 			// 与界面的转发 (mail-shell forwardDraft) 同一套原文, 按界面语言翻译。
 			header := []string{
@@ -207,12 +214,12 @@ func replyFromCandidates(orig *store.EmailDetail) []string {
 	return out
 }
 
-// isOwnAddress 判断地址是不是本账号的发件身份或登录地址。
+// isOwnAddress 判断地址是不是自己的: 本账号的发件身份、本账号所属登录的登录名, 或别的登录的地址 (ownAddresses)。
 func (a *App) isOwnAddress(accountID, email string) bool {
 	if email == "" {
 		return false
 	}
-	if strings.EqualFold(email, a.GetSessionStatus().Username) {
+	if strings.EqualFold(email, a.usernameFor(accountID)) || a.ownAddresses()[strings.ToLower(email)] {
 		return true
 	}
 	ids, err := a.ListIdentities(accountID)
@@ -225,6 +232,63 @@ func (a *App) isOwnAddress(accountID, email string) bool {
 		}
 	}
 	return false
+}
+
+// mcpFindIdentity 选发件身份并返回它所在的账号。指定了身份 (id 或地址) 而 accountID 里没有时,
+// 依次到每个登录的个人账号、再到其余账号里找; 地址在多个账号里都有时取先找到的 (主登录在前)。
+// 没指定身份时与 pickIdentity 相同, 用 accountID 自己的身份。
+func (a *App) mcpFindIdentity(accountID, want string, prefer []string) (string, Identity, error) {
+	id, err := a.pickIdentity(accountID, want, prefer)
+	if err == nil || want == "" {
+		return accountID, id, err
+	}
+	accounts, lerr := a.ListAccounts()
+	if lerr != nil {
+		return "", Identity{}, err
+	}
+	// 个人账号在前: 同一个地址既是个人身份又在共享邮箱里时, 用个人账号发。
+	slices.SortStableFunc(accounts, func(x, y store.Account) int {
+		if x.IsPersonal == y.IsPersonal {
+			return 0
+		}
+		if x.IsPersonal {
+			return -1
+		}
+		return 1
+	})
+	// 地址按顺序取第一个; 身份 id 各服务器各自编号 (常常相同), 只有一个账号里有时才认, 否则要求带上 accountId。
+	var byID []struct {
+		acc string
+		id  Identity
+	}
+	for _, acc := range accounts {
+		if acc.ID == accountID {
+			continue
+		}
+		ids, lerr := a.ListIdentities(acc.ID)
+		if lerr != nil {
+			continue
+		}
+		for _, cand := range ids {
+			if strings.EqualFold(cand.Email, want) {
+				return acc.ID, cand, nil
+			}
+			if cand.ID == want {
+				byID = append(byID, struct {
+					acc string
+					id  Identity
+				}{acc.ID, cand})
+			}
+		}
+	}
+	switch len(byID) {
+	case 0:
+		return "", Identity{}, err
+	case 1:
+		return byID[0].acc, byID[0].id, nil
+	default:
+		return "", Identity{}, fmt.Errorf("identity id %q exists in several accounts; pass the accountId from list_identities", want)
+	}
 }
 
 // pickIdentity 选发件身份: 指定的 id 或地址 > prefer 里第一个匹配的地址 > 设置里的默认身份 > 与登录地址相同的身份 > 第一个。
@@ -261,7 +325,7 @@ func (a *App) pickIdentity(accountID, want string, prefer []string) (Identity, e
 			}
 		}
 	}
-	login := strings.ToLower(a.GetSessionStatus().Username)
+	login := strings.ToLower(a.usernameFor(accountID))
 	for _, id := range ids {
 		if strings.ToLower(id.Email) == login {
 			return id, nil
@@ -280,6 +344,9 @@ func (a *App) replyAllCC(accountID string, orig *store.EmailDetail, to []store.A
 		for _, id := range ids {
 			skip[strings.ToLower(id.Email)] = true
 		}
+	}
+	for addr := range a.ownAddresses() {
+		skip[addr] = true
 	}
 	var out []store.Address
 	for _, addr := range append(append([]store.Address{}, orig.To...), orig.CC...) {

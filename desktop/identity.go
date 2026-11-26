@@ -17,14 +17,15 @@ import (
 // 静音与默认发件身份 (按账号 id 记)、推送订阅。界面偏好 (已读方式、提醒开关、头像开关等) 属于这台设备, 不清。
 func identitySettings() []string {
 	keys := append([]string{}, aiSyncedSettings...)
-	return append(keys, settingAIKeyUpdatedAt, "mutedMailAccounts", settingUnifiedExcluded, "defaultIdentities", "pushRelay")
+	return append(keys, settingAIKeyUpdatedAt, "mutedMailAccounts", settingUnifiedExcluded, "defaultIdentities", settingPushRelay)
 }
 
-// primaryOnlySettings 是 identitySettings 里只属于主登录、可以整个删的部分 (同步的 AI 设置与推送登记);
-// 按账号 id 记的列表类设置不在其中, 还有别的登录时只去掉主登录的条目 (forgetAccountSettings)。
+// primaryOnlySettings 是 identitySettings 里只属于主登录、可以整个删的部分 (同步的 AI 设置);
+// 按账号 id 记的列表类设置不在其中, 还有别的登录时只去掉主登录的条目 (forgetAccountSettings);
+// 推送登记按登录分开存, 主登录那份由 forgetPush 删。
 func primaryOnlySettings() []string {
 	keys := append([]string{}, aiSyncedSettings...)
-	return append(keys, settingAIKeyUpdatedAt, "pushRelay")
+	return append(keys, settingAIKeyUpdatedAt)
 }
 
 // hasOtherSignIns 报告除主登录外是否还有登录 (#15)。
@@ -71,9 +72,7 @@ func (a *App) ensureCacheOwner(ctx context.Context, st *store.Store, cfg config.
 	if err := keychain.Delete(config.KeyringService, aiKeyringKey); err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		a.log.Warn("clear ai key", "err", err)
 	}
-	ownCache.Lock()
-	ownCache.addrs = nil
-	ownCache.Unlock()
+	forgetOwnAddresses()
 	return st.SetStringSetting(ctx, store.SettingCacheOwner, owner)
 }
 

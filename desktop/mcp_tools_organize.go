@@ -18,7 +18,7 @@ import (
 const mcpMaxBatch = 200
 
 type emailBatchIn struct {
-	AccountID string   `json:"accountId,omitempty" jsonschema:"省略时为个人账号"`
+	AccountID string   `json:"accountId,omitempty" jsonschema:"省略时为主登录的个人账号"`
 	EmailIDs  []string `json:"emailIds" jsonschema:"邮件 id, 一次最多 200 封"`
 }
 

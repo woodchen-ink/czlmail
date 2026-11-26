@@ -19,6 +19,7 @@ export type EmailSummary = store.EmailSummary;
 export type EmailDetail = store.EmailDetail;
 export type Address = store.Address;
 export type Identity = main.Identity;
+export type ComposeIdentityGroup = main.ComposeIdentityGroup;
 export type SessionStatus = main.SessionStatus;
 export type SignInInfo = main.SignInInfo;
 export type AppSettings = main.AppSettings;
@@ -177,6 +178,9 @@ export const api = {
   emptyMailbox: guard(App.EmptyMailbox),
 
   listIdentities: guard(App.ListIdentities),
+  listComposeIdentities: guard(App.ListComposeIdentities),
+  ownAddresses: guard(App.OwnAddresses),
+  transferAttachments: guard(App.TransferAttachments),
   sendEmail: guard(App.SendEmail),
 
   archiveEmails: guard(App.ArchiveEmails),
@@ -342,6 +346,7 @@ const ERROR_MESSAGES: Record<string, () => string> = {
   "2022": () => t("主登录不能单独移除，请使用退出登录。"),
   "2023": () => t("这个账号已经登录过了。"),
   "2024": () => t("这里登录的是另一个账号。要使用另一个账号，请把它作为新的登录添加。"),
+  "2441": () => t("附件超过了所选发件人服务器的上传上限。"),
   "2030": () => t("这个账号没有「已删除」文件夹。"),
   "2031": () => t("这个账号没有「归档」文件夹。"),
   "2033": () => t("标签名不能为空。"),

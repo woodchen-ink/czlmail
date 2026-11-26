@@ -14,10 +14,13 @@ import (
 
 // 同邮局用户目录: JMAP Principals(RFC 9670)列出服务器上的个人与群组, 写信时可以直接搜到同事。
 
+// directoryCache 按 会话地址 + 服务器账号 id 记各登录的目录: 每个登录是一个邮局 (#15), 换了登录也不能沿用上一个邮局的目录。
 var directoryCache struct {
 	sync.Mutex
-	// key 是 会话地址 + 服务器账号 id: 换了登录 (另一个服务器或另一个用户) 不能沿用上一个邮局的目录。
-	key  string
+	entries map[string]directoryEntry
+}
+
+type directoryEntry struct {
 	at   time.Time
 	list []store.Recipient
 }
@@ -44,16 +47,34 @@ func (a *App) SearchDirectory(query string) ([]store.Recipient, error) {
 	return out, nil
 }
 
+// directory 合并各登录的同邮局目录 (每个登录的个人账号各取一次), 主登录在前, 同一地址只列一次。
 func (a *App) directory() []store.Recipient {
 	directoryCache.Lock()
 	defer directoryCache.Unlock()
-	accountID := ""
-	if st, err := a.currentStore(); err == nil {
-		accountID = a.personalAccountID(st)
-	}
-	if accountID == "" {
+	accounts, err := a.ListAccounts()
+	if err != nil {
 		return nil
 	}
+	var out []store.Recipient
+	seen := map[string]bool{}
+	signIns := map[string]bool{}
+	for _, acc := range accounts {
+		if !acc.IsPersonal || signIns[acc.SignIn] {
+			continue
+		}
+		signIns[acc.SignIn] = true
+		for _, r := range a.directoryOf(acc.ID) {
+			if key := strings.ToLower(r.Email); !seen[key] {
+				seen[key] = true
+				out = append(out, r)
+			}
+		}
+	}
+	return out
+}
+
+// directoryOf 取一个账号所在邮局的目录。调用方持有 directoryCache 的锁。
+func (a *App) directoryOf(accountID string) []store.Recipient {
 	// 不等启动时的会话恢复: 这里持有目录缓存的锁, 填收件人时不该卡住。
 	rt, err := a.routeWithin(accountID, 0)
 	if err != nil || rt.sync.Session() == nil {
@@ -64,8 +85,8 @@ func (a *App) directory() []store.Recipient {
 		return nil
 	}
 	key := rt.client.SessionEndpoint + " " + rt.serverID
-	if directoryCache.key == key && directoryCache.list != nil && time.Since(directoryCache.at) < directoryTTL {
-		return directoryCache.list
+	if e, ok := directoryCache.entries[key]; ok && e.list != nil && time.Since(e.at) < directoryTTL {
+		return e.list
 	}
 
 	req := &jmap.Request{Context: a.ctx}
@@ -100,7 +121,10 @@ func (a *App) directory() []store.Recipient {
 		}
 		out = append(out, store.Recipient{Name: principalName(p.Name, p.Description, p.Email), Email: p.Email})
 	}
-	directoryCache.key, directoryCache.list, directoryCache.at = key, out, time.Now()
+	if directoryCache.entries == nil {
+		directoryCache.entries = map[string]directoryEntry{}
+	}
+	directoryCache.entries[key] = directoryEntry{at: time.Now(), list: out}
 	return out
 }
 

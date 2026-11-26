@@ -140,13 +140,16 @@ export function EmailView({
   // 正文比阅读栏宽时阅读栏横向滚动(滚动条在底部始终可见), 平时不横向滚动。
   const [bodyWide, setBodyWide] = useState(false);
 
+  // 自己的地址: 所有登录的登录名与发件身份 (#15), 收件人里显示成「我」、回执请求不对自己发的信显示。
   useEffect(() => {
-    api
-      .listIdentities(accountId)
-      .then((ids) =>
-        setOwn(new Set((ids ?? []).map((i) => i.email.toLowerCase()))),
-      )
-      .catch(() => {});
+    let cancelled = false;
+    Promise.all([api.listIdentities(accountId).catch(() => []), api.ownAddresses().catch(() => [])]).then(([ids, all]) => {
+      if (cancelled) return;
+      setOwn(new Set([...(ids ?? []).map((i) => i.email.toLowerCase()), ...(all ?? [])]));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [accountId]);
 
   useEffect(() => {

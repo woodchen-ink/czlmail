@@ -88,6 +88,7 @@ type newMailNotice struct {
 	Preview   string `json:"preview"`
 }
 
+// username 是主登录的用户名。只用于跟主登录走的功能 (笔记、模板); 某个账号的登录名用 usernameFor。
 func (a *App) username() string {
 	return a.primaryConfig().Username
 }
@@ -110,28 +111,45 @@ func isFromSelf(e *store.Email, own map[string]bool) bool {
 	return false
 }
 
-// ownCache 缓存自己的全部发件地址(登录名 + 各账号的发件身份), 避免每批新邮件都请求一次服务器。
+// ownCache 缓存自己的全部发件地址 (各登录的登录名 + 各账号的发件身份), 避免每批新邮件都请求一次服务器。
 var ownCache struct {
 	sync.Mutex
 	at    time.Time
+	ttl   time.Duration
 	addrs map[string]bool
 }
 
+const (
+	ownCacheTTL = 10 * time.Minute
+	// ownCacheRetry 是有账号的身份没取到 (登录离线、还在连) 时的缓存时长: 等它连上后尽快补上,
+	// 否则它的身份发出的信会被当成别人的来信弹通知。
+	ownCacheRetry = time.Minute
+)
+
+// ownAddresses 返回自己的全部地址 (小写): 所有登录的登录名与所有账号的发件身份 (含别名、共享账号的身份)。
+// 新邮件通知、推送过滤、回复时排除自己、界面里的「我」都用它。
 func (a *App) ownAddresses() map[string]bool {
 	ownCache.Lock()
 	defer ownCache.Unlock()
-	if ownCache.addrs != nil && time.Since(ownCache.at) < 10*time.Minute {
+	if ownCache.addrs != nil && time.Since(ownCache.at) < ownCache.ttl {
 		return ownCache.addrs
 	}
 	out := map[string]bool{}
-	if u := strings.ToLower(a.username()); u != "" {
-		out[u] = true
+	a.mu.RLock()
+	for _, si := range a.signInsLocked() {
+		if u := strings.ToLower(si.cfg.Username); u != "" {
+			out[u] = true
+		}
 	}
+	a.mu.RUnlock()
+	complete := true
 	if st, err := a.currentStore(); err == nil {
 		if accounts, err := st.Accounts(a.ctx); err == nil {
 			for _, acc := range accounts {
-				ids, err := a.ListIdentities(acc.ID)
+				// 不等启动时的会话恢复: 这里持有缓存锁, 新邮件通知不该卡住; 没取到的下次补。
+				ids, err := a.identitiesNow(acc.ID)
 				if err != nil {
+					complete = false
 					continue
 				}
 				for _, id := range ids {
@@ -140,8 +158,48 @@ func (a *App) ownAddresses() map[string]bool {
 			}
 		}
 	}
-	ownCache.addrs, ownCache.at = out, time.Now()
+	ownCache.addrs, ownCache.at, ownCache.ttl = out, time.Now(), ownCacheTTL
+	if !complete {
+		ownCache.ttl = ownCacheRetry
+	}
 	return out
+}
+
+// forgetOwnAddresses 让下次 ownAddresses 重新取: 登录增减、账号增减、换人登录之后。
+func forgetOwnAddresses() {
+	ownCache.Lock()
+	ownCache.addrs = nil
+	ownCache.Unlock()
+}
+
+// OwnAddresses 返回自己的全部地址 (小写, 已排序), 界面据此把自己的地址显示成「我」、回复时去掉自己。
+func (a *App) OwnAddresses() []string {
+	own := a.ownAddresses()
+	out := make([]string, 0, len(own))
+	for addr := range own {
+		out = append(out, addr)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// identitiesNow 同 ListIdentities, 但会话正在恢复时不等。
+func (a *App) identitiesNow(accountID string) ([]Identity, error) {
+	rt, err := a.routeWithin(accountID, 0)
+	if err != nil {
+		return nil, err
+	}
+	list, err := rt.sync.Identities(a.ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Identity, 0, len(list))
+	for _, id := range list {
+		if id != nil {
+			out = append(out, Identity{ID: string(id.ID), Name: id.Name, Email: id.Email})
+		}
+	}
+	return out, nil
 }
 
 // mailMuted 报告某账号(通常是共享邮箱)是否关闭了新邮件通知。

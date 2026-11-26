@@ -51,6 +51,7 @@ func (a *App) mcpRequire(setting string) error {
 	}
 }
 
+// mcpAccount 是工具要用的账号: 指定了就用它, 否则是主登录的个人账号 (#15: 附加登录的账号要显式指定)。
 func (a *App) mcpAccount(id string) (string, error) {
 	if id != "" {
 		return id, nil
@@ -65,7 +66,27 @@ func (a *App) mcpAccount(id string) (string, error) {
 	return "", errors.New("no account available")
 }
 
-// mcpAccounts 返回要遍历的账号: 指定了就只有它, 否则全部账号。
+// mcpPersonalAccounts 返回每个登录各自的个人账号, 主登录在前: list_emails / list_identities 不指定账号时覆盖所有登录用。
+func (a *App) mcpPersonalAccounts() ([]string, error) {
+	accs, err := a.ListAccounts()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, acc := range accs {
+		if acc.IsPersonal && !seen[acc.SignIn] {
+			seen[acc.SignIn] = true
+			out = append(out, acc.ID)
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("no account available")
+	}
+	return out, nil
+}
+
+// mcpAccounts 返回要遍历的账号: 指定了就只有它, 否则全部登录的全部账号。
 func (a *App) mcpAccounts(id string) ([]string, error) {
 	if id != "" {
 		return []string{id}, nil

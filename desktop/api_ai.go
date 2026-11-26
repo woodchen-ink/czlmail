@@ -304,7 +304,7 @@ func (a *App) aiPrompt(req AIRequest, lang string) (string, string, error) {
 		if strings.TrimSpace(body) == "" {
 			body = htmltext.Convert(d.BodyHTML)
 		}
-		me := a.username()
+		me := a.usernameFor(req.AccountID)
 		intent := strings.TrimSpace(req.Text)
 		if intent == "" {
 			intent = "Write an appropriate, polite reply."

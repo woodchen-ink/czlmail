@@ -105,16 +105,16 @@ func upcomingReminders(occs []EventOccurrence, defaults defaultAlerts, now time.
 // reminderPlan 是此刻应当登记的提醒表。未登录或关掉了日程提醒时为空表 (清掉已登记的);
 // 读不到缓存时返回错误, 调用方保持原样不动。
 func (a *App) reminderPlan(now time.Time) ([]scheduledReminder, error) {
-	configured := a.primaryConfig().Configured()
 	st, err := a.currentStore()
 	if err != nil {
 		return nil, err
 	}
-	if !configured || !a.settingOn("notifyEvents", true) {
+	accounts := a.reminderAccounts(st)
+	if len(accounts) == 0 || !a.settingOn("notifyEvents", true) {
 		return []scheduledReminder{}, nil
 	}
 	// 提醒可能比事件早很多 (提前一周), 也可能在事件开始之后 (相对结束、绝对时间): 两头各放宽 reminderLookahead。
-	occs, err := a.expandEvents(st, nil, now.Add(-reminderLookahead), now.Add(reminderHorizon+reminderLookahead))
+	occs, err := a.expandEvents(st, accounts, now.Add(-reminderLookahead), now.Add(reminderHorizon+reminderLookahead))
 	if err != nil {
 		return nil, err
 	}

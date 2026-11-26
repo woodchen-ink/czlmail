@@ -38,8 +38,8 @@ func (a *App) initNotifier() {
 		}
 		// 邮件走与 czlmail:// 链接相同的打开队列: 移动端点通知常是冷启动, 这时界面还没加载,
 		// 直接发事件没人收, 会停在默认的收件箱; 队列里的请求由界面加载完后自己来取。
-		acc, id, ok := strings.Cut(actionID, "/")
-		if !ok || acc == "" || id == "" {
+		acc, id, ok := a.mailActionTarget(actionID)
+		if !ok {
 			return
 		}
 		a.opens.mu.Lock()
@@ -51,6 +51,26 @@ func (a *App) initNotifier() {
 	a.mu.Lock()
 	a.notifier = n
 	a.mu.Unlock()
+}
+
+// mailActionTarget 解析邮件通知的 actionID, 返回本机账号 id 与邮件 id。
+//   - 同步弹的通知: "<本机账号 id>/<邮件 id>", 附加登录的账号 id 带前缀 (s2~c), 前缀里没有 "/"。
+//   - iOS 推送通知 (原生壳点开时转来): "push:<中转登记 id>/<服务器账号 id>/<邮件 id>"。推送里只有服务器上的账号 id,
+//     两台服务器的账号 id 常常一样, 按中转登记认出是哪个登录 (每个登录各登记一次, 见 push_relay.go)。
+func (a *App) mailActionTarget(actionID string) (accountID, emailID string, ok bool) {
+	if rest, isPush := strings.CutPrefix(actionID, "push:"); isPush {
+		parts := strings.Split(rest, "/")
+		if len(parts) != 3 || parts[2] == "" {
+			return "", "", false
+		}
+		acc := a.pushAccountFor(parts[0], parts[1])
+		return acc, parts[2], acc != ""
+	}
+	acc, id, found := strings.Cut(actionID, "/")
+	if !found || acc == "" || id == "" {
+		return "", "", false
+	}
+	return acc, id, true
 }
 
 func (a *App) notifyNewMail(notices []newMailNotice) {
