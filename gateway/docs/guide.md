@@ -297,7 +297,7 @@ You need a Microsoft Entra directory: every Microsoft 365 or Azure account has o
 4. **Redirect URI**: platform **Web**, `https://mail-gw.example.com/oauth/microsoft/callback`. It must match `GATEWAY_BASE_URL` exactly, scheme and port included. Click **Register**.
 5. On the app's **Overview**, copy the **Application (client) ID**.
 6. **Certificates & secrets** → **Client secrets** → **New client secret**. Pick an expiry (at most 24 months), copy the secret's **Value** at once (it is shown only once; the *Secret ID* is not the secret) and note the expiry date.
-7. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**: `openid`, `email`, `offline_access` (under *OpenId permissions*), `IMAP.AccessAsUser.All` and `SMTP.Send`. `User.Read` can stay or go; nothing else is needed. If only your own organisation uses the gateway, **Grant admin consent for <organisation>** here spares its users the consent screen.
+7. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**: `openid`, `email`, `profile`, `offline_access` (under *OpenId permissions*), `IMAP.AccessAsUser.All` and `SMTP.Send`. `User.Read` can stay or go; nothing else is needed. If only your own organisation uses the gateway, **Grant admin consent for <organisation>** here spares its users the consent screen.
 
 Leave everything else in the registration alone: no implicit grant, no mobile or SPA platform, no certificates.
 
@@ -339,6 +339,12 @@ Microsoft 365 can turn IMAP and authenticated SMTP off per mailbox, and new tena
 - Microsoft wants the account verified first: sign in at <https://outlook.live.com> in a private window and finish whatever it asks (phone, CAPTCHA, new terms), then **Re-authorize**.
 - Another Microsoft account was picked on the sign-in page: **Re-authorize** in a private window and sign in as the mailbox itself. The gateway refuses a re-authorization by a different account (40935).
 - Right after a new account's first authorization Exchange can take a few minutes; the gateway keeps retrying by itself.
+
+If it persists after all of the above, find out whether the account or the gateway is the problem:
+
+1. Check that the authorization went to the right account: the gateway log line `oauth account` shows the grant's account (`token_account`), and `microsoft imap not connected` shows the IMAP user it signed in as. They must name the same address.
+2. Try the same account in another IMAP client that signs in with OAuth, for example Thunderbird (add the account, choose OAuth2; it uses its own Microsoft app). If that client gets the same refusal, Microsoft is blocking IMAP for the account itself, and nothing in the gateway can change it.
+3. For an account Microsoft blocks: at <https://account.microsoft.com> → **Security** → **Sign-in activity**, confirm any blocked or unusual sign-ins as your own, and complete any verification it asks for. Newly created accounts and accounts flagged for unusual activity can be kept off IMAP and SMTP for a while even though Outlook on the web works, and a changed IMAP switch can take a while to apply. Pause the mailbox, wait, and **Re-authorize** later.
 
 ### 6.6 How Microsoft mailboxes differ
 

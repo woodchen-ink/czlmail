@@ -170,7 +170,7 @@ Work and school accounts (Microsoft 365, Exchange Online) and personal accounts 
 4. **Redirect URI**: platform **Web**, `<GATEWAY_BASE_URL>/oauth/microsoft/callback` (for example `https://mail-gw.example.com/oauth/microsoft/callback`). It must match `GATEWAY_BASE_URL` exactly, scheme and port included. **Register**.
 5. On the app's **Overview**, copy the **Application (client) ID**.
 6. **Certificates & secrets** → **Client secrets** → **New client secret**. Choose an expiry (at most 24 months) and copy the secret's **Value** at once (it is shown only once; the *Secret ID* is not the secret). Note the expiry date.
-7. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**: `openid`, `email`, `offline_access` (under *OpenId permissions*), `IMAP.AccessAsUser.All` and `SMTP.Send`. Leave `User.Read` or remove it; nothing else is needed. If your own organisation is the only one using the gateway, **Grant admin consent for <organisation>** here saves its users the consent screen.
+7. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**: `openid`, `email`, `profile`, `offline_access` (under *OpenId permissions*), `IMAP.AccessAsUser.All` and `SMTP.Send`. Leave `User.Read` or remove it; nothing else is needed. If your own organisation is the only one using the gateway, **Grant admin consent for <organisation>** here saves its users the consent screen.
 
 Nothing else changes in the registration: no implicit grant, no mobile / SPA platform, no certificates.
 

@@ -297,7 +297,7 @@ Gmail 用 OAuth 授权: 收信走 IMAP, 发信走 Gmail API, 不保存 Gmail 密
 4. **重定向 URI**: 平台选 **Web**, 填 `https://mail-gw.example.com/oauth/microsoft/callback`, 必须与 `GATEWAY_BASE_URL` 完全一致 (包括协议和端口)。点「注册」。
 5. 在应用的「概述」页复制**应用程序 (客户端) ID**。
 6. 「证书和密码」→「客户端密码」→「新建客户端密码」, 选一个有效期 (最长 24 个月), 立刻复制密码的**值** (只显示这一次; 「机密 ID」不是密码), 并记下到期日。
-7. 「API 权限」→「添加权限」→「Microsoft Graph」→「委托的权限」, 勾选 `openid`、`email`、`offline_access` (在「OpenId 权限」下)、`IMAP.AccessAsUser.All` 和 `SMTP.Send`。`User.Read` 可留可删, 其它不需要。如果只有你自己的组织使用网关, 在这里点「代表 <组织> 授予管理员同意」, 组织里的用户就不会再看到授权确认页。
+7. 「API 权限」→「添加权限」→「Microsoft Graph」→「委托的权限」, 勾选 `openid`、`email`、`profile`、`offline_access` (在「OpenId 权限」下)、`IMAP.AccessAsUser.All` 和 `SMTP.Send`。`User.Read` 可留可删, 其它不需要。如果只有你自己的组织使用网关, 在这里点「代表 <组织> 授予管理员同意」, 组织里的用户就不会再看到授权确认页。
 
 注册里其它设置都不用动: 不开隐式授权, 不加移动端 / SPA 平台, 不传证书。
 
@@ -339,6 +339,12 @@ Microsoft 365 可以按邮箱关闭 IMAP 和 SMTP 认证, 新租户默认关闭 
 - Microsoft 要求先验证账号: 在无痕窗口登录 <https://outlook.live.com>, 按提示完成验证 (手机、人机验证、新条款), 再点**重新授权**。
 - 授权页上选了另一个 Microsoft 账号: 在无痕窗口点**重新授权**, 用这个邮箱本人登录。网关会拒绝换成别的账号的重新授权 (40935)。
 - 新账号刚授权后 Exchange 可能要几分钟才开通, 网关会自己重试。
+
+以上都做了仍然失败, 先判断是账号的问题还是网关的问题:
+
+1. 确认授权的是这个账号: 网关日志 `oauth account` 里的 `token_account` 是授权所属账号, `microsoft imap not connected` 里的 `user` 是 IMAP 登录用的地址, 两者应是同一个地址。
+2. 用另一个支持 OAuth 登录的 IMAP 客户端试同一个账号, 例如 Thunderbird (添加账号时选 OAuth2, 它用自己的 Microsoft 应用)。如果它也被同样拒绝, 就是 Microsoft 在账号层面禁止了 IMAP, 网关这边改不了。
+3. 账号被 Microsoft 限制时: 在 <https://account.microsoft.com> →「安全」→「登录活动」里把被拦截或异常的登录确认为本人, 并完成它要求的验证。新注册的账号、被判定有异常活动的账号, 可能一段时间内不能用 IMAP 和 SMTP, 即使网页版 Outlook 正常; 刚改过的 IMAP 开关也可能要过一阵才生效。可以先暂停这个邮箱, 过段时间再点**重新授权**。
 
 ### 6.6 Microsoft 邮箱的差异
 

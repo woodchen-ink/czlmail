@@ -536,7 +536,7 @@ export const en: Messages = {
         'Redirect URI platform "Web", with the address below.',
       ],
       s2: [
-        'Under "API permissions" → "Add a permission", choose Microsoft Graph → "Delegated permissions" and add IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid and email (the scopes listed below).',
+        'Under "API permissions" → "Add a permission", choose Microsoft Graph → "Delegated permissions" and add IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid, email and profile (the scopes listed below).',
         'Under "Certificates & secrets", create a client secret and note its value and expiry date.',
       ],
       secretWarnTitle: "Client secrets expire",

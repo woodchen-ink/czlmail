@@ -508,7 +508,7 @@ export const zhCN = {
         "重定向 URI 平台选「Web」, 填下面的回调地址。",
       ],
       s2: [
-        "在「API 权限」→「添加权限」里选 Microsoft Graph →「委托的权限」, 勾选 IMAP.AccessAsUser.All、SMTP.Send、offline_access、openid 与 email (即下面列出的权限)。",
+        "在「API 权限」→「添加权限」里选 Microsoft Graph →「委托的权限」, 勾选 IMAP.AccessAsUser.All、SMTP.Send、offline_access、openid、email 与 profile (即下面列出的权限)。",
         "在「证书和密码」里新建客户端密码, 记下「值」与到期日。",
       ],
       secretWarnTitle: "客户端密钥会过期",
