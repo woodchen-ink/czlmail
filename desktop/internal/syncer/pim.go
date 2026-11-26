@@ -99,7 +99,7 @@ func (s *Syncer) dropPIM(ctx context.Context, accountID string, k pimKind) error
 		return nil
 	}
 	s.log.Info("server no longer advertises capability, clearing cache", "account", accountID, "type", k.typeName)
-	return s.store.WithTx(ctx, func(tx *sql.Tx) error {
+	return s.write(ctx, func(tx *sql.Tx) error {
 		if err := store.ClearObjects(ctx, tx, k.table, accountID); err != nil {
 			return err
 		}
