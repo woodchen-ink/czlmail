@@ -104,7 +104,12 @@ func TestFileKeepsPrimaryAtTopLevel(t *testing.T) {
 	if len(f.SignIns) != 1 || f.SignIns[0].ID != "s2" || f.SignIns[0].ServerHost != "b" || f.LastSignIn != 2 {
 		t.Fatalf("extra sign-ins lost: %+v", f)
 	}
-	if _, err := os.Stat(filepath.Join(dir, DirName())); err != nil {
+	// 数据目录在系统的用户配置目录下: Windows 是 %APPDATA%, Linux 是 $XDG_CONFIG_HOME, macOS 是 ~/Library/Application Support。
+	base, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(base, DirName())); err != nil {
 		t.Fatal(err)
 	}
 }
