@@ -185,7 +185,7 @@ export const en: Messages = {
     40312:
       "SMTP AUTH is turned off for this mailbox or its organization; an admin can enable Authenticated SMTP in the Microsoft 365 admin center",
     40313:
-      "Microsoft accepted the authorization but will not open this mailbox: the account may need verifying first (sign in at outlook.live.com in a private window), or another account was picked (re-authorize in a private window); for work accounts an admin must enable IMAP",
+      "Microsoft accepted the authorization but will not open this mailbox: Outlook.com may have IMAP off (outlook.live.com → Settings → Mail → Forwarding and IMAP → Let devices and apps use IMAP), the account may need verifying first (sign in at outlook.live.com in a private window), or another account was picked (re-authorize in a private window); for work accounts an admin must enable IMAP",
     50211: "Could not connect through the proxy",
     50212: "TLS handshake failed; check the encryption mode and port",
     50213: "The server rejected the request",

@@ -335,6 +335,7 @@ Microsoft 365 can turn IMAP and authenticated SMTP off per mailbox, and new tena
 
 **Personal accounts (Outlook.com, Hotmail, Live) with 40313.** Exchange accepted the authorization but answers *User is authenticated but not connected*. The mailbox shows `unreachable` with code 40313 and retries; after 8 failed sign-ins in a row (about 10 minutes) it stops at `authRequired`. Usually one of:
 
+- POP and IMAP are off for the account (Outlook.com may have them off by default): at outlook.live.com → **Settings** → **Mail** → **Forwarding and IMAP**, turn on **Let devices and apps use IMAP**, then **Re-authorize**.
 - Microsoft wants the account verified first: sign in at <https://outlook.live.com> in a private window and finish whatever it asks (phone, CAPTCHA, new terms), then **Re-authorize**.
 - Another Microsoft account was picked on the sign-in page: **Re-authorize** in a private window and sign in as the mailbox itself. The gateway refuses a re-authorization by a different account (40935).
 - Right after a new account's first authorization Exchange can take a few minutes; the gateway keeps retrying by itself.
