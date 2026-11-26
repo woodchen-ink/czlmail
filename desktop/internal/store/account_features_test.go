@@ -50,3 +50,29 @@ func TestAccountFeatures(t *testing.T) {
 	}
 
 }
+
+// TestRemoveSignInDropsFeatures 移除附加登录时它的账号行连同能力一起删掉, 其余登录的能力不动。
+func TestRemoveSignInDropsFeatures(t *testing.T) {
+	ctx := context.Background()
+	s := openTemp(t)
+	caps := map[string]map[jmap.URI]json.RawMessage{
+		"c":    {"urn:ietf:params:jmap:mail": json.RawMessage(`{}`), "urn:ietf:params:jmap:calendars": json.RawMessage(`{}`)},
+		"s2~c": {"urn:ietf:params:jmap:mail": json.RawMessage(`{}`)},
+	}
+	if err := s.WithTx(ctx, func(tx *sql.Tx) error {
+		return UpsertAccounts(ctx, tx, []Account{{ID: "c", IsPersonal: true}, {ID: "s2~c", IsPersonal: true}}, caps)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveSignInData(ctx, "s2"); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM accounts WHERE id = 's2~c'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("removed sign-in still has %d account rows (err %v)", n, err)
+	}
+	list, err := s.Accounts(ctx)
+	if err != nil || len(list) != 1 || list[0].ID != "c" || !list[0].Features.Calendars {
+		t.Fatalf("remaining accounts = %+v, %v", list, err)
+	}
+}

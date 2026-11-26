@@ -7,12 +7,17 @@ import (
 	"fmt"
 
 	"git.sr.ht/~rockorager/go-jmap"
+	"github.com/woodchen-ink/czlmail/desktop/internal/capability"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 	"github.com/woodchen-ink/czlmail/desktop/internal/notes"
 )
 
 // FileSnapshot reads a consistent complete FileNode view without trusting stale cache metadata.
 func (s *Syncer) FileSnapshot(ctx context.Context, account string) (notes.Snapshot, error) {
+	// 服务器明确没有文件存储 (会话已取得) 时报 2280, 笔记库显示「服务器不支持」而不是「离线」; 会话没恢复时仍按离线处理。
+	if s.Lacks(account, jmapx.FileNodeURI) {
+		return notes.Snapshot{}, capability.Unsupported(capability.FeatureFiles)
+	}
 	if !s.accountSupports(account, jmapx.FileNodeURI) {
 		return notes.Snapshot{}, notes.ErrUnavailable
 	}

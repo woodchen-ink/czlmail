@@ -10,6 +10,7 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/capability"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
+	"github.com/woodchen-ink/czlmail/desktop/internal/notes"
 )
 
 // mailOnlySession 模拟只有邮件能力的服务器 (如经 JMAP 代理接入的 Gmail)。
@@ -56,5 +57,17 @@ func TestUnsupportedWritesSendNothing(t *testing.T) {
 	}
 	if list, err := s.ScheduledSends(ctx, "g"); err != nil || list != nil {
 		t.Errorf("ScheduledSends = %v, %v; want none without a request", list, err)
+	}
+}
+
+// TestNotesWithoutFileStorage 笔记库所在账号明确没有文件存储时报 2280 (服务器不支持), 会话没恢复时仍是离线 (2205)。
+func TestNotesWithoutFileStorage(t *testing.T) {
+	ctx := context.Background()
+	var unsupported *capability.UnsupportedError
+	if _, err := (&Syncer{client: &jmap.Client{Session: mailOnlySession()}}).FileSnapshot(ctx, "g"); !errors.As(err, &unsupported) {
+		t.Errorf("mail-only account: err = %v, want 2280", err)
+	}
+	if _, err := (&Syncer{client: &jmap.Client{}}).FileSnapshot(ctx, "g"); !errors.Is(err, notes.ErrUnavailable) {
+		t.Errorf("no session: err = %v, want notes.ErrUnavailable", err)
 	}
 }
