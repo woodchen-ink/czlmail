@@ -2,6 +2,7 @@ package mail
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -159,7 +160,7 @@ func TestCache(t *testing.T) {
 		}
 	}
 	read := func(key, data string) string {
-		f, err := c.Open(key, fill(data))
+		f, err := c.Open(context.Background(), key, fill(data))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -256,5 +257,34 @@ func TestDeliveredReachesOnNewMail(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no new mail reported")
+	}
+}
+
+func TestHeaderInjectionRejected(t *testing.T) {
+	bad := "x>\r\nBcc: a@b"
+	if se := (&createEmail{MessageID: []string{bad}}).checkHeaderValues(); se == nil || se.Properties[0] != "messageId" {
+		t.Errorf("message id %+v", se)
+	}
+	name := "Eve\r\nBcc: a@b"
+	if se := (&createEmail{To: []emailAddress{{Name: &name, Email: "e@x"}}}).checkHeaderValues(); se == nil {
+		t.Error("address name with CRLF accepted")
+	}
+	if se := (&createEmail{MessageID: []string{"ok@example.test"}}).checkHeaderValues(); se != nil {
+		t.Errorf("valid message id refused: %+v", se)
+	}
+	if _, ok := parseHeaderProp("header:X\r\nBcc"); ok {
+		t.Error("header name with CRLF accepted")
+	}
+	if !validFolded(" one\r\n two") || validFolded(" one\r\nBcc: x") || validFolded("a\nb") {
+		t.Error("validFolded")
+	}
+}
+
+func TestLenientBase64(t *testing.T) {
+	src := "aGVs bG8g\r\nd29y!bGQ\r\n" // stray blank and '!', no padding
+	stream, err := io.ReadAll(transferReader(strings.NewReader(src), "base64"))
+	whole, problem := decodeTransfer([]byte(src), "base64")
+	if err != nil || string(stream) != "hello world" || string(whole) != "hello world" || !problem {
+		t.Fatalf("stream %q %v, whole %q %v", stream, err, whole, problem)
 	}
 }

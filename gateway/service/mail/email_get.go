@@ -109,7 +109,7 @@ func (s *Service) emailGet(ctx context.Context, call *jmapserver.Call) (any, err
 		return nil, err
 	}
 	state := a.state(mailindex.TypeEmail)
-	var ids []string
+	var ids, requested []string // resolved ids, and the ids as the client wrote them
 	if args.IDs == nil {
 		// "All" is bounded by maxObjectsInGet: the newest emails.
 		if err := a.idx.DB().Table("emails").Where("orphaned_from = ''").Order("received_at DESC").
@@ -117,10 +117,20 @@ func (s *Service) emailGet(ctx context.Context, call *jmapserver.Call) (any, err
 			return nil, err
 		}
 	} else {
-		for _, id := range dedupe(*args.IDs) {
+		// Deduplicate after resolving: "#draft" and the draft's id are one email,
+		// built once (two goroutines must never share a message).
+		seen := map[string]bool{}
+		for _, id := range *args.IDs {
 			real, _ := resolveID(call, id)
-			ids = append(ids, real)
+			if !seen[real] {
+				seen[real] = true
+				ids = append(ids, real)
+				requested = append(requested, id)
+			}
 		}
+	}
+	if args.IDs == nil {
+		requested = ids
 	}
 	msgs, err := loadMessages(a.idx, ids)
 	if err != nil {
@@ -160,10 +170,6 @@ func (s *Service) emailGet(ctx context.Context, call *jmapserver.Call) (any, err
 
 	list := []map[string]any{}
 	notFound := []string{}
-	requested := ids
-	if args.IDs != nil {
-		requested = dedupe(*args.IDs)
-	}
 	for i := range ids {
 		if errs[i] != nil {
 			if messageGone(errs[i]) {

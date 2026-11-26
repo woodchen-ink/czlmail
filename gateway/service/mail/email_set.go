@@ -269,6 +269,7 @@ func (s *Service) updateEmails(ctx context.Context, call *jmapserver.Call, a *ac
 	}
 	resp.wrote = wroteBefore
 	failed := map[string]bool{}
+	moved := map[string]bool{}
 	fail := func(clientIDs []string, err error, refused *SetError) error {
 		for _, id := range clientIDs {
 			delete(resp.Updated, id)
@@ -279,7 +280,13 @@ func (s *Service) updateEmails(ctx context.Context, call *jmapserver.Call, a *ac
 		}
 		for _, id := range clientIDs {
 			failed[id] = true
-			resp.notUpdated(id, se)
+			e := se
+			if moved[id] {
+				// The email did move; only its keywords are as before.
+				e = &SetError{Type: se.Type, Properties: []string{"keywords"},
+					Description: "The email was moved, but its keywords were not changed."}
+			}
+			resp.notUpdated(id, e)
 		}
 		return nil
 	}
@@ -292,10 +299,22 @@ func (s *Service) updateEmails(ctx context.Context, call *jmapserver.Call, a *ac
 	for _, target := range targets {
 		clientIDs := moves[target]
 		if _, err := a.up.Move(ctx, realIDs(clientIDs, realOf), target); err != nil {
+			if isNotFound(err) {
+				// The target mailbox (or an email) went away since the patch was checked.
+				for _, id := range clientIDs {
+					delete(resp.Updated, id)
+					failed[id] = true
+					resp.notUpdated(id, invalidProps("unknown mailbox", "mailboxIds"))
+				}
+				continue
+			}
 			if ferr := fail(clientIDs, err, refused); ferr != nil {
 				return ferr
 			}
 			continue
+		}
+		for _, id := range clientIDs {
+			moved[id] = true
 		}
 		resp.wrote = true
 	}

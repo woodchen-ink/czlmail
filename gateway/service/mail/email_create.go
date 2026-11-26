@@ -70,19 +70,23 @@ func (s *Service) store(ctx context.Context, call *jmapserver.Call, a *account, 
 		resp.notCreated(cid, se)
 		return nil
 	}
+	resp.wrote = true // on the server now: a later outage must not make the client retry this
 	if id == "" {
 		resp.notCreated(cid, setErr("serverFail", "the message was stored but could not be found again"))
 		return nil
 	}
 	call.CreatedIDs[cid] = id
+	created := map[string]any{"id": id, "blobId": blobIDMessage(id)}
 	var row struct {
 		ThreadID string
 		Size     int64
 	}
 	if err := a.idx.DB().Table("emails").Select("thread_id, size").Where("id = ?", id).Scan(&row).Error; err != nil {
-		return err
+		s.log.Warn("read created email", "account", a.id, "email", id, "err", err)
+	} else {
+		created["threadId"], created["size"] = row.ThreadID, row.Size
 	}
-	resp.created(cid, map[string]any{"id": id, "blobId": blobIDMessage(id), "threadId": row.ThreadID, "size": row.Size})
+	resp.created(cid, created)
 	return nil
 }
 
@@ -258,7 +262,7 @@ func (s *Service) createEmail(ctx context.Context, call *jmapserver.Call, a *acc
 				return nil
 			}
 			var v string
-			if json.Unmarshal(raw, &v) != nil || strings.ContainsAny(v, "\r\n") && hp.form == "Text" {
+			if json.Unmarshal(raw, &v) != nil || hp.form == "Text" && strings.ContainsAny(v, "\r\n\x00") || !validFolded(v) {
 				resp.notCreated(cid, invalidProps("invalid value", k))
 				return nil
 			}
@@ -289,6 +293,9 @@ func (s *Service) createEmail(ctx context.Context, call *jmapserver.Call, a *acc
 	if se == nil {
 		se = checkKeywords(e.Keywords)
 	}
+	if se == nil {
+		se = e.checkHeaderValues()
+	}
 	if se != nil {
 		resp.notCreated(cid, se)
 		return nil
@@ -307,6 +314,38 @@ func (s *Service) createEmail(ctx context.Context, call *jmapserver.Call, a *acc
 	}
 	return s.store(ctx, call, a, resp, cid, mbox, raw, keywordList(e.Keywords), received)
 }
+
+// checkHeaderValues rejects values that would break out of their header field.
+func (e *createEmail) checkHeaderValues() *SetError {
+	for prop, ids := range map[string][]string{"messageId": e.MessageID, "inReplyTo": e.InReplyTo, "references": e.References} {
+		for _, id := range ids {
+			if id == "" || strings.ContainsAny(strings.Trim(id, "<>"), "<> \t\r\n\x00") {
+				return invalidProps("invalid message id", prop)
+			}
+		}
+	}
+	for prop, list := range map[string][]emailAddress{"from": e.From, "sender": e.Sender, "replyTo": e.ReplyTo,
+		"to": e.To, "cc": e.Cc, "bcc": e.Bcc} {
+		for _, a := range list {
+			if strings.ContainsAny(a.Email, "<> \t\r\n\x00") || a.Name != nil && strings.ContainsAny(*a.Name, "\r\n\x00") {
+				return invalidProps("invalid address", prop)
+			}
+		}
+	}
+	for _, at := range append(append(slicesClone(e.Attachments), e.TextBody...), e.HTMLBody...) {
+		for _, v := range []*string{at.Name, at.CID, at.Disposition} {
+			if v != nil && strings.ContainsAny(*v, "\r\n\x00") {
+				return invalidProps("invalid part property", "attachments")
+			}
+		}
+		if strings.ContainsAny(at.Type, "\r\n\x00;") {
+			return invalidProps("invalid part type", "attachments")
+		}
+	}
+	return nil
+}
+
+func slicesClone(p []createPart) []createPart { return append([]createPart(nil), p...) }
 
 // buildMessage writes the RFC 5322 message of an Email/set create.
 func (s *Service) buildMessage(ctx context.Context, call *jmapserver.Call, a *account, e *createEmail) ([]byte, *SetError, error) {

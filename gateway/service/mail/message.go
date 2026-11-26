@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime/quotedprintable"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding/htmlindex"
@@ -69,6 +70,9 @@ func chunk[T any](s []T, n int) func(func([]T) bool) {
 // maxSectionInMemory bounds a header or text part read for Email/get.
 const maxSectionInMemory = 32 << 20
 
+// maxRawParse is the largest message parsed locally (servers without BODYSTRUCTURE).
+const maxRawParse = 64 << 20
+
 // structure returns the body lists, parsing the whole message when the server
 // gave no BODYSTRUCTURE.
 func (s *Service) structure(ctx context.Context, a *account, m *message) (*bodyLists, error) {
@@ -83,9 +87,14 @@ func (s *Service) structure(ctx context.Context, a *account, m *message) (*bodyL
 		}
 	}
 	if root == nil {
-		raw, err := s.readSection(ctx, a, m, "", 0)
+		// No BODYSTRUCTURE: parse the whole message. One beyond the largest
+		// message the gateway accepts tells a truncated read apart.
+		raw, err := s.readSection(ctx, a, m, "", maxRawParse+1)
 		if err != nil {
 			return nil, err
+		}
+		if len(raw) > maxRawParse {
+			return nil, errorf("message %s is too large to parse without BODYSTRUCTURE", m.row.ID)
 		}
 		m.raw = parseRawMessage(raw)
 		root = m.raw.root
@@ -96,15 +105,8 @@ func (s *Service) structure(ctx context.Context, a *account, m *message) (*bodyL
 
 // readSection reads a whole section into memory; limit 0 means maxSectionInMemory.
 func (s *Service) readSection(ctx context.Context, a *account, m *message, section string, limit int64) ([]byte, error) {
-	if m.raw != nil {
-		if b, ok := m.raw.sections[section]; ok {
-			return b, nil
-		}
-		if section == "" {
-			// The raw message itself is what was parsed; fetch it again from the cache.
-		} else {
-			return nil, nil
-		}
+	if m.raw != nil && section != "" {
+		return m.raw.sections[section], nil
 	}
 	if limit <= 0 {
 		limit = maxSectionInMemory
@@ -119,7 +121,7 @@ func (s *Service) readSection(ctx context.Context, a *account, m *message, secti
 
 // openSection opens BODY[section] of an email through the cache.
 func (s *Service) openSection(ctx context.Context, a *account, emailID, section string) (*File, error) {
-	return s.cache.Open(cacheKey(a.id, emailID, section), func(w io.Writer) error {
+	return s.cache.Open(ctx, cacheKey(a.id, emailID, section), func(w io.Writer) error {
 		if section == "" {
 			return a.up.FetchRaw(ctx, emailID, w)
 		}
@@ -132,16 +134,17 @@ func (s *Service) openSection(ctx context.Context, a *account, emailID, section 
 func decodeTransfer(data []byte, encoding string) (out []byte, problem bool) {
 	switch strings.ToLower(encoding) {
 	case "base64":
-		clean := bytes.Map(func(r rune) rune {
-			if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
+		clean, _ := io.ReadAll(&base64Only{r: bytes.NewReader(data)})
+		dec := make([]byte, base64.RawStdEncoding.DecodedLen(len(clean)))
+		n, err := base64.RawStdEncoding.Decode(dec, clean)
+		// Anything besides the alphabet, blanks and padding is a problem worth reporting.
+		junk := len(bytes.TrimRight(bytes.Map(func(r rune) rune {
+			if unicode.IsSpace(r) {
 				return -1
 			}
 			return r
-		}, data)
-		clean = bytes.TrimRight(clean, "=")
-		dec := make([]byte, base64.RawStdEncoding.DecodedLen(len(clean)))
-		n, err := base64.RawStdEncoding.Decode(dec, clean)
-		return dec[:n], err != nil
+		}, data), "=")) != len(clean)
+		return dec[:n], err != nil || junk
 	case "quoted-printable":
 		dec, err := io.ReadAll(quotedprintable.NewReader(bytes.NewReader(data)))
 		return dec, err != nil
@@ -153,23 +156,24 @@ func decodeTransfer(data []byte, encoding string) (out []byte, problem bool) {
 func transferReader(r io.Reader, encoding string) io.Reader {
 	switch strings.ToLower(encoding) {
 	case "base64":
-		return base64.NewDecoder(base64.StdEncoding, &skipSpace{r: r})
+		return base64.NewDecoder(base64.RawStdEncoding, &base64Only{r: r})
 	case "quoted-printable":
 		return quotedprintable.NewReader(r)
 	}
 	return r
 }
 
-// skipSpace drops line breaks and blanks, which base64.NewDecoder only
-// tolerates as CR / LF.
-type skipSpace struct{ r io.Reader }
+// base64Only keeps the base64 alphabet and drops everything else (line
+// breaks, padding, stray bytes), as decodeTransfer does: real mail often has
+// junk the strict decoder would stop at in the middle of a download.
+type base64Only struct{ r io.Reader }
 
-func (s *skipSpace) Read(p []byte) (int, error) {
+func (s *base64Only) Read(p []byte) (int, error) {
 	for {
 		n, err := s.r.Read(p)
 		j := 0
 		for _, b := range p[:n] {
-			if b != '\r' && b != '\n' && b != ' ' && b != '\t' {
+			if b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '+' || b == '/' {
 				p[j] = b
 				j++
 			}

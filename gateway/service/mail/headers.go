@@ -106,7 +106,7 @@ func parseHeaderProp(p string) (headerProp, bool) {
 			return headerProp{}, false
 		}
 	}
-	if hp.name == "" || strings.ContainsAny(hp.name, " \t") {
+	if !validFieldName(hp.name) {
 		return headerProp{}, false
 	}
 	return hp, true
@@ -130,6 +130,39 @@ func (hp headerProp) value(fields []headerField) any {
 		return nil
 	}
 	return vals[len(vals)-1] // the last instance (RFC 8621 §4.1.3)
+}
+
+// validFieldName is RFC 5322 ftext: printable ASCII except the colon.
+func validFieldName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		if c := name[i]; c < 33 || c > 126 || c == ':' {
+			return false
+		}
+	}
+	return true
+}
+
+// validFolded reports a raw header value whose line breaks are all folds
+// (CRLF followed by a blank), so it cannot start a new header field.
+func validFolded(v string) bool {
+	for i := 0; i < len(v); i++ {
+		switch v[i] {
+		case '\r':
+			if i+2 >= len(v) || v[i+1] != '\n' || (v[i+2] != ' ' && v[i+2] != '\t') {
+				return false
+			}
+		case '\n':
+			if i == 0 || v[i-1] != '\r' {
+				return false
+			}
+		case 0:
+			return false
+		}
+	}
+	return true
 }
 
 type emailAddress struct {

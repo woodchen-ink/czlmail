@@ -244,7 +244,8 @@ func (s *Service) search(ctx context.Context, a *account, mailboxes []string, q 
 	}
 	var mu sync.Mutex
 	var out []string
-	var firstErr error
+	var outage, refused error
+	answered := 0
 	sem := make(chan struct{}, maxSearchParallel)
 	var wg sync.WaitGroup
 	for _, id := range mailboxes {
@@ -256,24 +257,35 @@ func (s *Service) search(ctx context.Context, a *account, mailboxes []string, q 
 			ids, err := a.up.Search(ctx, id, q)
 			mu.Lock()
 			defer mu.Unlock()
-			if err != nil {
-				if !isNotFound(err) && firstErr == nil {
-					firstErr = err
+			switch {
+			case err == nil:
+				answered++
+				out = append(out, ids...)
+			case isNotFound(err):
+				answered++ // the folder went away since the last sync
+			case upstream.IsKind(err, upstream.KindRejected):
+				if refused == nil {
+					refused = err
 				}
-				return
+				s.log.Warn("folder refused search", "account", a.id, "mailbox", id, "err", err)
+			default:
+				if outage == nil {
+					outage = err
+				}
 			}
-			out = append(out, ids...)
 		}()
 	}
 	wg.Wait()
-	if firstErr != nil {
-		if me, ok := unavailable(firstErr); ok {
+	if outage != nil {
+		if me, ok := unavailable(outage); ok {
 			return nil, me
 		}
-		if upstream.IsKind(firstErr, upstream.KindRejected) {
-			return nil, &jmapserver.MethodError{Type: "unsupportedFilter", Description: "The mail server cannot run this search."}
-		}
-		return nil, firstErr
+		return nil, outage
+	}
+	// One folder refusing (a stale or odd folder) does not fail the search;
+	// every folder refusing means the server cannot run it.
+	if refused != nil && answered == 0 {
+		return nil, &jmapserver.MethodError{Type: "unsupportedFilter", Description: "The mail server cannot run this search."}
 	}
 	return out, nil
 }

@@ -184,12 +184,11 @@ func (ms *mailboxSetter) create(ctx context.Context, cid string, props map[strin
 		return nil
 	}
 	ms.call.CreatedIDs[cid] = id
-	m, err := ms.mailbox(id)
-	if err != nil {
-		return err
-	}
+	ms.resp.wrote = true
 	out := map[string]any{"id": id}
-	if m != nil {
+	if m, err := ms.mailbox(id); err != nil {
+		ms.s.log.Warn("read created mailbox", "account", ms.a.id, "mailbox", id, "err", err)
+	} else if m != nil {
 		obj := mailboxObject(m, mailboxCounts{}, map[string]bool{"role": true, "sortOrder": true, "isSubscribed": true,
 			"myRights": true, "totalEmails": true, "unreadEmails": true, "totalThreads": true, "unreadThreads": true})
 		for k, v := range obj {

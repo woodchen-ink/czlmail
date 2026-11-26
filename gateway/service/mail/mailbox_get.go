@@ -37,19 +37,25 @@ type mailboxCounts struct {
 	UnreadThreads int64
 }
 
-// mailboxCountsSQL counts every mailbox in one pass. An unread email has
-// neither $seen nor $draft; an unread thread has such an email anywhere
-// (RFC 8621 §2). Orphans are not there.
+// mailboxCountsSQL counts every mailbox in one pass (RFC 8621 §2). An unread
+// email has neither $seen nor $draft. A thread is unread for a mailbox when it
+// has an unread email outside Trash and Junk; for Trash and Junk themselves
+// unread emails anywhere count. Orphans are not there.
 const mailboxCountsSQL = `
-WITH ut AS (SELECT DISTINCT thread_id FROM emails WHERE seen = 0 AND draft = 0 AND orphaned_from = '')
+WITH bin AS (SELECT id FROM mailboxes WHERE role IN ('trash', 'junk')),
+unread AS (SELECT id, thread_id FROM emails WHERE seen = 0 AND draft = 0 AND orphaned_from = ''),
+ut_all AS (SELECT DISTINCT thread_id FROM unread),
+ut AS (SELECT DISTINCT u.thread_id FROM unread u
+       WHERE EXISTS (SELECT 1 FROM memberships m WHERE m.email_id = u.id AND m.mailbox_id NOT IN (SELECT id FROM bin)))
 SELECT ms.mailbox_id AS mailbox_id,
        COUNT(*) AS total_emails,
        SUM(CASE WHEN e.seen = 0 AND e.draft = 0 THEN 1 ELSE 0 END) AS unread_emails,
        COUNT(DISTINCT e.thread_id) AS total_threads,
-       COUNT(DISTINCT ut.thread_id) AS unread_threads
+       COUNT(DISTINCT CASE WHEN ms.mailbox_id IN (SELECT id FROM bin) THEN uta.thread_id ELSE ut.thread_id END) AS unread_threads
 FROM memberships ms
 JOIN emails e ON e.id = ms.email_id AND e.orphaned_from = ''
 LEFT JOIN ut ON ut.thread_id = e.thread_id
+LEFT JOIN ut_all uta ON uta.thread_id = e.thread_id
 GROUP BY ms.mailbox_id`
 
 func loadMailboxes(idx *mailindex.Store) ([]model.IndexMailbox, map[string]mailboxCounts, error) {
