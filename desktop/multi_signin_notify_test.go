@@ -44,9 +44,8 @@ func TestMultiSignInOwnIdentityNotNotified(t *testing.T) {
 }
 
 // 附加登录的登录名本身是一个地址、但不在它的发件身份里 (身份只有别名) 时, 发自登录名的信也算自己的。
-// ownAddresses 现在只放主登录的用户名, 附加登录的用户名没算进去。
+// ownAddresses 包含所有登录的登录名 (第 5 步)。
 func TestMultiSignInOwnUsernameNotNotified(t *testing.T) {
-	t.Skip("fixed in step 5: ownAddresses only adds the primary sign-in's username, not every sign-in's")
 	ts := newTwoServers(t)
 	ts.twoA.SetIdentities("c.alias@two.test")
 	ta := newTestApp(t)
