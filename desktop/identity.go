@@ -17,7 +17,7 @@ import (
 // 静音与默认发件身份 (按账号 id 记)、推送订阅。界面偏好 (已读方式、提醒开关、头像开关等) 属于这台设备, 不清。
 func identitySettings() []string {
 	keys := append([]string{}, aiSyncedSettings...)
-	return append(keys, settingAIKeyUpdatedAt, "mutedMailAccounts", settingUnifiedExcluded, "defaultIdentities", settingPushRelay)
+	return append(keys, settingAIKeyUpdatedAt, "mutedMailAccounts", settingUnifiedExcluded, "defaultIdentities", settingAccountLooks, settingPushRelay)
 }
 
 // primaryOnlySettings 是 identitySettings 里只属于主登录、可以整个删的部分 (同步的 AI 设置);

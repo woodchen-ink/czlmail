@@ -44,6 +44,7 @@ import { MailSidebar, UNIFIED_UNREAD } from "@/components/mail-sidebar";
 import { MailSyncState } from "@/components/mail-sync-state";
 import { UpstreamState } from "@/components/upstream-status";
 import { upstreamOK } from "@/lib/upstream";
+import { accountColor, useAccountLooks } from "@/lib/account-looks";
 import { mailboxLabel } from "@/components/mailbox-tree";
 import { MobileNavButton, PaneLayout, type MobilePane } from "@/components/pane-layout";
 import { useCompact } from "@/lib/use-compact";
@@ -149,6 +150,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
   const [username, setUsername] = useState("");
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const accountLooks = useAccountLooks();
   const [mailboxesByAccount, setMailboxesByAccount] = useState<Record<string, Mailbox[]>>({});
   const [accountId, setAccountId] = useState("");
   const [mailboxId, setMailboxId] = useState("");
@@ -1449,12 +1451,17 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
   /**
    * 统一视图与搜索结果里标出邮件属于哪个邮箱。主登录的个人邮箱是绝大多数, 不标;
-   * 共享邮箱与其它登录的邮箱才标, 列表里只放 @ 前面一段, 完整地址在悬停提示里。
+   * 共享邮箱与其它登录的邮箱才标, 列表里放用户起的名字, 没起就放 @ 前面一段, 完整地址在悬停提示里。
+   * 设了颜色的账号 (含主登录的) 另在行左边画一条竖线。
    */
-  function accountOf(email: EmailSummary): { label: string; title: string } | null {
+  function accountOf(email: EmailSummary): { label?: string; title: string; color?: string } | null {
     const acc = accounts.find((a) => a.id === email.accountId);
-    if (!acc || (acc.isPersonal && !acc.signIn)) return null;
-    return { label: acc.name.split("@")[0], title: acc.name };
+    if (!acc) return null;
+    const custom = accountLooks[acc.id]?.name;
+    const color = accountColor(acc.id, accountLooks);
+    const tagged = !(acc.isPersonal && !acc.signIn) || !!custom;
+    if (!tagged && !color) return null;
+    return { label: tagged ? custom || acc.name.split("@")[0] : undefined, title: acc.name, color };
   }
 
   return (

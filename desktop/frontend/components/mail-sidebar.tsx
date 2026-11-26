@@ -7,6 +7,8 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ExternalLink, MailWarning, Plus, UserRound } from "lucide-react";
 
+import { accountColor, accountName, signInLookKey, useAccountLooks } from "@/lib/account-looks";
+
 import { FolderDialog, type FolderAction } from "@/components/folder-dialog";
 
 import {
@@ -77,6 +79,7 @@ export function MailSidebar({
   useI18n();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [folderAction, setFolderAction] = useState<FolderAction | null>(null);
+  const looks = useAccountLooks();
 
   const act = (accId: string) => (action: FolderMenuAction, mailbox: Mailbox, label: string) => {
     switch (action) {
@@ -122,7 +125,9 @@ export function MailSidebar({
   // 有统一视图时它是日常入口, 「文件夹」「共享」默认收起; 用户展开、收起过的按记下的来。
   const hasUnified = accounts.length > 1;
   const defaultCollapsed = (key: string) =>
-    hasUnified && (key === "personal" || key === "shared" || key.startsWith("signin:"));
+    // 统一视图里各类别按账号展开的子行 (同 Thunderbird) 默认收起, 外观与原来一样。
+    key.startsWith("unified:") ||
+    (hasUnified && (key === "personal" || key === "shared" || key.startsWith("signin:")));
   const isCollapsed = (key: string) => collapsed[key] ?? defaultCollapsed(key);
 
   function toggle(key: string, open?: boolean) {
@@ -202,7 +207,8 @@ export function MailSidebar({
       list,
       own,
       shared: list.filter((a) => !a.isPersonal),
-      title: grouped && host ? host : (own[0] ?? list[0]).name,
+      // 用户在设置里给这个登录起了名字就用它 (服务器地址如 http://localhost:18090 说明不了是哪个邮箱)。
+      title: looks[signInLookKey(id)]?.name || (grouped && host ? host : accountName(own[0] ?? list[0], looks)),
     };
   });
   const sumInbox = (list: Account[]) =>
@@ -221,8 +227,20 @@ export function MailSidebar({
     kind === "drafts"
       ? unifiedBoxes.filter((m) => m.kind === kind).reduce((n, m) => n + m.totalEmails, 0)
       : countedBoxes.filter((m) => m.kind === kind).reduce((n, m) => n + m.unreadEmails, 0);
-  const unifiedRows = KIND_ORDER.filter((kind) => unifiedBoxes.some((m) => m.kind === kind)).map((kind) => ({
+  const unifiedRows: {
+    view: string;
+    icon: typeof MailWarning;
+    color?: string;
+    label: string;
+    unread: number;
+    badge: boolean;
+    perAccount?: { account: Account; box: Mailbox }[];
+  }[] = KIND_ORDER.filter((kind) => unifiedBoxes.some((m) => m.kind === kind)).map((kind) => ({
     view: kind,
+    // 展开后每个账号的同类文件夹一行, 点了直接进那个账号的文件夹。
+    perAccount: unifiedAccounts.flatMap((account) =>
+      (mailboxesByAccount[account.id] ?? []).filter((m) => m.kind === kind).map((box) => ({ account, box })),
+    ),
     icon: mailboxIcon(kind),
     color: mailboxColor(kind),
     label: mailboxLabel({ kind, name: kind }),
@@ -242,7 +260,8 @@ export function MailSidebar({
 
   // 共享邮箱, 以及同一登录下的多个个人账号 (czlmail 网关每个上游邮箱一个): 每个账号一行可折叠的标题。
   // 网关账号的标题带上游类型图标与状态 (需要重新授权 / 连不上 / 同步中), 能重新授权时旁边给网关后台入口。
-  const renderAccounts = (list: Account[]) =>
+  // own: 登录自己的个人邮箱, 每行带「新建文件夹」; 一个登录下有多个邮箱时节标题上的「+」分不清建到哪个邮箱, 放到这里。
+  const renderAccounts = (list: Account[], own = false) =>
     list.map((acc) => {
       const key = `acc:${acc.id}`;
       const open = !isCollapsed(key);
@@ -250,7 +269,7 @@ export function MailSidebar({
       const reauth = acc.upstream?.reauthUrl;
       return (
         <div key={acc.id} className="flex flex-col">
-          <div className="flex items-center">
+          <div className="group/acc flex items-center">
             <button
               type="button"
               onClick={() => toggle(key)}
@@ -262,7 +281,10 @@ export function MailSidebar({
                 className={cn("size-3 shrink-0 transition-transform", !open && "-rotate-90")}
               />
               <KindIcon className="size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{acc.name}</span>
+              <AccountDot color={accountColor(acc.id, looks)} />
+              <span className="min-w-0 flex-1 truncate" title={acc.name}>
+                {accountName(acc, looks)}
+              </span>
               <UpstreamBadge info={acc.upstream} />
               {/* 展开时收件箱行自己有角标, 折叠时才在账号名上显示, 否则看不出是哪个共享邮箱来了信。 */}
               {!open && <UnreadBadge count={inboxUnread(mailboxesByAccount[acc.id])} quiet={muted.has(acc.id)} />}
@@ -276,6 +298,17 @@ export function MailSidebar({
                 className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-1"
               >
                 <ExternalLink className="size-3.5" />
+              </button>
+            )}
+            {own && (
+              <button
+                type="button"
+                onClick={() => setFolderAction({ kind: "create", accountId: acc.id })}
+                aria-label={t("在 {0} 中新建文件夹", accountName(acc, looks))}
+                title={t("在 {0} 中新建文件夹", accountName(acc, looks))}
+                className="text-muted-foreground hover:bg-secondary hover:text-foreground rounded-sm p-1 opacity-0 group-hover/acc:opacity-100 focus-visible:opacity-100"
+              >
+                <Plus className="size-3.5" />
               </button>
             )}
           </div>
@@ -297,8 +330,9 @@ export function MailSidebar({
 
   // 登录自己的个人账号: 只有一个普通账号时直接列文件夹 (与原来相同);
   // 有多个 (czlmail 网关) 或是网关账号时按账号分组, 否则几个收件箱连在一起分不清, 上游状态也没处显示。
+  const ownGrouped = (list: Account[]) => !(list.length === 1 && !list[0].upstream);
   const renderOwn = (list: Account[]) =>
-    list.length === 1 && !list[0].upstream
+    !ownGrouped(list)
       ? list.map((acc) => (
           <MailboxTree
             key={acc.id}
@@ -311,7 +345,7 @@ export function MailSidebar({
             onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
           />
         ))
-      : renderAccounts(list);
+      : renderAccounts(list, true);
 
   if (syncing && allBoxes.length === 0) return <SidebarSkeleton />;
 
@@ -326,29 +360,72 @@ export function MailSidebar({
           unread={sumInbox(accounts)}
         >
           <nav className="flex flex-col gap-0.5" aria-label={t("全部账号")}>
-            {unifiedRows.map((row) => (
-              <FolderButton
-                key={row.view}
-                icon={row.icon}
-                color={row.color}
-                label={row.label}
-                selected={unified === row.view}
-                onClick={() => onSelectUnified(row.view)}
-                unread={row.unread}
-                badge={row.badge}
-              />
-            ))}
+            {unifiedRows.map((row) => {
+              const key = `unified:${row.view}`;
+              const expandable = (row.perAccount?.length ?? 0) > 1;
+              const open = expandable && !isCollapsed(key);
+              return (
+                <div key={row.view} className="flex flex-col gap-0.5">
+                  <div className="flex items-center">
+                    {expandable ? (
+                      <button
+                        type="button"
+                        onClick={() => toggle(key)}
+                        aria-expanded={open}
+                        aria-label={open ? t("收起各账号") : t("按账号展开")}
+                        title={open ? t("收起各账号") : t("按账号展开")}
+                        className="text-muted-foreground hover:text-foreground flex w-4 shrink-0 justify-center rounded-sm py-1.5"
+                      >
+                        <ChevronDown className={cn("size-3 transition-transform", !open && "-rotate-90")} />
+                      </button>
+                    ) : (
+                      <span aria-hidden className="w-4 shrink-0" />
+                    )}
+                    <FolderButton
+                      icon={row.icon}
+                      color={row.color}
+                      label={row.label}
+                      selected={unified === row.view}
+                      onClick={() => onSelectUnified(row.view)}
+                      unread={row.unread}
+                      badge={row.badge}
+                    />
+                  </div>
+                  {open &&
+                    row.perAccount!.map(({ account, box }) => (
+                      <div key={`${account.id}/${box.id}`} className="flex items-center">
+                        <span aria-hidden className="w-4 shrink-0" />
+                        <FolderButton
+                          icon={row.icon}
+                          color={row.color}
+                          label={accountName(account, looks)}
+                          title={`${mailboxLabel(box)} · ${account.name}`}
+                          selected={selectedIn(account.id) === box.id}
+                          onClick={() => onSelect(account.id, box.id)}
+                          depth={1}
+                          unread={box.kind === "drafts" ? box.totalEmails : box.unreadEmails}
+                          badge={box.kind === "inbox"}
+                          quiet={muted.has(account.id)}
+                          stripe={accountColor(account.id, looks) ?? ""}
+                        />
+                      </div>
+                    ))}
+                </div>
+              );
+            })}
           </nav>
         </Section>
       )}
 
       {personal.length > 0 && (
         <Section
-          title={tContext("heading", "文件夹")}
+          // 主登录只有一个个人邮箱且用户给它起了名字 (设置 → 账户): 节标题用这个名字, 否则照旧「文件夹」。
+          title={(personal.length === 1 && looks[personal[0].id]?.name) || tContext("heading", "文件夹")}
+          color={personal.length === 1 ? accountColor(personal[0].id, looks) : undefined}
           open={!isCollapsed("personal")}
           onToggle={() => toggle("personal")}
           unread={sumInbox(personal)}
-          onAdd={() => setFolderAction({ kind: "create", accountId: personal[0].id })}
+          onAdd={ownGrouped(personal) ? undefined : () => setFolderAction({ kind: "create", accountId: personal[0].id })}
           headerProps={dragExpand("personal")}
         >
           {renderOwn(personal)}
@@ -372,10 +449,11 @@ export function MailSidebar({
           <Section
             key={key}
             title={g.title}
+            color={g.own.length === 1 && !g.own[0].upstream ? accountColor(g.own[0].id, looks) : undefined}
             open={!isCollapsed(key)}
             onToggle={() => toggle(key)}
             unread={sumInbox(g.list)}
-            onAdd={g.own.length > 0 ? () => setFolderAction({ kind: "create", accountId: g.own[0].id }) : undefined}
+            onAdd={g.own.length > 0 && !ownGrouped(g.own) ? () => setFolderAction({ kind: "create", accountId: g.own[0].id }) : undefined}
             headerProps={dragExpand(key)}
           >
             {renderOwn(g.own)}
@@ -394,8 +472,15 @@ export function MailSidebar({
   );
 }
 
+/** 账号颜色的小圆点 (设置 → 账户), 没设颜色时不占位。 */
+function AccountDot({ color }: { color?: string }) {
+  if (!color) return null;
+  return <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />;
+}
+
 function Section({
   title,
+  color,
   open,
   onToggle,
   onAdd,
@@ -404,6 +489,8 @@ function Section({
   children,
 }: {
   title: string;
+  /** 这一节只有一个账号时它的颜色 (设置 → 账户), 标题前一个小圆点。 */
+  color?: string;
   open: boolean;
   onToggle: () => void;
   onAdd?: () => void;
@@ -425,6 +512,7 @@ function Section({
           className="hover:bg-secondary flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-2 py-1 text-left text-sm font-semibold"
         >
           <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", !open && "-rotate-90")} />
+          <AccountDot color={color} />
           <span className="min-w-0 flex-1 truncate">{title}</span>
           {!open && <UnreadBadge count={unread} />}
         </button>

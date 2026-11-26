@@ -86,6 +86,7 @@ import { FoldersSection, IdentitiesSection, ScheduledSection, VacationSection } 
 import { AddressBooksSection, CalendarsSection } from "@/components/settings/pim-sections";
 import { Card, Divider, Row, SectionTitle, useSettings } from "@/components/settings/ui";
 import { SignInsCard } from "@/components/settings/sign-ins-section";
+import { AccountLooksCard } from "@/components/settings/account-looks-card";
 import { store } from "@/wailsjs/go/models";
 import { listen } from "@/lib/app-bus";
 
@@ -695,6 +696,8 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
           </Card>
         </>
       )}
+
+      {accounts.length > 1 && <AccountLooksCard accounts={accounts} settings={settings} save={save} />}
 
       <ImageCacheCard active={active} />
 

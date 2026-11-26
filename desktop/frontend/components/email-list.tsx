@@ -60,7 +60,8 @@ interface Props {
   /** 给出时每行标出来源(搜索结果所在文件夹、统一视图里的账号), 返回空串不标。 */
   whereOf?: (email: EmailSummary) => string;
   /** 给出时在头像下方标出邮件所属的邮箱 (统一视图与搜索里的共享邮箱), 返回 null 不标。 */
-  accountOf?: (email: EmailSummary) => { label: string; title: string } | null;
+  /** 统一视图与搜索里邮件所属的邮箱: label 是列表里的小标记 (没有就不标), color 是账号颜色 (左边一条竖线)。 */
+  accountOf?: (email: EmailSummary) => { label?: string; title: string; color?: string } | null;
   /** 已发送、草稿等文件夹: 头像与名字显示收件人, 发件人都是自己。 */
   showRecipients?: boolean;
   /**
@@ -306,13 +307,22 @@ export function EmailList({
                     }
                   }}
                   className={cn(
-                    "group border-border flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
+                    "group border-border relative flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
                     "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
                     ((highlightSelected && key === selectedKey) || isChecked) && "bg-muted",
                     childSelected && "bg-secondary",
                     dragging.has(key) && "opacity-40",
                   )}
                 >
+                  {/* 账号颜色 (设置 → 账户): 统一视图里一眼分出哪个邮箱的信, 同 Thunderbird。 */}
+                  {account?.color && (
+                    <span
+                      aria-hidden
+                      title={account.title}
+                      className="absolute inset-y-0 left-0 w-[3px]"
+                      style={{ backgroundColor: account.color }}
+                    />
+                  )}
                   {/* 未读用头像旁的色点而不是整行加粗：整行加粗在长列表里显得噪杂，
                     色点在扫视时反而更容易定位。 */}
                   {multi && (
@@ -373,7 +383,7 @@ export function EmailList({
                       )}
                     </div>
                     {/* 共享邮箱标记放头像下方, 不占主题行; 负外边距让它最宽可比头像多 8px 而不撑宽头像列 (串联细线按头像列定位)。 */}
-                    {account && (
+                    {account?.label && (
                       <span
                         title={account.title}
                         className="bg-secondary text-muted-foreground -mx-1 mt-1 max-w-11 truncate rounded-sm px-1 text-[10px] leading-4"

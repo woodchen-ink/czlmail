@@ -266,6 +266,7 @@ export function FolderButton({
   badge,
   quiet,
   dropTarget,
+  stripe,
   ...rest
 }: {
   icon: typeof Inbox;
@@ -283,6 +284,8 @@ export function FolderButton({
   quiet?: boolean;
   /** 拖着邮件停在这个文件夹上, 松开就移进来。 */
   dropTarget?: boolean;
+  /** 账号颜色 (设置 → 账户): 名字前一条细竖线, 统一视图展开的各账号行用; 空串只占位, 让有色、无色的行名字对齐。 */
+  stripe?: string;
 } & Omit<React.ComponentProps<"button">, "onClick" | "title">) {
   return (
     <button
@@ -291,7 +294,7 @@ export function FolderButton({
       onClick={onClick}
       aria-current={selected ? "page" : undefined}
       className={cn(
-        "group flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors",
+        "group flex w-full min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors",
         "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
         selected && "bg-muted font-medium",
         // 目标文件夹整行铺强调色, 图标也跟着反白, 一眼看出会落到哪里。
@@ -300,6 +303,9 @@ export function FolderButton({
       style={{ paddingLeft: `${depth * 12 + 8}px` }}
     >
       <Icon className={cn("size-4 shrink-0", color ?? "text-muted-foreground")} />
+      {stripe !== undefined && (
+        <span aria-hidden className="-mr-1 h-3.5 w-[3px] shrink-0 rounded-full" style={{ backgroundColor: stripe || "transparent" }} />
+      )}
       <span className="min-w-0 flex-1 truncate" title={title ?? label}>
         {label}
       </span>
