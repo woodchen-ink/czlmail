@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/woodchen-ink/czlmail/gateway/model"
 	"github.com/woodchen-ink/czlmail/gateway/service/mailindex"
 )
 
@@ -186,5 +189,72 @@ func TestCache(t *testing.T) {
 	c2.DropAccount("a")
 	if c2.size != 0 || c2.lru.Len() != 0 {
 		t.Fatalf("drop account left %d", c2.size)
+	}
+}
+
+func TestDeliveredReachesOnNewMail(t *testing.T) {
+	idx, err := mailindex.Open(t.TempDir(), "acct1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { idx.Close() })
+	inbox := &model.IndexMailbox{Name: "INBOX", Role: "inbox", Attrs: "[]"}
+	sent := &model.IndexMailbox{Name: "Sent", Role: "sent", Attrs: "[]"}
+	if _, err := idx.Write(func(tx *mailindex.Tx) error {
+		if err := tx.CreateMailbox(inbox); err != nil {
+			return err
+		}
+		if err := tx.CreateMailbox(sent); err != nil {
+			return err
+		}
+		tx.SetReady()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan []NewMail, 1)
+	s, err := New(Options{Log: slog.New(slog.DiscardHandler), OnNewMail: func(user string, mails []NewMail) {
+		if user == "u1" {
+			got <- mails
+		}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx.OnDelivered(func(ids []string) { s.Delivered("u1", "acct1", idx, ids) })
+	mk := func(subject string) *model.IndexEmail {
+		return &model.IndexEmail{Subject: subject, ReceivedAt: time.Now().UTC(), Size: 10, Keywords: `{"$flagged":true}`,
+			From: `[{"name":"Bob","email":"bob@example.test"}]`}
+	}
+	var inboxMail *model.IndexEmail
+	if _, err := idx.Write(func(tx *mailindex.Tx) error {
+		inboxMail = mk("Hello")
+		if err := tx.CreateEmail(inboxMail, nil, inbox.ID, 1, 0); err != nil {
+			return err
+		}
+		tx.Delivered(inboxMail.ID)
+		own := mk("My own copy")
+		if err := tx.CreateEmail(own, nil, sent.ID, 1, 0); err != nil {
+			return err
+		}
+		tx.Delivered(own.ID)
+		// Created by a gateway write: not delivered.
+		return tx.CreateEmail(mk("Appended"), nil, inbox.ID, 2, 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case mails := <-got:
+		if len(mails) != 1 {
+			t.Fatalf("mails %+v", mails)
+		}
+		m := mails[0]
+		st, _ := idx.State(mailindex.TypeEmail)
+		if m.AccountID != "acct1" || m.Subject != "Hello" || m.From[0].Email != "bob@example.test" || m.State != st ||
+			m.Email["id"] != inboxMail.ID || m.Email["preview"] == nil || len(m.Keywords) != 1 || m.MailboxIDs[0] != inbox.ID {
+			t.Fatalf("mail %+v", m)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no new mail reported")
 	}
 }
