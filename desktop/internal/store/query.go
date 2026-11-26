@@ -409,6 +409,8 @@ type Account struct {
 	IsPersonal bool   `json:"isPersonal"`
 	// SignIn 是账号所属登录的前缀 (主登录为空), 由上层按账号 id 填写, 不存库。
 	SignIn string `json:"signIn"`
+	// SignInHost 是所属登录的服务器主机名, 同样由上层填写, 不存库; 侧栏在一个登录下有多个邮箱或网关邮箱时用它作这一节的标题。
+	SignInHost string `json:"signInHost"`
 	// Primary 表示会话 primaryAccounts 的邮件账号指向它 (登录的默认邮箱)。
 	Primary bool `json:"primary"`
 	// Features 是账号所在服务器公布的功能, 取自上次连上时存下的能力 (离线时照用); 从没连上过时全部为真。

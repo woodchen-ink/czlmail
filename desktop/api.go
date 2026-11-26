@@ -92,9 +92,11 @@ func (a *App) ListAccounts() ([]store.Account, error) {
 		return nil, err
 	}
 	order := map[string]int{}
+	hosts := map[string]string{}
 	a.mu.RLock()
 	for i, si := range a.signInsLocked() {
 		order[si.id] = i
+		hosts[si.id] = si.cfg.ServerHost
 	}
 	a.mu.RUnlock()
 	rank := func(id string) int {
@@ -105,6 +107,7 @@ func (a *App) ListAccounts() ([]store.Account, error) {
 	}
 	for i := range list {
 		list[i].SignIn, _ = accountid.Split(list[i].ID)
+		list[i].SignInHost = hosts[list[i].SignIn]
 	}
 	// 稳定排序保留库里的「个人在前、按名称」。
 	slices.SortStableFunc(list, func(x, y store.Account) int { return rank(x.SignIn) - rank(y.SignIn) })
