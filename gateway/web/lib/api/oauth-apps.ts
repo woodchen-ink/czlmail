@@ -22,14 +22,18 @@ export interface OAuthAppInput {
   secretExpiresAt?: string
 }
 
-/** Used for display while the backend does not answer: proposed callback path and scopes. */
+/**
+ * Used for display while the backend does not answer; the wizard shows the
+ * scopes GET /oauth-apps returns. Google: only the Gmail scope (the address
+ * comes from the Gmail profile, not from openid / email).
+ */
 export const OAUTH_DEFAULTS: Record<
   OAuthProvider,
   { callbackPath: string; scopes: string[] }
 > = {
   google: {
     callbackPath: "/oauth/google/callback",
-    scopes: ["https://mail.google.com/", "openid", "email"],
+    scopes: ["https://mail.google.com/"],
   },
   microsoft: {
     callbackPath: "/oauth/microsoft/callback",
