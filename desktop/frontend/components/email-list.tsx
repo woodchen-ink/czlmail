@@ -381,8 +381,9 @@ export function EmailList({
                         {account.label}
                       </span>
                     )}
+                    {/* 不能靠 items-center 居中: 36px 列里 1px 线落在 17.5px, 与下方成员行的 30px 细线错开半像素, 看着是歪的。 */}
                     {isOpen && members.length > 0 && (
-                      <span aria-hidden className="bg-muted-foreground/30 -mb-2.5 w-px flex-1" />
+                      <span aria-hidden className="bg-muted-foreground/30 -mb-2.5 ml-[18px] w-px flex-1 self-start" />
                     )}
                   </div>
 
