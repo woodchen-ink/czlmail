@@ -1,9 +1,12 @@
 package microsoft_test
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,5 +184,29 @@ func TestNotConnectedIsRetried(t *testing.T) {
 		if err := upstream.Classify("imap", se); !upstream.IsKind(err, upstream.KindUnreachable) {
 			t.Errorf("%s %s: kind %v", se.Command, se.Status, err.Kind)
 		}
+	}
+}
+
+// A refused sign-in logs the user= it sent and whose grant the token was, so a
+// token of another account shows up next to the mailbox it was used for.
+func TestSignInFailureLogsTokenOwner(t *testing.T) {
+	im := newExchangeIMAP(t, "good-token")
+	sm := newExchangeSMTP(t, "good-token")
+	var logs bytes.Buffer
+	cfg := probeConfig(im.Addr(), sm.Addr(), "other-accounts-token")
+	cfg.Log = slog.New(slog.NewJSONHandler(&logs, nil))
+	cfg.TokenOwner = func() string { return "oid=o-2 email=other@outlook.test" }
+	up, err := microsoft.New(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer up.Close()
+	if _, err := up.Probe(context.Background()); err == nil {
+		t.Fatal("sign-in with the wrong token succeeded")
+	}
+	out := logs.String()
+	if !strings.Contains(out, `"msg":"microsoft imap sign in"`) || !strings.Contains(out, `"user":"`+mailbox+`"`) ||
+		!strings.Contains(out, `"token_account":"oid=o-2 email=other@outlook.test"`) || strings.Contains(out, "other-accounts-token") {
+		t.Errorf("log %s", out)
 	}
 }

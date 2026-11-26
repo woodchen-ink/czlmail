@@ -21,6 +21,10 @@ type Token struct {
 	RefreshToken string    `json:"refreshToken"`
 	Expiry       time.Time `json:"expiry"`
 	Scope        string    `json:"scope,omitempty"`
+	// Account is who the grant belongs to, from the id_token of the code
+	// exchange (kept across refreshes), for diagnostics: a mailbox signing in
+	// with another account's token shows up in the logs.
+	Account *TokenAccount `json:"account,omitempty"`
 	// IDToken is the OpenID Connect id_token of a code exchange, read once for
 	// the address and never stored.
 	IDToken string `json:"-"`
@@ -158,27 +162,45 @@ func (c *Client) classify(err error) error {
 	return err
 }
 
-// IDClaims returns the identifying claims of tok's id_token (email,
-// preferred_username, oid, tid, sub) for diagnostics; empty without one. The
-// token came straight from the token endpoint, so its signature is not checked.
-func (t *Token) IDClaims() map[string]string {
-	out := map[string]string{}
+// TokenAccount identifies the account of a grant (no secrets).
+type TokenAccount struct {
+	OID               string `json:"oid,omitempty"`
+	TID               string `json:"tid,omitempty"`
+	Sub               string `json:"sub,omitempty"`
+	Email             string `json:"email,omitempty"`
+	PreferredUsername string `json:"preferredUsername,omitempty"`
+}
+
+// AccountFromIDToken reads the identifying claims of t's id_token; nil without
+// one. The token came straight from the token endpoint, so its signature is
+// not checked.
+func (t *Token) AccountFromIDToken() *TokenAccount {
 	parts := strings.Split(t.IDToken, ".")
 	if len(parts) != 3 {
-		return out
+		return nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return out
+		return nil
 	}
-	var c map[string]any
+	var c struct {
+		OID               string `json:"oid"`
+		TID               string `json:"tid"`
+		Sub               string `json:"sub"`
+		Email             string `json:"email"`
+		PreferredUsername string `json:"preferred_username"`
+	}
 	if json.Unmarshal(raw, &c) != nil {
-		return out
+		return nil
 	}
-	for _, k := range []string{"email", "preferred_username", "oid", "tid", "sub"} {
-		if v, ok := c[k].(string); ok {
-			out[k] = v
-		}
+	a := TokenAccount(c)
+	return &a
+}
+
+// String lists the account for logs ("-" for an unknown one).
+func (a *TokenAccount) String() string {
+	if a == nil {
+		return "-"
 	}
-	return out
+	return "oid=" + a.OID + " tid=" + a.TID + " email=" + a.Email + " preferred_username=" + a.PreferredUsername
 }

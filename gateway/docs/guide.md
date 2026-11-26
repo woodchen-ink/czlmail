@@ -285,7 +285,7 @@ Gmail signs in with OAuth: mail is read over IMAP and sent through the Gmail API
 
 ## 6. Add Microsoft 365 / Outlook.com
 
-Work and school accounts (Microsoft 365, Exchange Online) and personal accounts (Outlook.com, Hotmail, Live) both sign in with OAuth 2.0 to IMAP `outlook.office365.com:993` and SMTP `smtp.office365.com:587`; no password is stored. The gateway needs an app registration in Microsoft Entra, which an admin creates once.
+Work and school accounts (Microsoft 365, Exchange Online) and personal accounts (Outlook.com, Hotmail, Live) both sign in with OAuth 2.0 to IMAP `outlook.office365.com:993`; SMTP (port 587, STARTTLS) is `smtp.office365.com` for work and school accounts and `smtp-mail.outlook.com` for personal accounts, picked automatically; no password is stored. The gateway needs an app registration in Microsoft Entra, which an admin creates once.
 
 ### 6.1 Register the app in Microsoft Entra (admin, once)
 

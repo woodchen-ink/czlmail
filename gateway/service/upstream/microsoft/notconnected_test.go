@@ -1,7 +1,10 @@
 package microsoft
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/woodchen-ink/czlmail/gateway/pkg/imapc"
@@ -39,5 +42,18 @@ func TestNotConnectedRetriesThenAuthRequired(t *testing.T) {
 	var ue *upstream.Error
 	if err := nc.classify(nope, cfg); !errors.As(err, &ue) || ue.Kind != upstream.KindUnreachable {
 		t.Errorf("after a good sign-in: %v", err)
+	}
+}
+
+func TestNotConnectedLogsTokenOwner(t *testing.T) {
+	var logs bytes.Buffer
+	cfg := upstream.Config{AccountID: "a2", IMAP: upstream.Endpoint{Username: "robert@outlook.test"},
+		Log: slog.New(slog.NewJSONHandler(&logs, nil)), TokenOwner: func() string { return "oid=o-1 email=zurn@outlook.test" }}
+	(&notConnected{}).classify(&imapc.StatusError{Command: "AUTHENTICATE", Status: "NO", Text: "User is authenticated but not connected."}, cfg)
+	out := logs.String()
+	for _, want := range []string{`"msg":"microsoft imap not connected"`, `"account":"a2"`, `"user":"robert@outlook.test"`, `"token_account":"oid=o-1 email=zurn@outlook.test"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log lacks %s: %s", want, out)
+		}
 	}
 }

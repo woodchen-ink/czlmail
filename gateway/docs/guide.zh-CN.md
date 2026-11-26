@@ -285,7 +285,7 @@ Gmail 用 OAuth 授权: 收信走 IMAP, 发信走 Gmail API, 不保存 Gmail 密
 
 ## 6. 添加 Microsoft 365 / Outlook.com
 
-工作 / 学校账号 (Microsoft 365、Exchange Online) 和个人账号 (Outlook.com、Hotmail、Live) 都通过 OAuth 2.0 登录 IMAP `outlook.office365.com:993` 与 SMTP `smtp.office365.com:587`, 不保存密码。网关需要在 Microsoft Entra 里注册一个应用, 由管理员做一次。
+工作 / 学校账号 (Microsoft 365、Exchange Online) 和个人账号 (Outlook.com、Hotmail、Live) 都通过 OAuth 2.0 登录 IMAP `outlook.office365.com:993`; SMTP (端口 587, STARTTLS) 工作 / 学校账号用 `smtp.office365.com`, 个人账号用 `smtp-mail.outlook.com`, 自动选择; 不保存密码。网关需要在 Microsoft Entra 里注册一个应用, 由管理员做一次。
 
 ### 6.1 在 Microsoft Entra 注册应用 (管理员, 只做一次)
 

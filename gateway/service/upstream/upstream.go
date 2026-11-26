@@ -51,6 +51,10 @@ type Config struct {
 	// TokenRejected tells the token source the server refused token, so the
 	// next AccessToken refreshes instead of returning it again. May be nil.
 	TokenRejected func(token string)
+	// TokenOwner describes the account the current OAuth grant was issued to
+	// (oid, email, preferred_username; never the token), for logging a refused
+	// sign-in next to the user name it used. Nil for password upstreams.
+	TokenOwner func() string
 	// APIBase is the provider's REST API root for OAuth kinds (the Gmail API
 	// sends mail and lists identities); it goes through Dialer too.
 	APIBase string
