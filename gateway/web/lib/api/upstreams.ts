@@ -81,7 +81,55 @@ export interface UpstreamView {
     initialSync: { done: number; total: number } | null
   }
   capabilities: Capabilities
+  /** How sent mail reaches the Sent folder (#41). */
+  sentCopy: SentCopy
   createdAt: string | null
+}
+
+/**
+ * auto: the first send (or a test send) finds out whether the server keeps its own
+ * copy; gateway: the gateway files the copy; server: the server does.
+ */
+export type SentCopy = "auto" | "gateway" | "server"
+
+export interface SentCopyTest {
+  ok: boolean
+  /** The strategy now stored. */
+  sentCopy: SentCopy
+  serverSaves: boolean
+  waitedMs: number
+  code?: number
+  msg?: string
+  detail?: string
+}
+
+export interface IdentityAddress {
+  name: string | null
+  email: string
+}
+
+export interface Identity {
+  id: string
+  /** primary: the mailbox address; alias: added here (may be *@domain); provider: Gmail send-as. */
+  source: "primary" | "alias" | "provider"
+  email: string
+  name: string
+  replyTo: IdentityAddress[]
+  bcc: IdentityAddress[]
+  textSignature: string
+  htmlSignature: string
+  mayDelete: boolean
+  updatedAt: string | null
+}
+
+export interface IdentityInput {
+  /** Only for new aliases and alias edits. */
+  email?: string
+  name?: string
+  replyTo?: IdentityAddress[]
+  bcc?: IdentityAddress[]
+  textSignature?: string
+  htmlSignature?: string
 }
 
 /** A mailbox for the pages: the overview card plus what the actions need. */
@@ -176,8 +224,10 @@ export const upstreamsApi = {
     (await api.get<UpstreamView[]>("/upstreams")).map(toUpstream),
   test: (body: UpstreamInput) => api.post<ProbeReport>("/upstreams/test", body),
   create: (body: UpstreamInput) => api.post<UpstreamView>("/upstreams", body),
-  update: (id: string, body: Partial<UpstreamInput>) =>
-    api.patch<UpstreamView>(path(id), body),
+  update: (
+    id: string,
+    body: Partial<UpstreamInput> & { sentCopy?: SentCopy }
+  ) => api.patch<UpstreamView>(path(id), body),
   testExisting: (id: string) => api.post<ProbeReport>(`${path(id)}/test`),
   pause: (id: string) => api.post<UpstreamView>(`${path(id)}/pause`),
   resume: (id: string) => api.post<UpstreamView>(`${path(id)}/resume`),
@@ -192,6 +242,20 @@ export const upstreamsApi = {
     }>(`/upstreams/autoconfig?email=${encodeURIComponent(email)}`),
   /** TODO(#42/#43): consent URL to re-authorise a Gmail / Microsoft mailbox. */
   reauth: (id: string) => api.post<{ url: string }>(`${path(id)}/reauth`),
+  setSentCopy: (id: string, sentCopy: SentCopy) =>
+    api.patch<UpstreamView>(path(id), { sentCopy }),
+  /** Sends a message to the mailbox itself and stores the result; takes up to ~15 s. */
+  sendTest: (id: string) => api.post<SentCopyTest>(`${path(id)}/send-test`),
+  identities: (id: string) => api.get<Identity[]>(`${path(id)}/identities`),
+  createIdentity: (id: string, body: IdentityInput) =>
+    api.post<Identity>(`${path(id)}/identities`, body),
+  updateIdentity: (id: string, identityId: string, body: IdentityInput) =>
+    api.patch<Identity>(
+      `${path(id)}/identities/${encodeURIComponent(identityId)}`,
+      body
+    ),
+  deleteIdentity: (id: string, identityId: string) =>
+    api.del<object>(`${path(id)}/identities/${encodeURIComponent(identityId)}`),
   /** TODO(#42/#43): start adding a Gmail / Microsoft mailbox; returns the consent URL. */
   startOAuth: (provider: "google" | "microsoft") =>
     api.post<{ url: string }>(`/upstreams/oauth/${provider}/start`),
