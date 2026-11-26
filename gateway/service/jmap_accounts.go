@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/url"
 
@@ -10,7 +9,6 @@ import (
 
 	"github.com/woodchen-ink/czlmail/gateway/model"
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
-	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 )
 
 // JMAP capabilities of upstream accounts (RFC 8621).
@@ -69,14 +67,11 @@ func (a *UpstreamAccounts) UserSession(ctx context.Context, userPublicID string)
 	return us, nil
 }
 
-func mailAccountCapability(row *model.Upstream) map[string]any {
-	// Sorting and paging come from the index; sorting by address fields needs the
-	// server's SORT, so it is offered only when the server has it.
-	sorts := []string{"receivedAt", "sentAt", "size", "subject", "hasKeyword", "allInThreadHaveKeyword", "someInThreadHaveKeyword"}
-	var caps upstream.Capabilities
-	if row.ServerCaps != "" && json.Unmarshal([]byte(row.ServerCaps), &caps) == nil && caps.Sort {
-		sorts = append(sorts, "from", "to")
-	}
+func mailAccountCapability(*model.Upstream) map[string]any {
+	// Sorting and paging come from the index (service/mail), which has every
+	// sortable field, so the options do not depend on the server's SORT.
+	sorts := []string{"receivedAt", "sentAt", "size", "subject", "from", "to", "hasKeyword",
+		"allInThreadHaveKeyword", "someInThreadHaveKeyword"}
 	return map[string]any{
 		"maxMailboxesPerEmail":       1,
 		"maxMailboxDepth":            nil,

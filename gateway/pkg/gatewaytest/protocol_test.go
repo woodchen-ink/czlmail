@@ -30,7 +30,7 @@ func TestGatewayStarts(t *testing.T) {
 }
 
 // Dovecot smoke: one IMAP upstream shows up as a mail account with standard roles.
-// Runs up to Mailbox/get, which skips until #40 lands; needs docker-compose.test.yml.
+// Needs docker-compose.test.yml.
 func TestProtocolDovecotSession(t *testing.T) {
 	mbox := imaptest.Dovecot(t).NewUser(t)
 	gw := Start(t)

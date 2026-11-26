@@ -57,6 +57,8 @@ type UpstreamManager struct {
 	locks    map[string]*sync.Mutex
 	stopped  bool
 	metrics  UpstreamMetrics
+	deliver  DeliveryFunc
+	removed  []func(accountID string)
 }
 
 // UpstreamMetrics records upstream activity for the admin overview; it is
@@ -73,6 +75,35 @@ func (m *UpstreamManager) SetMetrics(rec UpstreamMetrics) {
 	m.mu.Lock()
 	m.metrics = rec
 	m.mu.Unlock()
+}
+
+// OnRemove registers fn to run after an upstream was deleted (its index is
+// gone), to drop what other parts keep for it, such as cached messages.
+func (m *UpstreamManager) OnRemove(fn func(accountID string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.removed = append(m.removed, fn)
+}
+
+func (m *UpstreamManager) notifyRemoved(accountID string) {
+	m.mu.Lock()
+	fns := m.removed
+	m.mu.Unlock()
+	for _, fn := range fns {
+		fn(accountID)
+	}
+}
+
+// DeliveryFunc learns about emails that arrived on an upstream (found new by the
+// sync engine, not created by a gateway write). It runs while the index's write
+// lock is held: hand the work to another goroutine.
+type DeliveryFunc func(userPublicID, accountID string, idx *mailindex.Store, emailIDs []string)
+
+// OnDelivered installs fn for every upstream started afterwards; call it before Run.
+func (m *UpstreamManager) OnDelivered(fn DeliveryFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deliver = fn
 }
 
 type managed struct {
@@ -187,6 +218,7 @@ func (m *UpstreamManager) start(row *model.Upstream) {
 	parent := m.ctx
 	clients := m.clients[userID]
 	rec := m.metrics
+	deliver := m.deliver
 	m.mu.Unlock()
 
 	cfg, err := m.Config(row)
@@ -203,6 +235,10 @@ func (m *UpstreamManager) start(row *model.Upstream) {
 	if err != nil {
 		m.log.Error("open upstream index", "account", row.PublicID, "err", err)
 		return
+	}
+	if deliver != nil {
+		accountID := row.PublicID
+		idx.OnDelivered(func(ids []string) { deliver(userID, accountID, idx, ids) })
 	}
 	up, err := upstream.New(cfg, idx)
 	if err != nil {
@@ -274,6 +310,7 @@ func (m *UpstreamManager) Remove(row *model.Upstream) {
 		m.log.Error("remove upstream index", "account", row.PublicID, "err", err)
 	}
 	m.forgetMetrics(row.PublicID)
+	m.notifyRemoved(row.PublicID)
 	if userID, err := m.userPublicID(row.UserID); err == nil {
 		m.endStreams(userID)
 	}
@@ -295,6 +332,7 @@ func (m *UpstreamManager) RemoveUser(userPublicID string) {
 		m.stopOne(id)
 		_ = mailindex.Remove(m.dataDir, id)
 		m.forgetMetrics(id)
+		m.notifyRemoved(id)
 		l.Unlock()
 	}
 	var rows []model.Upstream

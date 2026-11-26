@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"gorm.io/gorm"
@@ -15,6 +16,7 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 	"github.com/woodchen-ink/czlmail/gateway/router"
 	"github.com/woodchen-ink/czlmail/gateway/service"
+	"github.com/woodchen-ink/czlmail/gateway/service/mail"
 	"github.com/woodchen-ink/czlmail/gateway/service/metrics"
 	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 )
@@ -28,6 +30,7 @@ type App struct {
 	Handler http.Handler
 	Auth    *Auth
 	JMAP    *jmapserver.Server
+	Mail    *mail.Service
 	// Upstreams manages users' upstream mailboxes; Manager runs them.
 	Upstreams *service.Upstreams
 	Manager   *service.UpstreamManager
@@ -69,7 +72,7 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 	}
 	jmap.RegisterCapability(jmapserver.GatewayCapability, gateway)
 	// Server-level values are empty objects (RFC 8621 §1.3); the limits are per
-	// account. The Mail and Submission methods are registered by service/mail.
+	// account. The Mail methods come from service/mail, Submission from #41.
 	jmap.RegisterCapability(service.MailCapability, struct{}{})
 	jmap.RegisterCapability(service.SubmissionCapability, struct{}{})
 	pushStore := service.NewPushStore(db, ring, log)
@@ -79,6 +82,23 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 	}); err != nil {
 		return nil, err
 	}
+	cache, err := mail.NewCache(filepath.Join(cfg.DataDir, "cache", "mail"), mail.DefaultCacheBytes)
+	if err != nil {
+		return nil, err
+	}
+	mailSvc, err := mail.New(mail.Options{
+		Upstreams: mgr,
+		Log:       log,
+		Uploads:   jmap.Uploads(),
+		Cache:     cache,
+		OnNewMail: newMailNotifier(jmap),
+	})
+	if err != nil {
+		return nil, err
+	}
+	mailSvc.Register(jmap)
+	mgr.OnDelivered(mailSvc.Delivered)
+	mgr.OnRemove(cache.DropAccount)
 	// Disabled user or revoked app password: drop the user's push streams (clients
 	// with a still-valid app password reconnect at once) and the push subscriptions
 	// of the revoked credentials, so a revoked device stops getting mail summaries.
@@ -147,7 +167,7 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 		Czlmail:  &handler.CzlmailConfig{Gateway: gateway},
 		AdminWeb: web,
 	})
-	return &App{Handler: h, Auth: auth, JMAP: jmap, Metrics: rec, Overview: overview, Tasks: tasks, Upstreams: upstreams, Manager: mgr, stop: stop}, nil
+	return &App{Handler: h, Auth: auth, JMAP: jmap, Mail: mailSvc, Metrics: rec, Overview: overview, Tasks: tasks, Upstreams: upstreams, Manager: mgr, stop: stop}, nil
 }
 
 // Close stops the background jobs and upstreams, writes the pending metrics and

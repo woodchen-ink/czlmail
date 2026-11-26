@@ -49,9 +49,20 @@ type Store struct {
 	db   *gorm.DB
 	path string
 
-	wmu  sync.Mutex // one writer at a time
-	mu   sync.RWMutex
-	meta model.IndexMeta
+	wmu         sync.Mutex // one writer at a time
+	mu          sync.RWMutex
+	meta        model.IndexMeta
+	onDelivered func(emailIDs []string)
+}
+
+// OnDelivered sets fn to run after each commit that added emails the sync engine
+// found new on the server (see Tx.Delivered). It runs on the writer's goroutine
+// while the write lock is held, so it must not write to the index; reading
+// through DB is fine.
+func (s *Store) OnDelivered(fn func(emailIDs []string)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onDelivered = fn
 }
 
 // Open opens (creating and migrating) the index of accountID.

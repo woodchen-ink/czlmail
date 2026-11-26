@@ -39,6 +39,10 @@ type Dialect struct {
 	ThreadKey func(m *imapc.Message) string
 	// SkipMailbox hides folders (Gmail's [Gmail] parent).
 	SkipMailbox func(e *imapc.ListEntry) bool
+	// SearchCriteria builds the UID SEARCH criteria for a query (Gmail: one
+	// X-GM-RAW string); nil uses the standard SEARCH keys. utf8 asks for
+	// CHARSET UTF-8 in front of them.
+	SearchCriteria func(q upstream.SearchQuery) (criteria []any, utf8 bool)
 }
 
 // Options configure an IMAP upstream beyond Config.
