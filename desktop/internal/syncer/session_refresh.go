@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
+	"git.sr.ht/~rockorager/go-jmap/mail"
 )
 
 // 会话里的账号列表会在运行中变化: 别人把邮箱共享给自己、撤销共享、改了共享邮箱的名字。
@@ -48,6 +49,27 @@ func (s *Syncer) RequestSessionRefresh() {
 	case s.sessionRefresh <- struct{}{}:
 	default:
 	}
+}
+
+// noteSessionState 在 API 响应的 sessionState 与当前会话不同时请求重读会话 (RFC 8620 §3.4):
+// 网关在上游邮箱状态变化时改会话 state, 账号能力 (上游状态) 随之更新。
+// 同一个值只请求一次: 重读没换上会话 (比如校验没通过) 时, 不该让之后每个请求都再触发一次。
+func (s *Syncer) noteSessionState(state string) {
+	if state == "" {
+		return
+	}
+	sess := s.session()
+	if sess == nil || sess.State == state {
+		return
+	}
+	if prev, _ := s.staleSessionState.Load().(string); prev == state {
+		return
+	}
+	s.staleSessionState.Store(state)
+	if s.log != nil {
+		s.log.Info("session state changed, re-reading the session", "known", sess.State, "reported", state)
+	}
+	s.RequestSessionRefresh()
 }
 
 // knowsAccount 报告当前会话里是否有该账号。
@@ -102,6 +124,7 @@ func (s *Syncer) refreshSession(ctx context.Context) error {
 	s.client.Unlock()
 
 	diff := diffAccounts(before.Accounts, fresh.Accounts)
+	diff.Renamed = withPrimaryChange(diff.Renamed, before, fresh)
 	diff.Added, diff.Renamed, diff.Capabilities = s.locals(diff.Added), s.locals(diff.Renamed), s.locals(diff.Capabilities)
 	// 会话里少了的账号先不删缓存, 交给 pruneAccounts 连续两次确认; diff.Removed 只放确认删掉的。
 	diff.Removed = s.pruneAccounts(ctx)
@@ -117,7 +140,7 @@ func (s *Syncer) refreshSession(ctx context.Context) error {
 			return nil
 		}
 		if err := s.SyncAccount(ctx, id); err != nil {
-			s.log.Error("sync new account", "account", id, "err", err)
+			s.logSyncError("sync new account", id, err)
 		}
 	}
 	return nil
@@ -264,6 +287,21 @@ func sameCapabilities(a, b map[jmap.URI]json.RawMessage) bool {
 		}
 	}
 	return true
+}
+
+// withPrimaryChange 把默认邮箱 (primaryAccounts 的邮件账号) 换了的前后两个账号并进 Renamed, 让缓存里的账号行随之重写。
+func withPrimaryChange(renamed []string, before, after *jmap.Session) []string {
+	old, cur := before.PrimaryAccounts[mail.URI], after.PrimaryAccounts[mail.URI]
+	if old == cur {
+		return renamed
+	}
+	for _, id := range []jmap.ID{old, cur} {
+		if _, ok := after.Accounts[id]; ok && !slices.Contains(renamed, string(id)) {
+			renamed = append(renamed, string(id))
+		}
+	}
+	slices.Sort(renamed)
+	return renamed
 }
 
 func hasPersonal(accounts map[jmap.ID]jmap.Account) bool {

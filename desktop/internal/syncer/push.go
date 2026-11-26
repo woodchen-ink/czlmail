@@ -8,6 +8,8 @@ import (
 
 	"git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/core/push"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/upstream"
 )
 
 // 断线重连的退避区间。上限取 1 分钟: 邮件客户端可以容忍一分钟的延迟,
@@ -126,7 +128,13 @@ func (s *Syncer) syncAllAccounts(ctx context.Context) error {
 			status.Done++
 			s.setRound(status)
 		})
-		if err != nil {
+		switch {
+		case err == nil:
+		case upstream.FromError(err) != nil:
+			// 网关的上游邮箱暂时不可用 (要重新授权、连不上、首次导入中、已暂停): 这是账号的状态, 不是这一轮失败,
+			// 界面按账号能力里的上游状态显示, 其它账号照常同步。
+			s.log.Info("sync account skipped: upstream mailbox unavailable", "account", accountID, "err", err)
+		default:
 			s.log.Error("sync account", "account", accountID, "err", err)
 			if firstErr == nil {
 				firstErr = err

@@ -15,6 +15,7 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmaptest"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
+	"github.com/woodchen-ink/czlmail/desktop/internal/upstream"
 )
 
 func dial(t *testing.T, srv *jmaptest.Server, user, pass string) *jmap.Client {
@@ -133,7 +134,8 @@ func TestSyncerAgainstMock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if me, ok := resp.Responses[0].Args.(*jmap.MethodError); !ok || me.Type != "accountNotFound" {
+	// 方法错误经 upstream.MethodErrorOf 取: 链接了 internal/upstream 的程序里它不是 *jmap.MethodError。
+	if _, typ, ok := upstream.MethodErrorOf(resp.Responses[0].Args); !ok || typ != "accountNotFound" {
 		t.Fatalf("foreign account id: %+v", resp.Responses[0].Args)
 	}
 }

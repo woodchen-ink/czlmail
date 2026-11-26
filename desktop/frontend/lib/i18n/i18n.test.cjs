@@ -221,7 +221,7 @@ test("Every dictionary covers exactly the English keys and is registered", () =>
 test("Every localized error code exists in the Go backend", () => {
   const api = fs.readFileSync(path.join(root, "lib/api.ts"), "utf8");
   const table = api.slice(api.indexOf("const ERROR_MESSAGES"), api.indexOf("};", api.indexOf("const ERROR_MESSAGES")));
-  const codes = [...table.matchAll(/^ {2}"(\d{4})":/gm)].map((m) => m[1]);
+  const codes = [...table.matchAll(/^ {2}"(\d{4,5})":/gm)].map((m) => m[1]);
   assert.ok(codes.length > 50, "error table not found");
   /** Go sources under desktop/, skipping the frontend and build output. */
   function goFiles(directory) {

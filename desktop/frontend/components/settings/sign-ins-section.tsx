@@ -37,6 +37,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { missingFeatures } from "@/lib/account-features";
+import { ReauthButton, UpstreamBadge } from "@/components/upstream-status";
+import { upstreamDescription, upstreamKind } from "@/lib/upstream";
 import { cn } from "@/lib/utils";
 import {
   Events,
@@ -107,6 +109,9 @@ export function SignInsCard({
     return main ? missingFeatures(main) : [];
   };
   const others = list.filter((s) => !s.primary).length;
+  /** czlmail 网关登录下的上游邮箱 (带 upstream 的账号), 逐个列出类型与状态。 */
+  const gatewayAccounts = (s: SignInInfo) =>
+    s.accounts.map((id) => byId.get(id)).filter((a): a is Account => !!a?.upstream);
 
   async function retry(s: SignInInfo) {
     setBusy(s.id);
@@ -248,7 +253,13 @@ export function SignInsCard({
                 {t("服务器不支持：{0}", missing(s).join(", "))}
               </p>
             )}
-            {s.accounts.length > 1 && (
+            {gatewayAccounts(s).length > 0 ? (
+              <ul className="flex flex-col gap-1.5">
+                {gatewayAccounts(s).map((acc) => (
+                  <GatewayAccountRow key={acc.id} account={acc} />
+                ))}
+              </ul>
+            ) : s.accounts.length > 1 && (
               <p className="text-muted-foreground text-xs leading-relaxed">
                 {t(
                   "可访问的邮箱：{0}",
@@ -416,4 +427,25 @@ function reauthOf(s: SignInInfo): SessionStatus {
     signInReason: s.signInReason,
     signedOut: s.signedOut,
   } as SessionStatus;
+}
+
+/** 网关登录里的一个上游邮箱: 类型图标、名称、默认邮箱标记与状态; 需要重新授权时给网关后台入口。 */
+function GatewayAccountRow({ account }: { account: Account }) {
+  useI18n();
+  const kind = upstreamKind(account.upstream);
+  const Icon = kind?.icon ?? Server;
+  const description = upstreamDescription(account.upstream);
+  return (
+    <li className="flex flex-col gap-1">
+      <div className="flex items-center gap-2 text-xs">
+        <Icon className="text-muted-foreground size-3.5 shrink-0" />
+        <span className="min-w-0 truncate">{account.name}</span>
+        {kind && <span className="text-muted-foreground shrink-0">{kind.label}</span>}
+        {account.primary && <span className="text-muted-foreground shrink-0">· {t("默认")}</span>}
+        <UpstreamBadge info={account.upstream} className="ml-auto" />
+        <ReauthButton info={account.upstream} size="xs" />
+      </div>
+      {description && <p className="text-muted-foreground pl-5.5 text-xs leading-relaxed">{description}</p>}
+    </li>
+  );
 }

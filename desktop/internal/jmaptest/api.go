@@ -89,6 +89,13 @@ func (ex *exchange) run(inv invocation, rawArgs json.RawMessage) {
 		return
 	}
 	typ, method, _ := strings.Cut(inv.name, "/")
+	if acc != nil && acc.unavailable != nil && typ != "PushSubscription" {
+		up := acc.unavailable
+		s.mu.Unlock()
+		ex.responses = append(ex.responses, invocation{name: "error",
+			args: map[string]any{"type": "serverUnavailable", "czlUpstream": up}, callID: inv.callID})
+		return
+	}
 	if acc != nil && !acc.supportsLocked(typ) {
 		s.mu.Unlock()
 		ex.fail(inv, "unknownMethod")

@@ -1,7 +1,7 @@
 package store
 
 // schemaVersion 与 SQLite 的 user_version pragma 对齐, 等于 migrations 的长度。
-const schemaVersion = 14
+const schemaVersion = 15
 
 // migrations 按索引顺序执行, 索引 i 把 schema 从版本 i 升到 i+1。
 // 已发布的迁移不可修改, 只能追加新的一条。
@@ -21,6 +21,7 @@ var migrations = []string{
 	migration012,
 	migration013,
 	migration014,
+	migration015,
 }
 
 // migration001 建立全部四类数据(邮件/日历/通讯录/文件)的基础表。
@@ -368,4 +369,12 @@ UPDATE emails SET body_fetched_at = NULL WHERE has_attachment = 1;
 // NULL 表示还没取过 (升级前缓存的邮件), 由 syncer.BackfillAttachmentNames 补齐。
 const migration014 = `
 ALTER TABLE emails ADD COLUMN attachment_names TEXT;
+`
+
+// migration015 记下会话 primaryAccounts 指向的邮件账号。
+//
+// 一个登录下可以有多个个人账号 (czlmail 网关每个上游邮箱一个账号, 都是 isPersonal),
+// 只跟主登录走的功能 (模板、AI 设置、笔记) 要用用户选的默认邮箱, 不能按遍历顺序取第一个。
+const migration015 = `
+ALTER TABLE accounts ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0;
 `

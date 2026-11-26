@@ -160,13 +160,22 @@ func (a *App) personalAccountID(st *store.Store) string {
 	if err != nil {
 		return ""
 	}
+	// 只看主登录: 网盘里的模板、AI 设置、受信发件人通讯录都跟主登录走。
+	// 主登录下可以有多个个人账号 (czlmail 网关每个上游邮箱一个), 取会话 primaryAccounts 指向的那个;
+	// 旧缓存还没记下它时 (升级后第一次连上之前) 退回第一个个人账号。
+	first := ""
 	for _, acc := range accounts {
-		// 只看主登录: 网盘里的模板、AI 设置、受信发件人通讯录都跟主登录走。
-		if prefix, _ := accountid.Split(acc.ID); acc.IsPersonal && prefix == accountid.Primary {
+		if prefix, _ := accountid.Split(acc.ID); !acc.IsPersonal || prefix != accountid.Primary {
+			continue
+		}
+		if acc.Primary {
 			return acc.ID
 		}
+		if first == "" {
+			first = acc.ID
+		}
 	}
-	return ""
+	return first
 }
 
 // AppSettings 是界面可调的偏好, 存本地缓存库。

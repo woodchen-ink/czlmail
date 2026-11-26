@@ -17,6 +17,7 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
+	"github.com/woodchen-ink/czlmail/desktop/internal/upstream"
 )
 
 // 服务端未公布 Core 限制时的保守取值。RFC 8620 不保证这些字段一定存在,
@@ -73,6 +74,8 @@ type Syncer struct {
 	sessionMu sync.Mutex
 	// missing 是缓存里有、会话里连续缺失的账号及缺失次数, 由 sessionMu 保护。
 	missing map[string]int
+	// staleSessionState 是 API 响应里报过、与当前会话不同的 sessionState, 同一个值只请求一次重读 (见 noteSessionState)。
+	staleSessionState atomic.Value
 
 	// mu 串行化同一账号上的同步, 避免推送密集时同一类型被并发拉取,
 	// 造成两条协程拿着同一个旧 state token 各拉一遍。
@@ -247,7 +250,7 @@ func (s *Syncer) applyStateChange(ctx context.Context, change *jmap.StateChange)
 			}
 
 			if err := s.syncType(ctx, s.local(accountID), dt); err != nil {
-				s.log.Error("sync type", "account", accountID, "type", typeName, "err", err)
+				s.logSyncError("sync type", s.local(accountID), err, "type", typeName)
 			}
 		}
 	}
@@ -304,8 +307,9 @@ func (s *Syncer) do(req *jmap.Request) (*jmap.Response, error) {
 	if err != nil {
 		return nil, wrap(CodeRequest, "jmap request", err)
 	}
+	s.noteSessionState(resp.SessionState)
 	for _, inv := range resp.Responses {
-		if me, ok := inv.Args.(*jmap.MethodError); ok {
+		if me, _, ok := upstream.MethodErrorOf(inv.Args); ok {
 			return resp, &Error{
 				Code: CodeMethod,
 				Msg:  "method " + inv.Name + " failed",
@@ -315,6 +319,28 @@ func (s *Syncer) do(req *jmap.Request) (*jmap.Response, error) {
 	}
 	return resp, nil
 }
+
+// logSyncError 记一次同步失败。网关上游邮箱不可用是账号的状态 (界面按上游状态显示), 只记信息级日志。
+func (s *Syncer) logSyncError(msg, accountID string, err error, attrs ...any) {
+	attrs = append([]any{"account", accountID, "err", err}, attrs...)
+	if upstream.FromError(err) != nil {
+		s.log.Info(msg+": upstream mailbox unavailable", attrs...)
+		return
+	}
+	s.log.Error(msg, attrs...)
+}
+
+// Upstream 返回账号在当前会话里公布的网关上游状态, 不是网关账号或会话里没有它时为 nil。
+func (s *Syncer) Upstream(accountID string) *upstream.Info {
+	acc, ok := s.account(accountID)
+	if !ok {
+		return nil
+	}
+	return upstream.Of(acc.RawCapabilities)
+}
+
+// NoteSessionState 供直接拼请求的调用方 (不经同步器的 do) 报告响应里的 sessionState, 见 noteSessionState。
+func (s *Syncer) NoteSessionState(state string) { s.noteSessionState(state) }
 
 // methodErrorType 取出错误的 JMAP 类型名, 非方法错误返回空串。
 func methodErrorType(err error) string {

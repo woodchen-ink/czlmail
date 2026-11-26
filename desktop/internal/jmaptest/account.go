@@ -16,6 +16,10 @@ type Account struct {
 	id   string
 	name string
 	caps []string
+	// capObjs 是测试指定的能力对象 (如网关的上游状态), 覆盖 accountCapability 的默认值。
+	capObjs map[string]any
+	// unavailable 非空时依赖上游的方法返回 serverUnavailable 附 czlUpstream, 下载回 503 (见 SetUnavailable)。
+	unavailable map[string]any
 	// stamp 是本账号的变更计数, 各类型的 state 都取自它, 单调递增。
 	stamp int64
 	types map[string]*collection
@@ -100,6 +104,38 @@ func (a *Account) SetCaps(caps ...string) {
 	a.caps = slices.Clone(caps)
 	a.s.sessionGen++
 	a.s.mu.Unlock()
+}
+
+// SetCapability 设定账号某能力的对象 (如网关的 Upstream 状态), 没有这项能力时加上; obj 为 nil 时去掉这项能力。
+// 改了会话 state (sessionGen), 下一次读会话与之后的 API 响应 (sessionState) 都能看到; 不断开推送, 要模拟网关断流用 DropStreams。
+func (a *Account) SetCapability(uri string, obj any) {
+	a.s.mu.Lock()
+	defer a.s.mu.Unlock()
+	if obj == nil {
+		a.caps = slices.DeleteFunc(a.caps, func(c string) bool { return c == uri })
+		delete(a.capObjs, uri)
+	} else {
+		if !slices.Contains(a.caps, uri) {
+			a.caps = append(a.caps, uri)
+		}
+		if a.capObjs == nil {
+			a.capObjs = map[string]any{}
+		}
+		a.capObjs[uri] = obj
+	}
+	a.s.sessionGen++
+}
+
+// SetUnavailable 模拟网关的上游邮箱不可用: 之后这个账号上的方法都返回 serverUnavailable 附
+// czlUpstream {status, code}, 下载回 503 problem JSON; status 为空时恢复。只管方法结果, 账号能力里的上游状态另用 SetCapability 改。
+func (a *Account) SetUnavailable(status string, code int) {
+	a.s.mu.Lock()
+	defer a.s.mu.Unlock()
+	if status == "" {
+		a.unavailable = nil
+		return
+	}
+	a.unavailable = map[string]any{"status": status, "code": code}
 }
 
 // Rename 改账号名称 (下一次读会话生效)。

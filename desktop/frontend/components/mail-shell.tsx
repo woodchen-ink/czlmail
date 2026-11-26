@@ -42,6 +42,8 @@ import { EmailList } from "@/components/email-list";
 import { EmailView } from "@/components/email-view";
 import { MailSidebar, UNIFIED_UNREAD } from "@/components/mail-sidebar";
 import { MailSyncState } from "@/components/mail-sync-state";
+import { UpstreamState } from "@/components/upstream-status";
+import { upstreamOK } from "@/lib/upstream";
 import { mailboxLabel } from "@/components/mailbox-tree";
 import { MobileNavButton, PaneLayout, type MobilePane } from "@/components/pane-layout";
 import { useCompact } from "@/lib/use-compact";
@@ -1066,6 +1068,9 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       ? pendingAccounts.includes(accountId)
       : pendingAccounts.length > 0;
   const firstSyncRunning = viewPending && (!!syncStatus?.running || retryingSync);
+  // 在看的账号是 czlmail 网关账号且上游邮箱不可用: 空列表说明原因, 不显示「没有邮件」。
+  const viewedAccount = !unified ? accounts.find((a) => a.id === accountId) : undefined;
+  const viewedUpstream = viewedAccount && !upstreamOK(viewedAccount.upstream) ? viewedAccount.upstream : undefined;
 
   async function retryFirstSync() {
     if (retryingSync) return;
@@ -1688,7 +1693,9 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 highlightSelected={!compact}
                 loading={loading}
                 emptyState={
-                  syncStatus && viewPending && !searching && (firstSyncRunning || syncStatus.error) ? (
+                  viewedAccount && viewedUpstream && !searching ? (
+                    <UpstreamState name={viewedAccount.name} info={viewedUpstream} />
+                  ) : syncStatus && viewPending && !searching && (firstSyncRunning || syncStatus.error) ? (
                     <MailSyncState status={syncStatus} retrying={retryingSync} onRetry={retryFirstSync} />
                   ) : undefined
                 }

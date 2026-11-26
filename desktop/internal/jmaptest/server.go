@@ -37,6 +37,8 @@ const (
 	Sieve            = "urn:ietf:params:jmap:sieve"
 	VacationResponse = "urn:ietf:params:jmap:vacationresponse"
 	Principals       = "urn:ietf:params:jmap:principals"
+	// Upstream 是 czlmail 网关的账号级能力, 对象由测试用 Account.SetCapability 给出。
+	Upstream = "https://czl.net/jmap/upstream"
 )
 
 // DefaultCaps 是 AddAccount 不传能力时的默认值: 收发邮件。
@@ -206,6 +208,10 @@ type User struct {
 	password string
 	rejected bool
 	grants   []grant
+	// primary 是会话 primaryAccounts 指向的账号, 为空时取最后一个个人账号 (见 SetPrimary)。
+	primary *Account
+	// noUpstream 为真时会话资源回网关的 403 no-upstream (见 SetNoUpstream)。
+	noUpstream bool
 }
 
 type grant struct {
@@ -241,6 +247,32 @@ func (u *User) Grant(acc *Account, personal bool) *User {
 	u.grants = append(u.grants, grant{acc: acc, personal: personal})
 	s.sessionGen++
 	return u
+}
+
+// SetPrimary 让会话 primaryAccounts 的各能力都指向这个账号 (czlmail 网关里用户选的默认邮箱)。
+// 不调用时指向最后授予的个人账号。
+func (u *User) SetPrimary(acc *Account) {
+	s := u.s
+	s.mu.Lock()
+	u.primary = acc
+	s.sessionGen++
+	s.mu.Unlock()
+}
+
+// SetNoUpstream 为真时会话资源回 403 application/problem+json (type https://czl.net/jmap/gateway/no-upstream),
+// 模拟 czlmail 网关里这个用户还没有添加任何邮箱。
+func (u *User) SetNoUpstream(on bool) {
+	s := u.s
+	s.mu.Lock()
+	u.noUpstream = on
+	s.mu.Unlock()
+}
+
+// DropStreams 断开全部推送连接 (网关在上游状态变化时这样做, 让客户端重连并重读会话)。
+func (s *Server) DropStreams() {
+	s.mu.Lock()
+	s.dropStreamsLocked(func(*stream) bool { return true })
+	s.mu.Unlock()
 }
 
 // Revoke 收回用户对账号的访问 (撤销共享)。
@@ -336,8 +368,18 @@ func (s *Server) authenticate(r *http.Request) *User {
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request, u *User) {
 	s.mu.Lock()
+	noUpstream := u.noUpstream
 	body := s.sessionLocked(u)
 	s.mu.Unlock()
+	if noUpstream {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"type": "https://czl.net/jmap/gateway/no-upstream", "status": 403, "code": 40301, "msg": "no_upstream",
+			"detail": "No mailbox is connected to this gateway user yet.", "adminUrl": s.srv.URL + "/admin/",
+		})
+		return
+	}
 	writeJSON(w, body)
 }
 
@@ -357,6 +399,9 @@ func (s *Server) sessionLocked(u *User) map[string]any {
 		accCaps := map[string]any{}
 		for _, c := range g.acc.caps {
 			accCaps[c] = accountCapability(c)
+			if obj, ok := g.acc.capObjs[c]; ok {
+				accCaps[c] = obj
+			}
 			if _, ok := caps[c]; !ok {
 				caps[c] = map[string]any{}
 			}
@@ -368,6 +413,13 @@ func (s *Server) sessionLocked(u *User) map[string]any {
 		if g.personal {
 			for _, c := range g.acc.caps {
 				primary[c] = g.acc.id
+			}
+		}
+	}
+	if u.primary != nil {
+		if _, ok := u.sees(u.primary); ok {
+			for _, c := range u.primary.caps {
+				primary[c] = u.primary.id
 			}
 		}
 	}
@@ -438,6 +490,17 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request, u *User)
 	}
 	s.mu.Lock()
 	acc := s.accountForLocked(u, parts[0])
+	if acc != nil && acc.unavailable != nil {
+		up := acc.unavailable
+		s.mu.Unlock()
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"type": "https://czl.net/jmap/gateway/upstream-unavailable", "status": 503, "code": 50320,
+			"msg": "upstream_unavailable", "czlUpstream": up,
+		})
+		return
+	}
 	var data []byte
 	ok := false
 	if acc != nil {

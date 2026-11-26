@@ -16,6 +16,7 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
+	"github.com/woodchen-ink/czlmail/desktop/internal/upstream"
 )
 
 // 登录 (sign-in) 是一组服务器地址 + 凭据, 对应一个 JMAP 会话; 一个会话里可以有多个账号 (个人 + 共享)。
@@ -149,9 +150,12 @@ func (r accountRoute) do(req *jmap.Request) (*jmap.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("2133 jmap request: %w", err)
 	}
+	if r.sync != nil {
+		r.sync.NoteSessionState(resp.SessionState)
+	}
 	for _, inv := range resp.Responses {
-		if me, ok := inv.Args.(*jmap.MethodError); ok {
-			return nil, fmt.Errorf("2134 %s failed: %s", inv.Name, me.Type)
+		if me, _, ok := upstream.MethodErrorOf(inv.Args); ok {
+			return nil, fmt.Errorf("2134 %s failed: %w", inv.Name, me)
 		}
 	}
 	return resp, nil

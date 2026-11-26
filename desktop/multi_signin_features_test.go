@@ -54,7 +54,7 @@ func multiSignInApp(t *testing.T) (*App, *store.Store) {
 	return a, st
 }
 
-// 发件人下拉: 写信账号在前, 再是其它登录的个人账号; 同一登录的共享邮箱不列。
+// 发件人下拉: 写信账号在前, 再是各登录能发信的个人账号; 共享邮箱不列。
 func TestComposeIdentityAccounts(t *testing.T) {
 	a, _ := multiSignInApp(t)
 	accounts, err := a.ListAccounts()
@@ -73,9 +73,9 @@ func TestComposeIdentityAccounts(t *testing.T) {
 		want    []string
 	}{
 		{"c", []string{"c", "s2~c", "s3~x"}},
-		// 在共享邮箱里写信 (回复): 共享邮箱自己的身份在前, 主登录的个人账号不另列 (同一登录, 与原来一致)。
-		{"d", []string{"d", "s2~c", "s3~x"}},
-		{"s2~e", []string{"s2~e", "c", "s3~x"}},
+		// 在共享邮箱里写信 (回复): 共享邮箱自己的身份在前, 再是各登录的个人账号 (含同一登录的, #46)。
+		{"d", []string{"d", "c", "s2~c", "s3~x"}},
+		{"s2~e", []string{"s2~e", "c", "s2~c", "s3~x"}},
 		{"s2~c", []string{"s2~c", "c", "s3~x"}},
 	} {
 		if got := ids(composeIdentityAccounts(accounts, tc.compose)); !slices.Equal(got, tc.want) {

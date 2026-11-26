@@ -28,9 +28,13 @@ export function withFeature<T extends Pick<store.Account, "features">>(accounts:
   return accounts.filter((a) => supports(a, feature));
 }
 
-/** 主登录的个人账号: 笔记、模板同步、信任通讯录、AI 设置同步都放在它的网盘与通讯录里。 */
+/**
+ * 主登录的个人账号: 笔记、模板同步、信任通讯录、AI 设置同步都放在它的网盘与通讯录里。
+ * 一个登录可以有多个个人账号 (czlmail 网关每个上游邮箱一个), 取会话 primaryAccounts 指向的那个, 与后端 personalAccountID 一致。
+ */
 export function primaryPersonal(accounts: store.Account[]): store.Account | undefined {
-  return accounts.find((a) => a.isPersonal && !a.signIn);
+  const own = accounts.filter((a) => a.isPersonal && !a.signIn);
+  return own.find((a) => a.primary) ?? own[0];
 }
 
 /** 设置 → 账户卡片上列出的不支持功能, 按界面上的叫法。 */

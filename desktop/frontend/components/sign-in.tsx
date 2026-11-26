@@ -11,6 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { api, errorMessage, type SessionStatus, type SignInHint } from "@/lib/api";
+import { openExternal } from "@/lib/external";
+
+/** 网关的部署说明: Gmail、Outlook 与普通 IMAP 邮箱要先部署 czlmail 网关才能用。 */
+const GATEWAY_README_URL = "https://github.com/woodchen-ink/czlmail/blob/main/gateway/README.md";
 
 interface Props {
   onSignedIn: () => void;
@@ -63,7 +67,10 @@ export function SignIn({ onSignedIn, reauth, onBack, target }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // 域名下 /.well-known/czlmail.json 声明的单点登录方式; 有它时直接给出「使用 XX 登录」。
+  // 服务器是 czlmail 网关时 hint.gateway 有值: 密码说明换成网关的应用专用密码, 并给出网关后台入口。
   const [hint, setHint] = useState<SignInHint | null>(null);
+  const gateway = hint?.gateway;
+  const oauthHint = hint && hint.clientId ? hint : null;
   const [hintBusy, setHintBusy] = useState(false);
 
   useEffect(() => {
@@ -86,12 +93,12 @@ export function SignIn({ onSignedIn, reauth, onBack, target }: Props) {
   }, [server]);
 
   async function signInWithHint() {
-    if (!hint || busy) return;
+    if (!oauthHint || busy) return;
     setHintBusy(true);
     setBusy(true);
     setError("");
     try {
-      await calls.oauth(server.trim(), hint.issuer, hint.clientId);
+      await calls.oauth(server.trim(), oauthHint.issuer, oauthHint.clientId);
       onSignedIn();
     } catch (err) {
       setError(errorMessage(err));
@@ -155,13 +162,13 @@ export function SignIn({ onSignedIn, reauth, onBack, target }: Props) {
           />
         </Field>
 
-        {hint && (
+        {oauthHint && (
           <div className="flex flex-col gap-2">
             {hintBusy ? (
               <div className="flex flex-col gap-2">
                 <div className="border-border bg-secondary flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm">
                   <Loader2 className="size-4 shrink-0 animate-spin" />
-                  <span className="flex-1">{t("请在浏览器中完成 {0} 登录", hint.name)}</span>
+                  <span className="flex-1">{t("请在浏览器中完成 {0} 登录", oauthHint.name)}</span>
                 </div>
                 <Button type="button" variant="ghost" size="sm" onClick={cancel}>
                   <X className="size-4" />
@@ -170,7 +177,7 @@ export function SignIn({ onSignedIn, reauth, onBack, target }: Props) {
             ) : (
               <Button type="button" onClick={signInWithHint} disabled={busy}>
                 <ExternalLink className="size-4" />
-                {t("使用 {0} 登录", hint.name)}</Button>
+                {t("使用 {0} 登录", oauthHint.name)}</Button>
             )}
             <p className="text-muted-foreground text-center text-xs">{t("或者使用应用专用密码登录")}</p>
           </div>
@@ -193,7 +200,16 @@ export function SignIn({ onSignedIn, reauth, onBack, target }: Props) {
             <Field
               label={t("应用专用密码")}
               htmlFor="password"
-              hint={t("在邮箱网页端的设置里创建。账号使用单点登录（SSO）时，这里不能填 SSO 的密码。")}
+              hint={
+                gateway
+                  ? t("网关后台生成的应用专用密码，不是 Gmail 等邮箱的密码。")
+                  : t("在邮箱网页端的设置里创建。账号使用单点登录（SSO）时，这里不能填 SSO 的密码。")
+              }
+              action={
+                gateway?.adminUrl ? (
+                  <LinkButton onClick={() => openExternal(gateway.adminUrl)}>{t("打开网关后台")}</LinkButton>
+                ) : undefined
+              }
             >
               <Input
                 id="password"
@@ -258,9 +274,15 @@ export function SignIn({ onSignedIn, reauth, onBack, target }: Props) {
         )}
 
         {error && (
-          <p className="text-destructive text-sm leading-relaxed" role="alert">
-            {errorMessage(error)}
-          </p>
+          <div className="flex flex-col items-start gap-1" role="alert">
+            <p className="text-destructive text-sm leading-relaxed">{errorMessage(error)}</p>
+            {/\b2061\b/.test(error) && (
+              <LinkButton onClick={() => openExternal(GATEWAY_README_URL)}>{t("查看 czlmail 网关部署说明")}</LinkButton>
+            )}
+            {/\b2066\b/.test(error) && gateway?.adminUrl && (
+              <LinkButton onClick={() => openExternal(gateway.adminUrl)}>{t("打开网关后台")}</LinkButton>
+            )}
+          </div>
         )}
       </form>
 
@@ -310,11 +332,14 @@ function Field({
   label,
   htmlFor,
   hint,
+  action,
   children,
 }: {
   label: string;
   htmlFor: string;
   hint?: string;
+  /** 跟在说明后面的一个链接 (如「打开网关后台」)。 */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   useI18n();
@@ -325,7 +350,22 @@ function Field({
       </label>
       {children}
       {hint && <p className="text-muted-foreground text-xs leading-relaxed">{hint}</p>}
+      {action}
     </div>
+  );
+}
+
+/** 表单里的文字链接: 交给系统浏览器打开外部页面。 */
+function LinkButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 self-start text-xs underline-offset-4 hover:underline"
+    >
+      <ExternalLink className="size-3" />
+      {children}
+    </button>
   );
 }
 

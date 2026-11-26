@@ -12,6 +12,7 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/capability"
 	"github.com/woodchen-ink/czlmail/desktop/internal/otp"
+	"github.com/woodchen-ink/czlmail/desktop/internal/upstream"
 )
 
 // EmailSummary 是列表视图的一行。刻意不含正文与收件人列表 ——
@@ -408,15 +409,19 @@ type Account struct {
 	IsPersonal bool   `json:"isPersonal"`
 	// SignIn 是账号所属登录的前缀 (主登录为空), 由上层按账号 id 填写, 不存库。
 	SignIn string `json:"signIn"`
+	// Primary 表示会话 primaryAccounts 的邮件账号指向它 (登录的默认邮箱)。
+	Primary bool `json:"primary"`
 	// Features 是账号所在服务器公布的功能, 取自上次连上时存下的能力 (离线时照用); 从没连上过时全部为真。
 	Features capability.Features `json:"features"`
+	// Upstream 是 czlmail 网关账号背后上游邮箱的状态, 取自同一份能力; 不是网关账号时为空。
+	Upstream *upstream.Info `json:"upstream"`
 }
 
 // Accounts 读出已缓存的账号, 个人账号排在共享账号前面。
 func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, is_personal, account_capabilities FROM accounts
-		ORDER BY is_personal DESC, name`)
+		SELECT id, name, is_personal, is_primary, account_capabilities FROM accounts
+		ORDER BY is_personal DESC, is_primary DESC, name`)
 	if err != nil {
 		return nil, wrap(CodeQuery, "query accounts", err)
 	}
@@ -425,13 +430,15 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 	var out []Account
 	for rows.Next() {
 		var a Account
-		var personal int
+		var personal, primary int
 		var caps string
-		if err := rows.Scan(&a.ID, &a.Name, &personal, &caps); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &personal, &primary, &caps); err != nil {
 			return nil, wrap(CodeQuery, "scan account", err)
 		}
 		a.IsPersonal = personal != 0
+		a.Primary = primary != 0
 		a.Features = capability.Decode(caps)
+		a.Upstream = upstream.Decode(caps)
 		out = append(out, a)
 	}
 	return out, wrap(CodeQuery, "iterate accounts", rows.Err())
@@ -447,14 +454,15 @@ func UpsertAccounts(ctx context.Context, tx *sql.Tx, accounts []Account, capsByA
 			return wrap(CodeEncode, "encode account capabilities", err)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO accounts (id, name, is_personal, account_capabilities, updated_at)
-			VALUES (?, ?, ?, ?, ?)
+			INSERT INTO accounts (id, name, is_personal, is_primary, account_capabilities, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT (id) DO UPDATE SET
 				name                 = excluded.name,
 				is_personal          = excluded.is_personal,
+				is_primary           = excluded.is_primary,
 				account_capabilities = excluded.account_capabilities,
 				updated_at           = excluded.updated_at`,
-			a.ID, a.Name, boolToInt(a.IsPersonal), caps, now,
+			a.ID, a.Name, boolToInt(a.IsPersonal), boolToInt(a.Primary), caps, now,
 		); err != nil {
 			return wrap(CodeQuery, "upsert account", err)
 		}

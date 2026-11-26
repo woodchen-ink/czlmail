@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 
 	"git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/core"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/upstream"
 )
 
 // 上传与下载不走 go-jmap 的 UploadWithContext / DownloadWithContext, 原因有二:
@@ -94,8 +97,19 @@ func uriTemplateEscape(s string) string {
 
 // blobHTTPError 与 go-jmap 一样解读失败的响应: JSON 时按 RFC 7807 问题详情,
 // 否则只报状态码。错误文本保持原样, 日志与界面上的提示不受影响。
+// czlmail 网关在上游邮箱不可用时回 503 application/problem+json 并附 czlUpstream, 这时报网关的上游码。
 func blobHTTPError(resp *http.Response) error {
-	if resp.Header.Get("Content-Type") != "application/json" {
+	ct, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if ct == "application/problem+json" {
+		var p struct {
+			Upstream *upstream.Error `json:"czlUpstream"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&p) == nil && p.Upstream != nil {
+			return fmt.Errorf("HTTP %d: %w", resp.StatusCode, p.Upstream)
+		}
+		return fmt.Errorf("HTTP %d %s", resp.StatusCode, resp.Status)
+	}
+	if ct != "application/json" {
 		return fmt.Errorf("HTTP %d %s", resp.StatusCode, resp.Status)
 	}
 	reqErr := &jmap.RequestError{}
