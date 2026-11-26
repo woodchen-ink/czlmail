@@ -78,6 +78,7 @@ import {
   type EventOccurrence,
   type PIMChange,
 } from "@/lib/api";
+import { supports, withFeature } from "@/lib/account-features";
 import { send } from "@/lib/app-bus";
 import { hm, shortDate } from "@/lib/date";
 import { localUrl } from "@/lib/native-bridge";
@@ -123,8 +124,11 @@ export function ContactsShell({ active }: { active: boolean }) {
   const loadBooks = useCallback(async () => {
     try {
       const [accs, list, everyone] = await Promise.all([api.listAccounts(), api.listAddressBooks(), api.listContacts("", "", "")]);
-      setAccounts(accs ?? []);
-      setBooks(list ?? []);
+      // 只列服务器公布了通讯录的账号: 新建通讯录、导入的账号选择都跟着它。
+      const capable = withFeature(accs ?? [], "contacts");
+      const ids = new Set(capable.map((a) => a.id));
+      setAccounts(capable);
+      setBooks((list ?? []).filter((b) => ids.has(b.accountId)));
       setAll(everyone ?? []);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -210,6 +214,9 @@ export function ContactsShell({ active }: { active: boolean }) {
 
   const sections = useMemo(() => groupByInitial(contacts), [contacts]);
   const writableBooks = books.filter((b) => (!b.myRights || b.myRights.mayWrite) && b.name !== TRUSTED);
+  // 导入 .vcf 要服务器解析 (contacts:parse)。
+  const canImport = (b: AddressBook) => supports(accounts.find((a) => a.id === b.accountId), "contactParse");
+  const importableBooks = writableBooks.filter(canImport);
 
   /** 新建时的默认通讯录: 当前选中的通讯录, 否则个人账号的默认通讯录。 */
   function defaultBook(): AddressBook | undefined {
@@ -307,20 +314,24 @@ export function ContactsShell({ active }: { active: boolean }) {
             >
               <BookPlus className="size-4" />
               {t("新建通讯录")}</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <Upload className="size-4" />
-                {t("导入联系人（.vcf）")}</DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-64">
-                {writableBooks.map((b) => (
-                  <DropdownMenuItem key={`${b.accountId}/${b.id}`} onSelect={() => importTo(b)}>
-                    <span className="min-w-0 flex-1 truncate">{bookLabel(b)}</span>
-                    <span className="text-muted-foreground max-w-24 shrink-0 truncate text-xs">{accountName(b.accountId)}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+            {importableBooks.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Upload className="size-4" />
+                    {t("导入联系人（.vcf）")}</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-64">
+                    {importableBooks.map((b) => (
+                      <DropdownMenuItem key={`${b.accountId}/${b.id}`} onSelect={() => importTo(b)}>
+                        <span className="min-w-0 flex-1 truncate">{bookLabel(b)}</span>
+                        <span className="text-muted-foreground max-w-24 shrink-0 truncate text-xs">{accountName(b.accountId)}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -368,9 +379,11 @@ export function ContactsShell({ active }: { active: boolean }) {
                     <div>{item}</div>
                   </ContextMenuTrigger>
                   <ContextMenuContent className="w-48">
-                    <ContextMenuItem onSelect={() => importTo(b)}>
-                      <Upload />
-                      {t("导入联系人")}</ContextMenuItem>
+                    {canImport(b) && (
+                      <ContextMenuItem onSelect={() => importTo(b)}>
+                        <Upload />
+                        {t("导入联系人")}</ContextMenuItem>
+                    )}
                     <ContextMenuItem onSelect={() => setBookDialog({ accountId: b.accountId, book: b })}>
                       <Pencil />
                       {t("重命名")}</ContextMenuItem>

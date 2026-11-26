@@ -10,6 +10,7 @@ import (
 
 	"git.sr.ht/~rockorager/go-jmap"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/capability"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 	"github.com/woodchen-ink/czlmail/desktop/internal/pim"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
@@ -61,6 +62,28 @@ func (s *Syncer) accountSupports(accountID string, uri jmap.URI) bool {
 	}
 	_, ok = acc.RawCapabilities[uri]
 	return ok
+}
+
+// Lacks 报告账号所在的服务器明确没有公布某能力: 会话已取得、账号在会话里, 而能力表里没有它。
+// 会话还没恢复 (离线、启动中) 时为假, 照常发请求, 失败按离线处理, 不当作不支持。
+func (s *Syncer) Lacks(accountID string, uri jmap.URI) bool {
+	if s.client.Session == nil {
+		return false
+	}
+	acc, ok := s.client.Session.Accounts[s.server(accountID)]
+	if !ok {
+		return false
+	}
+	_, ok = acc.RawCapabilities[uri]
+	return !ok
+}
+
+// Require 在账号的服务器明确不支持某能力时返回 capability.UnsupportedError (2280), 供写操作前检查。
+func (s *Syncer) Require(accountID string, uri jmap.URI) error {
+	if s.Lacks(accountID, uri) {
+		return capability.Unsupported(capability.FeatureOf(uri))
+	}
+	return nil
 }
 
 // SupportsFiles 报告账号所在的服务器是否提供文件存储 (FileNode)。

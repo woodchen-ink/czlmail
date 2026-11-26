@@ -1,8 +1,11 @@
 package syncer
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"time"
 
@@ -29,11 +32,14 @@ type AccountDiff struct {
 	Removed []string
 	// Renamed 是名称或个人/共享属性变了的账号, 只需要更新缓存里的账号行。
 	Renamed []string
+	// Capabilities 是公布的能力变了的账号 (服务器升级、管理员开关了日历等): 更新账号行让界面重新按能力显示功能,
+	// 再同步一次, 新支持的日历/通讯录/网盘随即引导。
+	Capabilities []string
 }
 
 // Empty 报告账号列表是否没有变化。
 func (d AccountDiff) Empty() bool {
-	return len(d.Added) == 0 && len(d.Removed) == 0 && len(d.Renamed) == 0
+	return len(d.Added) == 0 && len(d.Removed) == 0 && len(d.Renamed) == 0 && len(d.Capabilities) == 0
 }
 
 // RequestSessionRefresh 请求尽快重读一次会话, 不阻塞; 已有待处理的请求时合并。
@@ -96,17 +102,17 @@ func (s *Syncer) refreshSession(ctx context.Context) error {
 	s.client.Unlock()
 
 	diff := diffAccounts(before.Accounts, fresh.Accounts)
-	diff.Added, diff.Renamed = s.locals(diff.Added), s.locals(diff.Renamed)
+	diff.Added, diff.Renamed, diff.Capabilities = s.locals(diff.Added), s.locals(diff.Renamed), s.locals(diff.Capabilities)
 	// 会话里少了的账号先不删缓存, 交给 pruneAccounts 连续两次确认; diff.Removed 只放确认删掉的。
 	diff.Removed = s.pruneAccounts(ctx)
 	if diff.Empty() {
 		return nil
 	}
-	s.log.Info("session accounts changed", "added", diff.Added, "removed", diff.Removed, "renamed", diff.Renamed)
+	s.log.Info("session accounts changed", "added", diff.Added, "removed", diff.Removed, "renamed", diff.Renamed, "capabilities", diff.Capabilities)
 	if s.OnAccountsChanged != nil {
 		s.OnAccountsChanged(diff)
 	}
-	for _, id := range diff.Added {
+	for _, id := range slices.Concat(diff.Added, diff.Capabilities) {
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -221,6 +227,9 @@ func diffAccounts(before, after map[jmap.ID]jmap.Account) AccountDiff {
 		case old.Name != acc.Name || old.IsPersonal != acc.IsPersonal:
 			d.Renamed = append(d.Renamed, string(id))
 		}
+		if ok && !sameCapabilities(old.RawCapabilities, acc.RawCapabilities) {
+			d.Capabilities = append(d.Capabilities, string(id))
+		}
 	}
 	for id := range before {
 		if _, ok := after[id]; !ok {
@@ -231,7 +240,30 @@ func diffAccounts(before, after map[jmap.ID]jmap.Account) AccountDiff {
 	slices.Sort(d.Added)
 	slices.Sort(d.Removed)
 	slices.Sort(d.Renamed)
+	slices.Sort(d.Capabilities)
 	return d
+}
+
+// sameCapabilities 比较两份账号能力表: 能力集合与各能力对象 (定时发送上限等参数) 都相同。
+// 按 JSON 值比较而不是按字节: 服务器每次输出的键顺序不保证一致, 按字节比会让每次重读会话都当作变化、多跑一轮同步。
+func sameCapabilities(a, b map[jmap.URI]json.RawMessage) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for uri, x := range a {
+		y, ok := b[uri]
+		if !ok {
+			return false
+		}
+		if bytes.Equal(x, y) {
+			continue
+		}
+		var vx, vy any
+		if json.Unmarshal(x, &vx) != nil || json.Unmarshal(y, &vy) != nil || !reflect.DeepEqual(vx, vy) {
+			return false
+		}
+	}
+	return true
 }
 
 func hasPersonal(accounts map[jmap.ID]jmap.Account) bool {

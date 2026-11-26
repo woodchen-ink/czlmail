@@ -36,6 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { missingFeatures } from "@/lib/account-features";
 import { cn } from "@/lib/utils";
 import {
   Events,
@@ -98,6 +99,13 @@ export function SignInsCard({
   }, [active, load]);
 
   const names = new Map(accounts.map((a) => [a.id, a.name]));
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  /** 服务器不支持的功能, 按这个登录的个人账号算 (共享账号的能力可能被角色另外收窄)。 */
+  const missing = (s: SignInInfo) => {
+    const own = s.accounts.map((id) => byId.get(id)).filter((a) => a !== undefined);
+    const main = own.find((a) => a.isPersonal) ?? own[0];
+    return main ? missingFeatures(main) : [];
+  };
   const others = list.filter((s) => !s.primary).length;
 
   async function retry(s: SignInInfo) {
@@ -233,6 +241,11 @@ export function SignInsCard({
             {s.signInRequired && (
               <p className="text-destructive text-xs leading-relaxed">
                 {t("登录已失效，同步已暂停：{0}", errorMessage(s.signInReason))}
+              </p>
+            )}
+            {missing(s).length > 0 && (
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {t("服务器不支持：{0}", missing(s).join(", "))}
               </p>
             )}
             {s.accounts.length > 1 && (

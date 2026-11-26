@@ -87,7 +87,7 @@ const valuesOf = (v: unknown): string[] => (Array.isArray(v) ? v : typeof v === 
 /** 过滤规则: 规则编辑器生成 Sieve 脚本, 元数据格式与 Bulwark 相同, 两边可以互相编辑。 */
 export function FiltersSection({ active }: { active: boolean }) {
   useI18n();
-  const { accounts, accountId, setAccountId } = useAccounts(active);
+  const { accounts, accountId, setAccountId } = useAccounts(active, "sieve");
   const [rules, setRules] = useState<sieve.Rule[] | null>(null);
   const [managed, setManaged] = useState(true);
   const [script, setScript] = useState("");

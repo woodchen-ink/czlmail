@@ -10,6 +10,7 @@ import (
 	"git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/mail/vacationresponse"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/capability"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 	"github.com/woodchen-ink/czlmail/desktop/internal/sieve"
 )
@@ -37,6 +38,9 @@ type sieveScript struct {
 func (a *App) activeScript(accountID string) (*sieveScript, string, error) {
 	rt, err := a.route(accountID)
 	if err != nil {
+		return nil, "", err
+	}
+	if err := rt.sync.Require(accountID, jmapx.SieveURI); err != nil {
 		return nil, "", err
 	}
 	req := &jmap.Request{Context: a.ctx}
@@ -109,6 +113,9 @@ func (a *App) SaveSieveScript(accountID, script string) error {
 	if err != nil {
 		return err
 	}
+	if err := rt.sync.Require(accountID, jmapx.SieveURI); err != nil {
+		return err
+	}
 	blobID, _, _, err := rt.sync.UploadBlobType(a.ctx, accountID, "application/sieve", bytes.NewReader([]byte(script)))
 	if err != nil {
 		return err
@@ -165,6 +172,9 @@ func (a *App) GetVacation(accountID string) (Vacation, error) {
 	if err != nil {
 		return Vacation{}, err
 	}
+	if err := rt.sync.Require(accountID, capability.VacationURI); err != nil {
+		return Vacation{}, err
+	}
 	req := &jmap.Request{Context: a.ctx}
 	req.Invoke(&vacationresponse.Get{Account: jmap.ID(rt.serverID)})
 	resp, err := rt.do(req)
@@ -197,6 +207,9 @@ func (a *App) SaveVacation(accountID string, v Vacation) error {
 	}
 	rt, err := a.route(accountID)
 	if err != nil {
+		return err
+	}
+	if err := rt.sync.Require(accountID, capability.VacationURI); err != nil {
 		return err
 	}
 	req := &jmap.Request{Context: a.ctx}

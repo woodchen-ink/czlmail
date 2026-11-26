@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"git.sr.ht/~rockorager/go-jmap"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/capability"
 	"github.com/woodchen-ink/czlmail/desktop/internal/otp"
 )
 
@@ -405,12 +408,14 @@ type Account struct {
 	IsPersonal bool   `json:"isPersonal"`
 	// SignIn 是账号所属登录的前缀 (主登录为空), 由上层按账号 id 填写, 不存库。
 	SignIn string `json:"signIn"`
+	// Features 是账号所在服务器公布的功能, 取自上次连上时存下的能力 (离线时照用); 从没连上过时全部为真。
+	Features capability.Features `json:"features"`
 }
 
 // Accounts 读出已缓存的账号, 个人账号排在共享账号前面。
 func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, is_personal FROM accounts
+		SELECT id, name, is_personal, account_capabilities FROM accounts
 		ORDER BY is_personal DESC, name`)
 	if err != nil {
 		return nil, wrap(CodeQuery, "query accounts", err)
@@ -421,20 +426,23 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 	for rows.Next() {
 		var a Account
 		var personal int
-		if err := rows.Scan(&a.ID, &a.Name, &personal); err != nil {
+		var caps string
+		if err := rows.Scan(&a.ID, &a.Name, &personal, &caps); err != nil {
 			return nil, wrap(CodeQuery, "scan account", err)
 		}
 		a.IsPersonal = personal != 0
+		a.Features = capability.Decode(caps)
 		out = append(out, a)
 	}
 	return out, wrap(CodeQuery, "iterate accounts", rows.Err())
 }
 
-// UpsertAccounts 写入会话里发现的账号。
-func UpsertAccounts(ctx context.Context, tx *sql.Tx, accounts []Account, capsByAccount map[string][]string) error {
+// UpsertAccounts 写入会话里发现的账号。capsByAccount 是各账号的原始能力表 (account_capabilities 列存
+// URI → 能力对象; 早期版本只存 URI 数组, 读取两种都认, 见 capability.Decode)。
+func UpsertAccounts(ctx context.Context, tx *sql.Tx, accounts []Account, capsByAccount map[string]map[jmap.URI]json.RawMessage) error {
 	now := time.Now().Unix()
 	for _, a := range accounts {
-		caps, err := json.Marshal(capsByAccount[a.ID])
+		caps, err := capability.Encode(capsByAccount[a.ID])
 		if err != nil {
 			return wrap(CodeEncode, "encode account capabilities", err)
 		}
@@ -446,7 +454,7 @@ func UpsertAccounts(ctx context.Context, tx *sql.Tx, accounts []Account, capsByA
 				is_personal          = excluded.is_personal,
 				account_capabilities = excluded.account_capabilities,
 				updated_at           = excluded.updated_at`,
-			a.ID, a.Name, boolToInt(a.IsPersonal), string(caps), now,
+			a.ID, a.Name, boolToInt(a.IsPersonal), caps, now,
 		); err != nil {
 			return wrap(CodeQuery, "upsert account", err)
 		}

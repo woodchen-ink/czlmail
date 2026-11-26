@@ -286,6 +286,9 @@ func (a *App) mcpCalendar(accountID, calendarID string) (string, string, error) 
 	if err != nil {
 		return "", "", err
 	}
+	if err := a.requireCalendars(acc); err != nil {
+		return "", "", err
+	}
 	cals, err := a.ListCalendars()
 	if err != nil {
 		return "", "", err

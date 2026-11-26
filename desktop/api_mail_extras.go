@@ -180,6 +180,10 @@ func (a *App) parseInvite(accountID, emailID string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 服务器没有日历时不解析: 邀请附件照常可以下载打开, 只是没有接受/拒绝的横幅。
+	if rt.sync.Lacks(accountID, jmapx.CalendarsURI) || rt.sync.Lacks(accountID, jmapx.CalendarsParseURI) {
+		return nil, nil
+	}
 	req := &jmap.Request{Context: a.ctx}
 	req.Invoke(&jmapx.Call{Method: jmapx.CalendarEvent + "/parse", Args: map[string]any{
 		"accountId": rt.serverID, "blobIds": []string{blobID},

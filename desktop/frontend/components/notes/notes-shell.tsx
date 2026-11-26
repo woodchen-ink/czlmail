@@ -19,6 +19,7 @@ import { NoteTree } from "@/components/notes/note-tree";
 import { NoteAttachmentPane, type NoteAttachmentPreview } from "@/components/notes/note-attachment-pane";
 import { NoteDiffDialog } from "@/components/notes/note-diff-dialog";
 import { NoteProblems } from "@/components/notes/note-problems";
+import { primaryPersonal, usePrimarySupports } from "@/lib/account-features";
 import { api, errorMessage, onEvent } from "@/lib/api";
 import { onFileDrop } from "@/lib/file-drop";
 import { noteApi, noteEvents, fileBase64, localDay, takePendingNote, type NoteEntry, type NoteVault, type NoteDiff } from "@/lib/notes/api";
@@ -46,6 +47,8 @@ export function NotesShell({ active }: { active: boolean }) {
   const { syncing, sync } = useNoteSync(doc.flush);
   const [vaults, setVaults] = useState<NoteVault[]>([]);
   const [vaultId, setVaultId] = useState("");
+  // 笔记放在主登录个人账号的网盘里; 那台服务器没有文件存储时不提供「开始使用」。
+  const noteStorage = usePrimarySupports("files");
   const [parent, setParent] = useState("");
   const [selected, setSelected] = useState<NoteEntry | null>(null);
   const [tick, setTick] = useState(0);
@@ -355,7 +358,9 @@ export function NotesShell({ active }: { active: boolean }) {
 
   const main = <>
     <section className="flex h-full min-w-0 flex-col">
-      {!vaultId ? <div className="m-auto flex max-w-md flex-col gap-4 p-8"><h2 className="text-xl font-semibold">{t("笔记")}</h2><p className="text-muted-foreground text-sm">{t("笔记保存在个人账号的 Notes 目录中。")}</p><Button disabled={busy} onClick={() => void run(async () => { const accounts = await api.listAccounts(); const account = accounts.find((item) => item.isPersonal); if (!account) return; const v = await noteApi.bind(account.id, ""); setVaults([v]); setVaultId(v.id); void sync(); })}>{t("开始使用笔记")}</Button></div> : <>
+      {!vaultId ? <div className="m-auto flex max-w-md flex-col gap-4 p-8"><h2 className="text-xl font-semibold">{t("笔记")}</h2>{noteStorage
+        ? <><p className="text-muted-foreground text-sm">{t("笔记保存在个人账号的 Notes 目录中。")}</p><Button disabled={busy} onClick={() => void run(async () => { const accounts = await api.listAccounts(); const account = primaryPersonal(accounts ?? []); if (!account) return; const v = await noteApi.bind(account.id, ""); setVaults([v]); setVaultId(v.id); void sync(); })}>{t("开始使用笔记")}</Button></>
+        : <p className="text-muted-foreground text-sm">{t("笔记保存在主登录个人账号的网盘里，主登录的服务器没有文件存储，暂时无法使用笔记。")}</p>}</div> : <>
         {attachmentPreview
           ? <header className="border-border flex min-h-12 items-center gap-3 border-b px-4"><span className="min-w-0 flex-1 truncate text-sm">{attachmentPreview.name}</span><Button variant="ghost" size="sm" onClick={closePreview}>{doc.note ? t("返回笔记") : t("关闭")}</Button></header>
           : doc.note && <NoteHeader note={doc.note} dirty={doc.dirty} failed={!!doc.error} mode={mode} busy={busy} focusTitle={created === doc.note.id} onMode={setMode}

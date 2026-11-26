@@ -17,6 +17,9 @@ func (s *Syncer) SetPIM(
 	ctx context.Context, accountID, typeName string,
 	create map[string]any, update map[string]map[string]any, destroy []string, extra map[string]any,
 ) (map[string]string, error) {
+	if err := s.Require(accountID, jmapx.URIFor(typeName)); err != nil {
+		return nil, err
+	}
 	send := func(create map[string]any, update map[string]map[string]any) (*jmapx.SetResponse, error) {
 		req := &jmap.Request{Context: ctx}
 		req.Invoke(jmapx.Set(typeName, s.sid(accountID), create, update, destroy, extra))

@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { api, errorMessage, type EmailDetail, type Invite, type Unsubscribe } from "@/lib/api";
+import { supports, useAccounts } from "@/lib/account-features";
 import { send } from "@/lib/app-bus";
 import { parseLocalDateTime, shortDate, hm } from "@/lib/date";
 
@@ -63,11 +64,14 @@ export function EmailBanners({
 }) {
   useI18n();
   const fromSelf = (email.from ?? []).some((a) => ownAddresses.has((a.email || "").toLowerCase()));
+  // 回执是一封邮件: 服务器不能发信的账号不提示。
+  const accounts = useAccounts();
+  const canSend = supports(accounts?.find((a) => a.id === accountId), "submission");
 
   return (
     <>
       <InviteBanner accountId={accountId} email={email} />
-      {info?.receiptTo && !email.mdnSent && !email.isDraft && !fromSelf && (
+      {info?.receiptTo && !email.mdnSent && !email.isDraft && !fromSelf && canSend && (
         <ReceiptBanner accountId={accountId} email={email} to={info.receiptTo} />
       )}
     </>

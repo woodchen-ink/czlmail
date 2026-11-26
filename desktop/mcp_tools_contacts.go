@@ -86,6 +86,9 @@ func (a *App) addContactFileTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{Name: "list_files", Description: "列出网盘目录内容, 或按文件名搜索整个网盘。", Annotations: readOnlyTool()},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in filesIn) (*mcp.CallToolResult, any, error) {
 			acc, err := a.mcpAccount(in.AccountID)
+			if err == nil {
+				err = a.requireFiles(acc)
+			}
 			if err != nil {
 				return nil, nil, err
 			}
@@ -123,6 +126,9 @@ func (a *App) addContactFileTools(server *mcp.Server) {
 		Annotations: readOnlyTool(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in readFileIn) (*mcp.CallToolResult, any, error) {
 		acc, err := a.mcpAccount(in.AccountID)
+		if err == nil {
+			err = a.requireFiles(acc)
+		}
 		if err != nil {
 			return nil, nil, err
 		}

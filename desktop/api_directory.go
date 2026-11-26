@@ -59,6 +59,10 @@ func (a *App) directory() []store.Recipient {
 	if err != nil || rt.client.Session == nil {
 		return nil
 	}
+	// 服务器没有成员目录 (Principals) 时不查: 否则每敲一个字都发一次注定失败的请求。
+	if rt.sync.Lacks(accountID, jmapx.PrincipalsURI) {
+		return nil
+	}
 	key := rt.client.SessionEndpoint + " " + rt.serverID
 	if directoryCache.key == key && directoryCache.list != nil && time.Since(directoryCache.at) < directoryTTL {
 		return directoryCache.list

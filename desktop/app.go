@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -404,7 +405,8 @@ func (a *App) classifyAuthFailure(cfg config.Config, httpClient *http.Client, ca
 // 缓存里存本机账号 id (带这个登录的前缀)。
 func (a *App) persistAccounts(ctx context.Context, si *signIn, client *jmap.Client, st *store.Store) error {
 	accounts := make([]store.Account, 0, len(client.Session.Accounts))
-	caps := make(map[string][]string, len(client.Session.Accounts))
+	// 能力原样存下 (含定时发送上限这类参数): 离线或会话还没恢复时界面按上次已知的能力显示功能。
+	caps := make(map[string]map[jmap.URI]json.RawMessage, len(client.Session.Accounts))
 
 	for id, acc := range client.Session.Accounts {
 		local := accountid.Join(si.id, string(id))
@@ -413,11 +415,7 @@ func (a *App) persistAccounts(ctx context.Context, si *signIn, client *jmap.Clie
 			Name:       acc.Name,
 			IsPersonal: acc.IsPersonal,
 		})
-		list := make([]string, 0, len(acc.RawCapabilities))
-		for uri := range acc.RawCapabilities {
-			list = append(list, string(uri))
-		}
-		caps[local] = list
+		caps[local] = acc.RawCapabilities
 	}
 
 	return st.WithTx(ctx, func(tx *sql.Tx) error {
