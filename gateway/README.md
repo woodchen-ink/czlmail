@@ -147,16 +147,47 @@ GATEWAY_MASTER_KEY=$(openssl rand -base64 32) GATEWAY_BASE_URL=http://localhost:
 ```
 
 - Separate Go module (`github.com/woodchen-ink/czlmail/gateway`); it does not import `desktop/`.
-- Top-level packages: `config` (startup env), `database` (SQLite, pure Go), `model`, `service` (business logic and data access), `handler`, `router`, `middleware`, `initapp`, `cron`, `pkg` (`pkg/crypto` for sealed secrets and argon2id password hashes).
+- Top-level packages: `config` (startup env), `database` (SQLite, pure Go), `model`, `service` (business logic and data access), `handler`, `router`, `middleware`, `initapp`, `cron`, `pkg` (`pkg/crypto` for sealed secrets and argon2id password hashes, `pkg/jmapserver` for the JMAP Core engine; `pkg/*test` are test helpers, see Testing).
 - Settings are registered once in `service/settings.go` (key, type, default) and read through `service.Settings`; never query the `settings` table directly.
 - JMAP endpoints authenticate with `service.BasicAuthenticator.Authenticate` (`ErrUnauthenticated` → 401, `*service.RateLimitError` → 429) and subscribe to `service.Invalidations` to close the EventSource connections of users whose credentials were revoked.
-
-- Top-level packages: `config` (startup env), `database` (SQLite, pure Go), `model`, `service` (business logic and data access), `handler`, `router`, `middleware`, `initapp`, `cron`, `pkg` (`pkg/crypto` for sealed secrets, `pkg/jmapserver` for the JMAP Core engine).
 - JMAP tests drive the server with go-jmap, the client library czlmail uses.
 - `initapp.NewApp(cfg, db, log, version)` assembles the whole gateway (services, router, background jobs); `Serve` and the end-to-end tests both use it, so tests run the real routes.
 - A table column holding a sealed secret must call `service.RegisterSealedColumn` so `rotate-key` re-encrypts it. Seal with the row's public id in the AAD, never the auto-increment key.
 - Errors to clients are a numeric code plus an English identifier (`{"code":40400,"msg":"not_found"}`); upstream server replies go to logs and the admin only.
 - Logs are JSON lines with `trace_id`; every response carries `X-Request-Id`.
+
+### Testing
+
+`go test ./...` passes without Docker: tests that need a real server skip. To run them, start the test servers and point the tests at them:
+
+```sh
+cd gateway
+docker compose -f docker-compose.test.yml up -d
+export GATEWAY_TEST_IMAP_ADDR=127.0.0.1:1143 GATEWAY_TEST_IMAP_BASIC_ADDR=127.0.0.1:1144 \
+       GATEWAY_TEST_SMTP_ADDR=127.0.0.1:1025 GATEWAY_TEST_MAILPIT_URL=http://127.0.0.1:8025
+go test ./...
+docker compose -f docker-compose.test.yml down -v
+```
+
+PowerShell: set the same variables with `$env:GATEWAY_TEST_IMAP_ADDR = "127.0.0.1:1143"` and so on. CI (`.github/workflows/gateway.yml`) starts the same compose file and runs `go test -race ./...` with these variables.
+
+| Server | Port | What it is |
+| --- | --- | --- |
+| `dovecot` | 1143 | Dovecot 2.4 with CONDSTORE, QRESYNC, NOTIFY, IDLE, MOVE, UIDPLUS, SPECIAL-USE, LIST-STATUS |
+| `dovecot-basic` | 1144 | The same without CONDSTORE / QRESYNC / NOTIFY advertised, for the STATUS polling tier. Dovecot still honours CONDSTORE if asked, so choose the tier by advertised capabilities |
+| `mailpit` | 1025, 8025 | SMTP sink accepting any credentials without TLS; API to read what was sent |
+
+Test-only settings: plaintext auth, users `alice` / `alice-pass` and `bob` / `bob-pass`, and any other user name with password `test` gets its own empty mailbox (INBOX, Drafts, Sent, Trash, Junk, Archive). Nothing persists across `down`.
+
+Dovecot has no OBJECTID (RFC 8474); it offers `X-GUID` instead. OBJECTID is exercised with the fake server below (`Options.ObjectID`).
+
+Test helpers in `pkg/` (imported by tests only):
+
+- `pkg/imaptest`: `Dovecot(t)` / `DovecotBasic(t)` → `NewUser(t)` (a fresh mailbox per test) → `Dial(t)` for setup: `Create`, `Delete`, `Recreate` (new UIDVALIDITY), `Append` / `AppendSample`, `AddFlags`, `RemoveFlags`, `Move`, `Expunge`, `UIDs`. `DialRaw` is a line-level client for checking exact replies and extensions.
+- `pkg/smtptest`: Mailpit lookups; send each test's mail to its own `UniqueAddress`.
+- `pkg/gmailtest`: in-memory Gmail account. The IMAP side has X-GM-MSGID / X-GM-THRID / X-GM-LABELS (read and STORE), X-GM-RAW search, XLIST and SPECIAL-USE, APPENDUID / COPYUID, CONDSTORE and IDLE, with per-folder UIDs over one label store, so the jmap-perl#125 traps are reproducible (UIDs only valid in their own folder, labels with spaces must be quoted, `\Draft` flag = `[Gmail]/Drafts`). `SetIntercept` injects command failures, `DropConnections` simulates a network cut. `NewAPI` is the Gmail REST stand-in (`users.messages.send` incl. media upload, `settings.sendAs`, `profile`); sent mail appears in `[Gmail]/Sent Mail` under the returned id.
+- `pkg/oauthtest`: OAuth provider stand-in (authorization endpoint, token endpoint with PKCE); `RevokeRefreshToken`, `FailNext("invalid_grant")`, `ExpireAccessTokens`. Its access tokens are what the Gmail fakes accept.
+- `pkg/gatewaytest`: starts the gateway in-process with `initapp.NewApp` and returns a go-jmap client. `NewUser` goes through the admin API (owner setup token, `POST /api/admin/users`, login, app password); `SessionProblem` reads the Session status (403 `no-upstream` until a mailbox is added). `AddIMAPUpstream` / `AddGmailUpstream` skip the test until #39 / #42.
 
 ### Releases
 

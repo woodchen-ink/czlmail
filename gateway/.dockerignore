@@ -9,3 +9,5 @@ web/node_modules
 web/.next
 web/out
 data/
+testdata/
+docker-compose.test.yml
