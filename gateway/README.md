@@ -29,6 +29,7 @@ Only startup settings are environment variables; everything else is configured i
 | `GATEWAY_BASE_URL` | Public origin, used in JMAP session URLs and OAuth redirect URIs. `https`, or `http://localhost`. | required |
 | `GATEWAY_LISTEN` | Listen address | `:8080` |
 | `GATEWAY_DATA_DIR` | SQLite files and temporary blobs | `/data` |
+| `GATEWAY_WEB_DIR` | The admin web build served under `/admin/` (the image sets it) | `web/out` |
 | `GATEWAY_TRUSTED_PROXIES` | Trusted reverse proxies as `Header@cidr,cidr`, e.g. `X-Real-IP@172.16.0.0/12`. Empty: use the direct peer address. | empty |
 | `TZ` | Time zone for logs and the admin | `UTC` |
 
@@ -45,14 +46,14 @@ gateway rotate-key   # re-encrypt secrets: set GATEWAY_OLD_MASTER_KEY (current) 
 There is no admin password in the environment. While the gateway has no user, it logs a one-time setup link at startup:
 
 ```json
-{"level":"WARN","msg":"no user yet: open the setup link ...","setup_url":"https://mail-gw.example.com/setup?token=…"}
+{"level":"WARN","msg":"no user yet: open the setup link ...","setup_url":"https://mail-gw.example.com/admin/setup/?token=…"}
 ```
 
 ```sh
 docker compose logs gateway | grep setup_url
 ```
 
-Open the link and choose the owner's email and password (at least 10 characters). Until the admin pages land ([#44](https://github.com/woodchen-ink/czlmail/issues/44)), do the same with the API:
+Open the link and choose the owner's email and password (at least 10 characters); you are signed in to the admin right away. Without a browser, do the same with the API:
 
 ```sh
 curl -c cookies.txt -H 'Content-Type: application/json' \
@@ -63,6 +64,22 @@ curl -c cookies.txt -H 'Content-Type: application/json' \
 The link works once and for 30 minutes; restart the gateway to get a new one. Once the owner exists, no link is printed again.
 
 Roles: the **owner** (the first user) manages everyone; **admins** manage plain users and the settings; **users** manage their own app passwords. Nobody can change their own role or disable or delete themselves, so the owner always stays. Self-service registration is off by default (`site.registration_open`); connecting to private-network hosts is off by default too (`security.allow_private_networks`). `proxy.default` and `proxy.default_password` set the SOCKS5 proxy mailboxes use unless they say otherwise (see Mailboxes).
+
+## Admin
+
+The admin is served by the gateway itself at `/admin/` (the bare origin redirects there), next to the API and JMAP on the same port. Its interface is in Chinese.
+
+| Page | |
+| --- | --- |
+| 概览 Overview | Whether everything works and what needs doing: a card per mailbox (status, how it is watched, last sync, first-sync progress, last error, proxy), online clients, to-dos (mailboxes to re-authorise, a Microsoft OAuth secret expiring within 30 days, master key backup not confirmed), and hourly trends over 24 h / 7 d / 30 d: upstream requests, rate-limit hits and push latency p50 / p95, compared with the previous period. Admins see every user's mailboxes, users their own. |
+| 我的邮箱 Mailboxes | Add an IMAP mailbox (server detection, TLS or STARTTLS only, a connection test before saving) or a Gmail / Microsoft one; test, pause, re-authorise, set a proxy, set the default, remove. |
+| 应用密码 App passwords | Create one per device; the password is shown once, with what to enter in czlmail. |
+| 用户 Users | Admins: create, edit, disable and delete users. |
+| OAuth 应用 OAuth apps | Admins: step-by-step setup of the Google and Microsoft apps, with the redirect URI and scopes to copy. |
+| 设置 Settings | Your account and password, theme, registration, network and security settings. |
+| 系统 System | Version, database, master key, startup environment; background tasks with their recent runs and a "run now" button; the audit log. |
+
+Mailbox management and OAuth apps arrive with the upstream work packages ([#39](https://github.com/woodchen-ink/czlmail/issues/39), [#42](https://github.com/woodchen-ink/czlmail/issues/42), [#43](https://github.com/woodchen-ink/czlmail/issues/43)); until then those pages say the feature is not ready.
 
 ## App passwords
 
@@ -145,6 +162,13 @@ JSON under `/api/admin/`, responses `{"code","data","msg"}`. The session is an H
 | `POST /upstreams/{id}/test`, `/pause`, `/resume`, `/default` | test the saved settings (optionally with changes, not saved); pause; resume; make it the primary account |
 | `GET /settings`, `PATCH /settings` | admins: settings, update with `{"key": value}`; a secret setting takes a string (`""` keeps it, `null` clears it) |
 | `GET /audit-logs?cursor=&limit=` | admins: audit log, newest first |
+| `GET /overview?scope=mine\|all&range=24h\|7d\|30d` | upstream cards, `statusCounts`, `onlineClients`, `todos` and `trend`; `scope` defaults to `all` for admins and must be `mine` for users |
+| `GET /system`, `POST /system/master-key-backup` | admins: version, database, master key and startup environment (secrets shown as `set`); record that the master key is backed up |
+| `GET /system/tasks`, `POST /system/tasks/{name}/run` | admins: background jobs with their last 20 runs; run one now and wait for it |
+
+`GET /setup` also says whether self-service registration is open (`registrationOpen`), so the sign-in page can offer it.
+
+The overview's `trend` has one point per hour of the window, oldest first, ending with the current hour: `total` merges all mailboxes, `series` holds the five busiest mailboxes by requests plus `other` for the rest, and `summary` / `previous` sum the window and the one before it. Latencies are quantiles over a histogram of all pushes in the hour or window, `null` without pushes. Counts are kept per mailbox and hour for 30 days.
 
 Error codes (HTTP status + sequence; upstream input errors use the x30 sequence):
 
@@ -159,9 +183,11 @@ Error codes (HTTP status + sequence; upstream input errors use the x30 sequence)
 | 40006 | `invalid_setting` | | 40400 | `not_found` |
 | 40007 | `wrong_password` | | 40401 | `user_not_found` |
 | 40008 | `invalid_cursor` | | 40402 | `app_password_not_found` |
-| 40030 | `invalid_host` | | 40430 | `upstream_not_found` |
-| 40031 | `invalid_port` | | 40900 | `email_taken` |
-| 40032 | `invalid_tls_mode` | | 40901 | `setup_completed` |
+| 40009 | `invalid_scope` | | 40403 | `task_not_found` |
+| 40010 | `invalid_range` | | 40430 | `upstream_not_found` |
+| 40030 | `invalid_host` | | 40900 | `email_taken` |
+| 40031 | `invalid_port` | | 40901 | `setup_completed` |
+| 40032 | `invalid_tls_mode` | | 40902 | `task_running` |
 | 40033 | `invalid_proxy` | | 40930 | `upstream_kind_managed` |
 | 40034 | `missing_password` | | 41500 | `unsupported_media_type` |
 | 40035 | `private_network_not_allowed` | | 42900 | `too_many_requests` |
@@ -231,6 +257,19 @@ GATEWAY_MASTER_KEY=$(openssl rand -base64 32) GATEWAY_BASE_URL=http://localhost:
 - A table column holding a sealed secret must call `service.RegisterSealedColumn` so `rotate-key` re-encrypts it. Seal with the row's public id in the AAD, never the auto-increment key.
 - Errors to clients are a numeric code plus an English identifier (`{"code":40400,"msg":"not_found"}`); upstream server replies go to logs and the admin only.
 - Logs are JSON lines with `trace_id`; every response carries `X-Request-Id`.
+- Upstream activity for the overview trend is recorded through `service/metrics` (`initapp.App.Metrics`): `UpstreamRequest(accountID)` per request sent to the upstream, `RateLimited(accountID)` when the upstream throttles, `PushLatency(accountID, d)` from the upstream reporting a change to `Changes().Publish`, and `Forget(accountID)` when a mailbox is removed. Calls only touch memory; counts are flushed every minute. Upstream cards and OAuth secret expiry come from `service.UpstreamSource` and `service.OAuthSecretSource`, set on `App.Overview`.
+- Background jobs are `cron.Task`s registered in `initapp.NewApp`; they show in the admin's task center.
+
+### Admin web
+
+`web/` is a Next.js static export (basePath `/admin`) with Tailwind and shadcn/ui; the gateway serves `web/out` (see `handler/admin_web.go`). All API calls go through `web/lib/api/`, texts through `web/lib/i18n/` (Chinese source; another language is a file of the same shape).
+
+```sh
+cd gateway/web
+npm ci
+npm run dev       # http://localhost:3000/admin/, /api proxied to GATEWAY_DEV_URL (default http://localhost:8080)
+npm run lint && npm run typecheck && npm run build   # build writes web/out, which `go run .` serves at /admin/
+```
 
 ### Testing
 

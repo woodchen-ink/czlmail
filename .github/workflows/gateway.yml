@@ -56,8 +56,25 @@ jobs:
         if: failure()
         run: docker compose -f docker-compose.test.yml logs
 
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: gateway/web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+
   image:
-    needs: test
+    needs: [test, web]
     runs-on: ubuntu-latest
     permissions:
       contents: read

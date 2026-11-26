@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -83,7 +84,7 @@ func (s *System) Info(actor *model.User) (*SystemInfo, error) {
 	}
 	info := &SystemInfo{
 		Version: s.version, GoVersion: runtime.Version(), StartedAt: s.startedAt, BaseURL: s.baseURL,
-		TimeZone: time.Local.String(), OnlineClients: s.streams(""), AdminWeb: s.adminWeb, Env: s.env,
+		TimeZone: zoneName(s.now()), OnlineClients: s.streams(""), AdminWeb: s.adminWeb, Env: s.env,
 	}
 	if sqlDB, err := s.db.DB(); err != nil {
 		info.Database.Error = "unavailable"
@@ -130,6 +131,20 @@ func (s *System) ConfirmMasterKeyBackup(actor *model.User) (time.Time, error) {
 	now := s.now().UTC().Truncate(time.Second)
 	row := model.Meta{Key: MetaMasterKeyBackupConfirmed, Value: now.Format(time.RFC3339)}
 	return now, s.db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&row).Error
+}
+
+// zoneName is the process time zone (TZ) as "Asia/Shanghai (UTC+08:00)"; Windows reports "Local".
+func zoneName(now time.Time) string {
+	_, off := now.Zone()
+	sign := "+"
+	if off < 0 {
+		sign, off = "-", -off
+	}
+	utc := fmt.Sprintf("UTC%s%02d:%02d", sign, off/3600, off%3600/60)
+	if name := now.Location().String(); name != "Local" {
+		return name + " (" + utc + ")"
+	}
+	return utc
 }
 
 func fileSizes(pattern string) int64 {

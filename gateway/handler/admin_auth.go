@@ -6,20 +6,23 @@ import (
 	"github.com/woodchen-ink/go-web-utils/resputil"
 
 	"github.com/woodchen-ink/czlmail/gateway/middleware"
+	"github.com/woodchen-ink/czlmail/gateway/service"
 )
 
 type setupStatusView struct {
-	Required bool `json:"required"`
+	Required         bool `json:"required"`
+	RegistrationOpen bool `json:"registrationOpen"` // the sign-in page links to sign-up
 }
 
-// SetupStatus: GET /api/admin/setup — whether the first-run setup is still open.
+// SetupStatus: GET /api/admin/setup — whether the first-run setup is still open, and
+// whether self-service registration is.
 func (h *Admin) SetupStatus(w http.ResponseWriter, r *http.Request) {
 	req, err := h.Accounts.SetupRequired()
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	resputil.OK(w, setupStatusView{Required: req})
+	resputil.OK(w, setupStatusView{Required: req, RegistrationOpen: h.Settings.Bool(service.SettingRegistrationOpen)})
 }
 
 type setupInput struct {
