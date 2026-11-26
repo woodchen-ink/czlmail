@@ -218,7 +218,7 @@ function WizardBody({
   const canSave =
     ready &&
     clientId.trim() &&
-    (secret || app?.configured) &&
+    (secret || app?.hasSecret) &&
     (provider === "google" || expires)
 
   return (
@@ -310,8 +310,8 @@ function WizardBody({
               label={t.oauth.clientSecret}
               type="password"
               autoComplete="new-password"
-              required={!app?.configured}
-              hint={app?.configured ? t.oauth.clientSecretKeep : undefined}
+              required={!app?.hasSecret}
+              hint={app?.hasSecret ? t.oauth.clientSecretKeep : undefined}
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
             />

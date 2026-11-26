@@ -131,6 +131,9 @@ type UpstreamDetail struct {
 	OwnerPublicID string
 	Live          upstream.Status
 	Capabilities  *upstream.Capabilities
+	// Mailboxes is the number of mailboxes (Gmail: labels) in the index; nil
+	// while the upstream is not running or on its first sync.
+	Mailboxes *int
 }
 
 // List returns the upstreams of the actor (or of ownerPublicID, for admins).
@@ -166,6 +169,9 @@ func (s *Upstreams) Get(actor *model.User, publicID string) (*UpstreamDetail, er
 
 func (s *Upstreams) detail(up *model.Upstream, ownerPublicID string) UpstreamDetail {
 	d := UpstreamDetail{Upstream: *up, OwnerPublicID: ownerPublicID, Live: s.mgr.Status(up)}
+	if n, ok := s.mgr.MailboxCount(up.PublicID); ok {
+		d.Mailboxes = &n
+	}
 	if up.ServerCaps != "" {
 		var c upstream.Capabilities
 		if json.Unmarshal([]byte(up.ServerCaps), &c) == nil {

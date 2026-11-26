@@ -75,6 +75,52 @@ function MailboxesPage() {
     else router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
 
+  // The OAuth callback lands here with ?added=<id>, ?reauthorized=<id> or
+  // ?oauthError=<msg>&code=<n>: say how it went once, then drop those params
+  // (an added mailbox stays highlighted through ?focus=).
+  const handled = React.useRef("")
+  const added = params.get("added")
+  const reauthorized = params.get("reauthorized")
+  const oauthError = params.get("oauthError")
+  const oauthCode = params.get("code")
+  React.useEffect(() => {
+    if (!added && !reauthorized && !oauthError) return
+    const key = `${added}|${reauthorized}|${oauthError}|${oauthCode}`
+    if (handled.current === key) return
+    handled.current = key
+    if (oauthError) {
+      const code = Number(oauthCode) || 0
+      toast.error(t.mailboxes.oauthFailed, {
+        description: t.errors.withCode(
+          t.errors.codes[code] ?? oauthError,
+          code
+        ),
+      })
+    } else {
+      toast.success(
+        added ? t.mailboxes.oauthAdded : t.mailboxes.oauthReauthorized
+      )
+    }
+    const next = new URLSearchParams(params.toString())
+    for (const k of ["added", "reauthorized", "oauthError", "code"])
+      next.delete(k)
+    const id = added || reauthorized
+    if (id) next.set("focus", id)
+    const qs = next.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    qc.invalidateQueries({ queryKey: qk.upstreams })
+  }, [
+    added,
+    reauthorized,
+    oauthError,
+    oauthCode,
+    params,
+    pathname,
+    router,
+    qc,
+    t,
+  ])
+
   const list = useQuery({
     queryKey: qk.upstreams,
     queryFn: upstreamsApi.list,

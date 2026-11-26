@@ -133,6 +133,10 @@ function OAuthAppsPage() {
   const notReady = isNotReady(list.error)
   const apps = list.data ?? []
   const find = (p: OAuthProvider) => apps.find((a) => a.provider === p)
+  // The list names the providers this gateway build supports.
+  const shown = list.data
+    ? PROVIDERS.filter((p) => list.data.some((a) => a.provider === p))
+    : PROVIDERS
 
   const remove = useMutation({
     mutationFn: (p: OAuthProvider) => oauthAppsApi.remove(p),
@@ -162,7 +166,7 @@ function OAuthAppsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {PROVIDERS.map((p) => (
+          {shown.map((p) => (
             <ProviderPanel
               key={p}
               provider={p}
@@ -175,7 +179,7 @@ function OAuthAppsPage() {
         </div>
       )}
       <OAuthWizard
-        provider={wizard || null}
+        provider={wizard && shown.includes(wizard) ? wizard : null}
         app={wizard ? find(wizard) : undefined}
         ready={!notReady}
         onOpenChange={(o) => !o && setWizard("")}

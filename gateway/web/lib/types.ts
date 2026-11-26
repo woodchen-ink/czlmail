@@ -74,6 +74,8 @@ export interface UpstreamCard {
   /** detail is the mail server's own reply, shown to the mailbox owner on hover. */
   lastError: { code: number; msg: string; at: string; detail?: string } | null
   proxy: { mode: "default" | "custom"; host: string } | null
+  /** Folders (Gmail: labels); undefined when this API does not say, null before the first sync. */
+  mailboxes?: number | null
 }
 
 export interface TrendPoint {

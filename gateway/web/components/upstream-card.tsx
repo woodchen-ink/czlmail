@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CircleAlert, Gauge, Network, RefreshCw } from "lucide-react"
+import { CircleAlert, Folders, Gauge, Network, RefreshCw } from "lucide-react"
 
 import { Panel } from "@/components/panel"
 import { StatusBadge } from "@/components/status-badge"
@@ -104,6 +104,16 @@ export function UpstreamCard({
         {card.lastSyncAt !== undefined && (
           <Row icon={RefreshCw} label={t.upstream.lastSync}>
             {now ? formatRelative(card.lastSyncAt, now) : t.common.emptyValue}
+          </Row>
+        )}
+        {card.mailboxes != null && (
+          <Row
+            icon={Folders}
+            label={
+              card.kind === "gmail" ? t.upstream.labels : t.upstream.folders
+            }
+          >
+            {t.upstream.count(formatNumber(card.mailboxes))}
           </Row>
         )}
         <Row icon={Network} label={t.upstream.proxy}>

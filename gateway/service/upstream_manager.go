@@ -465,6 +465,22 @@ func (m *UpstreamManager) Lookup(accountID string) (*Handle, *jmapserver.Upstrea
 	return h, nil
 }
 
+// MailboxCount is the number of JMAP mailboxes (folders, or Gmail labels) in a
+// running upstream's index; ok is false while it is not running or not ready.
+func (m *UpstreamManager) MailboxCount(accountID string) (n int, ok bool) {
+	m.mu.Lock()
+	r := m.running[accountID]
+	m.mu.Unlock()
+	if r == nil || !r.idx.Ready() {
+		return 0, false
+	}
+	var c int64
+	if err := r.idx.DB().Model(&model.IndexMailbox{}).Where("hidden = ?", false).Count(&c).Error; err != nil {
+		return 0, false
+	}
+	return int(c), true
+}
+
 // Trim prunes every running upstream's changelog (cron).
 func (m *UpstreamManager) Trim() (int64, error) {
 	m.mu.Lock()

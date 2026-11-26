@@ -85,7 +85,19 @@ function SendingBody({ upstream }: { upstream: Upstream }) {
         />
       ) : (
         <div className="grid max-h-[70dvh] gap-5 overflow-y-auto pr-1">
-          <SentCopySection upstream={upstream} />
+          {upstream.kind === "gmail" ? (
+            // Gmail sends through its API and files the Sent copy itself.
+            <section>
+              <h3 className="text-sm font-semibold">
+                {t.mailboxes.sentCopyTitle}
+              </h3>
+              <p className="mt-0.5 text-xs text-foreground-muted">
+                {t.mailboxes.sentCopyByProvider}
+              </p>
+            </section>
+          ) : (
+            <SentCopySection upstream={upstream} />
+          )}
           <div className="border-t" />
           <IdentityList upstreamId={upstream.id} onEdit={setEditing} />
         </div>
