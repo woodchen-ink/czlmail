@@ -122,7 +122,7 @@ const AUTOSAVE_MS = 4000;
 // 与界面语言无关: 按收件人可能用的语言都查。捷克语、俄语取词干覆盖变格:
 // příloha/v příloze/přikládám/přiložený, вложение/вложил/прилагаю/прикрепил; 不收 приложен (会命中「приложение」应用程序)。
 const ATTACHMENT_WORDS = ["附件", "附上", "见附", "attached", "attachment", "enclosed", "příloh", "příloze", "přiklád", "přilož", "влож", "прилага", "прикреп"];
-const LANGUAGES = ["简体中文", "English", "Čeština", "日本語","한국어", "Deutsch", "Français", "Español", "Русский"];
+const LANGUAGES = ["简体中文", "English", "Čeština", "日本語", "한국어", "Deutsch", "Français", "Español", "Русский"];
 
 /**
  * 写信面板, 占据阅读窗格。
