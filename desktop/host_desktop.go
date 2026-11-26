@@ -55,6 +55,10 @@ func (a *App) quit() { wruntime.Quit(a.ctx) }
 // emit 向前端广播事件。启动早期 ctx 尚未就绪时静默丢弃 ——
 // 此时窗口还没有监听者, 事件本身也没有意义。
 func (a *App) emit(name string, data ...any) {
+	if a.tap != nil {
+		a.tap(name, data...)
+		return
+	}
 	if a.ctx == nil {
 		return
 	}

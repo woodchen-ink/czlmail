@@ -190,7 +190,9 @@ func (a *App) refreshTrayUnreadSoon() {
 		trayUnread.counted = true
 		trayUnread.Unlock()
 		if changed {
-			a.setTrayUnread(n)
+			if a.tap == nil {
+				a.setTrayUnread(n)
+			}
 			a.emit(EventUnread, n)
 		}
 	})
