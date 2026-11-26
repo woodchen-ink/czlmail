@@ -20,6 +20,7 @@ export type EmailDetail = store.EmailDetail;
 export type Address = store.Address;
 export type Identity = main.Identity;
 export type SessionStatus = main.SessionStatus;
+export type SignInInfo = main.SignInInfo;
 export type AppSettings = main.AppSettings;
 export type ComposeRequest = main.ComposeRequest;
 export type SigningCertificate = smime.Certificate;
@@ -140,6 +141,16 @@ export const api = {
   cancelSignIn: guard(App.CancelSignIn),
   signOut: guard(App.SignOut),
   retrySession: guard(App.RetrySession),
+
+  // 多个登录 (设置 → 账户)。id 是登录前缀, 主登录为空串。
+  listSignIns: guard(App.ListSignIns),
+  addSignInWithPassword: guard(App.AddSignInWithPassword),
+  addSignInOAuth: guard(App.AddSignInOAuth),
+  signInAgainWithPassword: guard(App.SignInAgainWithPassword),
+  signInAgainOAuth: guard(App.SignInAgainOAuth),
+  retrySignIn: guard(App.RetrySignIn),
+  signOutOf: guard(App.SignOutOf),
+  removeSignIn: guard(App.RemoveSignIn),
 
   listAccounts: guard(App.ListAccounts),
   listMailboxes: guard(App.ListMailboxes),
@@ -327,6 +338,10 @@ const ERROR_MESSAGES: Record<string, () => string> = {
   "2015": () => t("读取系统钥匙串中的登录凭据失败，请重新登录。"),
   "2018": () => t("无法把登录凭据保存到系统钥匙串，请确认系统钥匙串可用。"),
   "2020": () => t("本机没有找到保存的登录凭据。"),
+  "2021": () => t("这个登录已经不存在，可能刚被移除。"),
+  "2022": () => t("主登录不能单独移除，请使用退出登录。"),
+  "2023": () => t("这个账号已经登录过了。"),
+  "2024": () => t("这里登录的是另一个账号。要使用另一个账号，请把它作为新的登录添加。"),
   "2030": () => t("这个账号没有「已删除」文件夹。"),
   "2031": () => t("这个账号没有「归档」文件夹。"),
   "2033": () => t("标签名不能为空。"),

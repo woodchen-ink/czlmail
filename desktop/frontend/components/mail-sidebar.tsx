@@ -118,7 +118,8 @@ export function MailSidebar({
 
   // 有统一视图时它是日常入口, 「文件夹」「共享」默认收起; 用户展开、收起过的按记下的来。
   const hasUnified = accounts.length > 1;
-  const defaultCollapsed = (key: string) => hasUnified && (key === "personal" || key === "shared");
+  const defaultCollapsed = (key: string) =>
+    hasUnified && (key === "personal" || key === "shared" || key.startsWith("signin:"));
   const isCollapsed = (key: string) => collapsed[key] ?? defaultCollapsed(key);
 
   function toggle(key: string, open?: boolean) {
@@ -182,8 +183,15 @@ export function MailSidebar({
     }
   }
 
-  const personal = accounts.filter((a) => a.isPersonal);
-  const shared = accounts.filter((a) => !a.isPersonal);
+  // 「文件夹」「共享」放主登录的账号; 其余登录 (#15) 各占一节, 标题是它的个人账号, 里面是它的文件夹与共享邮箱。
+  const primary = accounts.filter((a) => !a.signIn);
+  const personal = primary.filter((a) => a.isPersonal);
+  const shared = primary.filter((a) => !a.isPersonal);
+  const otherSignIns = [...new Set(accounts.filter((a) => a.signIn).map((a) => a.signIn))].map((id) => {
+    const list = accounts.filter((a) => a.signIn === id);
+    const own = list.filter((a) => a.isPersonal);
+    return { id, list, own, shared: list.filter((a) => !a.isPersonal), title: (own[0] ?? list[0]).name };
+  });
   const sumInbox = (list: Account[]) =>
     list.reduce((n, a) => n + (muted.has(a.id) ? 0 : inboxUnread(mailboxesByAccount[a.id])), 0);
   // 统一视图里在看的不是某个账号的文件夹, 账号文件夹都不高亮。
@@ -218,6 +226,43 @@ export function MailSidebar({
       badge: true,
     });
   }
+
+  const renderShared = (list: Account[]) =>
+    list.map((acc) => {
+      const key = `acc:${acc.id}`;
+      const open = !isCollapsed(key);
+      return (
+        <div key={acc.id} className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => toggle(key)}
+            {...dragExpand(key)}
+            aria-expanded={open}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 rounded-sm px-2 py-1 text-left text-xs"
+          >
+            <ChevronDown
+              className={cn("size-3 shrink-0 transition-transform", !open && "-rotate-90")}
+            />
+            <UserRound className="size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{acc.name}</span>
+            {/* 展开时收件箱行自己有角标, 折叠时才在账号名上显示, 否则看不出是哪个共享邮箱来了信。 */}
+            {!open && <UnreadBadge count={inboxUnread(mailboxesByAccount[acc.id])} quiet={muted.has(acc.id)} />}
+          </button>
+          {open && (
+            <MailboxTree
+              mailboxes={mailboxesByAccount[acc.id] ?? []}
+              selectedId={selectedIn(acc.id)}
+              onSelect={(id) => onSelect(acc.id, id)}
+              onAction={act(acc.id)}
+              indent={1}
+              quiet={muted.has(acc.id)}
+              accountId={acc.id}
+              onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
+            />
+          )}
+        </div>
+      );
+    });
 
   if (syncing && allBoxes.length === 0) return <SidebarSkeleton />;
 
@@ -280,43 +325,37 @@ export function MailSidebar({
           unread={sumInbox(shared)}
           headerProps={dragExpand("shared")}
         >
-          {shared.map((acc) => {
-            const key = `acc:${acc.id}`;
-            const open = !isCollapsed(key);
-            return (
-              <div key={acc.id} className="flex flex-col">
-                <button
-                  type="button"
-                  onClick={() => toggle(key)}
-                  {...dragExpand(key)}
-                  aria-expanded={open}
-                  className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 rounded-sm px-2 py-1 text-left text-xs"
-                >
-                  <ChevronDown
-                    className={cn("size-3 shrink-0 transition-transform", !open && "-rotate-90")}
-                  />
-                  <UserRound className="size-3.5 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{acc.name}</span>
-                  {/* 展开时收件箱行自己有角标, 折叠时才在账号名上显示, 否则看不出是哪个共享邮箱来了信。 */}
-                  {!open && <UnreadBadge count={inboxUnread(mailboxesByAccount[acc.id])} quiet={muted.has(acc.id)} />}
-                </button>
-                {open && (
-                  <MailboxTree
-                    mailboxes={mailboxesByAccount[acc.id] ?? []}
-                    selectedId={selectedIn(acc.id)}
-                    onSelect={(id) => onSelect(acc.id, id)}
-                    onAction={act(acc.id)}
-                    indent={1}
-                    quiet={muted.has(acc.id)}
-                    accountId={acc.id}
-                    onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
-                  />
-                )}
-              </div>
-            );
-          })}
+          {renderShared(shared)}
         </Section>
       )}
+      {otherSignIns.map((g) => {
+        const key = `signin:${g.id}`;
+        return (
+          <Section
+            key={key}
+            title={g.title}
+            open={!isCollapsed(key)}
+            onToggle={() => toggle(key)}
+            unread={sumInbox(g.list)}
+            onAdd={g.own.length > 0 ? () => setFolderAction({ kind: "create", accountId: g.own[0].id }) : undefined}
+            headerProps={dragExpand(key)}
+          >
+            {g.own.map((acc) => (
+              <MailboxTree
+                key={acc.id}
+                mailboxes={mailboxesByAccount[acc.id] ?? []}
+                selectedId={selectedIn(acc.id)}
+                onSelect={(id) => onSelect(acc.id, id)}
+                onAction={act(acc.id)}
+                quiet={muted.has(acc.id)}
+                accountId={acc.id}
+                onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
+              />
+            ))}
+            {renderShared(g.shared)}
+          </Section>
+        );
+      })}
 
       <FolderDialog
         action={folderAction}

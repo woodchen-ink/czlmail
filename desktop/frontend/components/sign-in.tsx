@@ -18,12 +18,39 @@ interface Props {
   reauth?: SessionStatus;
   /** 重新登录时可以不登录、退回去看已缓存的邮件。 */
   onBack?: () => void;
+  /**
+   * 在设置 → 账户里用: 添加一个登录, 或重新登录某个登录 (id 为登录前缀, 主登录为空串)。
+   * 这时只渲染表单本身, 不占满整页, 也不显示语言选择与标题。
+   */
+  target?: { kind: "add" } | { kind: "again"; id: string };
+}
+
+/** 按 target 选登录调用: 不给时是主登录 (首次登录、登录失效后重新登录)。 */
+function signInCalls(target: Props["target"]) {
+  if (target?.kind === "add")
+    return {
+      password: (server: string, email: string, pass: string) => api.addSignInWithPassword(server, email, pass),
+      oauth: (server: string, idp: string, clientId: string) => api.addSignInOAuth(server, idp, clientId),
+    };
+  if (target?.kind === "again") {
+    const id = target.id;
+    return {
+      password: (server: string, email: string, pass: string) => api.signInAgainWithPassword(id, server, email, pass),
+      oauth: (server: string, idp: string, clientId: string) => api.signInAgainOAuth(id, server, idp, clientId),
+    };
+  }
+  return {
+    password: (server: string, email: string, pass: string) => api.signInWithPassword(server, email, pass),
+    oauth: (server: string, idp: string, clientId: string) => api.signIn(server, idp, clientId),
+  };
 }
 
 type Mode = "password" | "oauth";
 
-export function SignIn({ onSignedIn, reauth, onBack }: Props) {
+export function SignIn({ onSignedIn, reauth, onBack, target }: Props) {
   useI18n();
+  const calls = signInCalls(target);
+  const embedded = !!target;
   const [mode, setMode] = useState<Mode>(reauth?.authMethod === "oauth" ? "oauth" : "password");
   const [server, setServer] = useState(reauth?.server ?? "");
   const [email, setEmail] = useState(reauth?.username ?? "");
@@ -64,7 +91,7 @@ export function SignIn({ onSignedIn, reauth, onBack }: Props) {
     setBusy(true);
     setError("");
     try {
-      await api.signIn(server.trim(), hint.issuer, hint.clientId);
+      await calls.oauth(server.trim(), hint.issuer, hint.clientId);
       onSignedIn();
     } catch (err) {
       setError(errorMessage(err));
@@ -87,12 +114,12 @@ export function SignIn({ onSignedIn, reauth, onBack }: Props) {
     setError("");
     try {
       if (mode === "password") {
-        await api.signInWithPassword(server.trim(), email.trim(), password);
+        await calls.password(server.trim(), email.trim(), password);
       } else {
         const useSso = sso && idp.trim() !== "";
         writePref("idp", useSso ? idp.trim() : "");
         writePref("clientId", useSso ? clientId.trim() : "");
-        await api.signIn(server.trim(), useSso ? idp.trim() : "", useSso ? clientId.trim() : "");
+        await calls.oauth(server.trim(), useSso ? idp.trim() : "", useSso ? clientId.trim() : "");
       }
       onSignedIn();
     } catch (err) {
@@ -113,6 +140,155 @@ export function SignIn({ onSignedIn, reauth, onBack }: Props) {
     setError("");
   }
 
+  const form = (
+    <>
+      <form onSubmit={submit} className={embedded ? "flex flex-col gap-4" : "mt-8 flex flex-col gap-4"}>
+        <Field label={t("服务器")} htmlFor="server">
+          <Input
+            id="server"
+            value={server}
+            onChange={(e) => setServer(e.target.value)}
+            placeholder="mail.example.net"
+            autoComplete="url"
+            autoFocus={!reauth && target?.kind !== "again"}
+            disabled={busy}
+          />
+        </Field>
+
+        {hint && (
+          <div className="flex flex-col gap-2">
+            {hintBusy ? (
+              <div className="flex flex-col gap-2">
+                <div className="border-border bg-secondary flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm">
+                  <Loader2 className="size-4 shrink-0 animate-spin" />
+                  <span className="flex-1">{t("请在浏览器中完成 {0} 登录", hint.name)}</span>
+                </div>
+                <Button type="button" variant="ghost" size="sm" onClick={cancel}>
+                  <X className="size-4" />
+                  {t("取消")}</Button>
+              </div>
+            ) : (
+              <Button type="button" onClick={signInWithHint} disabled={busy}>
+                <ExternalLink className="size-4" />
+                {t("使用 {0} 登录", hint.name)}</Button>
+            )}
+            <p className="text-muted-foreground text-center text-xs">{t("或者使用应用专用密码登录")}</p>
+          </div>
+        )}
+
+        {mode === "password" && (
+          <>
+            <Field label={t("邮箱")} htmlFor="email">
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.net"
+                autoComplete="username"
+                disabled={busy}
+              />
+            </Field>
+
+            <Field
+              label={t("应用专用密码")}
+              htmlFor="password"
+              hint={t("在邮箱网页端的设置里创建。账号使用单点登录（SSO）时，这里不能填 SSO 的密码。")}
+            >
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                autoFocus={!!reauth || target?.kind === "again"}
+                disabled={busy}
+              />
+            </Field>
+          </>
+        )}
+
+        {mode === "oauth" && (
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={sso} onCheckedChange={(v) => setSso(v === true)} disabled={busy} />
+              {t("通过单点登录（外部身份提供商）")}</label>
+            {sso && (
+              <>
+                <Field
+                  label={t("身份提供商地址")}
+                  htmlFor="idp"
+                  hint={t("邮件服务器把登录交给外部身份提供商（如 Stalwart 配置了 OIDC 目录）时填写，例如 connect.example.net。")}
+                >
+                  <Input id="idp" value={idp} onChange={(e) => setIdp(e.target.value)} placeholder="connect.example.net" disabled={busy} />
+                </Field>
+                <Field
+                  label={t("客户端 ID")}
+                  htmlFor="client-id"
+                  hint={t("由管理员在身份提供商上创建的公开客户端（无密钥、PKCE），回调地址需包含 http://127.0.0.1:47821/callback。")}
+                >
+                  <Input id="client-id" value={clientId} onChange={(e) => setClientId(e.target.value)} disabled={busy} />
+                </Field>
+              </>
+            )}
+          </div>
+        )}
+
+        {busy && mode === "oauth" ? (
+          <div className="flex flex-col gap-2">
+            <div className="border-border bg-secondary flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm">
+              <Loader2 className="size-4 shrink-0 animate-spin" />
+              <span className="flex-1">{t("请在浏览器中完成授权")}</span>
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={cancel}>
+              <X className="size-4" />
+              {t("取消")}</Button>
+          </div>
+        ) : (
+          <Button type="submit" disabled={busy || !canSubmit}>
+            {busy ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : mode === "password" ? (
+              <LogIn className="size-4" />
+            ) : (
+              <ExternalLink className="size-4" />
+            )}
+            {mode === "password" ? t("登录") : t("在浏览器中登录")}
+          </Button>
+        )}
+
+        {error && (
+          <p className="text-destructive text-sm leading-relaxed" role="alert">
+            {errorMessage(error)}
+          </p>
+        )}
+      </form>
+
+      <div className="mt-6 text-center">
+        <button
+          type="button"
+          onClick={() => switchMode(mode === "password" ? "oauth" : "password")}
+          disabled={busy}
+          className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
+        >
+          {mode === "password" ? t("改用浏览器授权登录（OAuth）") : t("改用应用专用密码登录")}
+        </button>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={busy}
+            className="text-muted-foreground hover:text-foreground mt-3 block w-full text-xs underline-offset-4 hover:underline"
+          >
+            {t("暂不登录，返回查看已缓存的邮件")}
+          </button>
+        )}
+      </div>
+    </>
+  );
+
+  if (embedded) return form;
+
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto p-6">
       <div className="w-full max-w-sm py-8">
@@ -124,149 +300,7 @@ export function SignIn({ onSignedIn, reauth, onBack }: Props) {
         </h1>
         <p className="text-muted-foreground mt-2 text-center text-sm">
           {reauth ? t("登录已失效，请重新登录以继续同步") : t("连接你的 JMAP 邮箱服务器")}</p>
-
-        <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
-          <Field label={t("服务器")} htmlFor="server">
-            <Input
-              id="server"
-              value={server}
-              onChange={(e) => setServer(e.target.value)}
-              placeholder="mail.example.net"
-              autoComplete="url"
-              autoFocus={!reauth}
-              disabled={busy}
-            />
-          </Field>
-
-          {hint && (
-            <div className="flex flex-col gap-2">
-              {hintBusy ? (
-                <div className="flex flex-col gap-2">
-                  <div className="border-border bg-secondary flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm">
-                    <Loader2 className="size-4 shrink-0 animate-spin" />
-                    <span className="flex-1">{t("请在浏览器中完成 {0} 登录", hint.name)}</span>
-                  </div>
-                  <Button type="button" variant="ghost" size="sm" onClick={cancel}>
-                    <X className="size-4" />
-                    {t("取消")}</Button>
-                </div>
-              ) : (
-                <Button type="button" onClick={signInWithHint} disabled={busy}>
-                  <ExternalLink className="size-4" />
-                  {t("使用 {0} 登录", hint.name)}</Button>
-              )}
-              <p className="text-muted-foreground text-center text-xs">{t("或者使用应用专用密码登录")}</p>
-            </div>
-          )}
-
-          {mode === "password" && (
-            <>
-              <Field label={t("邮箱")} htmlFor="email">
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.net"
-                  autoComplete="username"
-                  disabled={busy}
-                />
-              </Field>
-
-              <Field
-                label={t("应用专用密码")}
-                htmlFor="password"
-                hint={t("在邮箱网页端的设置里创建。账号使用单点登录（SSO）时，这里不能填 SSO 的密码。")}
-              >
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  autoFocus={!!reauth}
-                  disabled={busy}
-                />
-              </Field>
-            </>
-          )}
-
-          {mode === "oauth" && (
-            <div className="flex flex-col gap-3">
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={sso} onCheckedChange={(v) => setSso(v === true)} disabled={busy} />
-                {t("通过单点登录（外部身份提供商）")}</label>
-              {sso && (
-                <>
-                  <Field
-                    label={t("身份提供商地址")}
-                    htmlFor="idp"
-                    hint={t("邮件服务器把登录交给外部身份提供商（如 Stalwart 配置了 OIDC 目录）时填写，例如 connect.example.net。")}
-                  >
-                    <Input id="idp" value={idp} onChange={(e) => setIdp(e.target.value)} placeholder="connect.example.net" disabled={busy} />
-                  </Field>
-                  <Field
-                    label={t("客户端 ID")}
-                    htmlFor="client-id"
-                    hint={t("由管理员在身份提供商上创建的公开客户端（无密钥、PKCE），回调地址需包含 http://127.0.0.1:47821/callback。")}
-                  >
-                    <Input id="client-id" value={clientId} onChange={(e) => setClientId(e.target.value)} disabled={busy} />
-                  </Field>
-                </>
-              )}
-            </div>
-          )}
-
-          {busy && mode === "oauth" ? (
-            <div className="flex flex-col gap-2">
-              <div className="border-border bg-secondary flex items-center gap-2 rounded-md border px-3 py-2.5 text-sm">
-                <Loader2 className="size-4 shrink-0 animate-spin" />
-                <span className="flex-1">{t("请在浏览器中完成授权")}</span>
-              </div>
-              <Button type="button" variant="ghost" size="sm" onClick={cancel}>
-                <X className="size-4" />
-                {t("取消")}</Button>
-            </div>
-          ) : (
-            <Button type="submit" disabled={busy || !canSubmit}>
-              {busy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : mode === "password" ? (
-                <LogIn className="size-4" />
-              ) : (
-                <ExternalLink className="size-4" />
-              )}
-              {mode === "password" ? t("登录") : t("在浏览器中登录")}
-            </Button>
-          )}
-
-          {error && (
-            <p className="text-destructive text-sm leading-relaxed" role="alert">
-              {errorMessage(error)}
-            </p>
-          )}
-        </form>
-
-        <div className="mt-6 text-center">
-          <button
-            type="button"
-            onClick={() => switchMode(mode === "password" ? "oauth" : "password")}
-            disabled={busy}
-            className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
-          >
-            {mode === "password" ? t("改用浏览器授权登录（OAuth）") : t("改用应用专用密码登录")}
-          </button>
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              disabled={busy}
-              className="text-muted-foreground hover:text-foreground mt-3 block w-full text-xs underline-offset-4 hover:underline"
-            >
-              {t("暂不登录，返回查看已缓存的邮件")}
-            </button>
-          )}
-        </div>
+        {form}
       </div>
     </div>
   );

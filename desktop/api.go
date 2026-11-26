@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/woodchen-ink/czlmail/desktop/internal/config"
+	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
 
@@ -47,6 +47,8 @@ type SessionStatus struct {
 	// SignInReason 是带错误码的原因。
 	SignInRequired bool   `json:"signInRequired"`
 	SignInReason   string `json:"signInReason"`
+	// SignedOut 表示用户退出了主登录, 但还有别的登录在用 (#15): 主登录的缓存还在, 可以重新登录。
+	SignedOut bool `json:"signedOut"`
 }
 
 func (a *App) GetSessionStatus() SessionStatus {
@@ -66,51 +68,47 @@ func (a *App) GetSessionStatus() SessionStatus {
 
 		SignInRequired: si.reason != "",
 		SignInReason:   si.reason,
+		SignedOut:      si.signedOut,
 	}
 }
 
-// SignOut 停掉同步并清除令牌。
+// SignOut 退出主登录: 停掉同步并清除凭据。
 //
 // 本地缓存保留: 重新登录后不必重新引导, 且清库是破坏性操作,
 // 应由界面上单独的入口触发而不是搭在退出登录里。
+// 没有其余登录时配置一并清掉, 界面回到登录页; 有其余登录时它们照常同步 (见 signOutOf)。
 func (a *App) SignOut() error {
-	// 先撤推送: 要用到还在的会话 (iOS; 其它平台为空)。
-	a.stopPush()
-
-	a.mu.Lock()
-	si := &a.primary
-	cfg := si.cfg
-	si.stopLocked()
-	si.reason = ""
-	a.mu.Unlock()
-
-	var err error
-	if cfg.AuthMethod == config.AuthPassword {
-		err = config.DeletePassword(cfg.SessionEndpoint, cfg.Username)
-	} else if cfg.Issuer != "" {
-		err = config.DeleteToken(si.id, cfg.Issuer)
-	}
-	if err != nil {
-		return err
-	}
-
-	// 配置一并清掉, 否则下次启动 Configured() 仍为真, 界面会进入一个
-	// 连不上服务器的邮件页, 而不是回到登录页。
-	a.mu.Lock()
-	si.cfg = config.Config{}
-	a.mu.Unlock()
-	// 系统里登记的日程提醒 (移动端) 跟着清掉: 退出后不该再替这个账号弹通知。
-	a.planRemindersSoon(true)
-	return config.Save(config.Config{})
+	return a.signOutOf(&a.primary)
 }
 
-// ListAccounts 列出全部账号, 个人账号在前。
+// ListAccounts 列出全部账号: 按登录分组 (主登录在前, 其余按添加顺序), 组内个人账号在前。
 func (a *App) ListAccounts() ([]store.Account, error) {
 	st, err := a.currentStore()
 	if err != nil {
 		return nil, err
 	}
-	return st.Accounts(a.ctx)
+	list, err := st.Accounts(a.ctx)
+	if err != nil {
+		return nil, err
+	}
+	order := map[string]int{}
+	a.mu.RLock()
+	for i, si := range a.signInsLocked() {
+		order[si.id] = i
+	}
+	a.mu.RUnlock()
+	rank := func(id string) int {
+		if i, ok := order[id]; ok {
+			return i
+		}
+		return len(order) // 登录已移除、缓存还没删完的账号排最后
+	}
+	for i := range list {
+		list[i].SignIn, _ = accountid.Split(list[i].ID)
+	}
+	// 稳定排序保留库里的「个人在前、按名称」。
+	slices.SortStableFunc(list, func(x, y store.Account) int { return rank(x.SignIn) - rank(y.SignIn) })
+	return list, nil
 }
 
 // ListMailboxes 返回某账号的邮箱平表, 建树交给前端。

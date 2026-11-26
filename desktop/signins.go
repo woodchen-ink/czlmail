@@ -48,6 +48,9 @@ type signIn struct {
 	cancelFlow context.CancelFunc
 	flowGen    uint64
 
+	// signedOut 表示用户退出了这个登录 (config.Config.SignedOut), 会话不连, 缓存保留, 等重新登录。
+	signedOut bool
+
 	// restoring 在启动时恢复会话的那次连接进行中为 true, 期间需要会话的调用等它连上 (见 route)。
 	restoring atomic.Bool
 	// verifying 保证同一时刻只有一次"凭据是否真的失效"的核实在跑。
@@ -255,24 +258,18 @@ func (a *App) dropSignIn(id string) error {
 
 // forgetSignInData 删掉某个登录的全部账号缓存, 并把这些账号从按账号 id 记的设置里去掉。
 func (a *App) forgetSignInData(st *store.Store, id string) error {
-	accounts, err := st.Accounts(a.ctx)
-	if err != nil {
+	// 账号行可能已被清理掉 (撤销共享), 缓存与设置里却还留着: 按前缀而不是按账号表判断。
+	if err := st.RemoveSignInData(a.ctx, id); err != nil {
 		return err
 	}
-	gone := map[string]bool{}
-	for _, acc := range accounts {
-		if prefix, _ := accountid.Split(acc.ID); prefix == id {
-			gone[acc.ID] = true
-			if err := st.RemoveAccount(a.ctx, acc.ID); err != nil {
-				return err
-			}
-		}
-	}
-	// 账号行可能已被清理掉 (撤销共享), 设置里却还留着: 按前缀而不是按上面的列表判断。
-	owned := func(acc string) bool {
+	return a.forgetAccountSettings(st, func(acc string) bool {
 		prefix, _ := accountid.Split(acc)
-		return gone[acc] || prefix == id
-	}
+		return prefix == id
+	})
+}
+
+// forgetAccountSettings 把 owned 认领的账号从按账号 id 记的设置 (静音、统一视图排除、默认身份) 里去掉。
+func (a *App) forgetAccountSettings(st *store.Store, owned func(accountID string) bool) error {
 	for _, key := range []string{"mutedMailAccounts", settingUnifiedExcluded} {
 		list := a.accountListSetting(st, key)
 		kept := slices.DeleteFunc(slices.Clone(list), owned)

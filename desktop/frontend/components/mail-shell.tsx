@@ -64,7 +64,7 @@ import {
 import { displayAddressList, fullDate } from "@/lib/format";
 import { printEmail } from "@/lib/print";
 import { useAppearance } from "@/lib/theme";
-import { listen, takePendingOpenEmail } from "@/lib/app-bus";
+import { listen, send, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
 import { beginDraftIntent } from "@/lib/draft-transition";
@@ -543,8 +543,12 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         .then(setSyncStatus)
         .catch(() => {});
     loadSyncStatus();
-    const offConnected = onEvent(Events.connected, (name: string) => {
-      setUsername(name);
+    const offConnected = onEvent(Events.connected, () => {
+      // 连上的可能是其余登录 (#15) 之一, 负载里的用户名不一定是主登录的: 菜单里始终显示主登录。
+      api
+        .getSessionStatus()
+        .then((s) => setUsername(s.username))
+        .catch(() => {});
       loadAccounts();
       loadSyncStatus();
     });
@@ -1466,6 +1470,14 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
               onImport={importEmails}
               onShortcuts={() => setShowShortcuts(true)}
               onSignOut={async () => {
+                // 有多个登录 (#15) 时要选退出哪一个, 交给设置 → 账户, 那里逐个说明并确认。
+                const signIns = (await api.listSignIns().catch(() => [])) ?? [];
+                if (signIns.length > 1) {
+                  send("navigate", { module: "settings" });
+                  setTimeout(() => send("openSettings", { section: "account" }), 0);
+                  toast.info(t("有多个登录，请在这里选择要退出或移除的登录"));
+                  return;
+                }
                 await api.signOut();
                 onSignedOut();
               }}

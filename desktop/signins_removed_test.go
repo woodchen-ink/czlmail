@@ -31,21 +31,14 @@ func TestConnectAfterRemoveSignInGivesUp(t *testing.T) {
 	a.extra = []*signIn{si}
 
 	// 会话请求到达时 (认证进行中) 登录被删掉。
-	var srv *httptest.Server
-	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := fakeSessionServer(t, func() {
 		a.mu.Lock()
 		si.removed = true
 		a.mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"capabilities":{"urn:ietf:params:jmap:core":{"maxSizeUpload":1000,"maxConcurrentUpload":1,"maxSizeRequest":1000,"maxConcurrentRequests":1,"maxCallsInRequest":16,"maxObjectsInGet":500,"maxObjectsInSet":500,"collationAlgorithms":[]},"urn:ietf:params:jmap:mail":{}},`+
-			`"accounts":{"c":{"name":"me@b","isPersonal":true,"isReadOnly":false,"accountCapabilities":{"urn:ietf:params:jmap:mail":{}}}},`+
-			`"primaryAccounts":{"urn:ietf:params:jmap:mail":"c"},"username":"me@b",`+
-			`"apiUrl":"%[1]s/api","downloadUrl":"%[1]s/d/{accountId}/{blobId}/{name}?type={type}","uploadUrl":"%[1]s/u/{accountId}","eventSourceUrl":"%[1]s/es","state":"1"}`, srv.URL)
-	}))
-	defer srv.Close()
+	})
 
 	cfg := config.Config{SessionEndpoint: srv.URL, AuthMethod: config.AuthPassword, Username: "me@b"}
-	err = a.connect(si, cfg, basicAuthClient("me@b", "pw"), nil)
+	err = a.connect(si, cfg, basicAuthClient("me@b", "pw"), nil, nil)
 	if !errors.Is(err, errNotSignedIn) {
 		t.Fatalf("connect after removal = %v, want errNotSignedIn", err)
 	}
@@ -63,4 +56,20 @@ func TestConnectAfterRemoveSignInGivesUp(t *testing.T) {
 	if len(accs) != 0 {
 		t.Fatalf("accounts written back for a removed sign-in: %+v", accs)
 	}
+}
+
+// fakeSessionServer 是只回 JMAP 会话对象的假服务器 (用户 me@b, 个人账号 c); 每次请求先调 during。
+func fakeSessionServer(t *testing.T, during func()) *httptest.Server {
+	t.Helper()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		during()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"capabilities":{"urn:ietf:params:jmap:core":{"maxSizeUpload":1000,"maxConcurrentUpload":1,"maxSizeRequest":1000,"maxConcurrentRequests":1,"maxCallsInRequest":16,"maxObjectsInGet":500,"maxObjectsInSet":500,"collationAlgorithms":[]},"urn:ietf:params:jmap:mail":{}},`+
+			`"accounts":{"c":{"name":"me@b","isPersonal":true,"isReadOnly":false,"accountCapabilities":{"urn:ietf:params:jmap:mail":{}}}},`+
+			`"primaryAccounts":{"urn:ietf:params:jmap:mail":"c"},"username":"me@b",`+
+			`"apiUrl":"%[1]s/api","downloadUrl":"%[1]s/d/{accountId}/{blobId}/{name}?type={type}","uploadUrl":"%[1]s/u/{accountId}","eventSourceUrl":"%[1]s/es","state":"1"}`, srv.URL)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
 }
