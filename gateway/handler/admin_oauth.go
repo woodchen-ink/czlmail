@@ -162,6 +162,10 @@ func (h *Admin) ReauthUpstream(w http.ResponseWriter, r *http.Request) {
 // a redirect to /admin/mailboxes/: ?added=<id> for a new mailbox,
 // ?reauthorized=<id> after re-authorisation, ?oauthError=<msg>&code=<n> on failure.
 func (h *Admin) OAuthCallback(w http.ResponseWriter, r *http.Request) {
+	if ok, err := service.AdminConsentAnswer(r.URL.Query()); ok {
+		h.adminConsentCallback(w, r, err)
+		return
+	}
 	var p *service.AdminPrincipal
 	if c, err := r.Cookie(middleware.SessionCookie); err == nil {
 		p, _ = h.Accounts.ResolveSession(c.Value)
@@ -204,4 +208,21 @@ func (h *Admin) callbackError(r *http.Request, err error) apiError {
 	}
 	h.Log.Error("oauth callback failed", "trace_id", middleware.TraceID(r.Context()), "err", err)
 	return apiError{500, 50000, "internal_error"}
+}
+
+// adminConsentCallback ends a tenant admin's consent (the link in the OAuth app
+// settings): a redirect to /admin/mailboxes/ with ?adminConsent=granted, or
+// ?oauthError=oauth_denied&code=40330. Nothing is stored, so no session is
+// needed: the admin who consents is usually not a gateway user.
+func (h *Admin) adminConsentCallback(w http.ResponseWriter, r *http.Request, err error) {
+	q := url.Values{}
+	if err != nil {
+		e := h.callbackError(r, err)
+		q.Set("oauthError", e.msg)
+		q.Set("code", strconv.Itoa(e.code))
+	} else {
+		q.Set("adminConsent", "granted")
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, "/admin/mailboxes/?"+q.Encode(), http.StatusFound)
 }

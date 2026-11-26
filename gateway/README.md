@@ -150,6 +150,51 @@ Gmail is read over IMAP and sent through the Gmail API, both signed in with OAut
 
 **How Gmail looks in czlmail.** Labels are mailboxes and a message can be in several (`maxMailboxesPerEmail` is null). Inbox, Sent and Drafts are the `\Inbox`, `\Sent` and `\Draft` labels; your labels keep their hierarchy; mail without any label is in **Archive**. Starred is the flagged keyword; Important and the inbox categories are not shown. Only All Mail, Trash and Spam are synced, so every message is fetched once, whatever its labels. Moving a message changes its labels, archiving removes only Inbox, Trash and Spam are real moves (restoring from Trash brings the labels back), and deleting for good empties it from Trash. Ids come from Gmail (`X-GM-MSGID`, threads `X-GM-THRID`), so they survive relabelling and Trash. Server search uses Gmail's own search (`X-GM-RAW`). Sending goes through the Gmail API in the right conversation; the identities are Gmail's *Send mail as* addresses (refreshed every 6 hours; edit them in Gmail).
 
+### Add a Microsoft 365 / Outlook.com mailbox
+
+Work and school accounts (Microsoft 365, Exchange Online) and personal accounts (Outlook.com, Hotmail, Live) both connect through IMAP `outlook.office365.com:993` and SMTP `smtp.office365.com:587` (STARTTLS), signing in with OAuth 2.0 (XOAUTH2); no password is stored. The gateway needs its own app registration in Microsoft Entra, done once by the site admin.
+
+**1. Register the app in Microsoft Entra.** Registering needs a Microsoft Entra directory (any Microsoft 365 or Azure account has one; a free Azure account creates one).
+
+1. Open <https://entra.microsoft.com> → **Identity** → **Applications** → **App registrations** → **New registration**.
+2. **Name**: what users see on the consent screen, e.g. `czlmail gateway`.
+3. **Supported account types**: *Accounts in any organizational directory (Any Microsoft Entra ID tenant – Multitenant) and personal Microsoft accounts*. This is the `common` authority the gateway uses; pick a narrower type only if you also set `tenant` below.
+4. **Redirect URI**: platform **Web**, `<GATEWAY_BASE_URL>/oauth/microsoft/callback` (for example `https://mail-gw.example.com/oauth/microsoft/callback`). It must match `GATEWAY_BASE_URL` exactly, scheme and port included. **Register**.
+5. On the app's **Overview**, copy the **Application (client) ID**.
+6. **Certificates & secrets** → **Client secrets** → **New client secret**. Choose an expiry (at most 24 months) and copy the secret's **Value** at once (it is shown only once; the *Secret ID* is not the secret). Note the expiry date.
+7. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**: `openid`, `email`, `offline_access` (under *OpenId permissions*), `IMAP.AccessAsUser.All` and `SMTP.Send`. Leave `User.Read` or remove it; nothing else is needed. If your own organisation is the only one using the gateway, **Grant admin consent for <organisation>** here saves its users the consent screen.
+
+Nothing else changes in the registration: no implicit grant, no mobile / SPA platform, no certificates.
+
+**2. Enter the app in the gateway** (site admins):
+
+```sh
+curl -b cookies.txt -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' -X PUT \
+  -d '{"clientId":"<Application (client) ID>","clientSecret":"<secret Value>","secretExpiresAt":"2028-11-26"}' \
+  https://mail-gw.example.com/api/admin/oauth-apps/microsoft
+```
+
+- `secretExpiresAt` (`YYYY-MM-DD`) drives the reminder: `GET /api/admin/oauth-apps` shows `secretState` `ok`, `expiring` (from 30 days before) or `expired`, and the admin overview lists it as a to-do once the admin pages ([#44](https://github.com/woodchen-ink/czlmail/issues/44)) are in. To rotate, create a new secret in Entra and `PUT` it with its new date; mailboxes that stopped on the expired secret restart by themselves. Leaving the secret out keeps the stored one.
+- `tenant` (optional): empty or `common` for every account type; `organizations` for work accounts only; `consumers` for personal accounts only; a tenant id or domain (`contoso.onmicrosoft.com`) for an app registered as single tenant.
+
+**3. Add a mailbox.** `POST /api/admin/upstreams/oauth/microsoft/start` with `{"name":"Work","email":"me@contoso.com"}` (both optional; `email` preselects the account, admins may add `"user"`, and `proxy` as for IMAP) returns `{url}`. Open it in the same browser, sign in and accept; Microsoft sends you back to `/admin/mailboxes/?added=<accountId>`. The address comes from the sign-in (the `email` claim, else the sign-in name). Adding the same address again only renews its token and keeps the account id.
+
+When the grant ends (the user changed the password, removed the app, an admin revoked sessions, MFA or Conditional Access now asks for a new sign-in), only that mailbox turns `authRequired`; `POST /api/admin/upstreams/{id}/reauth` returns a sign-in URL for the same address, and the account id stays. The `AADSTS…` code from Microsoft is in the status `detail`.
+
+**Organisations that block user consent.** Many tenants only let admins approve apps; users then see *Need admin approval* (AADSTS90094 / AADSTS65001). `GET /api/admin/oauth-apps` gives `adminConsentUrl` for the microsoft app: send it to that organisation's admin, who signs in with an admin account and accepts for the whole organisation (the browser comes back to `/admin/mailboxes/?adminConsent=granted`, or `?oauthError=oauth_denied&code=40330`). Afterwards the users add their mailboxes as above. The admin can also do it in their own Entra: **Enterprise applications** → the app → **Permissions** → **Grant admin consent**.
+
+**Exchange settings that block a working sign-in.** Microsoft 365 tenants can turn IMAP and authenticated SMTP off; new tenants have SMTP AUTH off by default.
+
+- IMAP off for the mailbox: the connection test reports 40313 `imap_access_disabled` (Exchange answers *User is authenticated but not connected*), the mailbox shows `authRequired`. Turn on **IMAP** in Microsoft 365 admin center → **Users** → **Active users** → the user → **Mail** → **Manage email apps**, or `Set-CASMailbox -Identity me@contoso.com -ImapEnabled $true`. The same error appears when the signed-in account is not the mailbox's owner.
+- SMTP AUTH off: the test reports 40312 `smtp_auth_disabled` (*5.7.139 … SmtpClientAuthentication is disabled*). Turn on **Authenticated SMTP** in the same place, or `Set-CASMailbox -Identity me@contoso.com -SmtpClientAuthenticationDisabled $false` (per mailbox) / `Set-TransportConfig -SmtpClientAuthenticationDisabled $false` (whole tenant). Reading mail keeps working meanwhile.
+
+How Microsoft mailboxes differ from other IMAP servers:
+
+- Exchange has neither NOTIFY nor CONDSTORE / QRESYNC: push is IDLE on INBOX, the other folders are polled, and changes are found by comparing UIDs and flags (the newest 2000 messages on every check, everything once a day).
+- Folder roles come from the special-use flags Exchange puts on its folders and else from their names (`Sent Items`, `Deleted Items`, `Junk Email`, `Archive` and the translated names of the mailbox language).
+- Exchange files every message sent over SMTP in Sent Items itself, so new Microsoft mailboxes start with `sentCopy` `server` (see Sending): the gateway deletes the draft and gives Exchange's copy the same Email id, without a test send. Change it with `PATCH /upstreams/{id}` if a tenant behaves otherwise; re-authorising keeps the setting.
+- Microsoft has no endpoint for revoking one token: deleting the mailbox in the gateway deletes its tokens, and the user removes the app's access at <https://account.live.com/consent/Manage> (personal) or <https://myapps.microsoft.com> (work).
+
 ### Proxies
 
 Every connection of a mailbox (IMAP, SMTP, and for Gmail / Microsoft also OAuth and their APIs) can go through a SOCKS5 proxy. Host names are resolved by the proxy.
@@ -248,7 +293,7 @@ Error codes (HTTP status + sequence; upstream input errors use the x30 sequence)
 
 OAuth codes: 40038 `missing_client_secret`, 40039 `invalid_oauth_state`, 40040 `invalid_secret_expiry`, 40041 `invalid_client_id`, 40330 `oauth_denied`, 40331 `oauth_scope_denied`, 40432 `oauth_provider_not_found`, 40934 `oauth_app_not_configured`, 40935 `oauth_account_mismatch`, 40936 `oauth_kind_mismatch`, 50230 `oauth_exchange_failed`.
 
-Connection tests report per server: 40110 `authentication_failed`, 40311 `private_network_not_allowed`, 42910 `rate_limited`, 50210 `unreachable` / `timeout` / `connection_closed`, 50211 `proxy_failed`, 50212 `tls_failed`, 50213 `server_rejected`.
+Connection tests report per server: 40110 `authentication_failed`, 40311 `private_network_not_allowed`, 40312 `smtp_auth_disabled` and 40313 `imap_access_disabled` (Microsoft), 42910 `rate_limited`, 50210 `unreachable` / `timeout` / `connection_closed`, 50211 `proxy_failed`, 50212 `tls_failed`, 50213 `server_rejected`.
 
 `GET /oauth/{provider}/callback` (outside `/api`) is where the provider sends the browser back; it answers with a redirect to `/admin/mailboxes/` carrying `added`, `reauthorized` or `oauthError` + `code`.
 
@@ -378,7 +423,7 @@ Test helpers in `pkg/` (imported by tests only):
 - `pkg/imaptest`: `Dovecot(t)` / `DovecotBasic(t)` → `NewUser(t)` (a fresh mailbox per test) → `Dial(t)` for setup: `Create`, `Delete`, `Recreate` (new UIDVALIDITY), `Append` / `AppendSample`, `AddFlags`, `RemoveFlags`, `Move`, `Expunge`, `UIDs`. `DialRaw` is a line-level client for checking exact replies and extensions.
 - `pkg/smtptest`: Mailpit lookups; send each test's mail to its own `UniqueAddress`. `NewFake(t)` is a scripted SMTP server for replies Mailpit never gives (refused recipients, 552, 421, 535). Mailpit's raw view starts with its own `Bcc:` / `Received:` lines; envelope-only recipients appear in the summary's `Bcc`.
 - `pkg/gmailtest`: in-memory Gmail account. The IMAP side has X-GM-MSGID / X-GM-THRID / X-GM-LABELS (read and STORE), X-GM-RAW search, XLIST and SPECIAL-USE, APPENDUID / COPYUID, CONDSTORE and IDLE, with per-folder UIDs over one label store, so the jmap-perl#125 traps are reproducible (UIDs only valid in their own folder, labels with spaces must be quoted, `\Draft` flag = `[Gmail]/Drafts`). `SetIntercept` injects command failures, `DropConnections` simulates a network cut. `NewAPI` is the Gmail REST stand-in (`users.messages.send` incl. media upload, `settings.sendAs`, `profile`); sent mail appears in `[Gmail]/Sent Mail` under the returned id.
-- `pkg/oauthtest`: OAuth provider stand-in (authorization endpoint, token endpoint with PKCE); `RevokeRefreshToken`, `FailNext("invalid_grant")`, `ExpireAccessTokens`. Its access tokens are what the Gmail fakes accept.
+- `pkg/oauthtest`: OAuth provider stand-in (authorization endpoint, token endpoint with PKCE); `RevokeRefreshToken`, `RevokeUser`, `FailNext("invalid_grant")`, `FailNextWith(Failure{Code, AADSTS, Status})` for Microsoft-shaped errors (`error_codes`, `AADSTSnnnn:` descriptions), `ExpireAccessTokens`. Grants whose authorization asked for `openid` get an unsigned `id_token` (`email`, `preferred_username`, `tid`). Its access tokens are what the Gmail fakes accept.
 - `pkg/gatewaytest`: starts the gateway in-process with `initapp.NewApp` and returns a go-jmap client. `NewUser` goes through the admin API (owner setup token, `POST /api/admin/users`, login, app password); `SessionProblem` reads the Session status (403 `no-upstream` until a mailbox is added). `AddIMAPUpstream` adds a Dovecot user through the admin API and waits for its first sync (`IMAPUpstreamBody`, `CreateUpstream`, `WaitUpstream` for custom cases); `AddGmailUpstream` skips until #42.
 - `pkg/netx/netxtest`: a SOCKS5 server (no-auth or username/password) that records targets and can be stopped like a failing proxy.
 

@@ -1,6 +1,7 @@
 package imap
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/woodchen-ink/czlmail/gateway/pkg/imapc"
@@ -23,28 +24,64 @@ var specialUse = map[string]string{
 var roleNames = map[string]string{
 	"sent": "sent", "sent items": "sent", "sent messages": "sent", "sent mail": "sent", "已发送": "sent", "已发送邮件": "sent", "gesendet": "sent", "envoyés": "sent",
 	"drafts": "drafts", "draft": "drafts", "草稿": "drafts", "草稿箱": "drafts", "entwürfe": "drafts", "brouillons": "drafts",
-	"trash": "trash", "deleted items": "trash", "deleted messages": "trash", "bin": "trash", "已删除": "trash", "已删除邮件": "trash", "papierkorb": "trash", "corbeille": "trash",
+	"trash": "trash", "deleted": "trash", "deleted items": "trash", "deleted messages": "trash", "bin": "trash", "已删除": "trash", "已删除邮件": "trash", "papierkorb": "trash", "corbeille": "trash",
 	"junk": "junk", "spam": "junk", "junk e-mail": "junk", "junk email": "junk", "垃圾邮件": "junk", "垃圾箱": "junk",
 	"archive": "archive", "archives": "archive", "归档": "archive", "存档": "archive", "archiv": "archive",
 }
 
-// roleOf picks the JMAP role of a folder: SPECIAL-USE first, then the name.
-func roleOf(e *imapc.ListEntry) string {
+// Strength of a role guess, strongest first.
+const (
+	roleByAttr = iota
+	roleByTopName
+	roleByNestedName
+)
+
+// assignRoles gives each folder of a LIST its JMAP role, at most one folder per
+// role (RFC 8621 2): SPECIAL-USE attributes claim first, then top-level folder
+// names, then nested ones (a user's "Inbox/Archive" next to Exchange's "Archive"),
+// each in LIST order.
+func assignRoles(list []*imapc.ListEntry) []string {
+	type guess struct{ i, strength int }
+	var guesses []guess
+	cand := make([]string, len(list))
+	for i, e := range list {
+		r, strength := roleOf(e)
+		if r != "" {
+			cand[i] = r
+			guesses = append(guesses, guess{i, strength})
+		}
+	}
+	slices.SortStableFunc(guesses, func(a, b guess) int { return a.strength - b.strength })
+	out := make([]string, len(list))
+	taken := map[string]bool{}
+	for _, g := range guesses {
+		if r := cand[g.i]; !taken[r] {
+			taken[r], out[g.i] = true, r
+		}
+	}
+	return out
+}
+
+// roleOf guesses the JMAP role of one folder: SPECIAL-USE first, then the name.
+func roleOf(e *imapc.ListEntry) (string, int) {
 	if strings.EqualFold(e.Name, "INBOX") {
-		return "inbox"
+		return "inbox", roleByAttr
 	}
 	for _, a := range e.Attrs {
 		if r, ok := specialUse[strings.ToLower(a)]; ok {
-			return r
+			return r, roleByAttr
 		}
 	}
-	name := e.Name
+	name, strength := e.Name, roleByTopName
 	if e.Delimiter != "" {
 		if i := strings.LastIndex(name, e.Delimiter); i >= 0 {
-			name = name[i+len(e.Delimiter):]
+			name, strength = name[i+len(e.Delimiter):], roleByNestedName
 		}
 	}
-	return roleNames[strings.ToLower(name)]
+	if r := roleNames[strings.ToLower(name)]; r != "" {
+		return r, strength
+	}
+	return "", 0
 }
 
 // sortOrder puts the usual folders first, as clients expect.

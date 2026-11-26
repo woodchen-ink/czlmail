@@ -273,7 +273,7 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 		// Google's granular consent lets the user untick the mail scope.
 		return nil, ErrOAuthScopeDenied
 	}
-	email, err := client.Provider.Email(ctx, hc, client.Provider, tok.AccessToken)
+	email, err := client.Provider.Email(ctx, hc, client.Provider, tok)
 	if err != nil {
 		o.log.Warn("oauth mailbox address", "provider", provider, "err", err)
 		return nil, fmt.Errorf("%w: %w", ErrOAuthExchange, err)
@@ -310,6 +310,9 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 	}
 	row.IMAPHost, row.IMAPPort, row.IMAPTLS, row.IMAPUsername = pv.IMAP.Host, pv.IMAP.Port, pv.IMAP.TLS, email
 	row.SMTPHost, row.SMTPPort, row.SMTPTLS = pv.SMTP.Host, pv.SMTP.Port, pv.SMTP.TLS
+	if pv.SentCopy != "" {
+		row.SentCopy = pv.SentCopy
+	}
 	if row.OAuthTokenSealed, err = o.sealToken(row.PublicID, tok); err != nil {
 		return nil, err
 	}
@@ -336,11 +339,24 @@ func scopesGranted(granted string, wanted []string) bool {
 		case "openid", "email", "profile", "offline_access":
 			continue // not echoed back by every provider (Microsoft)
 		}
-		if !slices.Contains(have, w) {
+		if !slices.ContainsFunc(have, func(h string) bool { return scopeMatches(h, w) }) {
 			return false
 		}
 	}
 	return true
+}
+
+// scopeMatches compares a granted scope with a requested one ignoring case, and
+// accepts the bare name for a resource scope: Microsoft may answer
+// "IMAP.AccessAsUser.All" for "https://outlook.office.com/IMAP.AccessAsUser.All".
+func scopeMatches(granted, wanted string) bool {
+	if strings.EqualFold(granted, wanted) {
+		return true
+	}
+	if i := strings.LastIndex(wanted, "/"); i >= 0 && strings.HasPrefix(wanted, "https://") && !strings.Contains(granted, "/") {
+		return strings.EqualFold(granted, wanted[i+1:])
+	}
+	return false
 }
 
 // draftRow is the upstream a pending flow would create, enough to dial its proxy.
@@ -356,4 +372,21 @@ func (o *OAuth) draftRow(pend *oauthPending) (*model.Upstream, error) {
 		}
 	}
 	return row, nil
+}
+
+// AdminConsentAnswer reads a callback that answers an admin consent link
+// (state oauth.AdminConsentState): handled is false for any other callback. It
+// changes nothing in the gateway; users of that tenant can now sign in.
+func AdminConsentAnswer(q url.Values) (handled bool, err error) {
+	if q.Get("state") != oauth.AdminConsentState {
+		return false, nil
+	}
+	if strings.EqualFold(q.Get("admin_consent"), "true") {
+		return true, nil
+	}
+	e := q.Get("error")
+	if e == "" {
+		e = "no admin_consent"
+	}
+	return true, fmt.Errorf("%w: admin consent: %s", ErrOAuthDenied, e)
 }

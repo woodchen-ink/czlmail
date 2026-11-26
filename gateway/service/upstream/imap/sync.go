@@ -438,11 +438,16 @@ func (r *round) reconcileMailboxes(ctx context.Context, entries []*imapc.ListEnt
 			}
 			r.u.forget(g.ID)
 		}
+		listed := make([]*imapc.ListEntry, len(list))
+		for i := range list {
+			listed[i] = list[i].e
+		}
+		roles := assignRoles(listed)
 		for i := range list {
 			p := &list[i]
 			before := *p.row
 			m := p.row
-			role := roleOf(p.e)
+			role := roles[i]
 			m.Name, m.Delimiter, m.Role, m.NoSelect = p.e.Name, p.e.Delimiter, role, noSelect(p.e)
 			if r.u.gm != nil {
 				m.Hidden = role == "all"
