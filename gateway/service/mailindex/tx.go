@@ -749,3 +749,43 @@ func (s *Store) FolderUIDs(mailboxID string) (map[uint32]UIDInfo, error) {
 	}
 	return out, nil
 }
+
+// ReplaceContent makes emailID stand for another message: its row takes e's
+// content (keeping id, thread and creation time) and its memberships become the
+// one (mailboxID, uid). Gmail uses it to give a sent message its draft's id.
+func (tx *Tx) ReplaceContent(emailID string, e *model.IndexEmail, refs []string, mailboxID string, uid uint32, modseq uint64) error {
+	var old model.IndexEmail
+	if err := tx.db.Select("id", "thread_id", "created_at").Where("id = ?", emailID).First(&old).Error; err != nil {
+		return err
+	}
+	var mboxes []string
+	if err := tx.db.Model(&Membership{}).Where("email_id = ?", emailID).Pluck("mailbox_id", &mboxes).Error; err != nil {
+		return err
+	}
+	for _, m := range mboxes {
+		tx.record(TypeMailbox, m, KindCounts)
+	}
+	if err := tx.db.Where("email_id = ?", emailID).Delete(&Membership{}).Error; err != nil {
+		return err
+	}
+	if err := tx.db.Where("email_id = ?", emailID).Delete(&model.IndexEmailRef{}).Error; err != nil {
+		return err
+	}
+	e.ID, e.ThreadID, e.CreatedAt, e.OrphanedFrom = emailID, old.ThreadID, old.CreatedAt, ""
+	if e.Keywords == "" {
+		e.Keywords = "{}"
+	}
+	if err := tx.db.Select("*").Where("id = ?", emailID).Updates(e).Error; err != nil {
+		return err
+	}
+	if err := tx.db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&Membership{MailboxID: mailboxID, UID: uid, EmailID: emailID, ModSeq: modseq}).Error; err != nil {
+		return err
+	}
+	if err := tx.addRefs(emailID, refs); err != nil {
+		return err
+	}
+	tx.record(TypeEmail, emailID, KindUpdated)
+	tx.record(TypeThread, old.ThreadID, KindUpdated)
+	tx.record(TypeMailbox, mailboxID, KindCounts)
+	return nil
+}

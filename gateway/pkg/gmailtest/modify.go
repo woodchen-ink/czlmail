@@ -168,9 +168,18 @@ func (ss *session) copyMove(p *parser, uid, move bool) error {
 		return errAnswered
 	}
 	// All Mail is every message: moving out of it only adds the destination label.
+	// Moving out of Trash or Spam restores the message (Gmail's "Move to"), it
+	// does not delete it the way EXPUNGE there does.
 	if ss.sel.name != AllMail && df != ss.sel {
 		for _, tg := range targets {
-			ss.sel.remove(ss.s, tg.m)
+			switch ss.sel.name {
+			case Trash:
+				delete(tg.m.labels, LabelTrash)
+			case Spam:
+				delete(tg.m.labels, LabelSpam)
+			default:
+				ss.sel.remove(ss.s, tg.m)
+			}
 			ss.s.touchLocked(tg.m)
 		}
 		ss.s.syncLocked()

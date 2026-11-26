@@ -130,6 +130,19 @@ func (o *OAuth) accessTokenFunc(accountID string, dialer netx.Dialer) func(ctx c
 	}
 }
 
+// tokenRejected is upstream.Config.TokenRejected: the cached access token is
+// dropped when it is the one the server refused, so the next call refreshes.
+func (o *OAuth) tokenRejected(accountID string) func(token string) {
+	return func(token string) {
+		e := o.entry(accountID)
+		e.mu.Lock()
+		if e.tok != nil && e.tok.AccessToken == token {
+			e.tok.AccessToken = ""
+		}
+		e.mu.Unlock()
+	}
+}
+
 func (o *OAuth) refresh(ctx context.Context, accountID, refreshToken string, dialer netx.Dialer) (*oauth.Token, error) {
 	var row model.Upstream
 	if err := o.db.Where("public_id = ?", accountID).First(&row).Error; err != nil {

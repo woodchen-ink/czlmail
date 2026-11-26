@@ -41,8 +41,8 @@ func TestProtocolDovecotSession(t *testing.T) {
 	requireMailAccount(t, c, acct, mailbox.RoleInbox, mailbox.RoleDrafts, mailbox.RoleSent, mailbox.RoleTrash)
 }
 
-// Gmail smoke: the fake Gmail upstream maps [Gmail]/All Mail to role "all".
-// Runs up to the upstream step; that skips until #42 lands. No Docker needed.
+// Gmail smoke: labels are mailboxes, All Mail is hidden and mail without a
+// label is in the virtual Archive. No Docker needed.
 func TestProtocolGmailSession(t *testing.T) {
 	provider := oauthtest.New(t)
 	gmail := gmailtest.New(t, gmailtest.Options{Account: "me@gmail.test", Tokens: provider})
@@ -50,9 +50,9 @@ func TestProtocolGmailSession(t *testing.T) {
 	gw := Start(t)
 	cred := gw.NewUser(t)
 	requireNoUpstream(t, gw, cred)
-	acct := gw.AddGmailUpstream(t, cred, gmail, api, provider.TokenURL(), provider.AddRefreshToken("me@gmail.test"))
+	acct := gw.AddGmailUpstream(t, cred, gmail, api, provider)
 	c := gw.Client(t, cred)
-	requireMailAccount(t, c, acct, mailbox.RoleInbox, mailbox.RoleDrafts, mailbox.RoleSent, mailbox.RoleTrash, mailbox.RoleAll)
+	requireMailAccount(t, c, acct, mailbox.RoleInbox, mailbox.RoleDrafts, mailbox.RoleSent, mailbox.RoleTrash, mailbox.RoleArchive)
 }
 
 func requireMailAccount(t *testing.T, c *jmap.Client, acct jmap.ID, roles ...mailbox.Role) {

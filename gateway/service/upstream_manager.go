@@ -525,6 +525,7 @@ func (m *UpstreamManager) Config(row *model.Upstream) (upstream.Config, error) {
 	if m.oauth != nil {
 		if p, ok := m.oauth.providerForKind(row.Kind); ok {
 			cfg.AccessToken = m.oauth.accessTokenFunc(row.PublicID, cfg.Dialer)
+			cfg.TokenRejected = m.oauth.tokenRejected(row.PublicID)
 			cfg.APIBase = p.APIBase
 		}
 	}

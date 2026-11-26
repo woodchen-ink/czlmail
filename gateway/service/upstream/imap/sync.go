@@ -83,7 +83,7 @@ func (r *round) run(ctx context.Context) error {
 
 	var candidates []*model.IndexMailbox
 	for _, m := range r.byName {
-		if m.NoSelect {
+		if m.NoSelect || m.Virtual {
 			continue
 		}
 		if full || hinted[m.Name] || r.u.isDue(m.ID, r.now) {
@@ -215,6 +215,9 @@ func (r *round) apply(ctx context.Context) error {
 			if err := d.applyRemovals(tx); err != nil {
 				return err
 			}
+			if err := r.u.applyFlagLabels(tx, d); err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {
@@ -258,7 +261,7 @@ func (r *round) sweep(ctx context.Context) error {
 	}
 	var rest []*model.IndexMailbox
 	for _, m := range r.byName {
-		if !m.NoSelect && !r.checked[m.ID] {
+		if !m.NoSelect && !m.Virtual && !r.checked[m.ID] {
 			rest = append(rest, m)
 		}
 	}
@@ -318,6 +321,29 @@ func (r *round) reconcileMailboxes(ctx context.Context, entries []*imapc.ListEnt
 	var existing []model.IndexMailbox
 	if err := r.u.idx.DB().Find(&existing).Error; err != nil {
 		return err
+	}
+	// Gmail: only All Mail, Trash and Spam are synced folders; the other
+	// folders are labels, reconciled as virtual mailboxes below.
+	all := entries
+	var kinds []gmailEntry
+	allMailName := ""
+	if r.u.gm != nil {
+		kinds = make([]gmailEntry, len(entries))
+		entries = nil
+		for i, e := range all {
+			k, ok := classifyGmail(e)
+			if !ok {
+				k = gmailEntry{}
+			}
+			kinds[i] = k
+			if k.sync {
+				entries = append(entries, e)
+				if k.hidden {
+					allMailName = e.Name
+				}
+			}
+		}
+		existing = slices.DeleteFunc(existing, func(m model.IndexMailbox) bool { return m.Virtual })
 	}
 	byName := map[string]*model.IndexMailbox{}
 	byUpstream := map[string]*model.IndexMailbox{}
@@ -405,6 +431,9 @@ func (r *round) reconcileMailboxes(ctx context.Context, entries []*imapc.ListEnt
 			m := p.row
 			role := roleOf(p.e)
 			m.Name, m.Delimiter, m.Role, m.NoSelect = p.e.Name, p.e.Delimiter, role, noSelect(p.e)
+			if r.u.gm != nil {
+				m.Hidden = role == "all"
+			}
 			m.ParentID = ids[parentName(p.e.Name, p.e.Delimiter)]
 			m.SortOrder = sortOrder(role)
 			attrs, _ := json.Marshal(p.e.Attrs)
@@ -418,12 +447,15 @@ func (r *round) reconcileMailboxes(ctx context.Context, entries []*imapc.ListEnt
 				}
 				continue
 			}
-			visible := before.Name != m.Name || before.ParentID != m.ParentID || before.Role != m.Role || before.NoSelect != m.NoSelect
+			visible := before.Name != m.Name || before.ParentID != m.ParentID || before.Role != m.Role || before.NoSelect != m.NoSelect || before.Hidden != m.Hidden
 			if visible || before.Attrs != m.Attrs || before.Delimiter != m.Delimiter || before.UpstreamID != m.UpstreamID || before.SortOrder != m.SortOrder {
 				if err := tx.UpdateMailbox(m, visible); err != nil {
 					return err
 				}
 			}
+		}
+		if r.u.gm != nil {
+			return r.u.reconcileLabels(tx, all, kinds, allMailName)
 		}
 		return nil
 	})

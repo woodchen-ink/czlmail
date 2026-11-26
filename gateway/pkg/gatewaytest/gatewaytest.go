@@ -10,7 +10,8 @@
 //
 // The gateway is built with initapp.NewApp, as Serve builds it, and users go through
 // the real admin API: owner setup link, user creation, app password. Upstream
-// registration skips the test until #39 (IMAP) and #42 (Gmail) provide it.
+// registration goes through the admin API too (Gmail: the full OAuth flow, see
+// UseFakeGoogle).
 package gatewaytest
 
 import (
@@ -33,7 +34,6 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/config"
 	"github.com/woodchen-ink/czlmail/gateway/database"
 	"github.com/woodchen-ink/czlmail/gateway/initapp"
-	"github.com/woodchen-ink/czlmail/gateway/pkg/gmailtest"
 )
 
 // Owner credentials of every test gateway (admin login, not JMAP).
@@ -207,15 +207,6 @@ func (a *Admin) Call(t testing.TB, method, path string, body, out any) (int, str
 		}
 	}
 	return r.Code, string(raw)
-}
-
-// AddGmailUpstream connects a fake Gmail account (IMAP + API + OAuth) to the user.
-func (g *Gateway) AddGmailUpstream(t testing.TB, cred Credentials, mail *gmailtest.Server, api *gmailtest.API, tokenURL, refreshToken string) jmap.ID {
-	t.Helper()
-	// TODO(#42): register a Gmail upstream with its IMAP address, API base URL and
-	// token endpoint overridden to the fakes, holding refreshToken.
-	t.Skip("gatewaytest: Gmail upstreams arrive with #42")
-	return ""
 }
 
 // Client returns a go-jmap client signed in as cred with the Session fetched.

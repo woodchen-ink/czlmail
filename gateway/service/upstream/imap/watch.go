@@ -53,8 +53,8 @@ func (u *Upstream) Watch(ctx context.Context, hint func(upstream.Hint)) error {
 		}
 		fallthrough
 	case caps.idle:
-		selected = "INBOX"
-		if _, err := c.Select(ctx, "INBOX", imapc.SelectOptions{ReadOnly: true}); err != nil {
+		selected = u.watchFolder()
+		if _, err := c.Select(ctx, selected, imapc.SelectOptions{ReadOnly: true}); err != nil {
 			return upstream.Classify("select", err)
 		}
 		for {

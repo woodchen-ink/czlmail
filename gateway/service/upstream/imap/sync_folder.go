@@ -31,6 +31,9 @@ type flagChange struct {
 	uid    uint32
 	kw     mailindex.Keywords
 	modseq uint64
+	// labels are Gmail's X-GM-LABELS, when fetched (hasLabels).
+	labels    []string
+	hasLabels bool
 }
 
 type syncPoint struct {
@@ -79,8 +82,11 @@ func (d *folderDelta) noteFetched(m *imapc.Message, isNew map[uint32]bool) {
 		return
 	}
 	kw := mailindex.FlagsToKeywords(m.Flags)
-	if kw.JSON() != info.Keywords || m.ModSeq != 0 && m.ModSeq != info.ModSeq {
-		d.flags = append(d.flags, flagChange{uid: m.UID, kw: kw, modseq: m.ModSeq})
+	labels, hasLabels := gmLabels(m)
+	// A label change is invisible in FLAGS: with labels, every fetched message
+	// is compared (setting the same labels again is a no-op).
+	if hasLabels || kw.JSON() != info.Keywords || m.ModSeq != 0 && m.ModSeq != info.ModSeq {
+		d.flags = append(d.flags, flagChange{uid: m.UID, kw: kw, modseq: m.ModSeq, labels: labels, hasLabels: hasLabels})
 	}
 }
 
@@ -136,7 +142,7 @@ func (r *round) folderDelta(ctx context.Context, m *model.IndexMailbox, st *imap
 	}
 	if r.caps.condstore && !mb.NoModSeq && m.HighestModSeq != 0 {
 		if mb.HighestModSeq != m.HighestModSeq {
-			err := r.c.Fetch(ctx, "1:*", []string{"UID", "FLAGS", "MODSEQ"},
+			err := r.c.Fetch(ctx, "1:*", r.u.flagItems("UID", "FLAGS", "MODSEQ"),
 				imapc.FetchOptions{UID: true, ChangedSince: m.HighestModSeq},
 				func(msg *imapc.Message) { d.noteFetched(msg, isNew) }, nil)
 			if err != nil {
@@ -208,7 +214,7 @@ func (r *round) compareFlags(ctx context.Context, d *folderDelta, mb *imapc.Mail
 	}
 	present := map[uint32]bool{}
 	minUID := uint32(0)
-	err := r.c.Fetch(ctx, imapc.Range(lo, 0), []string{"UID", "FLAGS"}, imapc.FetchOptions{},
+	err := r.c.Fetch(ctx, imapc.Range(lo, 0), r.u.flagItems("UID", "FLAGS"), imapc.FetchOptions{},
 		func(msg *imapc.Message) {
 			if msg.UID == 0 {
 				return

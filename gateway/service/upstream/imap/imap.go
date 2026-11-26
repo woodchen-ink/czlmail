@@ -77,6 +77,9 @@ type Upstream struct {
 
 	// sent are drafts being sent whose server copy may appear in Sent (sent_copy.go).
 	sent sentCopies
+
+	// gm is set for Gmail: labels are mailboxes (see gmail.go).
+	gm *gmailState
 }
 
 // serverCaps is what the engine uses, learned on the first connection.
@@ -131,6 +134,16 @@ func defaultSignIn(ctx context.Context, c *imapc.Client, cfg upstream.Config) er
 	if cfg.AccessToken != nil {
 		tok, err := cfg.AccessToken(ctx)
 		if err != nil {
+			return err
+		}
+		err = c.LoginXOAuth2(ctx, cfg.IMAP.Username, tok)
+		if err == nil || cfg.TokenRejected == nil || !upstream.IsKind(upstream.Classify("sign in", err), upstream.KindAuth) {
+			return err
+		}
+		// The token may be revoked or expired early: refresh once. A refused
+		// refresh is the real answer (authRequired).
+		cfg.TokenRejected(tok)
+		if tok, err = cfg.AccessToken(ctx); err != nil {
 			return err
 		}
 		return c.LoginXOAuth2(ctx, cfg.IMAP.Username, tok)

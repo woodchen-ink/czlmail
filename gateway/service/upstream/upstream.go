@@ -48,6 +48,9 @@ type Config struct {
 	// microsoft; filled in by #42 / #43). An *Error of KindAuth means the grant is
 	// gone. Nil for password upstreams.
 	AccessToken func(ctx context.Context) (string, error)
+	// TokenRejected tells the token source the server refused token, so the
+	// next AccessToken refreshes instead of returning it again. May be nil.
+	TokenRejected func(token string)
 	// APIBase is the provider's REST API root for OAuth kinds (the Gmail API
 	// sends mail and lists identities); it goes through Dialer too.
 	APIBase string
