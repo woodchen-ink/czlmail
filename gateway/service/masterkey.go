@@ -120,8 +120,8 @@ func rotateColumn(tx *gorm.DB, ring *crypto.Keyring, c SealedColumn) (int, error
 	}
 	var rows []row
 	err := tx.Table(c.Table).
-		Select(c.IDColumn+" AS id, "+c.Column+" AS sealed"). // names come from code, never from input
-		Where(c.Column+" IS NOT NULL AND "+c.Column+" <> ''").
+		Select(c.IDColumn + " AS id, " + c.Column + " AS sealed"). // names come from code, never from input
+		Where(c.Column + " IS NOT NULL AND " + c.Column + " <> ''").
 		Scan(&rows).Error
 	if err != nil {
 		return 0, err
@@ -150,7 +150,7 @@ func rotateColumn(tx *gorm.DB, ring *crypto.Keyring, c SealedColumn) (int, error
 
 func readKeyMeta(db *gorm.DB) (uint32, string, error) {
 	var rows []model.Meta
-	if err := db.Where("`key` IN ?",[]string{model.MetaMasterKeyVersion, model.MetaMasterKeyCheck}).Find(&rows).Error; err != nil {
+	if err := db.Where("`key` IN ?", []string{model.MetaMasterKeyVersion, model.MetaMasterKeyCheck}).Find(&rows).Error; err != nil {
 		return 0, "", err
 	}
 	var version uint32

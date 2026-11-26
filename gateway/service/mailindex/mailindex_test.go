@@ -189,7 +189,9 @@ func TestTrim(t *testing.T) {
 	write(t, s, func(tx *mailindex.Tx) error { tx.SetReady(); return tx.CreateMailbox(inbox) })
 	start, _ := s.State(mailindex.TypeEmail)
 	for i := range 5 {
-		write(t, s, func(tx *mailindex.Tx) error { return tx.CreateEmail(email(itoa(int64(i))+"@x"), nil, inbox.ID, uint32(i+1), 0) })
+		write(t, s, func(tx *mailindex.Tx) error {
+			return tx.CreateEmail(email(itoa(int64(i))+"@x"), nil, inbox.ID, uint32(i+1), 0)
+		})
 	}
 	n, err := s.Trim(30*24*time.Hour, 3)
 	if err != nil || n == 0 {

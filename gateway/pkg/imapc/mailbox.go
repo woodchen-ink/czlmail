@@ -51,7 +51,7 @@ type QResync struct {
 
 // SelectOptions configure Select.
 type SelectOptions struct {
-	ReadOnly bool // EXAMINE
+	ReadOnly  bool // EXAMINE
 	CondStore bool
 	// QResync requires ENABLE QRESYNC first.
 	QResync *QResync

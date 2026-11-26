@@ -64,6 +64,11 @@ func (r *round) run(ctx context.Context) error {
 	r.checked = map[string]bool{}
 	r.statuses = map[string]*imapc.Status{}
 
+	// STATUS (and LIST-STATUS) of the selected mailbox reports the session's own,
+	// possibly stale view (RFC 3501 §6.3.10); a pooled connection may still have one.
+	if err := r.c.Unselect(ctx); err != nil && !isOperational(err) {
+		return err
+	}
 	hinted := map[string]bool{}
 	for _, n := range r.req.Mailboxes {
 		hinted[n] = true

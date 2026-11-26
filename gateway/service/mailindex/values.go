@@ -40,6 +40,10 @@ var systemFlags = map[string]string{
 	`\draft`:    "$draft",
 }
 
+// serverKeywords are set by servers on their own (Dovecot's attachment detection)
+// and would show up as spurious keyword changes; they are not exposed.
+var serverKeywords = map[string]bool{"$hasattachment": true, "$hasnoattachment": true}
+
 // FlagsToKeywords maps IMAP flags to JMAP keywords (RFC 8621 §4.1.1): the four
 // system flags become $seen, $flagged, $answered, $draft; \Deleted and \Recent
 // are dropped; other keywords are lower-cased.
@@ -51,7 +55,7 @@ func FlagsToKeywords(flags []string) Keywords {
 			k[kw] = true
 			continue
 		}
-		if strings.HasPrefix(lf, `\`) {
+		if strings.HasPrefix(lf, `\`) || serverKeywords[lf] {
 			continue
 		}
 		k[lf] = true

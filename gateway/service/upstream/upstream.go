@@ -166,8 +166,8 @@ type ProbePart struct {
 }
 
 var (
-	probeMu  sync.RWMutex
-	probers  = map[string]Prober{}
+	probeMu sync.RWMutex
+	probers = map[string]Prober{}
 )
 
 // RegisterProber makes connection tests available for a kind.
