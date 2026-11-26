@@ -29,7 +29,7 @@ import { errorText } from "@/lib/errors"
 import { isAdminRole, useMe } from "@/lib/hooks/use-me"
 import { useMounted } from "@/lib/hooks/use-mounted"
 import { useQueryParam } from "@/lib/hooks/use-query-param"
-import { useT } from "@/lib/i18n"
+import { LOCALES, setLocale, useLocale, useT } from "@/lib/i18n"
 import { qk } from "@/lib/queries"
 import type { Setting } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -174,26 +174,40 @@ function AppearanceSection() {
   const t = useT()
   const { theme, setTheme } = useTheme()
   const mounted = useMounted()
+  const locale = useLocale()
   return (
-    <SettingRow
-      title={t.settings.theme}
-      hint={t.settings.themeHint}
-      control={
-        <Segmented
-          value={
-            mounted
-              ? ((theme as "light" | "dark" | "system") ?? "system")
-              : "system"
-          }
-          onChange={setTheme}
-          options={[
-            { value: "light", label: t.nav.themeLight },
-            { value: "dark", label: t.nav.themeDark },
-            { value: "system", label: t.nav.themeSystem },
-          ]}
-        />
-      }
-    />
+    <div className="divide-y">
+      <SettingRow
+        title={t.settings.language}
+        hint={t.settings.languageHint}
+        control={
+          <Segmented
+            value={locale}
+            onChange={setLocale}
+            options={LOCALES.map((l) => ({ value: l.value, label: l.label }))}
+          />
+        }
+      />
+      <SettingRow
+        title={t.settings.theme}
+        hint={t.settings.themeHint}
+        control={
+          <Segmented
+            value={
+              mounted
+                ? ((theme as "light" | "dark" | "system") ?? "system")
+                : "system"
+            }
+            onChange={setTheme}
+            options={[
+              { value: "light", label: t.nav.themeLight },
+              { value: "dark", label: t.nav.themeDark },
+              { value: "system", label: t.nav.themeSystem },
+            ]}
+          />
+        }
+      />
+    </div>
   )
 }
 

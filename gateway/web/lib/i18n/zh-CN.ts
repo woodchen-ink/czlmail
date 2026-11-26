@@ -1,5 +1,5 @@
-// Simplified Chinese, the source language. Another language is a file with the same
-// shape (type Messages) registered in lib/i18n/index.ts.
+// Simplified Chinese, the source language. Every other language (en.ts) has exactly
+// the same keys; `npm run i18n:check` enforces it.
 
 export const zhCN = {
   app: {
@@ -59,6 +59,11 @@ export const zhCN = {
     themeDark: "深色",
     themeSystem: "跟随系统",
     toggleSidebar: "展开 / 收起侧栏",
+    language: "语言",
+  },
+  notFound: {
+    title: "页面不存在 (404)",
+    back: "返回概览",
   },
   roles: { owner: "站长", admin: "管理员", user: "用户" },
   auth: {
@@ -357,6 +362,7 @@ export const zhCN = {
   oauth: {
     title: "OAuth 应用",
     subtitle: "Gmail 与 Microsoft 邮箱通过你自己注册的 OAuth 应用授权",
+    wizardTitle: (p: string) => `${p} OAuth 应用`,
     configured: "已配置",
     notConfigured: "未配置",
     configure: "配置",
@@ -434,6 +440,8 @@ export const zhCN = {
     passwordChanged: "密码已修改, 其他设备上的后台登录已退出",
     theme: "主题",
     themeHint: "只影响这个浏览器",
+    language: "语言",
+    languageHint: "默认跟随浏览器语言, 选择后记在这个浏览器",
     keys: {
       "site.registration_open": {
         title: "开放注册",
@@ -504,6 +512,7 @@ export const zhCN = {
         uploads: "清理过期上传",
         upstream_metrics: "清理过期上游指标",
         metrics_flush: "写入上游指标",
+        changelog: "清理过期变更记录",
       } as Record<string, string>,
     },
     audit: {
@@ -513,6 +522,7 @@ export const zhCN = {
       result: "结果",
       ip: "IP",
       params: "参数",
+      trace: "追踪 ID",
       empty: "还没有审计记录",
       anonymous: "未登录",
     },

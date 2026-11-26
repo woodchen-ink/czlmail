@@ -46,7 +46,7 @@ export function ServerFields({
             id={`${id}-host`}
             value={value.host}
             onChange={(e) => onChange({ ...value, host: e.target.value })}
-            placeholder="imap.example.com"
+            placeholder={`${id}.example.com`}
             required
           />
         </div>

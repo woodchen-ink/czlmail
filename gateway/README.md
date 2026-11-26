@@ -67,7 +67,7 @@ Roles: the **owner** (the first user) manages everyone; **admins** manage plain 
 
 ## Admin
 
-The admin is served by the gateway itself at `/admin/` (the bare origin redirects there), next to the API and JMAP on the same port. Its interface is in Chinese.
+The admin is served by the gateway itself at `/admin/` (the bare origin redirects there), next to the API and JMAP on the same port. It is in Chinese and English: it follows the browser language (Chinese for `zh*`, English otherwise) until you pick one in the user menu, on the sign-in page or under Settings → Appearance; the choice is kept in the browser. Error messages from the API are shown in the chosen language with their numeric code.
 
 | Page | |
 | --- | --- |
@@ -262,13 +262,13 @@ GATEWAY_MASTER_KEY=$(openssl rand -base64 32) GATEWAY_BASE_URL=http://localhost:
 
 ### Admin web
 
-`web/` is a Next.js static export (basePath `/admin`) with Tailwind and shadcn/ui; the gateway serves `web/out` (see `handler/admin_web.go`). All API calls go through `web/lib/api/`, texts through `web/lib/i18n/` (Chinese source; another language is a file of the same shape).
+`web/` is a Next.js static export (basePath `/admin`) with Tailwind and shadcn/ui; the gateway serves `web/out` (see `handler/admin_web.go`). All API calls go through `web/lib/api/`; every text is in `web/lib/i18n/zh-CN.ts` and `en.ts`, which must have the same keys (`npm run i18n:check`, run in CI).
 
 ```sh
 cd gateway/web
 npm ci
 npm run dev       # http://localhost:3000/admin/, /api proxied to GATEWAY_DEV_URL (default http://localhost:8080)
-npm run lint && npm run typecheck && npm run build   # build writes web/out, which `go run .` serves at /admin/
+npm run lint && npm run typecheck && npm run i18n:check && npm run build   # build writes web/out, which `go run .` serves at /admin/
 ```
 
 ### Testing

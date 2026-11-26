@@ -145,9 +145,11 @@ export function AuditTab() {
                 <dd className="font-mono text-xs leading-5">
                   {detail.status} · {detail.code} {detail.msg}
                 </dd>
-                <dt className="text-foreground-muted">IP</dt>
+                <dt className="text-foreground-muted">{t.system.audit.ip}</dt>
                 <dd className="font-mono text-xs leading-5">{detail.ip}</dd>
-                <dt className="text-foreground-muted">Trace</dt>
+                <dt className="text-foreground-muted">
+                  {t.system.audit.trace}
+                </dt>
                 <dd className="font-mono text-xs leading-5">
                   {detail.traceId}
                 </dd>

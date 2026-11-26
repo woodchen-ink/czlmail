@@ -8,6 +8,7 @@ import {
   AppWindow,
   ChevronsUpDown,
   KeyRound,
+  Languages,
   LayoutDashboard,
   LogOut,
   Mails,
@@ -47,7 +48,7 @@ import {
 import { authApi } from "@/lib/api/auth"
 import { isAdminRole } from "@/lib/hooks/use-me"
 import { useMounted } from "@/lib/hooks/use-mounted"
-import { useT } from "@/lib/i18n"
+import { LOCALES, setLocale, useLocale, useT, type Locale } from "@/lib/i18n"
 import type { User } from "@/lib/types"
 
 interface NavItem {
@@ -167,6 +168,7 @@ function UserMenu({ me }: { me: User }) {
   const qc = useQueryClient()
   const { theme, setTheme } = useTheme()
   const mounted = useMounted()
+  const locale = useLocale()
 
   const signOut = async () => {
     try {
@@ -231,6 +233,24 @@ function UserMenu({ me }: { me: User }) {
               <DropdownMenuRadioItem value="system">
                 <Monitor /> {t.nav.themeSystem}
               </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-foreground-subtle">
+              {t.nav.language}
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={locale}
+              onValueChange={(v) => setLocale(v as Locale)}
+            >
+              {LOCALES.map((l) => (
+                <DropdownMenuRadioItem
+                  key={l.value}
+                  value={l.value}
+                  lang={l.value}
+                >
+                  <Languages /> {l.label}
+                </DropdownMenuRadioItem>
+              ))}
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut}>

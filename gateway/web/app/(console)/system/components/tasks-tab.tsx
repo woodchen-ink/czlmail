@@ -26,7 +26,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { systemApi } from "@/lib/api/admin"
-import { formatDateTime, formatInterval, formatRelative } from "@/lib/format"
+import {
+  formatDateTime,
+  formatMs,
+  formatInterval,
+  formatRelative,
+} from "@/lib/format"
 import { useNow } from "@/lib/hooks/use-now"
 import { useT } from "@/lib/i18n"
 import { qk } from "@/lib/queries"
@@ -183,12 +188,13 @@ export function TasksTab() {
                   {formatDateTime(r.startedAt)}
                 </span>
                 <span className="w-14 shrink-0 text-xs text-foreground-subtle tabular-nums">
-                  {Math.max(
-                    0,
-                    new Date(r.finishedAt).getTime() -
-                      new Date(r.startedAt).getTime()
-                  )}{" "}
-                  ms
+                  {formatMs(
+                    Math.max(
+                      0,
+                      new Date(r.finishedAt).getTime() -
+                        new Date(r.startedAt).getTime()
+                    )
+                  )}
                 </span>
                 <span className="min-w-0 flex-1">
                   <RunResult run={r} />

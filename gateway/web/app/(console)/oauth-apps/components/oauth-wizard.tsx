@@ -224,9 +224,7 @@ function WizardBody({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>
-          {copy.name} {t.oauth.title}
-        </DialogTitle>
+        <DialogTitle>{t.oauth.wizardTitle(copy.name)}</DialogTitle>
         <DialogDescription asChild>
           <div className="pt-1">
             <Steps steps={copy.steps} current={step} />

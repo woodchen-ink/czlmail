@@ -12,6 +12,7 @@ import { toast } from "sonner"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { I18nProvider } from "@/components/i18n-provider"
 import { ApiError } from "@/lib/api/client"
 import { errorText } from "@/lib/errors"
 
@@ -62,7 +63,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
       <QueryClientProvider client={client}>
-        <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+        <TooltipProvider delayDuration={300}>
+          <I18nProvider>{children}</I18nProvider>
+        </TooltipProvider>
         <Toaster position="top-center" richColors={false} />
       </QueryClientProvider>
     </ThemeProvider>

@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "i18n:check": "node lib/i18n/check-keys.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.108.4",

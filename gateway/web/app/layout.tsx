@@ -2,10 +2,10 @@ import type { Metadata, Viewport } from "next"
 
 import "./globals.css"
 import { Providers } from "@/components/providers"
-import { zhCN } from "@/lib/i18n/zh-CN"
 
 export const metadata: Metadata = {
-  title: { default: zhCN.app.name, template: `%s · ${zhCN.app.name}` },
+  // Set again at runtime in the interface language (components/i18n-provider.tsx).
+  title: "czlmail gateway",
   robots: { index: false, follow: false },
 }
 
