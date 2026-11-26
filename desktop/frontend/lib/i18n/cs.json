@@ -1122,7 +1122,7 @@
   "修改": "Změněno",
   "字数": "Počet slov",
   "笔记页「今日日记」一键打开当天日记，没有就按模板新建。位置和文件名支持 YYYY、MM、DD、dddd（星期）等日期写法，与 Obsidian 相同；这些设置会同步到其他设备。": "Tlačítko „Dnešní deník“ v Poznámkách otevře jedním kliknutím záznam pro daný den, a pokud neexistuje, vytvoří jej podle šablony. Umístění a název souboru podporují zápis data jako v Obsidianu: YYYY, MM, DD, dddd (den v týdnu) a další. Tato nastavení se synchronizují do ostatních zařízení.",
-  "例如 dailynote/YYYY/MM，留空则放在笔记根目录。": "Například dailynote/YYYY/MM. Při nevyplnění se ukládá do kořene poznámek.",
+  "例如 dailynote/YYYY/MM；填 / 放在笔记根目录，留空用默认目录。": "Například dailynote/YYYY/MM. Zadejte / pro kořen poznámek, nebo nechte prázdné pro výchozí složku.",
   "例如 YYYY-MM-DD-dddd 得到 2025-03-21-星期五。": "Například z YYYY-MM-DD-dddd vznikne 2025-03-21-pátek.",
   "笔记库里一篇笔记的路径，例如 模板/日记.md；留空用内置模板。模板可用 {{date}}、{{time}}、{{title}}、{{date:YYYY年M月D日}}。": "Cesta k poznámce v knihovně, například Šablony/Deník.md; při nevyplnění se použije vestavěná šablona. V šabloně lze použít {{date}}, {{time}}, {{title}} a {{date:YYYY-MM-DD}}.",
   "当天日记": "Deník z tohoto dne",

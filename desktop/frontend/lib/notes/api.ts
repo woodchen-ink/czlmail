@@ -41,7 +41,7 @@ export const noteApi = {
   exportVault: App.ExportNoteVault,
   openJournal: App.OpenJournal,
   journalConfig: App.GetJournalConfig,
-  setJournalConfig: (value: JournalConfig) => App.SetJournalConfig(main.JournalConfig.createFrom(value)),
+  setJournalConfig: (value: JournalConfig, lang: string) => App.SetJournalConfig(main.JournalConfig.createFrom(value), lang),
   byDay: App.ListNotesByDay,
 };
 
