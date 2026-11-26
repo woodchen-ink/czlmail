@@ -48,6 +48,10 @@ type Upstream struct {
 
 	Paused    bool `gorm:"not null;default:false"`
 	IsDefault bool `gorm:"not null;default:false;index:idx_upstreams_user,priority:2"`
+	// AddressPending: Email is only the OAuth sign-in name (IMAPUsername) and
+	// the mailbox's own address is not known yet. The gateway looks for it in
+	// the synced mail; setting Email in the admin clears it.
+	AddressPending bool `gorm:"not null;default:false"`
 
 	// Status is the last jmapserver upstream status, kept across restarts.
 	Status      string `gorm:"size:16;not null;default:syncing"`

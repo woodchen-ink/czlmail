@@ -323,21 +323,24 @@ type initialSyncView struct {
 }
 
 type upstreamView struct {
-	ID           string             `json:"id"` // the JMAP accountId
-	UserID       string             `json:"userId"`
-	Kind         string             `json:"kind"`
-	Name         string             `json:"name"`
-	Email        string             `json:"email"`
-	IMAP         endpointView       `json:"imap"`
-	SMTP         endpointView       `json:"smtp"`
-	Proxy        proxyView          `json:"proxy"`
-	Paused       bool               `json:"paused"`
-	IsDefault    bool               `json:"isDefault"`
-	SentCopy     string             `json:"sentCopy"`
-	Status       upstreamStatusView `json:"status"`
-	Capabilities any                `json:"capabilities"`
-	Mailboxes    *int               `json:"mailboxes"` // folders (Gmail: labels); null until the first sync is done
-	CreatedAt    *string            `json:"createdAt"`
+	ID        string       `json:"id"` // the JMAP accountId
+	UserID    string       `json:"userId"`
+	Kind      string       `json:"kind"`
+	Name      string       `json:"name"`
+	Email     string       `json:"email"`
+	IMAP      endpointView `json:"imap"`
+	SMTP      endpointView `json:"smtp"`
+	Proxy     proxyView    `json:"proxy"`
+	Paused    bool         `json:"paused"`
+	IsDefault bool         `json:"isDefault"`
+	SentCopy  string       `json:"sentCopy"`
+	// AddressPending: email is only the sign-in name; the mailbox's own address
+	// (the From of sent mail) is not known yet. PATCH email to set it.
+	AddressPending bool               `json:"addressPending"`
+	Status         upstreamStatusView `json:"status"`
+	Capabilities   any                `json:"capabilities"`
+	Mailboxes      *int               `json:"mailboxes"` // folders (Gmail: labels); null until the first sync is done
+	CreatedAt      *string            `json:"createdAt"`
 }
 
 func newUpstreamView(d *service.UpstreamDetail) upstreamView {
@@ -359,15 +362,16 @@ func newUpstreamView(d *service.UpstreamDetail) upstreamView {
 	}
 	return upstreamView{
 		ID: u.PublicID, UserID: d.OwnerPublicID, Kind: u.Kind, Name: u.Name, Email: u.Email,
-		IMAP:         endpointView{Host: u.IMAPHost, Port: u.IMAPPort, TLS: u.IMAPTLS, Username: u.IMAPUsername, HasPassword: u.PasswordSealed != ""},
-		SMTP:         endpointView{Host: u.SMTPHost, Port: u.SMTPPort, TLS: u.SMTPTLS, Username: u.SMTPUsername, HasPassword: u.SMTPPasswordSealed != "" || u.PasswordSealed != ""},
-		Proxy:        proxyView{Mode: u.ProxyMode, URL: u.ProxyURL, HasPassword: u.ProxyPasswordSealed != ""},
-		Paused:       u.Paused,
-		IsDefault:    u.IsDefault,
-		SentCopy:     u.SentCopy,
-		Status:       st,
-		Capabilities: caps,
-		Mailboxes:    d.Mailboxes,
-		CreatedAt:    rfc3339(&u.CreatedAt),
+		IMAP:           endpointView{Host: u.IMAPHost, Port: u.IMAPPort, TLS: u.IMAPTLS, Username: u.IMAPUsername, HasPassword: u.PasswordSealed != ""},
+		SMTP:           endpointView{Host: u.SMTPHost, Port: u.SMTPPort, TLS: u.SMTPTLS, Username: u.SMTPUsername, HasPassword: u.SMTPPasswordSealed != "" || u.PasswordSealed != ""},
+		Proxy:          proxyView{Mode: u.ProxyMode, URL: u.ProxyURL, HasPassword: u.ProxyPasswordSealed != ""},
+		Paused:         u.Paused,
+		IsDefault:      u.IsDefault,
+		SentCopy:       u.SentCopy,
+		AddressPending: u.AddressPending,
+		Status:         st,
+		Capabilities:   caps,
+		Mailboxes:      d.Mailboxes,
+		CreatedAt:      rfc3339(&u.CreatedAt),
 	}
 }

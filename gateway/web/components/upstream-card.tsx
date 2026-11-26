@@ -99,6 +99,11 @@ export function UpstreamCard({
         {actions}
       </div>
       <div className="grid grid-cols-1 gap-1.5 px-4 py-3">
+        {card.addressPending && (
+          <Row icon={CircleAlert} label={t.upstream.address} tone="danger">
+            {t.upstream.addressPending}
+          </Row>
+        )}
         <Row icon={Gauge} label={t.upstream.watchMode}>
           {t.watchModes[card.watchMode] ?? card.watchMode}
         </Row>
@@ -129,7 +134,9 @@ export function UpstreamCard({
                 : errText(card.lastError.code, card.lastError.msg)}
             </span>
             <DocLink
-              topic="statuses"
+              topic={
+                card.lastError.code === 40313 ? "exchangeDisabled" : "statuses"
+              }
               variant="icon"
               className="ml-1 align-middle"
             />

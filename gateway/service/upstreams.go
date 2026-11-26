@@ -256,6 +256,7 @@ func (s *Upstreams) apply(up *model.Upstream, in UpstreamInput) error {
 	}
 	if in.Email != "" {
 		up.Email = in.Email
+		up.AddressPending = false // the admin knows the address
 	}
 	if in.SentCopy != "" {
 		up.SentCopy = in.SentCopy

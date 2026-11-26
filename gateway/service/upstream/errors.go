@@ -37,6 +37,9 @@ type Error struct {
 	Kind ErrorKind
 	Op   string
 	Err  error
+	// Code, when set, is the public status code instead of the kind's default
+	// (a provider-specific condition the admin can act on, e.g. 40313).
+	Code int
 }
 
 func (e *Error) Error() string { return e.Op + ": " + e.Err.Error() }
@@ -44,13 +47,17 @@ func (e *Error) Unwrap() error { return e.Err }
 
 // Status is the jmapserver upstream status for the kind.
 func (e *Error) Status() (string, int) {
+	state, code := jmapserver.UpstreamUnreachable, jmapserver.CodeUpstreamUnreachable
 	switch e.Kind {
 	case KindAuth:
-		return jmapserver.UpstreamAuthRequired, jmapserver.CodeUpstreamAuthRequired
+		state, code = jmapserver.UpstreamAuthRequired, jmapserver.CodeUpstreamAuthRequired
 	case KindThrottled:
-		return jmapserver.UpstreamUnreachable, jmapserver.CodeUpstreamRateLimited
+		code = jmapserver.CodeUpstreamRateLimited
 	}
-	return jmapserver.UpstreamUnreachable, jmapserver.CodeUpstreamUnreachable
+	if e.Code != 0 {
+		code = e.Code
+	}
+	return state, code
 }
 
 // Classify wraps err as an *Error (keeping an existing one).
@@ -118,11 +125,13 @@ func imapKind(se *imapc.StatusError) ErrorKind {
 	if containsAny(se.Text, "throttl", "too many simultaneous", "rate limit", "bandwidth limit") {
 		return KindThrottled
 	}
-	// Exchange Online accepts the token, then answers every command with this when
-	// IMAP is off for the mailbox or the token belongs to another account: only the
-	// user or the tenant admin can fix it, so it is not retried.
+	// Exchange Online accepts the token, then answers every command with this
+	// while it cannot open the mailbox: IMAP is off for it, or — seen right after
+	// a personal account's first authorisation — the mailbox is not ready yet. A
+	// new sign-in would not help either way, so it is retried with backoff (the
+	// status detail and the connection test, 40313, say what it is).
 	if containsAny(se.Text, "authenticated but not connected") {
-		return KindAuth
+		return KindUnreachable
 	}
 	if se.Status == "BYE" {
 		return KindUnreachable

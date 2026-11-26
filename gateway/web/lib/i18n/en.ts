@@ -185,7 +185,7 @@ export const en: Messages = {
     40312:
       "SMTP AUTH is turned off for this mailbox or its organization; an admin can enable Authenticated SMTP in the Microsoft 365 admin center",
     40313:
-      "Exchange has IMAP turned off for this mailbox, or the signed-in account is not its owner; an admin can enable IMAP in the Microsoft 365 admin center",
+      "Microsoft accepted the authorization but will not open this mailbox: Outlook.com may have IMAP off (outlook.live.com → Settings → Mail → Forwarding and IMAP → Let devices and apps use IMAP), the account may need verifying first (sign in at outlook.live.com in a private window), or another account was picked (re-authorize in a private window); for work accounts an admin must enable IMAP",
     50211: "Could not connect through the proxy",
     50212: "TLS handshake failed; check the encryption mode and port",
     50213: "The server rejected the request",
@@ -255,6 +255,9 @@ export const en: Messages = {
     proxyDefault: "Default proxy",
     proxyCustom: "Custom",
     owner: "Owner",
+    address: "Address",
+    addressPending:
+      "Mailbox address not confirmed; set it in Name and address before sending",
     since: (s: string) => `Since ${s}`,
     default: "Default",
     folders: "Folders",
@@ -405,6 +408,16 @@ export const en: Messages = {
     noSignature: "No signature",
     passwordTitle: (name: string) => `Update password · ${name}`,
     passwordSaved: "Password updated; reconnecting",
+    rename: "Name and address",
+    renameTitle: (name: string) => `Name and address · ${name}`,
+    renameHint:
+      "The name is the account name in czlmail; the address is the From of sent mail and the primary identity.",
+    accountName: "Name",
+    mailboxAddress: "Mailbox address",
+    signInName: (login: string) => `Signs in as ${login}`,
+    addressPendingHint:
+      "This Microsoft account was registered with another provider's address and the gateway has not found its Outlook address in its mail yet. Send a message at outlook.live.com: its From is the address (usually outlook_…@outlook.com).",
+    renameSaved: "Saved",
   },
   appPasswords: {
     title: "App passwords",

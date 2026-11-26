@@ -125,7 +125,7 @@ func TestProbeFailures(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rep.IMAP.OK || rep.IMAP.Code != microsoft.CodeProbeIMAPDisabled || rep.IMAP.Msg != "imap_access_disabled" {
+		if rep.IMAP.OK || rep.IMAP.Code != microsoft.CodeProbeIMAPDisabled || rep.IMAP.Msg != "mailbox_not_connected" {
 			t.Errorf("IMAP %+v", rep.IMAP)
 		}
 		if rep.SMTP == nil || !rep.SMTP.OK {
@@ -170,11 +170,16 @@ func TestProbeFailures(t *testing.T) {
 	})
 }
 
-// "User is authenticated but not connected" needs the user or the tenant admin,
-// so the Runner must not retry it as a network failure.
-func TestNotConnectedIsAuth(t *testing.T) {
-	err := upstream.Classify("imap", &imapc.StatusError{Status: "BAD", Command: "CAPABILITY", Text: "User is authenticated but not connected."})
-	if !upstream.IsKind(err, upstream.KindAuth) {
-		t.Errorf("kind %v", err.Kind)
+// "User is authenticated but not connected" is not a refused sign-in: a new
+// authorisation does not fix it (IMAP off for the mailbox, or a mailbox not
+// ready yet right after the first authorisation), so it is retried.
+func TestNotConnectedIsRetried(t *testing.T) {
+	for _, se := range []*imapc.StatusError{
+		{Status: "BAD", Command: "CAPABILITY", Text: "User is authenticated but not connected."},
+		{Status: "NO", Command: "AUTHENTICATE", Text: "User is authenticated but not connected."},
+	} {
+		if err := upstream.Classify("imap", se); !upstream.IsKind(err, upstream.KindUnreachable) {
+			t.Errorf("%s %s: kind %v", se.Command, se.Status, err.Kind)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -80,6 +81,64 @@ func (c IDClaims) Mailbox() string {
 		return strings.ToLower(c.PreferredUsername)
 	}
 	return ""
+}
+
+// consumerDomains host Outlook.com mailboxes: a personal account that signs in
+// with one of them has its mailbox at that address.
+var consumerDomains = []string{"outlook.", "hotmail.", "live.", "msn.com", "windowslive.com", "passport.com"}
+
+// ConsumerAddress reports an address at an Outlook.com domain
+// (outlook.com, outlook.de, hotmail.co.uk, live.cn, msn.com, ...).
+func ConsumerAddress(addr string) bool {
+	_, domain, ok := strings.Cut(strings.ToLower(addr), "@")
+	if !ok {
+		return false
+	}
+	for _, d := range consumerDomains {
+		if domain == d {
+			return true
+		}
+		if rest, ok := strings.CutPrefix(domain, d); ok && strings.HasSuffix(d, ".") && countryTLD(rest) {
+			return true
+		}
+	}
+	return false
+}
+
+// countryTLD: "com", "de", "co.uk", "com.au" — at most two short labels.
+func countryTLD(s string) bool {
+	labels := strings.Split(s, ".")
+	if len(labels) > 2 {
+		return false
+	}
+	for _, l := range labels {
+		if l == "" || len(l) > 3 {
+			return false
+		}
+	}
+	return true
+}
+
+var generatedRe = regexp.MustCompile(`(?i)^outlook_[0-9a-f]{8,32}@outlook\.com$`)
+
+// GeneratedAddress reports the address Outlook.com gives the mailbox of a
+// personal account registered with another provider's address
+// (outlook_<hex>@outlook.com). It is not an alias of the account, so neither
+// the id_token nor Graph /me shows it; sending From the sign-in address is
+// refused (SendAsDenied).
+func GeneratedAddress(addr string) bool { return generatedRe.MatchString(addr) }
+
+// MailboxAddress is the mailbox's own address for a sign-in name. Work and
+// school accounts and personal accounts at an Outlook.com domain have their
+// mailbox at the sign-in address (the email claim is the primary SMTP
+// address). A personal account signed in with another provider's address has
+// an outlook_<hex>@outlook.com mailbox that only its mail shows: confirmed is
+// false and the sign-in name stands in until it is found.
+func MailboxAddress(c IDClaims, login string) (address string, confirmed bool) {
+	if !c.Personal() || ConsumerAddress(login) {
+		return login, true
+	}
+	return login, false
 }
 
 // PersonalTenant is the tenant id of personal Microsoft accounts.
