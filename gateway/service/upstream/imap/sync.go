@@ -99,7 +99,7 @@ func (r *round) run(ctx context.Context) error {
 	// A message that appeared or vanished here may have moved from or to a folder
 	// this round did not look at. Check the others by STATUS before importing, so
 	// the move is matched (same id) instead of showing up as a new message.
-	if !full && r.anyChanged() {
+	if r.anyChanged() {
 		if err := r.sweep(ctx); err != nil {
 			return err
 		}
@@ -259,9 +259,19 @@ func (r *round) sweep(ctx context.Context) error {
 			return err
 		}
 	}
+	// Every folder without changes this round is checked again with a fresh
+	// STATUS: one judged unchanged from this round's LIST-STATUS may have
+	// received the moved message after that snapshot (another client moving
+	// INBOX → Trash between our LIST and our SELECT of INBOX).
+	has := map[string]bool{}
+	for _, d := range r.deltas {
+		has[d.mbox.ID] = true
+	}
 	var rest []*model.IndexMailbox
 	for _, m := range r.byName {
-		if !m.NoSelect && !m.Virtual && !r.checked[m.ID] {
+		if !m.NoSelect && !m.Virtual && !has[m.ID] {
+			delete(r.statuses, m.Name)
+			r.checked[m.ID] = false
 			rest = append(rest, m)
 		}
 	}
