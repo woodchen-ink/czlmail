@@ -14,7 +14,7 @@ import { api, errorMessage, type SessionStatus, type SignInHint } from "@/lib/ap
 import { openExternal } from "@/lib/external";
 
 /** 网关的部署说明: Gmail、Outlook 与普通 IMAP 邮箱要先部署 czlmail 网关才能用。 */
-const GATEWAY_README_URL = "https://github.com/woodchen-ink/czlmail/blob/main/gateway/README.md";
+const GATEWAY_README_URL = "https://github.com/woodchen-ink/czlmail-gateway#readme";
 
 interface Props {
   onSignedIn: () => void;
