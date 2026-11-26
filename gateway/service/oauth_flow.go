@@ -310,6 +310,9 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 	}
 	row.IMAPHost, row.IMAPPort, row.IMAPTLS, row.IMAPUsername = pv.IMAP.Host, pv.IMAP.Port, pv.IMAP.TLS, email
 	row.SMTPHost, row.SMTPPort, row.SMTPTLS = pv.SMTP.Host, pv.SMTP.Port, pv.SMTP.TLS
+	if pv.SentCopy != "" {
+		row.SentCopy = pv.SentCopy
+	}
 	if row.OAuthTokenSealed, err = o.sealToken(row.PublicID, tok); err != nil {
 		return nil, err
 	}

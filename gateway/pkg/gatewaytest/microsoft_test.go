@@ -146,14 +146,16 @@ func TestMicrosoftOAuthUpstream(t *testing.T) {
 	idA := f.add(t, credA, mailA)
 	idB := f.add(t, credB, mailB)
 	var row struct {
-		Kind  string `json:"kind"`
-		Email string `json:"email"`
-		IMAP  struct {
+		Kind     string `json:"kind"`
+		Email    string `json:"email"`
+		SentCopy string `json:"sentCopy"`
+		IMAP     struct {
 			Username string `json:"username"`
 		} `json:"imap"`
 	}
 	gw.UserAdmin(t, credA).Do(t, "GET", "/api/admin/upstreams/"+idA, nil, &row)
-	if row.Kind != "microsoft" || row.Email != "adele@contoso.test" || row.IMAP.Username != "adele@contoso.test" {
+	// Exchange keeps its own Sent copy: preset, no test send needed.
+	if row.Kind != "microsoft" || row.Email != "adele@contoso.test" || row.IMAP.Username != "adele@contoso.test" || row.SentCopy != "server" {
 		t.Errorf("upstream %+v", row)
 	}
 

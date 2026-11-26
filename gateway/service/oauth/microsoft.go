@@ -32,6 +32,8 @@ func init() {
 		AuthParams: map[string]string{"prompt": "select_account"},
 		IMAP:       upstream.Endpoint{Host: microsoft.IMAPHost, Port: microsoft.IMAPPort, TLS: imapc.TLSImplicit},
 		SMTP:       upstream.Endpoint{Host: microsoft.SMTPHost, Port: microsoft.SMTPPort, TLS: imapc.TLSStartTLS},
+		// Exchange files every message submitted over SMTP in Sent Items.
+		SentCopy:   upstream.SentCopyServer,
 		Email:      microsoftEmail,
 		WithTenant: microsoftTenant,
 		ClassifyError: func(status int, body []byte) error {

@@ -438,11 +438,11 @@ func (r *round) reconcileMailboxes(ctx context.Context, entries []*imapc.ListEnt
 			}
 			r.u.forget(g.ID)
 		}
-		entries := make([]*imapc.ListEntry, len(list))
+		listed := make([]*imapc.ListEntry, len(list))
 		for i := range list {
-			entries[i] = list[i].e
+			listed[i] = list[i].e
 		}
-		roles := assignRoles(entries)
+		roles := assignRoles(listed)
 		for i := range list {
 			p := &list[i]
 			before := *p.row

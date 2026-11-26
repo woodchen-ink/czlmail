@@ -192,7 +192,7 @@ How Microsoft mailboxes differ from other IMAP servers:
 
 - Exchange has neither NOTIFY nor CONDSTORE / QRESYNC: push is IDLE on INBOX, the other folders are polled, and changes are found by comparing UIDs and flags (the newest 2000 messages on every check, everything once a day).
 - Folder roles come from the special-use flags Exchange puts on its folders and else from their names (`Sent Items`, `Deleted Items`, `Junk Email`, `Archive` and the translated names of the mailbox language).
-- Exchange files every message sent over SMTP in Sent Items itself, so the gateway does not append a copy.
+- Exchange files every message sent over SMTP in Sent Items itself, so new Microsoft mailboxes start with `sentCopy` `server` (see Sending): the gateway deletes the draft and gives Exchange's copy the same Email id, without a test send. Change it with `PATCH /upstreams/{id}` if a tenant behaves otherwise; re-authorising keeps the setting.
 - Microsoft has no endpoint for revoking one token: deleting the mailbox in the gateway deletes its tokens, and the user removes the app's access at <https://account.live.com/consent/Manage> (personal) or <https://myapps.microsoft.com> (work).
 
 ### Proxies

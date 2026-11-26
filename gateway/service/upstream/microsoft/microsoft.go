@@ -28,10 +28,6 @@ const (
 	SMTPPort = 587
 )
 
-// ServerSavesSent: Exchange files a copy of every message submitted over SMTP in
-// Sent Items itself, so the gateway must not append its own.
-const ServerSavesSent = true
-
 func init() {
 	upstream.Register(upstream.KindMicrosoft, New)
 	upstream.RegisterProber(upstream.KindMicrosoft, Probe)

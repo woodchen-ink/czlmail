@@ -36,6 +36,10 @@ type Provider struct {
 	// another way (the Gmail API).
 	IMAP upstream.Endpoint
 	SMTP upstream.Endpoint
+	// SentCopy presets the sent-copy strategy of new upstreams
+	// (upstream.SentCopyServer when the provider files sent mail itself); ""
+	// leaves the default, auto. Re-authorisation keeps what the upstream has.
+	SentCopy string
 	// APIBase is the provider's REST API root (https://gmail.googleapis.com),
 	// handed to the upstream as Config.APIBase.
 	APIBase string
