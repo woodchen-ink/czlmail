@@ -29,7 +29,7 @@ func TestContactLinksRoundTrip(t *testing.T) {
 
 	f.Given = "Jana"
 	f.OnlineServices = append(f.OnlineServices, ContactService{Service: "Blog", URI: "https://blog.example.cz", Link: true})
-	props, err := contactProps(f)
+	props, err := contactProps(f, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

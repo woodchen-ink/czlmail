@@ -77,6 +77,8 @@ func (a *App) SearchRecipients(query string) ([]store.Recipient, error) {
 
 // ContactField 是邮箱/电话条目。Context 取 work / private / 空; Feature 只用于电话(mobile/voice/fax/...)。
 type ContactField struct {
+	// Key 是条目在 JSContact 里的 key, 新加的条目为空; 保存时按它写回原条目 (见 contactOrig)。
+	Key     string `json:"key,omitempty"`
 	Value   string `json:"value"`
 	Context string `json:"context"`
 	Feature string `json:"feature"`
@@ -85,6 +87,7 @@ type ContactField struct {
 
 // ContactAddress 是结构化地址。
 type ContactAddress struct {
+	Key      string `json:"key,omitempty"`
 	Street   string `json:"street"`
 	Locality string `json:"locality"`
 	Region   string `json:"region"`
@@ -97,6 +100,7 @@ type ContactAddress struct {
 
 // ContactService 是在线服务(社交账号、网站等)。
 type ContactService struct {
+	Key     string `json:"key,omitempty"`
 	Service string `json:"service"`
 	URI     string `json:"uri"`
 	Label   string `json:"label"`
@@ -109,12 +113,14 @@ const legacyLinkService = "网站"
 
 // ContactDate 是纪念日。Date 为 YYYY-MM-DD, 不含年份时为 --MM-DD。
 type ContactDate struct {
+	Key  string `json:"key,omitempty"`
 	Kind string `json:"kind"` // birth / death / wedding / 其它
 	Date string `json:"date"`
 }
 
 // ContactInfo 是个人信息(专长、爱好、兴趣)。
 type ContactInfo struct {
+	Key   string `json:"key,omitempty"`
 	Kind  string `json:"kind"` // expertise / hobby / interest
 	Value string `json:"value"`
 	Level string `json:"level"` // high / medium / low
@@ -338,18 +344,18 @@ func contactFormFrom(raw []byte) *ContactForm {
 	for _, k := range sortedMapKeys(c.Emails) {
 		e := c.Emails[k]
 		if e.Address != "" {
-			f.Emails = append(f.Emails, ContactField{Value: e.Address, Context: firstContext(e.Contexts), Label: e.Label})
+			f.Emails = append(f.Emails, ContactField{Key: k, Value: e.Address, Context: firstContext(e.Contexts), Label: e.Label})
 		}
 	}
 	for _, k := range sortedMapKeys(c.Phones) {
 		p := c.Phones[k]
 		if p.Number != "" {
-			f.Phones = append(f.Phones, ContactField{Value: p.Number, Context: firstContext(p.Contexts), Feature: firstKey(p.Features), Label: p.Label})
+			f.Phones = append(f.Phones, ContactField{Key: k, Value: p.Number, Context: firstContext(p.Contexts), Feature: firstKey(p.Features), Label: p.Label})
 		}
 	}
 	for _, k := range sortedMapKeys(c.Addresses) {
 		ad := c.Addresses[k]
-		out := ContactAddress{Context: firstContext(ad.Contexts), Full: ad.Full}
+		out := ContactAddress{Key: k, Context: firstContext(ad.Contexts), Full: ad.Full}
 		for _, comp := range ad.Components {
 			switch comp.Kind {
 			case "name", "number", "street", "direction", "building", "floor", "apartment", "room", "subdistrict", "district", "block":
@@ -376,25 +382,25 @@ func contactFormFrom(raw []byte) *ContactForm {
 			if s.Service == legacyLinkService {
 				f.OnlineServices = append(f.OnlineServices, ContactService{URI: uri, Label: s.Label, Link: true})
 			} else {
-				f.OnlineServices = append(f.OnlineServices, ContactService{Service: s.Service, URI: uri, Label: s.Label})
+				f.OnlineServices = append(f.OnlineServices, ContactService{Key: k, Service: s.Service, URI: uri, Label: s.Label})
 			}
 		}
 	}
 	for _, k := range sortedMapKeys(c.Links) {
 		if l := c.Links[k]; l.URI != "" {
-			f.OnlineServices = append(f.OnlineServices, ContactService{URI: l.URI, Label: l.Label, Link: true})
+			f.OnlineServices = append(f.OnlineServices, ContactService{Key: k, URI: l.URI, Label: l.Label, Link: true})
 		}
 	}
 	for _, k := range sortedMapKeys(c.Anniversaries) {
 		an := c.Anniversaries[k]
 		if d := partialDate(an.Date); d != "" {
-			f.Anniversaries = append(f.Anniversaries, ContactDate{Kind: an.Kind, Date: d})
+			f.Anniversaries = append(f.Anniversaries, ContactDate{Key: k, Kind: an.Kind, Date: d})
 		}
 	}
 	for _, k := range sortedMapKeys(c.PersonalInfo) {
 		p := c.PersonalInfo[k]
 		if p.Value != "" {
-			f.PersonalInfo = append(f.PersonalInfo, ContactInfo{Kind: p.Kind, Value: p.Value, Level: p.Level})
+			f.PersonalInfo = append(f.PersonalInfo, ContactInfo{Key: k, Kind: p.Kind, Value: p.Value, Level: p.Level})
 		}
 	}
 	for k, on := range c.Keywords {
@@ -493,10 +499,20 @@ func (a *App) SaveContact(f ContactForm) (string, error) {
 			return "", err
 		}
 	}
-	props, err := contactProps(&f)
+	// 修改时以本机缓存里的原卡片为底, 编辑器不认识的属性与条目 key 不丢; 读不到就整体重写。
+	var orig *contactOrig
+	if f.ID != "" {
+		if st, err := a.currentStore(); err == nil {
+			if raw, err := st.Contact(a.ctx, f.AccountID, f.ID); err == nil {
+				orig = newContactOrig([]byte(raw))
+			}
+		}
+	}
+	props, err := contactProps(&f, orig)
 	if err != nil {
 		return "", err
 	}
+	dropUnchanged(props, &f, orig)
 
 	if f.ID == "" {
 		// 服务器不会自动生成 uid; 没有 uid 的联系人无法被群组引用, 也会让 CardDAV 客户端报错。
@@ -539,7 +555,8 @@ func (a *App) SaveContact(f ContactForm) (string, error) {
 }
 
 // contactProps 把表单转成 JSContact 属性。取值为 nil 的属性在更新时表示删除。
-func contactProps(f *ContactForm) (map[string]any, error) {
+// o 是原卡片 (修改时): 列表条目按原 key 写回, 只改用户动过的字段; 为 nil 时整体重写 (新建)。
+func contactProps(f *ContactForm, o *contactOrig) (map[string]any, error) {
 	trim := strings.TrimSpace
 	kind := f.Kind
 	if kind == "" {
@@ -592,7 +609,7 @@ func contactProps(f *ContactForm) (map[string]any, error) {
 		props["nicknames"] = map[string]any{"n0": map[string]any{"name": v}}
 	}
 
-	emails := map[string]any{}
+	emails := o.list("emails", "e")
 	for i, e := range f.Emails {
 		v := trim(e.Value)
 		if v == "" {
@@ -601,36 +618,28 @@ func contactProps(f *ContactForm) (map[string]any, error) {
 		if !emailPattern.MatchString(v) {
 			return nil, fmt.Errorf("2112 invalid email %q", v)
 		}
-		entry := map[string]any{"address": v}
-		if e.Context != "" {
-			entry["contexts"] = map[string]bool{e.Context: true}
-		}
-		if trim(e.Label) != "" {
-			entry["label"] = trim(e.Label)
-		}
-		emails[fmt.Sprintf("e%d", i)] = entry
+		was, _ := o.origField(func(c *ContactForm) []ContactField { return c.Emails }, e.Key)
+		entry, fresh := emails.entry(e.Key, i)
+		put(entry, fresh, v != was.Value, "address", v)
+		put(entry, fresh, e.Context != was.Context, "contexts", contextMap(e.Context))
+		put(entry, fresh, trim(e.Label) != was.Label, "label", trim(e.Label))
 	}
-	props["emails"] = nilIfEmpty(emails)
+	props["emails"] = nilIfEmpty(emails.out)
 
-	phones := map[string]any{}
+	phones := o.list("phones", "p")
 	for i, p := range f.Phones {
 		v := trim(p.Value)
 		if v == "" {
 			continue
 		}
-		entry := map[string]any{"number": v}
-		if p.Context != "" {
-			entry["contexts"] = map[string]bool{p.Context: true}
-		}
-		if p.Feature != "" {
-			entry["features"] = map[string]bool{p.Feature: true}
-		}
-		if trim(p.Label) != "" {
-			entry["label"] = trim(p.Label)
-		}
-		phones[fmt.Sprintf("p%d", i)] = entry
+		was, _ := o.origField(func(c *ContactForm) []ContactField { return c.Phones }, p.Key)
+		entry, fresh := phones.entry(p.Key, i)
+		put(entry, fresh, v != was.Value, "number", v)
+		put(entry, fresh, p.Context != was.Context, "contexts", contextMap(p.Context))
+		put(entry, fresh, p.Feature != was.Feature, "features", contextMap(p.Feature))
+		put(entry, fresh, trim(p.Label) != was.Label, "label", trim(p.Label))
 	}
-	props["phones"] = nilIfEmpty(phones)
+	props["phones"] = nilIfEmpty(phones.out)
 
 	props["organizations"] = nil
 	if org != "" {
@@ -649,7 +658,7 @@ func contactProps(f *ContactForm) (map[string]any, error) {
 	}
 	props["titles"] = nilIfEmpty(titles)
 
-	addrs := map[string]any{}
+	addrs := o.list("addresses", "a")
 	for i, ad := range f.Addresses {
 		var comps []map[string]string
 		for _, c := range []struct{ kind, value string }{
@@ -659,45 +668,62 @@ func contactProps(f *ContactForm) (map[string]any, error) {
 				comps = append(comps, map[string]string{"kind": c.kind, "value": v})
 			}
 		}
-		if len(comps) == 0 {
-			if trim(ad.Full) == "" {
-				continue
-			}
-			entry := map[string]any{"full": trim(ad.Full)}
-			addrs[fmt.Sprintf("a%d", i)] = entry
+		if len(comps) == 0 && trim(ad.Full) == "" {
 			continue
 		}
-		entry := map[string]any{"components": comps, "isOrdered": true, "defaultSeparator": ", "}
-		if ad.Context != "" {
-			entry["contexts"] = map[string]bool{ad.Context: true}
+		was, _ := o.origAddress(ad.Key)
+		entry, fresh := addrs.entry(ad.Key, i)
+		// 分量 (连同 full) 是一个整体: 编辑器把街道类分量合成了一栏, 只有用户改过才按编辑器的写法重写。
+		parts := func(a ContactAddress) [5]string {
+			return [5]string{trim(a.Street), trim(a.Locality), trim(a.Region), trim(a.Postcode), trim(a.Country)}
 		}
-		addrs[fmt.Sprintf("a%d", i)] = entry
+		if moved := parts(ad) != parts(was) || trim(ad.Full) != trim(was.Full); fresh || moved {
+			for _, k := range []string{"components", "isOrdered", "defaultSeparator", "full"} {
+				delete(entry, k)
+			}
+			if len(comps) == 0 {
+				entry["full"] = trim(ad.Full)
+			} else {
+				entry["components"], entry["isOrdered"], entry["defaultSeparator"] = comps, true, ", "
+			}
+		}
+		put(entry, fresh, ad.Context != was.Context, "contexts", contextMap(ad.Context))
 	}
-	props["addresses"] = nilIfEmpty(addrs)
+	props["addresses"] = nilIfEmpty(addrs.out)
 
 	// 网站 (Link 且没填服务名) 写回 links, 其余写 onlineServices。
-	services, links := map[string]any{}, map[string]any{}
+	// 原 key 只在同一属性里沿用: 网站填了服务名就从 links 挪到 onlineServices, 当新条目处理。
+	services, links := o.list("onlineServices", "os"), o.list("links", "l")
 	for i, sv := range f.OnlineServices {
-		if trim(sv.URI) == "" {
+		uri, label, service := trim(sv.URI), trim(sv.Label), trim(sv.Service)
+		if uri == "" {
 			continue
 		}
-		entry := map[string]any{"uri": trim(sv.URI)}
-		if trim(sv.Label) != "" {
-			entry["label"] = trim(sv.Label)
-		}
-		if sv.Link && trim(sv.Service) == "" {
-			links[fmt.Sprintf("l%d", i)] = entry
+		if sv.Link && service == "" {
+			was, _ := o.origService(sv.Key, true)
+			entry, fresh := links.entry(sv.Key, i)
+			put(entry, fresh, uri != was.URI, "uri", uri)
+			put(entry, fresh, label != was.Label, "label", label)
 			continue
 		}
-		if trim(sv.Service) != "" {
-			entry["service"] = trim(sv.Service)
+		key := sv.Key
+		if sv.Link {
+			key = ""
 		}
-		services[fmt.Sprintf("os%d", i)] = entry
+		was, _ := o.origService(key, false)
+		entry, fresh := services.entry(key, i)
+		if fresh || uri != was.URI {
+			// 原条目可能只有 user (账号名) 没有 uri; 改过之后统一写进 uri。
+			delete(entry, "user")
+			entry["uri"] = uri
+		}
+		put(entry, fresh, service != was.Service, "service", service)
+		put(entry, fresh, label != was.Label, "label", label)
 	}
-	props["onlineServices"] = nilIfEmpty(services)
-	props["links"] = nilIfEmpty(links)
+	props["onlineServices"] = nilIfEmpty(services.out)
+	props["links"] = nilIfEmpty(links.out)
 
-	anns := map[string]any{}
+	anns := o.list("anniversaries", "an")
 	for i, an := range f.Anniversaries {
 		m := datePattern.FindStringSubmatch(trim(an.Date))
 		if m == nil {
@@ -714,22 +740,27 @@ func contactProps(f *ContactForm) (map[string]any, error) {
 		if k == "" {
 			k = "birth"
 		}
-		anns[fmt.Sprintf("an%d", i)] = map[string]any{"kind": k, "date": date}
+		was, _ := o.origDate(an.Key)
+		entry, fresh := anns.entry(an.Key, i)
+		put(entry, fresh, k != was.Kind, "kind", k)
+		// 日期没改时保留原写法 (可能带 calendarScale, 或是 Timestamp)。
+		put(entry, fresh, trim(an.Date) != was.Date, "date", date)
 	}
-	props["anniversaries"] = nilIfEmpty(anns)
+	props["anniversaries"] = nilIfEmpty(anns.out)
 
-	info := map[string]any{}
+	info := o.list("personalInfo", "pi")
 	for i, p := range f.PersonalInfo {
-		if trim(p.Value) == "" {
+		v := trim(p.Value)
+		if v == "" {
 			continue
 		}
-		entry := map[string]any{"kind": p.Kind, "value": trim(p.Value)}
-		if p.Level != "" {
-			entry["level"] = p.Level
-		}
-		info[fmt.Sprintf("pi%d", i)] = entry
+		was, _ := o.origInfo(p.Key)
+		entry, fresh := info.entry(p.Key, i)
+		put(entry, fresh, p.Kind != was.Kind, "kind", p.Kind)
+		put(entry, fresh, v != was.Value, "value", v)
+		put(entry, fresh, p.Level != was.Level, "level", p.Level)
 	}
-	props["personalInfo"] = nilIfEmpty(info)
+	props["personalInfo"] = nilIfEmpty(info.out)
 
 	keywords := map[string]bool{}
 	for _, k := range f.Keywords {
