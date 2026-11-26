@@ -41,8 +41,12 @@ func (s *Service) Delivered(userID, accountID string, idx *mailindex.Store, emai
 		return
 	}
 	ids := slices.Clone(emailIDs)
-	go s.deliver(userID, accountID, idx, ids)
+	s.deliveries.Go(func() { s.deliver(userID, accountID, idx, ids) })
 }
+
+// Close waits for new-mail notifications in flight. Call it after the upstream
+// manager has stopped, so no new deliveries start.
+func (s *Service) Close() { s.deliveries.Wait() }
 
 func (s *Service) deliver(userID, accountID string, idx *mailindex.Store, ids []string) {
 	msgs, err := loadMessages(idx, ids)

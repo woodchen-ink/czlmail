@@ -24,16 +24,16 @@ import (
 // newGateway serves the fully assembled gateway, as Serve does.
 func newGateway(t *testing.T) (*initapp.App, string) {
 	t.Helper()
-	var app *initapp.App
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { app.Handler.ServeHTTP(w, r) }))
-	t.Cleanup(ts.Close)
-
+	// Cleanups run in reverse: app, HTTP server, database, then the directory.
 	dir := t.TempDir()
 	db, err := database.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { database.Close(db) })
+	var app *initapp.App
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { app.Handler.ServeHTTP(w, r) }))
+	t.Cleanup(ts.Close)
 	cfg := &config.Config{MasterKey: bytes.Repeat([]byte{7}, config.MasterKeySize), BaseURL: ts.URL, DataDir: dir}
 	app, err = initapp.NewApp(cfg, db, slog.New(slog.NewJSONHandler(io.Discard, nil)), "2026.12.0")
 	if err != nil {

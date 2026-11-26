@@ -64,19 +64,20 @@ func Start(t testing.TB) *Gateway {
 // StartWith is Start with app options (shorter waits for sending tests).
 func StartWith(t testing.TB, opts initapp.Options) *Gateway {
 	t.Helper()
-	g := &Gateway{}
-	g.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		g.App.Handler.ServeHTTP(w, r)
-	}))
-	t.Cleanup(g.Close)
-
-	g.DataDir = t.TempDir()
+	// Cleanups run in reverse: App.Close (background work, EventSource streams),
+	// then the HTTP server (waits for requests in flight), then the database, and
+	// only then is the data directory removed.
+	g := &Gateway{DataDir: t.TempDir()}
 	db, err := database.Open(g.DataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { database.Close(db) })
 	g.DB = db
+	g.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.App.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(g.Close)
 
 	key := make([]byte, config.MasterKeySize)
 	if _, err := rand.Read(key); err != nil {
@@ -93,7 +94,7 @@ func StartWith(t testing.TB, opts initapp.Options) *Gateway {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(g.App.Close) // before g.Close, so open EventSource streams do not block it
+	t.Cleanup(g.App.Close)
 	return g
 }
 

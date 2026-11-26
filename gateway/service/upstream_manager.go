@@ -61,6 +61,7 @@ type UpstreamManager struct {
 	metrics  UpstreamMetrics
 	deliver  DeliveryFunc
 	removed  []func(accountID string)
+	bg       sync.WaitGroup // restarts and probes started outside a runner
 }
 
 // UpstreamMetrics records upstream activity for the admin overview; it is
@@ -169,9 +170,31 @@ func (m *UpstreamManager) Stop() {
 	}
 	m.running = map[string]*managed{}
 	m.mu.Unlock()
+	m.bg.Wait() // restarts find nothing to start once stopped is set
 	for _, r := range list {
 		r.stop()
 	}
+}
+
+// background runs f on its own goroutine unless the manager has stopped; Stop
+// waits for it.
+func (m *UpstreamManager) background(f func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.stopped {
+		return
+	}
+	m.bg.Go(f)
+}
+
+// runContext is the context Run was given, ended when the gateway shuts down.
+func (m *UpstreamManager) runContext() context.Context {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ctx == nil {
+		return context.Background()
+	}
+	return m.ctx
 }
 
 func (r *managed) stop() {
@@ -391,7 +414,8 @@ func (m *UpstreamManager) settingsChanged(keys []string) {
 	}
 	for i := range rows {
 		if private || rows[i].ProxyMode == model.ProxyFollow {
-			go m.Restart(&rows[i])
+			row := &rows[i]
+			m.background(func() { m.Restart(row) })
 		}
 	}
 }
@@ -626,19 +650,19 @@ func (e *runnerEvents) StatusChanged(accountID string, st upstream.Status) {
 	e.m.record(accountID, e.userID, st)
 	if st.State == jmapserver.UpstreamOK {
 		e.once.Do(func() {
-			go func() {
+			e.m.background(func() {
 				e.m.mu.Lock()
 				r := e.m.running[accountID]
 				e.m.mu.Unlock()
 				if r == nil {
 					return
 				}
-				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				ctx, cancel := context.WithTimeout(e.m.runContext(), time.Minute)
 				defer cancel()
 				if caps, err := r.up.Probe(ctx); err == nil {
 					e.m.saveCaps(accountID, caps)
 				}
-			}()
+			})
 		})
 	}
 }

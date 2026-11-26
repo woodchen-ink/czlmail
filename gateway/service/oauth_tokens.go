@@ -100,7 +100,8 @@ func (o *OAuth) appChanged(provider string) {
 		return
 	}
 	for i := range rows {
-		go o.mgr.Restart(&rows[i])
+		row := &rows[i]
+		o.mgr.background(func() { o.mgr.Restart(row) })
 	}
 }
 

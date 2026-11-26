@@ -78,6 +78,7 @@ type Scheduler struct {
 	log   *slog.Logger
 	tasks []*task
 	ctx   context.Context
+	wg    sync.WaitGroup // task loops
 }
 
 // NewScheduler returns an empty scheduler.
@@ -92,9 +93,13 @@ func (s *Scheduler) Add(t Task) { s.tasks = append(s.tasks, &task{def: t}) }
 func (s *Scheduler) Start(ctx context.Context) {
 	s.ctx = ctx
 	for _, t := range s.tasks {
-		go s.loop(ctx, t)
+		s.wg.Go(func() { s.loop(ctx, t) })
 	}
 }
+
+// Wait blocks until every task loop has returned, including a run in progress.
+// Cancel the context given to Start first.
+func (s *Scheduler) Wait() { s.wg.Wait() }
 
 func (s *Scheduler) loop(ctx context.Context, t *task) {
 	tick := time.NewTicker(t.def.Interval)
