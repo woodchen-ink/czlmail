@@ -67,6 +67,11 @@ func openFile(path string) (*gorm.DB, error) {
 	q.Add("_pragma", "busy_timeout(5000)")
 	q.Add("_pragma", "foreign_keys(1)")
 	q.Add("_pragma", "synchronous(NORMAL)")
+	// BEGIN IMMEDIATE: a transaction that reads and then writes takes the write
+	// lock up front and waits (busy_timeout) for other writers. A deferred one
+	// fails at once with SQLITE_BUSY when another connection committed after its
+	// read, which busy_timeout cannot help (WAL snapshot upgrade).
+	q.Add("_txlock", "immediate")
 	db, err := gorm.Open(sqlite.Open(path+"?"+q.Encode()), &gorm.Config{
 		Logger:  logger.Default.LogMode(logger.Silent),
 		NowFunc: func() time.Time { return time.Now().UTC() },
