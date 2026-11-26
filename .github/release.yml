@@ -1,0 +1,6 @@
+# GitHub 自动生成的版本说明 (release.yml 的 generate_release_notes) 用这份配置。
+# 网关 (gateway/) 单独发镜像、不建 Release, 它的 PR 不进客户端的版本说明。
+changelog:
+  exclude:
+    labels:
+      - gateway

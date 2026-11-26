@@ -1,0 +1,107 @@
+# JMAP gateway (gateway/): test on PRs, publish the Docker image to ghcr.io.
+#   push to main touching gateway/**  -> :edge and :sha-<7>
+#   tag gateway-vYYYY.M.N              -> :YYYY.M.N, :YYYY.M and :latest (tags with "-" skip :YYYY.M and :latest)
+# No GitHub Release is created: the desktop and Android updaters read releases/latest,
+# which must keep pointing at the app release (release.yml, tags v*).
+name: gateway
+
+on:
+  pull_request:
+    paths: ["gateway/**", ".github/workflows/gateway.yml"]
+  push:
+    branches: [main]
+    paths: ["gateway/**", ".github/workflows/gateway.yml"]
+    tags: ["gateway-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/woodchen-ink/czlmail-gateway
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: gateway/go.mod
+          cache-dependency-path: gateway/go.sum
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version and tags
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          push=true
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF" in
+            push:refs/tags/gateway-v*)
+              version="${GITHUB_REF_NAME#gateway-v}"
+              if ! [[ "$version" =~ ^[0-9]{4}\.[0-9]{1,2}\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+                echo "::error::tag $GITHUB_REF_NAME is not gateway-vYYYY.M.N"; exit 1
+              fi
+              tags="$IMAGE:$version"
+              if [[ "$version" != *-* ]]; then
+                tags="$tags,$IMAGE:${version%.*},$IMAGE:latest"
+              fi ;;
+            push:refs/heads/main)
+              version="edge-${GITHUB_SHA::7}"
+              tags="$IMAGE:edge,$IMAGE:sha-${GITHUB_SHA::7}" ;;
+            workflow_dispatch:*)
+              version="manual-${GITHUB_SHA::7}"
+              tags="$IMAGE:manual-${GITHUB_SHA::7}" ;;
+            *)
+              version="pr-${GITHUB_SHA::7}"
+              tags="$IMAGE:pr"
+              push=false ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "push=$push" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: steps.meta.outputs.push == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: gateway
+          platforms: linux/amd64,linux/arm64
+          push: ${{ steps.meta.outputs.push == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.title=czlmail-gateway
+            org.opencontainers.image.description=JMAP gateway for czlmail: IMAP, Gmail and Microsoft mailboxes as one JMAP server
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          cache-from: type=gha,scope=gateway
+          cache-to: type=gha,scope=gateway,mode=max
