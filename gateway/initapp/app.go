@@ -60,6 +60,10 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 		return nil, err
 	}
 	jmap.RegisterCapability(jmapserver.GatewayCapability, gateway)
+	// Server-level values are empty objects (RFC 8621 §1.3); the limits are per
+	// account. The Mail and Submission methods are registered by service/mail.
+	jmap.RegisterCapability(service.MailCapability, struct{}{})
+	jmap.RegisterCapability(service.SubmissionCapability, struct{}{})
 	pushStore := service.NewPushStore(db, ring, log)
 	if err := jmap.EnablePush(context.Background(), jmapserver.PushOptions{
 		Store:                pushStore,

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -283,8 +282,3 @@ func (c *Client) Wait(ctx context.Context, maxWait time.Duration, wake func(*Res
 	}
 	return nil
 }
-
-// Keyword helpers.
-
-// IsSystemFlag reports \Seen-style flags.
-func IsSystemFlag(f string) bool { return strings.HasPrefix(f, "\\") }

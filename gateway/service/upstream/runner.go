@@ -140,6 +140,13 @@ func (r *Runner) setStatus(state string, code int, err error) {
 
 func (r *Runner) progress(done, total int) {
 	r.mu.Lock()
+	state := r.status.State
+	r.mu.Unlock()
+	if state != jmapserver.UpstreamSyncing {
+		// A retry of the first sync got through: it is importing again.
+		r.setStatus(jmapserver.UpstreamSyncing, 0, nil)
+	}
+	r.mu.Lock()
 	r.status.Progress = &jmapserver.InitialSync{Done: done, Total: total}
 	r.mu.Unlock()
 	r.events.Progress(r.id, done, total)
@@ -199,7 +206,9 @@ func (r *Runner) session(ctx context.Context, backoff *time.Duration) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if !r.up.Index().Ready() {
+	// The first attempt says syncing; a retry keeps its error status until it
+	// imports something (progress) or completes, so the Session does not flap.
+	if !r.up.Index().Ready() && r.Status().State == "" {
 		r.setStatus(jmapserver.UpstreamSyncing, 0, nil)
 	}
 	if err := r.sync(ctx, SyncRequest{Full: true, Progress: r.progress}); err != nil {

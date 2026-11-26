@@ -30,7 +30,7 @@ func TestGatewayStarts(t *testing.T) {
 }
 
 // Dovecot smoke: one IMAP upstream shows up as a mail account with standard roles.
-// Runs up to the upstream step; that skips until #39 lands; needs docker-compose.test.yml.
+// Runs up to Mailbox/get, which skips until #40 lands; needs docker-compose.test.yml.
 func TestProtocolDovecotSession(t *testing.T) {
 	mbox := imaptest.Dovecot(t).NewUser(t)
 	gw := Start(t)
@@ -67,6 +67,9 @@ func requireMailAccount(t *testing.T, c *jmap.Client, acct jmap.ID, roles ...mai
 	req := &jmap.Request{}
 	req.Invoke(&mailbox.Get{Account: acct})
 	resp := Do(t, c, req)
+	if me, ok := resp.Responses[0].Args.(*jmap.MethodError); ok && me.Type == "unknownMethod" {
+		t.Skip("gatewaytest: Mailbox/get arrives with #40")
+	}
 	got, ok := resp.Responses[0].Args.(*mailbox.GetResponse)
 	if !ok {
 		t.Fatalf("Mailbox/get: %#v", resp.Responses[0].Args)

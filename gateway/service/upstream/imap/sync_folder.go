@@ -22,6 +22,7 @@ type folderDelta struct {
 	flags    []flagChange
 	newUIDs  []uint32 // not indexed yet, newest first
 	next     syncPoint
+	removed  bool // applyRemovals committed
 	imported bool
 }
 

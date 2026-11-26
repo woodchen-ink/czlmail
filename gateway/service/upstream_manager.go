@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -318,9 +317,6 @@ type Handle struct {
 	Status   upstream.Status
 }
 
-// ErrAccountUnavailable is returned by Lookup with the reason in UpstreamError.
-var ErrAccountUnavailable = errors.New("upstream unavailable")
-
 // Lookup returns the running upstream of accountID, or a *jmapserver.UpstreamError
 // for serverUnavailable when it is paused, still on its first sync, or not running.
 // Reads may still use Handle.Upstream.Index() when the upstream is unreachable but
@@ -328,9 +324,17 @@ var ErrAccountUnavailable = errors.New("upstream unavailable")
 func (m *UpstreamManager) Lookup(accountID string) (*Handle, *jmapserver.UpstreamError) {
 	m.mu.Lock()
 	r := m.running[accountID]
+	last := m.statuses[accountID]
 	m.mu.Unlock()
 	if r == nil {
-		return nil, &jmapserver.UpstreamError{Status: jmapserver.UpstreamPaused, Code: jmapserver.CodeUpstreamPaused}
+		// Not running: paused, or its settings could not be used.
+		switch last {
+		case jmapserver.UpstreamAuthRequired:
+			return nil, &jmapserver.UpstreamError{Status: last, Code: jmapserver.CodeUpstreamAuthRequired}
+		case jmapserver.UpstreamPaused:
+			return nil, &jmapserver.UpstreamError{Status: last, Code: jmapserver.CodeUpstreamPaused}
+		}
+		return nil, &jmapserver.UpstreamError{Status: jmapserver.UpstreamUnreachable, Code: jmapserver.CodeUpstreamUnreachable}
 	}
 	st := r.runner.Status()
 	if !r.idx.Ready() {

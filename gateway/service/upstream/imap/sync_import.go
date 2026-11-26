@@ -2,6 +2,7 @@ package imap
 
 import (
 	"context"
+	"errors"
 	"slices"
 
 	"github.com/woodchen-ink/czlmail/gateway/pkg/imapc"
@@ -116,7 +117,10 @@ func (u *Upstream) threadKey(m *imapc.Message) string {
 // metaItems are the FETCH items of a new message.
 func (u *Upstream) metaItems() []string {
 	caps := u.serverCaps()
-	items := []string{"UID", "FLAGS", "INTERNALDATE", "RFC822.SIZE", "ENVELOPE", "BODYSTRUCTURE", "BODY.PEEK[HEADER.FIELDS (REFERENCES)]"}
+	items := []string{"UID", "FLAGS", "INTERNALDATE", "RFC822.SIZE", "ENVELOPE", "BODY.PEEK[HEADER.FIELDS (REFERENCES)]"}
+	if !caps.noBodyStructure {
+		items = append(items, "BODYSTRUCTURE")
+	}
 	if caps.condstore {
 		items = append(items, "MODSEQ")
 	}
@@ -138,24 +142,33 @@ type fetched struct {
 func (u *Upstream) fetchMeta(ctx context.Context, c *imapc.Client, uids []uint32) ([]*fetched, error) {
 	byUID := map[uint32]*fetched{}
 	var order []*fetched
-	err := c.Fetch(ctx, imapc.UIDSet(uids).Compact(), u.metaItems(), imapc.FetchOptions{UID: true}, func(m *imapc.Message) {
+	collect := func(m *imapc.Message) {
 		if m.UID == 0 || byUID[m.UID] != nil {
 			return
 		}
 		f := &fetched{msg: m}
 		byUID[m.UID] = f
 		order = append(order, f)
-	}, nil)
+	}
+	set := imapc.UIDSet(uids).Compact()
+	err := c.Fetch(ctx, set, u.metaItems(), imapc.FetchOptions{UID: true}, collect, nil)
+	var se *imapc.StatusError
+	if errors.As(err, &se) && se.Status == "BAD" && !u.serverCaps().noBodyStructure {
+		// A server without BODYSTRUCTURE: index without it (no attachment flag,
+		// preview from the raw text).
+		u.mu.Lock()
+		u.caps.noBodyStructure = true
+		u.mu.Unlock()
+		u.log.Warn("server rejects BODYSTRUCTURE; indexing without it", "err", err)
+		err = c.Fetch(ctx, set, u.metaItems(), imapc.FetchOptions{UID: true}, collect, nil)
+	}
 	if err != nil {
 		return nil, err
 	}
 	// One FETCH per distinct preview section ("1", "1.1", ...): usually a handful.
 	sections := map[string][]uint32{}
 	for _, f := range order {
-		if f.msg.Body == nil {
-			continue
-		}
-		if p := previewPart(f.msg.Body); p != nil {
+		if p := previewSource(f.msg); p != nil {
 			sections[p.Path] = append(sections[p.Path], f.msg.UID)
 		}
 	}
@@ -172,7 +185,7 @@ func (u *Upstream) fetchMeta(ctx context.Context, c *imapc.Client, uids []uint32
 				return
 			}
 			if raw, ok := m.Sections[sec]; ok {
-				if p := previewPart(f.msg.Body); p != nil {
+				if p := previewSource(f.msg); p != nil {
 					f.preview = makePreview(p, raw)
 				}
 			}
@@ -182,6 +195,15 @@ func (u *Upstream) fetchMeta(ctx context.Context, c *imapc.Client, uids []uint32
 		}
 	}
 	return order, nil
+}
+
+// previewSource is the part the preview is read from; without a body structure,
+// the message text as plain text.
+func previewSource(m *imapc.Message) *imapc.BodyPart {
+	if m.Body == nil {
+		return &imapc.BodyPart{Path: "TEXT", Type: "text", Subtype: "plain"}
+	}
+	return previewPart(m.Body)
 }
 
 // importFolder fetches the folder's new messages in batches, newest first, and

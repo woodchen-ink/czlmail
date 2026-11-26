@@ -43,7 +43,7 @@ type Upstream struct {
 	OAuthTokenSealed string `gorm:"column:oauth_token_sealed;type:text"`
 
 	ProxyMode           string `gorm:"size:16;not null;default:follow"`
-	ProxyURL            string `gorm:"size:300"` // socks5://[user@]host:port, without password
+	ProxyURL            string `gorm:"size:300"`  // socks5://[user@]host:port, without password
 	ProxyPasswordSealed string `gorm:"type:text"` // crypto.PurposeProxySecret
 
 	Paused    bool `gorm:"not null;default:false"`

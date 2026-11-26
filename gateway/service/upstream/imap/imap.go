@@ -85,6 +85,8 @@ type serverCaps struct {
 	move       bool
 	uidplus    bool
 	specialUse bool
+	// noBodyStructure is learned when the server answers BAD to BODYSTRUCTURE.
+	noBodyStructure bool
 }
 
 func (c serverCaps) tier() string {
@@ -202,6 +204,7 @@ func (u *Upstream) learnCaps(ctx context.Context, c *imapc.Client) {
 		sc.xguid = probeXGUID(ctx, c)
 	}
 	u.mu.Lock()
+	sc.noBodyStructure = u.caps.noBodyStructure
 	u.caps = sc
 	u.mu.Unlock()
 	u.log.Info("upstream capabilities", "tier", sc.tier(), "notify", sc.notify, "idle", sc.idle, "objectid", sc.objectID, "xguid", sc.xguid, "list_status", sc.listStatus)

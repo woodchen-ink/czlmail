@@ -194,6 +194,9 @@ func (r *round) needsSync(m *model.IndexMailbox, st *imapc.Status, forced bool) 
 func (r *round) apply(ctx context.Context) error {
 	if err := r.write(func(tx *mailindex.Tx) error {
 		for _, d := range r.deltas {
+			if d.removed {
+				continue // applied before a sweep; a second DetachAll would undo the import
+			}
 			if err := d.applyRemovals(tx); err != nil {
 				return err
 			}
@@ -201,6 +204,9 @@ func (r *round) apply(ctx context.Context) error {
 		return nil
 	}); err != nil {
 		return err
+	}
+	for _, d := range r.deltas {
+		d.removed = true
 	}
 	if r.matcher == nil {
 		m, err := newOrphanMatcher(r.u.idx)
@@ -264,15 +270,18 @@ func (r *round) finish(wasReady bool) error {
 		}
 		for _, d := range r.deltas {
 			m := d.mbox
-			m.UIDValidity, m.UIDNext, m.HighestModSeq, m.Messages = d.next.UIDValidity, d.next.UIDNext, d.next.HighestModSeq, d.next.Messages
+			point := map[string]any{
+				"uid_validity": d.next.UIDValidity, "uid_next": d.next.UIDNext,
+				"highest_mod_seq": d.next.HighestModSeq, "messages": d.next.Messages, "synced_at": now,
+			}
 			if st := r.statuses[m.Name]; st != nil {
-				m.Unseen = st.Unseen
+				point["unseen"] = st.Unseen
 			}
-			m.SyncedAt = &now
 			if d.changed() {
-				m.ChangedAt = &now
+				point["changed_at"] = now
 			}
-			if err := tx.UpdateMailbox(m, false); err != nil {
+			// Only the sync point: LIST may have updated other columns this round.
+			if err := tx.DB().Model(&model.IndexMailbox{}).Where("id = ?", m.ID).Updates(point).Error; err != nil {
 				return err
 			}
 		}

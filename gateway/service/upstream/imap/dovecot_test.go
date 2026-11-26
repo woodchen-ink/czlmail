@@ -423,3 +423,5 @@ func TestDovecotFailures(t *testing.T) {
 		t.Fatalf("probe without proxy %+v", rep.IMAP)
 	}
 }
+
+func goUID(u uint32) goimap.UID { return goimap.UID(u) }

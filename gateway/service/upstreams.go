@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -422,8 +421,3 @@ func (s *Upstreams) proxyFor(up *model.Upstream) (*netx.Proxy, error) {
 
 // NewAccountID returns a random JMAP accountId: "a" + 20 base32 characters (100 bits).
 func NewAccountID() string { return "a" + randomB32(20) }
-
-// normalizeHost lower-cases a host name and drops a trailing dot.
-func normalizeHost(h string) string {
-	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(h)), ".")
-}

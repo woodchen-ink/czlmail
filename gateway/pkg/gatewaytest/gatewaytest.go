@@ -34,7 +34,6 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/database"
 	"github.com/woodchen-ink/czlmail/gateway/initapp"
 	"github.com/woodchen-ink/czlmail/gateway/pkg/gmailtest"
-	"github.com/woodchen-ink/czlmail/gateway/pkg/imaptest"
 )
 
 // Owner credentials of every test gateway (admin login, not JMAP).
@@ -51,7 +50,8 @@ type Gateway struct {
 	DB      *gorm.DB
 
 	mu    sync.Mutex
-	owner *Admin // signed in on first NewUser
+	owner *Admin            // signed in on first NewUser
+	users map[string]*Admin // by email, see UserAdmin
 }
 
 // Start runs a gateway on a fresh data directory; it stops when the test ends.
@@ -158,6 +158,15 @@ type Admin struct {
 // data into out when out is non-nil.
 func (a *Admin) Do(t testing.TB, method, path string, body, out any) {
 	t.Helper()
+	code, raw := a.Call(t, method, path, body, out)
+	if code != 200 {
+		t.Fatalf("gatewaytest: %s %s: %s", method, path, raw)
+	}
+}
+
+// Call is Do that returns the response code instead of failing on errors.
+func (a *Admin) Call(t testing.TB, method, path string, body, out any) (int, string) {
+	t.Helper()
 	var rd io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -183,25 +192,15 @@ func (a *Admin) Do(t testing.TB, method, path string, body, out any) {
 		Code int             `json:"code"`
 		Data json.RawMessage `json:"data"`
 	}
-	if json.Unmarshal(raw, &r) != nil || r.Code != 200 {
+	if json.Unmarshal(raw, &r) != nil {
 		t.Fatalf("gatewaytest: %s %s: %d %s", method, path, res.StatusCode, raw)
 	}
-	if out != nil {
+	if r.Code == 200 && out != nil {
 		if err := json.Unmarshal(r.Data, out); err != nil {
 			t.Fatalf("gatewaytest: %s %s: decode %s: %v", method, path, r.Data, err)
 		}
 	}
-}
-
-// AddIMAPUpstream connects a Dovecot mailbox to the user as a JMAP account and
-// returns its accountId.
-func (g *Gateway) AddIMAPUpstream(t testing.TB, cred Credentials, mbox *imaptest.User) jmap.ID {
-	t.Helper()
-	// TODO(#39): register an IMAP + SMTP upstream for cred.Email pointing at
-	// mbox.Server.Addr with mbox.Name / mbox.Password (plaintext allowed for tests),
-	// SMTP at smtptest's Mailpit, and wait for its first sync.
-	t.Skip("gatewaytest: IMAP upstreams arrive with #39")
-	return ""
+	return r.Code, string(raw)
 }
 
 // AddGmailUpstream connects a fake Gmail account (IMAP + API + OAuth) to the user.
