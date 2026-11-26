@@ -69,6 +69,7 @@ import {
   type Template,
   type UpdateInfo,
 } from "@/lib/api";
+import { anyAccountSupports, useAccounts as useAllAccounts, usePrimarySupports, type Feature } from "@/lib/account-features";
 import { BrowserOpenURL } from "@/wailsjs/runtime/runtime";
 import { NotesSection } from "@/components/settings/notes-section";
 import { AISection } from "@/components/settings/ai-section";
@@ -112,10 +113,21 @@ type Section =
 /** 移动端壳里没有的能力: 开机自启与默认应用登记 (iOS 由系统设置管), 以及键盘快捷键。 */
 const DESKTOP_ONLY: Section[] = ["integration", "shortcuts"];
 
-const getGroups: () => ({ title: string; items: { id: Section; label: string; icon: typeof Palette }[] }[]) = () => {
+/** 依赖服务器能力的设置: 没有任何账号支持时不显示, 部分支持时分区内只列支持的账号。 */
+const SECTION_FEATURE: Partial<Record<Section, Feature | "scheduled">> = {
+  identities: "submission",
+  scheduled: "scheduled",
+  vacation: "vacation",
+  filters: "sieve",
+  calendars: "calendars",
+  addressbooks: "contacts",
+};
+
+const getGroups = (accounts: Account[] | null): { title: string; items: { id: Section; label: string; icon: typeof Palette }[] }[] => {
   const native = isNative();
+  const shown = (id: Section) => (!native || !DESKTOP_ONLY.includes(id)) && (!SECTION_FEATURE[id] || anyAccountSupports(accounts, SECTION_FEATURE[id]));
   return allGroups()
-    .map((g) => ({ ...g, items: g.items.filter((i) => !native || !DESKTOP_ONLY.includes(i.id)) }))
+    .map((g) => ({ ...g, items: g.items.filter((i) => shown(i.id)) }))
     .filter((g) => g.items.length > 0);
 };
 
@@ -175,6 +187,11 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
     setSectionState(s);
     setMobileOpen(true);
   }, []);
+  const allAccounts = useAllAccounts();
+  const groups = getGroups(allAccounts);
+  // 所在分区因账号能力变化被藏掉时 (例如移除了唯一有日历的登录), 内容区退回「账户」。
+  const visible = groups.some((g) => g.items.some((i) => i.id === section));
+  const current: Section = visible ? section : "account";
 
   useEffect(() => {
     const off = listen("openSettings", ({ section: s }) => setSection(s as Section));
@@ -188,7 +205,7 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
       offUpd();
     };
   }, [setSection]);
-  const on = (id: Section) => active && section === id;
+  const on = (id: Section) => active && current === id;
   const swipeBack = useEdgeSwipe(compact && mobileOpen ? () => setMobileOpen(false) : null);
   const showNav = !compact || !mobileOpen;
   const showContent = !compact || mobileOpen;
@@ -204,7 +221,7 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
         aria-label={t("设置")}
       >
         <h1 className="px-2 py-2 text-base font-semibold">{t("设置")}</h1>
-        {getGroups().map((g) => (
+        {groups.map((g) => (
           <div key={g.title} className="mb-2 flex flex-col gap-0.5">
             <p className="text-muted-foreground px-2 pt-1 pb-0.5 text-xs">{g.title}</p>
             {g.items.map((s) => (
@@ -215,7 +232,7 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
                 className={cn(
                   "flex items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors",
                   "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-                  section === s.id && "bg-muted font-medium",
+                  current === s.id && "bg-muted font-medium",
                 )}
               >
                 <s.icon className="text-muted-foreground size-4" />
@@ -241,25 +258,25 @@ export function SettingsShell({ active, onSignedOut }: { active: boolean; onSign
         )}
       <div className="czl-scroll min-w-0 flex-1 overflow-y-auto">
         <div className={cn("mx-auto flex max-w-3xl flex-col gap-6", compact ? "p-4" : "p-8")}>
-          {section === "account" && <AccountSection active={on("account")} onSignedOut={onSignedOut} />}
-          {section === "appearance" && <AppearanceSection active={on("appearance")} />}
-          {section === "notifications" && <NotificationsSection active={on("notifications")} />}
-          {section === "integration" && <IntegrationSection active={on("integration")} />}
-          {section === "reading" && <ReadingSection active={on("reading")} />}
-          {section === "compose" && <ComposeSection active={on("compose")} />}
-          {section === "shortcuts" && <ShortcutsSection active={on("shortcuts")} />}
-          {section === "notes" && <NotesSection active={on("notes")} />}
-          {section === "ai" && <AISection active={on("ai")} />}
-          {section === "identities" && <IdentitiesSection active={on("identities")} />}
-          {section === "vacation" && <VacationSection active={on("vacation")} />}
-          {section === "filters" && <FiltersSection active={on("filters")} />}
-          {section === "templates" && <TemplateSection active={on("templates")} />}
-          {section === "folders" && <FoldersSection active={on("folders")} />}
-          {section === "scheduled" && <ScheduledSection active={on("scheduled")} />}
-          {section === "privacy" && <PrivacySection active={on("privacy")} />}
-          {section === "calendars" && <CalendarsSection active={on("calendars")} />}
-          {section === "addressbooks" && <AddressBooksSection active={on("addressbooks")} />}
-          {section === "about" && <AboutSection active={on("about")} />}
+          {current === "account" && <AccountSection active={on("account")} onSignedOut={onSignedOut} />}
+          {current === "appearance" && <AppearanceSection active={on("appearance")} />}
+          {current === "notifications" && <NotificationsSection active={on("notifications")} />}
+          {current === "integration" && <IntegrationSection active={on("integration")} />}
+          {current === "reading" && <ReadingSection active={on("reading")} />}
+          {current === "compose" && <ComposeSection active={on("compose")} />}
+          {current === "shortcuts" && <ShortcutsSection active={on("shortcuts")} />}
+          {current === "notes" && <NotesSection active={on("notes")} />}
+          {current === "ai" && <AISection active={on("ai")} />}
+          {current === "identities" && <IdentitiesSection active={on("identities")} />}
+          {current === "vacation" && <VacationSection active={on("vacation")} />}
+          {current === "filters" && <FiltersSection active={on("filters")} />}
+          {current === "templates" && <TemplateSection active={on("templates")} />}
+          {current === "folders" && <FoldersSection active={on("folders")} />}
+          {current === "scheduled" && <ScheduledSection active={on("scheduled")} />}
+          {current === "privacy" && <PrivacySection active={on("privacy")} />}
+          {current === "calendars" && <CalendarsSection active={on("calendars")} />}
+          {current === "addressbooks" && <AddressBooksSection active={on("addressbooks")} />}
+          {current === "about" && <AboutSection active={on("about")} />}
         </div>
       </div>
       </div>
@@ -276,6 +293,7 @@ function PrivacySection({ active }: { active: boolean }) {
   const [senders, setSenders] = useState<string[]>([]);
   const [adding, setAdding] = useState("");
   const [filter, setFilter] = useState("");
+  const trustSynced = usePrimarySupports("contacts");
 
   const load = useCallback(async () => {
     try {
@@ -334,7 +352,11 @@ function PrivacySection({ active }: { active: boolean }) {
 
       <SectionTitle
         title={t("信任的发件人")}
-        desc={t("这些地址的邮件会直接加载图片。名单保存在服务器的「Trusted Senders」通讯录里，与 Bulwark 网页端及其它设备共用。")}
+        desc={
+          trustSynced
+            ? t("这些地址的邮件会直接加载图片。名单保存在服务器的「Trusted Senders」通讯录里，与 Bulwark 网页端及其它设备共用。")
+            : t("这些地址的邮件会直接加载图片。主登录的服务器没有通讯录，名单只保存在本机。")
+        }
         small
       />
       <Card>
@@ -383,6 +405,7 @@ function TemplateSection({ active }: { active: boolean }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<Template | null>(null);
   const [deleting, setDeleting] = useState<Template | null>(null);
+  const synced = usePrimarySupports("files");
 
   const load = useCallback(async () => {
     try {
@@ -424,7 +447,11 @@ function TemplateSection({ active }: { active: boolean }) {
       <div className="flex items-end justify-between gap-4">
         <SectionTitle
           title={t("邮件模板")}
-          desc={t("写信时从模板开始，可以使用 {{占位符}}。模板保存在网盘的「CZL Mail」文件夹里，自动同步到你的其它设备。")}
+          desc={
+            synced
+              ? t("写信时从模板开始，可以使用 {{占位符}}。模板保存在网盘的「CZL Mail」文件夹里，自动同步到你的其它设备。")
+              : t("写信时从模板开始，可以使用 {{占位符}}。主登录的服务器没有文件存储，模板只保存在本机。")
+          }
         />
         <div className="flex shrink-0 gap-2">
           <Button variant="outline" size="sm" onClick={importFile} title={t("支持本程序与 Bulwark 导出的模板文件")}>

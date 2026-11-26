@@ -100,6 +100,7 @@ import {
   toRFC3339,
 } from "@/lib/date";
 import { useCompact } from "@/lib/use-compact";
+import { supports } from "@/lib/account-features";
 
 const HIDDEN_KEY = "czlmail.calendar.hidden";
 const VIEW_KEY = "czlmail.calendar.view";
@@ -171,8 +172,11 @@ export function CalendarShell({ active }: { active: boolean }) {
         api.listAccounts(),
         api.listCalendars(),
       ]);
-      setAccounts(accs ?? []);
-      setCalendars(cals ?? []);
+      const list = accs ?? [];
+      setAccounts(list);
+      // 服务器不再公布日历的账号 (缓存里可能还留着旧日历) 不列出。
+      const byId = new Map(list.map((a) => [a.id, a]));
+      setCalendars((cals ?? []).filter((c) => supports(byId.get(c.accountId), "calendars")));
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -397,6 +401,9 @@ export function CalendarShell({ active }: { active: boolean }) {
   const writable = calendars.filter(
     (c) => !c.myRights || c.myRights.mayWriteAll || c.myRights.mayWriteOwn,
   );
+  // 导入 .ics 要服务器解析 (calendars:parse)。
+  const canImport = (c: Calendar) => supports(accounts.find((a) => a.id === c.accountId), "calendarParse");
+  const importable = writable.filter(canImport);
 
   const sidebar = (
     <div className="flex h-full min-h-0 flex-col">
@@ -470,9 +477,11 @@ export function CalendarShell({ active }: { active: boolean }) {
                       >
                         <Pencil />
                         {t("编辑日历")}</ContextMenuItem>
-                      <ContextMenuItem onSelect={() => importTo(c)}>
-                        <Upload />
-                        {t("导入 .ics")}</ContextMenuItem>
+                      {canImport(c) && (
+                        <ContextMenuItem onSelect={() => importTo(c)}>
+                          <Upload />
+                          {t("导入 .ics")}</ContextMenuItem>
+                      )}
                       {!c.isDefault && (
                         <>
                           <ContextMenuSeparator />
@@ -503,7 +512,7 @@ export function CalendarShell({ active }: { active: boolean }) {
     { value: "tasks", label: t("任务") },
   ];
 
-  const importItems = writable.map((c) => (
+  const importItems = importable.map((c) => (
     <DropdownMenuItem
       key={calendarKey(c.accountId, c.id)}
       onSelect={() => importTo(c)}
@@ -556,7 +565,7 @@ export function CalendarShell({ active }: { active: boolean }) {
                 <DropdownMenuRadioItem key={v.value} value={v.value}>{v.label}</DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
-            {writable.length > 0 && (
+            {importable.length > 0 && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>{t("导入 .ics 到")}</DropdownMenuLabel>
@@ -614,17 +623,19 @@ export function CalendarShell({ active }: { active: boolean }) {
             ))}
           </ToggleGroup>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Upload className="size-4" />
-                {t("导入")}</Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuLabel>{t("导入 .ics 到")}</DropdownMenuLabel>
-              {importItems}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {importable.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Upload className="size-4" />
+                  {t("导入")}</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel>{t("导入 .ics 到")}</DropdownMenuLabel>
+                {importItems}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>}
 

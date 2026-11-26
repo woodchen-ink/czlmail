@@ -33,14 +33,12 @@ func (s *Syncer) fileSchemaTyped(ctx context.Context, account string) bool {
 // detectFileSchema 先看能力对象 (新草案声明 supportedNodeTypes), 再看缓存里服务器给过的节点原文。
 // 都判断不了 (网盘是空的) 时按旧写法发送, 被拒后由 SetPIM / SetFileConditional 换写法重试。
 func (s *Syncer) detectFileSchema(ctx context.Context, account string) (typed, known bool) {
-	if s.client.Session != nil {
-		if acc, ok := s.client.Session.Accounts[s.server(account)]; ok {
-			if raw, ok := acc.RawCapabilities[jmapx.FileNodeURI]; ok {
-				var capability map[string]json.RawMessage
-				if json.Unmarshal(raw, &capability) == nil {
-					if _, ok := capability["supportedNodeTypes"]; ok {
-						return true, true
-					}
+	if acc, ok := s.account(account); ok {
+		if raw, ok := acc.RawCapabilities[jmapx.FileNodeURI]; ok {
+			var capability map[string]json.RawMessage
+			if json.Unmarshal(raw, &capability) == nil {
+				if _, ok := capability["supportedNodeTypes"]; ok {
+					return true, true
 				}
 			}
 		}

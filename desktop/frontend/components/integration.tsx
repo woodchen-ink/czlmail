@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Events, api, errorMessage, onEvent, type Calendar, type IntegrationStatus, type OpenRequest } from "@/lib/api";
+import { supports } from "@/lib/account-features";
 import { requestOpenEmail, send } from "@/lib/app-bus";
 import { onFileDrop } from "@/lib/file-drop";
 
@@ -114,10 +115,13 @@ function IcsImportDialog({ source, onClose }: { source: string | null; onClose: 
   useEffect(() => {
     if (!source) return;
     setBusy(false);
-    api
-      .listCalendars()
-      .then((list) => {
-        const writable = (list ?? []).filter((c) => !c.myRights || c.myRights.mayWriteAll || c.myRights.mayWriteOwn);
+    Promise.all([api.listCalendars(), api.listAccounts()])
+      .then(([list, accounts]) => {
+        // 只列能写、且服务器能解析 .ics (calendars:parse) 的日历。
+        const byId = new Map((accounts ?? []).map((a) => [a.id, a]));
+        const writable = (list ?? []).filter(
+          (c) => (!c.myRights || c.myRights.mayWriteAll || c.myRights.mayWriteOwn) && supports(byId.get(c.accountId), "calendarParse"),
+        );
         setCalendars(writable);
         const def = writable.find((c) => c.isDefault) ?? writable[0];
         setTarget(def ? `${def.accountId}/${def.id}` : "");

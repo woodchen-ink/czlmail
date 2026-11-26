@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { usePrimarySupports } from "@/lib/account-features";
 import { api, errorMessage, Events, onEvent, type AIConfig } from "@/lib/api";
 import { main } from "@/wailsjs/go/models";
 
@@ -70,6 +71,8 @@ export function AISection({ active }: { active: boolean }) {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState("");
+  // AI 设置随主登录个人账号的网盘同步; 没有网盘时只在本机。
+  const synced = usePrimarySupports("files");
 
   useEffect(() => {
     if (!active) return;
@@ -136,7 +139,11 @@ export function AISection({ active }: { active: boolean }) {
     <>
       <SectionTitle
         title={t("AI 助手")}
-        desc={t("接入兼容 OpenAI Responses API 的模型服务后，可以翻译邮件、润色和翻译草稿、按你的意图起草回复。邮件内容只发送到你配置的服务。这些设置（含 API Key）与 MCP 开关保存在网盘的「CZL Mail」文件夹里，自动同步到你的其它设备。")}
+        desc={
+          synced
+            ? t("接入兼容 OpenAI Responses API 的模型服务后，可以翻译邮件、润色和翻译草稿、按你的意图起草回复。邮件内容只发送到你配置的服务。这些设置（含 API Key）与 MCP 开关保存在网盘的「CZL Mail」文件夹里，自动同步到你的其它设备。")
+            : t("接入兼容 OpenAI Responses API 的模型服务后，可以翻译邮件、润色和翻译草稿、按你的意图起草回复。邮件内容只发送到你配置的服务。主登录的服务器没有文件存储，这些设置只保存在本机。")
+        }
       />
       <Card>
         <Row title={t("启用 AI 功能")} desc={ready ? t("已就绪：阅读邮件与写信时会显示 AI 按钮") : t("填好接口信息并启用后，才会显示 AI 相关按钮")}>

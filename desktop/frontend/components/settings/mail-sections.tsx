@@ -20,6 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { api, errorMessage, type Account, type Identity, type Mailbox, type ScheduledItem, type SigningCertificate, type Vacation } from "@/lib/api";
+import { withFeature } from "@/lib/account-features";
 import { htmlToText, isHtmlEmpty, sanitizeInline, textToHtml } from "@/lib/html";
 import { isNative } from "@/lib/native-bridge";
 import { main } from "@/wailsjs/go/models";
@@ -38,7 +39,8 @@ export function IdentitiesSection({ active }: { active: boolean }) {
 
   const load = useCallback(async () => {
     try {
-      const accs = (await api.listAccounts()) ?? [];
+      // 服务器不能发信的账号没有发件身份。
+      const accs = withFeature((await api.listAccounts()) ?? [], "submission");
       setAccounts(accs);
       const entries = await Promise.all(accs.map(async (a) => [a.id, (await api.listIdentities(a.id).catch(() => [])) ?? []] as const));
       setIdentities(Object.fromEntries(entries));
@@ -441,7 +443,7 @@ function SignatureDialog({
 
 export function VacationSection({ active }: { active: boolean }) {
   useI18n();
-  const { accounts, accountId, setAccountId } = useAccounts(active);
+  const { accounts, accountId, setAccountId } = useAccounts(active, "vacation");
   const [v, setV] = useState<Vacation | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -637,7 +639,7 @@ function flatten(list: Mailbox[]): { m: Mailbox; depth: number }[] {
 
 export function ScheduledSection({ active }: { active: boolean }) {
   useI18n();
-  const { accounts, accountId, setAccountId } = useAccounts(active);
+  const { accounts, accountId, setAccountId } = useAccounts(active, "scheduled");
   const [items, setItems] = useState<ScheduledItem[] | null>(null);
 
   const load = useCallback(async () => {

@@ -1355,5 +1355,12 @@
   "证书文件 (.p12, .pfx)": "Certificate files (.p12, .pfx)",
   "复制验证码": "Copy code",
   "已复制验证码": "Code copied",
-  "另有 {0} 个附件": "{0} more attachments"
+  "另有 {0} 个附件": "{0} more attachments",
+  "笔记保存在主登录个人账号的网盘里，主登录的服务器没有文件存储，暂时无法使用笔记。": "Notes are stored in the primary sign-in's personal file storage. The primary sign-in's server has no file storage, so notes are not available.",
+  "接入兼容 OpenAI Responses API 的模型服务后，可以翻译邮件、润色和翻译草稿、按你的意图起草回复。邮件内容只发送到你配置的服务。主登录的服务器没有文件存储，这些设置只保存在本机。": "Connect a model service compatible with the OpenAI Responses API to translate emails, polish and translate drafts, and draft replies from your intent. Email content is sent only to the service you configure. The primary sign-in's server has no file storage, so these settings are kept on this device only.",
+  "这些地址的邮件会直接加载图片。主登录的服务器没有通讯录，名单只保存在本机。": "Images in emails from these addresses load right away. The primary sign-in's server has no contacts, so the list is kept on this device only.",
+  "写信时从模板开始，可以使用 {{占位符}}。主登录的服务器没有文件存储，模板只保存在本机。": "Start new messages from a template; {{placeholders}} are supported. The primary sign-in's server has no file storage, so templates are kept on this device only.",
+  "服务器不支持：{0}": "Not supported by the server: {0}",
+  "发送邮件": "Sending mail",
+  "这个账号所在的服务器不支持这项功能。": "The server of this account does not support this feature."
 }

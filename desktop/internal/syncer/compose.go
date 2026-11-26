@@ -14,6 +14,7 @@ import (
 	"git.sr.ht/~rockorager/go-jmap/mail/emailsubmission"
 	"git.sr.ht/~rockorager/go-jmap/mail/identity"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/capability"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
@@ -66,7 +67,11 @@ type Attachment struct {
 }
 
 // Identities 列出该账号可用的发件身份。
+// 服务器没有公布发信能力 (只读代理、归档账号) 时没有发件身份, 不发请求。
 func (s *Syncer) Identities(ctx context.Context, accountID string) ([]*identity.Identity, error) {
+	if s.Lacks(accountID, capability.SubmissionURI) {
+		return nil, nil
+	}
 	req := &jmap.Request{Context: ctx}
 	req.Invoke(&identity.Get{Account: s.server(accountID)})
 
@@ -88,6 +93,9 @@ func (s *Syncer) Identities(ctx context.Context, accountID string) ([]*identity.
 // 引用刚创建的邮件 id 提交, 同一个调用里再把邮件从草稿箱移到已发送。
 // 拆成多次请求会留下中间态 —— 建好了但没发出去的草稿, 或发出去了却还躺在草稿箱里的邮件。
 func (s *Syncer) Send(ctx context.Context, d Draft, draftMailboxID, sentMailboxID string) error {
+	if err := s.Require(d.AccountID, capability.SubmissionURI); err != nil {
+		return err
+	}
 	if d.IdentityID == "" {
 		return fmt.Errorf("1120 no sending identity selected")
 	}
@@ -392,10 +400,7 @@ func (s *Syncer) destroyEmail(ctx context.Context, accountID, id string) error {
 
 // MaxDelayedSend 返回服务器允许的最长定时发送秒数, 不支持时为 0。
 func (s *Syncer) MaxDelayedSend(accountID string) int {
-	if s.client.Session == nil {
-		return 0
-	}
-	acc, ok := s.client.Session.Accounts[s.server(accountID)]
+	acc, ok := s.account(accountID)
 	if !ok {
 		return 0
 	}
@@ -532,6 +537,9 @@ type ScheduledSend struct {
 
 // ScheduledSends 列出账号里等待发出的定时邮件。
 func (s *Syncer) ScheduledSends(ctx context.Context, accountID string) ([]ScheduledSend, error) {
+	if s.Lacks(accountID, capability.SubmissionURI) {
+		return nil, nil
+	}
 	req := &jmap.Request{Context: ctx}
 	q := req.Invoke(&emailsubmission.Query{
 		Account: s.server(accountID),

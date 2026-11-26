@@ -31,7 +31,7 @@ type Edit = { kind: "calendar" | "book"; id: string; name: string; color: string
 /** 日历与通讯录的管理(新建、重命名、改色、删除)。 */
 export function CalendarsSection({ active }: { active: boolean }) {
   useI18n();
-  const { accounts, accountId, setAccountId } = useAccounts(active);
+  const { accounts, accountId, setAccountId } = useAccounts(active, "calendars");
   const [calendars, setCalendars] = useState<Calendar[] | null>(null);
   const [edit, setEdit] = useState<Edit | null>(null);
   const [del, setDel] = useState<Calendar | null>(null);
@@ -123,7 +123,7 @@ export function CalendarsSection({ active }: { active: boolean }) {
 
 export function AddressBooksSection({ active }: { active: boolean }) {
   useI18n();
-  const { accounts, accountId, setAccountId } = useAccounts(active);
+  const { accounts, accountId, setAccountId } = useAccounts(active, "contacts");
   const [books, setBooks] = useState<AddressBook[] | null>(null);
   const [edit, setEdit] = useState<Edit | null>(null);
   const [del, setDel] = useState<AddressBook | null>(null);

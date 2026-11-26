@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { OptionSelect } from "@/components/option-select";
 import { cn } from "@/lib/utils";
 import { api, errorMessage, type Account, type AppSettings } from "@/lib/api";
+import { withFeature, type Feature } from "@/lib/account-features";
 import { main } from "@/wailsjs/go/models";
 
 export function SectionTitle({ title, desc, small }: { title: string; desc?: React.ReactNode; small?: boolean }) {
@@ -68,20 +69,24 @@ export function useSettings(active: boolean) {
   return { settings, save };
 }
 
-/** 设置页里按账号操作的部分(过滤器、自动回复、文件夹)用的账号选择。默认个人账号。 */
-export function useAccounts(active: boolean) {
+/**
+ * 设置页里按账号操作的部分(过滤器、自动回复、文件夹)用的账号选择。默认个人账号。
+ * 给了 feature 时只列服务器支持这项功能的账号。
+ */
+export function useAccounts(active: boolean, feature?: Feature | "scheduled") {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const list = (await api.listAccounts()) ?? [];
+      const all = (await api.listAccounts()) ?? [];
+      const list = feature ? withFeature(all, feature) : all;
       setAccounts(list);
       setAccountId((cur) => (cur && list.some((a) => a.id === cur) ? cur : ((list.find((a) => a.isPersonal) ?? list[0])?.id ?? "")));
     } catch (err) {
       toast.error(errorMessage(err));
     }
-  }, []);
+  }, [feature]);
 
   useEffect(() => {
     if (active) load();

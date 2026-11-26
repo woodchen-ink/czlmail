@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -403,21 +404,22 @@ func (a *App) classifyAuthFailure(cfg config.Config, httpClient *http.Client, ca
 // persistAccounts 把会话里发现的账号写进缓存, 供界面在离线时也能列出账号。
 // 缓存里存本机账号 id (带这个登录的前缀)。
 func (a *App) persistAccounts(ctx context.Context, si *signIn, client *jmap.Client, st *store.Store) error {
-	accounts := make([]store.Account, 0, len(client.Session.Accounts))
-	caps := make(map[string][]string, len(client.Session.Accounts))
+	// 在客户端锁内取会话: 会话刷新持同一把锁换上新会话。
+	client.Lock()
+	sess := client.Session
+	client.Unlock()
+	accounts := make([]store.Account, 0, len(sess.Accounts))
+	// 能力原样存下 (含定时发送上限这类参数): 离线或会话还没恢复时界面按上次已知的能力显示功能。
+	caps := make(map[string]map[jmap.URI]json.RawMessage, len(sess.Accounts))
 
-	for id, acc := range client.Session.Accounts {
+	for id, acc := range sess.Accounts {
 		local := accountid.Join(si.id, string(id))
 		accounts = append(accounts, store.Account{
 			ID:         local,
 			Name:       acc.Name,
 			IsPersonal: acc.IsPersonal,
 		})
-		list := make([]string, 0, len(acc.RawCapabilities))
-		for uri := range acc.RawCapabilities {
-			list = append(list, string(uri))
-		}
-		caps[local] = list
+		caps[local] = acc.RawCapabilities
 	}
 
 	return st.WithTx(ctx, func(tx *sql.Tx) error {

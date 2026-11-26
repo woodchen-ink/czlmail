@@ -56,7 +56,11 @@ func (a *App) directory() []store.Recipient {
 	}
 	// 不等启动时的会话恢复: 这里持有目录缓存的锁, 填收件人时不该卡住。
 	rt, err := a.routeWithin(accountID, 0)
-	if err != nil || rt.client.Session == nil {
+	if err != nil || rt.sync.Session() == nil {
+		return nil
+	}
+	// 服务器没有成员目录 (Principals) 时不查: 否则每敲一个字都发一次注定失败的请求。
+	if rt.sync.Lacks(accountID, jmapx.PrincipalsURI) {
 		return nil
 	}
 	key := rt.client.SessionEndpoint + " " + rt.serverID

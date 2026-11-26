@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"path/filepath"
 	"slices"
@@ -30,6 +31,28 @@ func TestDiffAccounts(t *testing.T) {
 	}
 	if !diffAccounts(before, before).Empty() {
 		t.Fatal("same session should give an empty diff")
+	}
+}
+
+// TestDiffAccountsCapabilities 能力集合或能力对象变了的账号单独列出, 没变的不列。
+func TestDiffAccountsCapabilities(t *testing.T) {
+	mail := json.RawMessage(`{}`)
+	before := map[jmap.ID]jmap.Account{
+		"c": {Name: "me", IsPersonal: true, RawCapabilities: map[jmap.URI]json.RawMessage{"urn:ietf:params:jmap:mail": mail}},
+		"e": {Name: "support", RawCapabilities: map[jmap.URI]json.RawMessage{"urn:ietf:params:jmap:submission": json.RawMessage(`{"maxDelayedSend":0}`)}},
+		"f": {Name: "finance", RawCapabilities: map[jmap.URI]json.RawMessage{"urn:ietf:params:jmap:mail": mail}},
+	}
+	after := map[jmap.ID]jmap.Account{
+		"c": {Name: "me", IsPersonal: true, RawCapabilities: map[jmap.URI]json.RawMessage{"urn:ietf:params:jmap:mail": mail, "urn:ietf:params:jmap:calendars": mail}},
+		"e": {Name: "support", RawCapabilities: map[jmap.URI]json.RawMessage{"urn:ietf:params:jmap:submission": json.RawMessage(`{"maxDelayedSend":60}`)}},
+		"f": {Name: "finance", RawCapabilities: map[jmap.URI]json.RawMessage{"urn:ietf:params:jmap:mail": json.RawMessage(`{}`)}},
+		// 同样的能力对象换了键顺序与空白, 不算变化。
+		"g": {Name: "ops", RawCapabilities: map[jmap.URI]json.RawMessage{"urn:ietf:params:jmap:submission": json.RawMessage(`{ "b":2, "a":1 }`)}},
+	}
+	before["g"] = jmap.Account{Name: "ops", RawCapabilities: map[jmap.URI]json.RawMessage{"urn:ietf:params:jmap:submission": json.RawMessage(`{"a":1,"b":2}`)}}
+	d := diffAccounts(before, after)
+	if !slices.Equal(d.Capabilities, []string{"c", "e"}) || len(d.Added)+len(d.Removed)+len(d.Renamed) != 0 {
+		t.Fatalf("diff = %+v", d)
 	}
 }
 

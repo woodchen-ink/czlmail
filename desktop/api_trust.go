@@ -128,6 +128,10 @@ func (a *App) syncTrustToServer(address string, trusted bool) {
 	if err != nil {
 		return
 	}
+	// 主登录的服务器没有通讯录时信任名单只留在本机 (设置页有说明), 不当错误记日志。
+	if s.Lacks(accountID, jmapx.ContactsURI) {
+		return
+	}
 	book, err := st.AddressBookByName(a.ctx, accountID, store.TrustedSendersBook)
 	bookID := ""
 	if err == nil {

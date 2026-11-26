@@ -3,7 +3,7 @@
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, CalendarDays, FolderOpen, Mail, NotebookPen, Settings, UsersRound } from "lucide-react";
 import { NotesShell } from "@/components/notes/notes-shell";
 import { flushNotes, noteApi, noteEvents, type NoteConfig } from "@/lib/notes/api";
@@ -21,6 +21,7 @@ import { useCompact } from "@/lib/use-compact";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+import { anyAccountSupports, useAccounts, type Feature } from "@/lib/account-features";
 import { Events, api, errorMessage, onEvent, type UpdateInfo } from "@/lib/api";
 import { listen, send, type Module } from "@/lib/app-bus";
 import { nativePlatform } from "@/lib/native-bridge";
@@ -29,6 +30,9 @@ const MODULE_KEY = "czlmail.module";
 
 // macOS 习惯用 ⌘ 而不是 Ctrl 作组合键; 两个都认, 提示按平台显示。
 const MOD = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent) ? "⌘" : "Ctrl+";
+
+/** 依赖服务器能力的模块: 所有账号都不支持时整个隐藏, 部分支持时模块内只列支持的账号。 */
+const MODULE_FEATURE: Partial<Record<Module, Feature>> = { calendar: "calendars", contacts: "contacts", files: "files" };
 
 const getNav: () => ({ id: Module; label: string; icon: typeof Mail; shortcut: string }[]) = () => ([
   { id: "mail", label: t("邮件"), icon: Mail, shortcut: `${MOD}1` },
@@ -53,6 +57,13 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
   const currentModule = useRef<Module>("mail");
   const notesGate = useRef(false);
   const [notesEnabled, setNotesEnabled] = useState(false);
+  const accounts = useAccounts();
+  // 服务器能力隐藏掉的模块。go 与快捷键经 ref 读, 不必随账号变化重建。
+  const hidden = useMemo(
+    () => new Set((Object.keys(MODULE_FEATURE) as Module[]).filter((m) => !anyAccountSupports(accounts, MODULE_FEATURE[m]!))),
+    [accounts],
+  );
+  const hiddenRef = useRef<Set<Module>>(hidden);
   // 未打开过的模块不挂载，避免启动时一次性拉取全部数据。
   const [visited, setVisited] = useState<Set<Module>>(() => new Set(["mail"]));
   const compact = useCompact();
@@ -60,6 +71,7 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
   // Navigation must not unmount or hide a failed save without letting the user recover it.
   const go = useCallback(async (m: Module) => {
     if (m === "notes" && !notesGate.current) return;
+    if (hiddenRef.current.has(m)) return;
     try {
       if (currentModule.current === "notes" && m !== "notes") await flushNotes();
     } catch (err) { toast.error(errorMessage(err)); return; }
@@ -82,6 +94,12 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
     }).catch((err) => toast.error(errorMessage(err)));
     return onEvent(noteEvents.config, apply);
   }, [go]);
+
+  // 账号能力读到之前先按都支持显示; 读到后当前模块被藏掉 (上次停在日历、账号不再支持) 时回到邮件。
+  useEffect(() => {
+    hiddenRef.current = hidden;
+    if (hidden.has(currentModule.current)) void go("mail");
+  }, [hidden, go]);
 
   useEffect(() => {
     api.getUnreadTotal().then(setUnread).catch(() => {});
@@ -160,7 +178,7 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
     };
   }, [go]);
 
-  const nav = getNav().filter((item) => item.id !== "notes" || notesEnabled);
+  const nav = getNav().filter((item) => (item.id !== "notes" || notesEnabled) && !hidden.has(item.id));
 
   return (
     <div className="flex h-full flex-col md:flex-row">

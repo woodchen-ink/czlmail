@@ -93,6 +93,13 @@ func (a *App) importPIMData(accountID, typeName string, data []byte, assign func
 	if err != nil {
 		return 0, err
 	}
+	parseURI := jmapx.CalendarsParseURI
+	if typeName == jmapx.ContactCard {
+		parseURI = jmapx.ContactsParseURI
+	}
+	if err := rt.sync.Require(accountID, parseURI); err != nil {
+		return 0, err
+	}
 	s := rt.sync
 	mediaType := "text/calendar"
 	if typeName == jmapx.ContactCard {
