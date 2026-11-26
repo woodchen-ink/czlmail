@@ -40,8 +40,9 @@ function Row({
       <span className="w-16 shrink-0 text-foreground-muted">{label}</span>
       <span
         className={cn(
-          "min-w-0 flex-1 truncate",
-          tone === "danger" && "text-destructive"
+          "min-w-0 flex-1",
+          // Errors wrap so the whole message is readable; other values are short.
+          tone === "danger" ? "text-destructive" : "truncate"
         )}
       >
         {children}
@@ -69,7 +70,9 @@ export function UpstreamCard({
   const proxy = !card.proxy
     ? t.upstream.proxyDirect
     : card.proxy.mode === "default"
-      ? `${t.upstream.proxyDefault} · ${card.proxy.host}`
+      ? card.proxy.host
+        ? `${t.upstream.proxyDefault} · ${card.proxy.host}`
+        : t.upstream.proxyDefault
       : `${t.upstream.proxyCustom} · ${card.proxy.host}`
   const pct =
     card.initialSync && card.initialSync.total > 0
@@ -94,19 +97,21 @@ export function UpstreamCard({
         <StatusBadge status={card.status} />
         {actions}
       </div>
-      <div className="grid gap-1.5 px-4 py-3">
+      <div className="grid grid-cols-1 gap-1.5 px-4 py-3">
         <Row icon={Gauge} label={t.upstream.watchMode}>
           {t.watchModes[card.watchMode] ?? card.watchMode}
         </Row>
-        <Row icon={RefreshCw} label={t.upstream.lastSync}>
-          {now ? formatRelative(card.lastSyncAt, now) : t.common.emptyValue}
-        </Row>
+        {card.lastSyncAt !== undefined && (
+          <Row icon={RefreshCw} label={t.upstream.lastSync}>
+            {now ? formatRelative(card.lastSyncAt, now) : t.common.emptyValue}
+          </Row>
+        )}
         <Row icon={Network} label={t.upstream.proxy}>
           {proxy}
         </Row>
         {card.lastError && (
           <Row icon={CircleAlert} label={t.upstream.lastError} tone="danger">
-            <span title={card.lastError.at}>
+            <span title={card.lastError.detail || card.lastError.at}>
               {errText(card.lastError.code, card.lastError.msg)}
             </span>
           </Row>

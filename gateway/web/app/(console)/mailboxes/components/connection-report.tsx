@@ -3,51 +3,60 @@
 import { CircleCheck, CircleX } from "lucide-react"
 
 import { useUpstreamErrorText } from "@/components/upstream-card"
-import type { ConnectionReport as Report } from "@/lib/api/upstreams"
+import {
+  capabilityNames,
+  watchModeOf,
+  type ProbePart,
+  type ProbeReport,
+} from "@/lib/api/upstreams"
 import { useT } from "@/lib/i18n"
 
-/** Result of "test connection": IMAP and SMTP, the detected watch mode and server capabilities. */
-export function ConnectionReport({ report }: { report: Report }) {
+/** Result of "test connection": IMAP and SMTP, the watch mode the capabilities allow, and the capabilities. */
+export function ConnectionReport({ report }: { report: ProbeReport }) {
   const t = useT()
   const errText = useUpstreamErrorText()
-  const line = (
-    label: string,
-    ok: boolean,
-    code: number,
-    msg: string,
-    extra?: string
-  ) => (
+  const watch = watchModeOf(report.imap.capabilities)
+  const caps = capabilityNames(report.imap.capabilities)
+
+  const line = (label: string, part: ProbePart, okText: string) => (
     <div className="flex items-start gap-2 text-sm">
-      {ok ? (
-        <CircleCheck className="mt-0.5 size-4 text-success" />
+      {part.ok ? (
+        <CircleCheck className="mt-0.5 size-4 shrink-0 text-success" />
       ) : (
-        <CircleX className="mt-0.5 size-4 text-destructive" />
+        <CircleX className="mt-0.5 size-4 shrink-0 text-destructive" />
       )}
       <span className="w-12 shrink-0 font-medium">{label}</span>
-      <span className={ok ? "text-foreground-muted" : "text-destructive"}>
-        {ok ? (extra ?? t.mailboxes.testOk) : errText(code, msg)}
-      </span>
+      <div className="min-w-0">
+        <p className={part.ok ? "text-foreground-muted" : "text-destructive"}>
+          {part.ok ? okText : errText(part.code ?? 0, part.msg ?? "")}
+        </p>
+        {/* The mail server's own reply: helps the owner fix their settings. */}
+        {!part.ok && part.detail && (
+          <p className="mt-0.5 font-mono text-xs break-all text-foreground-subtle">
+            {part.detail}
+          </p>
+        )}
+      </div>
     </div>
   )
+
   return (
     <div className="grid gap-2 rounded-lg border bg-muted p-3">
       {line(
         "IMAP",
-        report.imap.ok,
-        report.imap.code,
-        report.imap.msg,
-        report.imap.watchMode
-          ? `${t.mailboxes.testOk} · ${t.watchModes[report.imap.watchMode as keyof typeof t.watchModes] ?? report.imap.watchMode}`
-          : undefined
+        report.imap,
+        watch
+          ? `${t.mailboxes.testOk} · ${t.watchModes[watch]}`
+          : t.mailboxes.testOk
       )}
-      {line("SMTP", report.smtp.ok, report.smtp.code, report.smtp.msg)}
-      {report.imap.capabilities.length > 0 && (
+      {report.smtp && line("SMTP", report.smtp, t.mailboxes.testOk)}
+      {caps.length > 0 && (
         <div className="mt-1">
           <p className="mb-1 text-xs text-foreground-muted">
             {t.mailboxes.capabilities}
           </p>
           <div className="flex flex-wrap gap-1">
-            {report.imap.capabilities.map((c) => (
+            {caps.map((c) => (
               <span
                 key={c}
                 className="rounded-sm bg-card px-1.5 py-0.5 font-mono text-xs text-foreground-muted"

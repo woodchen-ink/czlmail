@@ -15,7 +15,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { upstreamsApi, type Upstream } from "@/lib/api/upstreams"
+import {
+  upstreamsApi,
+  type EndpointInput,
+  type Upstream,
+  type UpstreamView,
+} from "@/lib/api/upstreams"
 import { useT } from "@/lib/i18n"
 import { qk } from "@/lib/queries"
 
@@ -41,6 +46,16 @@ export function PasswordDialog({
   )
 }
 
+function endpoint(e: UpstreamView["imap"], password: string): EndpointInput {
+  return {
+    host: e.host,
+    port: e.port,
+    tls: e.tls,
+    username: e.username,
+    password,
+  }
+}
+
 function PasswordForm({
   upstream,
   onClose,
@@ -54,8 +69,14 @@ function PasswordForm({
   const save = useMutation({
     mutationFn: () =>
       upstreamsApi.update(upstream.id, {
-        imap: upstream.imap ? { ...upstream.imap, password } : undefined,
-        smtp: upstream.smtp ? { ...upstream.smtp, password } : undefined,
+        imap: endpoint(upstream.view.imap, password),
+        // SMTP signs in with the same account in the usual setup; a separate SMTP
+        // login keeps its own password.
+        smtp:
+          upstream.view.smtp.host &&
+          upstream.view.smtp.username === upstream.view.imap.username
+            ? endpoint(upstream.view.smtp, password)
+            : undefined,
       }),
     onSuccess: () => {
       toast.success(t.mailboxes.passwordSaved)

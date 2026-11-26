@@ -9,13 +9,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { Security } from "@/lib/api/upstreams"
+import type { TlsMode } from "@/lib/api/upstreams"
 import { useT } from "@/lib/i18n"
 
 export interface ServerDraft {
   host: string
   port: string
-  security: Security
+  tls: TlsMode
 }
 
 /** Host, port and TLS mode of one server, on one row. Only encrypted connections are offered. */
@@ -72,10 +72,8 @@ export function ServerFields({
             {t.mailboxes.security}
           </Label>
           <Select
-            value={value.security}
-            onValueChange={(v) =>
-              onChange({ ...value, security: v as Security })
-            }
+            value={value.tls}
+            onValueChange={(v) => onChange({ ...value, tls: v as TlsMode })}
           >
             <SelectTrigger className="w-full">
               <SelectValue />

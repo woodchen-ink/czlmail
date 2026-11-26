@@ -203,7 +203,11 @@ export function TrendChart({
                     connectNulls
                   />
                 ))}
-                <ChartLegend content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1 [&>div]:whitespace-nowrap" />} />
+                <ChartLegend
+                  content={
+                    <ChartLegendContent className="flex-wrap gap-x-4 gap-y-1 [&>div]:whitespace-nowrap" />
+                  }
+                />
               </LineChart>
             ) : (
               <BarChart data={data} margin={{ left: 4, right: 8 }}>
@@ -241,7 +245,11 @@ export function TrendChart({
                   />
                 ))}
                 {keys.length > 1 && (
-                  <ChartLegend content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1 [&>div]:whitespace-nowrap" />} />
+                  <ChartLegend
+                    content={
+                      <ChartLegendContent className="flex-wrap gap-x-4 gap-y-1 [&>div]:whitespace-nowrap" />
+                    }
+                  />
                 )}
               </BarChart>
             )}

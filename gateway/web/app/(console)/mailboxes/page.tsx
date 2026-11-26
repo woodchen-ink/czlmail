@@ -45,7 +45,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { UpstreamCard } from "@/components/upstream-card"
 import {
   upstreamsApi,
-  type ConnectionReport as Report,
+  type ProbeReport as Report,
   type Upstream,
 } from "@/lib/api/upstreams"
 import { useNow } from "@/lib/hooks/use-now"

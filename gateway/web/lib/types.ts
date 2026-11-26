@@ -27,7 +27,8 @@ export interface CreatedAppPassword extends AppPassword {
 
 export interface Setting {
   key: string
-  kind: "bool" | "string" | "int"
+  /** secret: the value is "********" when set; writing "" keeps it, null clears it. */
+  kind: "bool" | "string" | "int" | "secret"
   value: unknown
   default: unknown
 }
@@ -67,9 +68,11 @@ export interface UpstreamCard {
   statusSince: string | null
   code: number
   watchMode: WatchMode
-  lastSyncAt: string | null
+  /** undefined: not known by this API (the row is hidden); null: never synced. */
+  lastSyncAt?: string | null
   initialSync: { done: number; total: number } | null
-  lastError: { code: number; msg: string; at: string } | null
+  /** detail is the mail server's own reply, shown to the mailbox owner on hover. */
+  lastError: { code: number; msg: string; at: string; detail?: string } | null
   proxy: { mode: "default" | "custom"; host: string } | null
 }
 

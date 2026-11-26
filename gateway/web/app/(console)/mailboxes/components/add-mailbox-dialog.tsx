@@ -26,8 +26,9 @@ import { isNotReady } from "@/lib/api/client"
 import { oauthAppsApi } from "@/lib/api/oauth-apps"
 import {
   upstreamsApi,
-  type ConnectionReport as Report,
-  type NewImapUpstream,
+  probeOk,
+  type ProbeReport as Report,
+  type UpstreamInput,
 } from "@/lib/api/upstreams"
 import { errorText } from "@/lib/errors"
 import { isAdminRole, useMe } from "@/lib/hooks/use-me"
@@ -40,7 +41,7 @@ type Provider = "imap" | "google" | "microsoft"
 const emptyServer = (port: string): ServerDraft => ({
   host: "",
   port,
-  security: "tls",
+  tls: "tls",
 })
 
 function ProviderButton({
@@ -216,33 +217,33 @@ function ImapForm({
   } | null>(null)
   const [error, setError] = React.useState("")
 
-  const body = (): NewImapUpstream => {
+  const body = (): UpstreamInput => {
     const user = username.trim() || email.trim()
     return {
-      kind: "imap",
       name: name.trim(),
       email: email.trim(),
       imap: {
         host: imap.host.trim(),
         port: Number(imap.port),
-        security: imap.security,
+        tls: imap.tls,
         username: user,
         password,
       },
       smtp: {
         host: smtp.host.trim(),
         port: Number(smtp.port),
-        security: smtp.security,
+        tls: smtp.tls,
         username: sameCreds ? user : smtpUser.trim(),
         password: sameCreds ? password : smtpPass,
       },
-      proxy: { mode: "default" },
+      proxy: { mode: "follow" },
     }
   }
 
   // A test result counts only for the exact settings it was run with.
   const fingerprint = JSON.stringify(body())
   const report = tested?.fingerprint === fingerprint ? tested.report : null
+  const reportOk = report ? probeOk(report) : false
 
   const detect = useMutation({
     mutationFn: () => upstreamsApi.autoconfig(email.trim()),
@@ -252,13 +253,13 @@ function ImapForm({
         setImap({
           host: r.imap.host,
           port: String(r.imap.port),
-          security: r.imap.security,
+          tls: r.imap.tls,
         })
       if (r.smtp)
         setSmtp({
           host: r.smtp.host,
           port: String(r.smtp.port),
-          security: r.smtp.security,
+          tls: r.smtp.tls,
         })
       setDetected(t.mailboxes.detectedFrom[r.source])
     },
@@ -298,7 +299,7 @@ function ImapForm({
       onSubmit={(e) => {
         e.preventDefault()
         setError("")
-        if (report?.ok) save.mutate()
+        if (reportOk) save.mutate()
         else test.mutate()
       }}
     >
@@ -412,7 +413,7 @@ function ImapForm({
         <Button type="button" variant="ghost" onClick={onBack}>
           <ArrowLeft /> {t.common.back}
         </Button>
-        {report?.ok ? (
+        {reportOk ? (
           <Button type="submit" disabled={save.isPending}>
             {save.isPending ? <Spinner /> : <Check />}
             {t.mailboxes.saveMailbox}
@@ -420,7 +421,7 @@ function ImapForm({
         ) : (
           <Button
             type="submit"
-            variant={report && !report.ok ? "outline" : "default"}
+            variant={report && !reportOk ? "outline" : "default"}
             disabled={!filled || test.isPending}
             className={cn(!filled && "opacity-50")}
           >

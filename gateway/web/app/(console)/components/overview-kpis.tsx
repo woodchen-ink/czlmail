@@ -80,7 +80,7 @@ export function OverviewKpis({ data }: { data: Overview }) {
   const s = data.trend.summary
   const p = data.trend.previous
   return (
-    <Panel className="grid grid-cols-2 divide-border md:grid-cols-5 md:divide-x max-md:[&>*:nth-child(n+3)]:border-t max-md:[&>*:last-child]:col-span-2">
+    <Panel className="grid grid-cols-2 divide-border md:grid-cols-5 md:divide-x max-md:[&>*:last-child]:col-span-2 max-md:[&>*:nth-child(n+3)]:border-t">
       <Cell
         label={t.overview.kpiMailboxes}
         value={`${ok} / ${total}`}

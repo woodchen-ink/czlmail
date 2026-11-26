@@ -43,13 +43,6 @@ export function ProxyDialog({
   )
 }
 
-function currentMode(u: Upstream): ProxyMode {
-  return (
-    u.proxySettings?.mode ??
-    (u.proxy ? (u.proxy.mode === "custom" ? "custom" : "default") : "none")
-  )
-}
-
 function ProxyForm({
   upstream,
   onClose,
@@ -59,14 +52,20 @@ function ProxyForm({
 }) {
   const t = useT()
   const qc = useQueryClient()
-  const [mode, setMode] = React.useState<ProxyMode>(() => currentMode(upstream))
-  const [url, setUrl] = React.useState("")
+  const stored = upstream.view.proxy
+  const [mode, setMode] = React.useState<ProxyMode>(stored.mode)
+  const [url, setUrl] = React.useState(
+    stored.mode === "custom" ? stored.url : ""
+  )
+  const [password, setPassword] = React.useState("")
 
   const save = useMutation({
     mutationFn: () =>
       upstreamsApi.update(upstream.id, {
         proxy:
-          mode === "custom" ? { mode, url: url.trim() || undefined } : { mode },
+          mode === "custom"
+            ? { mode, url: url.trim(), password: password || undefined }
+            : { mode },
       }),
     onSuccess: () => {
       toast.success(t.mailboxes.proxySaved)
@@ -96,7 +95,7 @@ function ProxyForm({
         >
           {(
             [
-              ["default", t.mailboxes.proxyModeDefault],
+              ["follow", t.mailboxes.proxyModeDefault],
               ["none", t.mailboxes.proxyModeNone],
               ["custom", t.mailboxes.proxyModeCustom],
             ] as const
@@ -110,17 +109,26 @@ function ProxyForm({
           ))}
         </RadioGroup>
         {mode === "custom" && (
-          <FormField
-            id="proxy-url"
-            label={t.mailboxes.proxyUrl}
-            placeholder={
-              upstream.proxySettings?.url || "socks5://127.0.0.1:1080"
-            }
-            hint={t.mailboxes.proxyUrlHint}
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            required={!upstream.proxySettings?.url}
-          />
+          <>
+            <FormField
+              id="proxy-url"
+              label={t.mailboxes.proxyUrl}
+              placeholder="socks5://user@127.0.0.1:1080"
+              hint={t.mailboxes.proxyUrlHint}
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              required
+            />
+            <FormField
+              id="proxy-pass"
+              label={t.mailboxes.proxyPassword}
+              type="password"
+              autoComplete="new-password"
+              placeholder={stored.hasPassword ? t.mailboxes.keepStored : ""}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </>
         )}
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>

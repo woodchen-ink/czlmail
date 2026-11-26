@@ -1,85 +1,197 @@
-// Upstream mailbox management. TODO(#39): these routes land with the upstream
-// framework; until then they answer 404 and the pages show "not ready". The contract
-// is written down in the shared notes (gw-44-admin-web.md) and in README "Admin API".
+// Upstream mailbox management (#39, PR #56). The routes answer 404 until that work
+// package is deployed; pages then show "not ready". The view is mapped to the
+// overview's UpstreamCard here, so both pages render mailboxes the same way.
 import { api } from "./client"
-import type { UpstreamCard } from "@/lib/types"
+import type { UpstreamCard, UpstreamStatus, WatchMode } from "@/lib/types"
 
-export type Security = "tls" | "starttls"
+/** tls (implicit TLS) or starttls; the gateway also accepts plain, the admin does not offer it. */
+export type TlsMode = "tls" | "starttls" | "plain"
 
-export interface ServerSettings {
+export interface EndpointInput {
   host: string
   port: number
-  security: Security
-  username: string
-  /** Omitted on update: keep the stored password. */
+  tls: TlsMode
+  username?: string
+  /** Omitted or "" on update: keep the stored password. */
   password?: string
 }
 
-export type ProxyMode = "default" | "none" | "custom"
+/** follow: the gateway's default proxy (setting proxy.default); none: direct. */
+export type ProxyMode = "follow" | "none" | "custom"
 
-export interface ProxySettings {
+export interface ProxyInput {
   mode: ProxyMode
-  /** socks5://user:pass@host:port for "custom"; the server answers it masked. */
+  /** socks5://[user@]host:port for custom. */
   url?: string
+  /** Omitted or "" on update: keep the stored proxy password. */
+  password?: string
 }
 
-export interface Upstream extends UpstreamCard {
-  isDefault: boolean
-  paused: boolean
-  imap?: Omit<ServerSettings, "password">
-  smtp?: Omit<ServerSettings, "password">
-  proxySettings?: ProxySettings
-  createdAt: string
-}
-
-export interface NewImapUpstream {
-  kind: "imap"
+export interface UpstreamInput {
   name: string
   email: string
-  imap: ServerSettings
-  smtp: ServerSettings
-  proxy: ProxySettings
+  imap: EndpointInput
+  smtp?: EndpointInput
+  proxy?: ProxyInput
 }
 
-export interface Autoconfig {
-  source: "preset" | "ispdb" | "autoconfig" | "none"
-  provider?: string
-  imap?: { host: string; port: number; security: Security }
-  smtp?: { host: string; port: number; security: Security }
+export type Capabilities = Partial<
+  Record<
+    | "condstore"
+    | "qresync"
+    | "idle"
+    | "notify"
+    | "move"
+    | "uidplus"
+    | "objectid"
+    | "xguid"
+    | "specialUse"
+    | "listStatus"
+    | "sort",
+    boolean
+  >
+>
+
+interface EndpointView {
+  host: string
+  port: number
+  tls: TlsMode
+  username: string
+  hasPassword: boolean
 }
 
-export interface ConnectionReport {
-  ok: boolean
-  imap: {
-    ok: boolean
-    code: number
-    msg: string
-    capabilities: string[]
-    watchMode: string
+/** GET /upstreams item as the gateway sends it. */
+export interface UpstreamView {
+  id: string
+  userId: string
+  kind: UpstreamCard["kind"]
+  name: string
+  email: string
+  imap: EndpointView
+  smtp: EndpointView
+  proxy: { mode: ProxyMode; url: string; hasPassword: boolean }
+  paused: boolean
+  isDefault: boolean
+  status: {
+    state: UpstreamStatus
+    code: number | null
+    since: string | null
+    /** The mail server's own reply, for the mailbox owner. */
+    detail: string
+    initialSync: { done: number; total: number } | null
   }
-  smtp: { ok: boolean; code: number; msg: string }
+  capabilities: Capabilities
+  createdAt: string | null
+}
+
+/** A mailbox for the pages: the overview card plus what the actions need. */
+export interface Upstream extends UpstreamCard {
+  view: UpstreamView
+  isDefault: boolean
+  paused: boolean
+}
+
+export interface ProbePart {
+  ok: boolean
+  code?: number
+  msg?: string
+  detail?: string
+  capabilities?: Capabilities
+  auth?: string[]
+}
+
+export interface ProbeReport {
+  imap: ProbePart
+  /** null when no SMTP server is configured. */
+  smtp: ProbePart | null
+}
+
+export function probeOk(r: ProbeReport): boolean {
+  return r.imap.ok && (!r.smtp || r.smtp.ok)
+}
+
+/** How the gateway can watch the mailbox, from the server's capabilities. */
+export function watchModeOf(caps: Capabilities | undefined): WatchMode {
+  if (!caps || Object.keys(caps).length === 0) return ""
+  if (caps.notify) return "notify"
+  if (caps.idle) return "idle"
+  return "poll"
+}
+
+/** Capability names the server announced, for the connection report. */
+export function capabilityNames(caps: Capabilities | undefined): string[] {
+  return Object.entries(caps ?? {})
+    .filter(([, on]) => on)
+    .map(([k]) => k.toUpperCase())
+}
+
+function proxyHost(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
+
+export function toUpstream(v: UpstreamView): Upstream {
+  const failing =
+    v.status.state === "authRequired" || v.status.state === "unreachable"
+  return {
+    id: v.id,
+    kind: v.kind,
+    name: v.name,
+    email: v.email,
+    ownerEmail: "",
+    status: v.status.state,
+    statusSince: v.status.since,
+    code: v.status.code ?? 0,
+    watchMode: watchModeOf(v.capabilities),
+    lastSyncAt: undefined, // not in this view
+    initialSync: v.status.initialSync,
+    lastError:
+      failing && v.status.code
+        ? {
+            code: v.status.code,
+            msg: "",
+            at: v.status.since ?? "",
+            detail: v.status.detail,
+          }
+        : null,
+    proxy:
+      v.proxy.mode === "none"
+        ? null
+        : v.proxy.mode === "follow"
+          ? { mode: "default", host: "" }
+          : { mode: "custom", host: proxyHost(v.proxy.url) },
+    view: v,
+    isDefault: v.isDefault,
+    paused: v.paused,
+  }
 }
 
 const path = (id: string) => `/upstreams/${encodeURIComponent(id)}`
 
 export const upstreamsApi = {
-  list: () => api.get<Upstream[]>("/upstreams"),
-  autoconfig: (email: string) =>
-    api.get<Autoconfig>(
-      `/upstreams/autoconfig?email=${encodeURIComponent(email)}`
-    ),
-  test: (body: NewImapUpstream) =>
-    api.post<ConnectionReport>("/upstreams/test", body),
-  create: (body: NewImapUpstream) => api.post<Upstream>("/upstreams", body),
-  update: (id: string, body: Partial<Omit<NewImapUpstream, "kind">>) =>
-    api.patch<Upstream>(path(id), body),
-  testExisting: (id: string) => api.post<ConnectionReport>(`${path(id)}/test`),
-  pause: (id: string) => api.post<Upstream>(`${path(id)}/pause`),
-  resume: (id: string) => api.post<Upstream>(`${path(id)}/resume`),
-  setDefault: (id: string) => api.post<Upstream>(`${path(id)}/default`),
-  /** OAuth mailboxes: returns the provider's consent URL to open. */
-  reauth: (id: string) => api.post<{ url: string }>(`${path(id)}/reauth`),
+  list: async () =>
+    (await api.get<UpstreamView[]>("/upstreams")).map(toUpstream),
+  test: (body: UpstreamInput) => api.post<ProbeReport>("/upstreams/test", body),
+  create: (body: UpstreamInput) => api.post<UpstreamView>("/upstreams", body),
+  update: (id: string, body: Partial<UpstreamInput>) =>
+    api.patch<UpstreamView>(path(id), body),
+  testExisting: (id: string) => api.post<ProbeReport>(`${path(id)}/test`),
+  pause: (id: string) => api.post<UpstreamView>(`${path(id)}/pause`),
+  resume: (id: string) => api.post<UpstreamView>(`${path(id)}/resume`),
+  setDefault: (id: string) => api.post<UpstreamView>(`${path(id)}/default`),
   remove: (id: string) => api.del<object>(path(id)),
+  /** TODO(#39 follow-up): server detection (presets → ISPDB → autoconfig) is not built yet; answers 404. */
+  autoconfig: (email: string) =>
+    api.get<{
+      source: "preset" | "ispdb" | "autoconfig" | "none"
+      imap?: { host: string; port: number; tls: TlsMode }
+      smtp?: { host: string; port: number; tls: TlsMode }
+    }>(`/upstreams/autoconfig?email=${encodeURIComponent(email)}`),
+  /** TODO(#42/#43): consent URL to re-authorise a Gmail / Microsoft mailbox. */
+  reauth: (id: string) => api.post<{ url: string }>(`${path(id)}/reauth`),
   /** TODO(#42/#43): start adding a Gmail / Microsoft mailbox; returns the consent URL. */
   startOAuth: (provider: "google" | "microsoft") =>
     api.post<{ url: string }>(`/upstreams/oauth/${provider}/start`),

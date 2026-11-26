@@ -233,6 +233,52 @@ function StringSetting({
   )
 }
 
+/** A sealed setting: the server only says whether it is set ("********"). */
+function SecretSetting({
+  s,
+  onSave,
+  pending,
+}: {
+  s: Setting
+  onSave: (v: string | null) => void
+  pending: boolean
+}) {
+  const t = useT()
+  const set = Boolean(s.value)
+  const [v, setV] = React.useState("")
+  return (
+    <form
+      className="flex gap-2"
+      onSubmit={(e) => {
+        e.preventDefault()
+        onSave(v)
+      }}
+    >
+      <Input
+        type="password"
+        autoComplete="new-password"
+        value={v}
+        placeholder={set ? t.settings.secretSet : t.settings.secretUnset}
+        onChange={(e) => setV(e.target.value)}
+        className="w-48"
+      />
+      <Button type="submit" variant="outline" disabled={pending || !v}>
+        {t.common.save}
+      </Button>
+      {set && (
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={pending}
+          onClick={() => onSave(null)}
+        >
+          {t.settings.secretClear}
+        </Button>
+      )}
+    </form>
+  )
+}
+
 function SettingsSection({ section }: { section: Section }) {
   const t = useT()
   const qc = useQueryClient()
@@ -261,6 +307,13 @@ function SettingsSection({ section }: { section: Section }) {
               disabled={update.isPending}
               onCheckedChange={(v) => update.mutate({ [s.key]: v })}
               aria-label={copy.title}
+            />
+          ) : s.kind === "secret" ? (
+            <SecretSetting
+              key={String(s.value)}
+              s={s}
+              pending={update.isPending}
+              onSave={(v) => update.mutate({ [s.key]: v })}
             />
           ) : (
             <StringSetting
