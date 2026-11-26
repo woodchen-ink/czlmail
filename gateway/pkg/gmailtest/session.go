@@ -661,9 +661,14 @@ func (ss *session) idle() error {
 		lines <- strings.TrimRight(line, "\r\n")
 	}()
 	for {
+		// Report what changed since the last command and take the wake-up channel
+		// under one lock: a change that landed between the previous command and
+		// IDLE (or between two wake-ups) is pushed now instead of being missed.
 		ss.s.mu.Lock()
+		ss.pushUpdatesLocked()
 		changed := ss.s.st.changed
 		ss.s.mu.Unlock()
+		ss.flush()
 		select {
 		case line := <-lines:
 			if !strings.EqualFold(line, "DONE") {
@@ -671,8 +676,6 @@ func (ss *session) idle() error {
 			}
 			return nil
 		case <-changed:
-			ss.pushUpdates()
-			ss.flush()
 		}
 	}
 }
