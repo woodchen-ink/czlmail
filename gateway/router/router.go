@@ -9,15 +9,20 @@ import (
 
 	"github.com/woodchen-ink/czlmail/gateway/handler"
 	"github.com/woodchen-ink/czlmail/gateway/middleware"
+	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 )
 
-// Deps are the handlers the router mounts. Later work packages add the JMAP
-// endpoints (/.well-known/jmap, /jmap/...) and the admin web pages (/admin/, /setup).
+// Deps are the handlers the router mounts. Later work packages add the admin
+// web pages (/admin/, /setup).
 type Deps struct {
 	Log      *slog.Logger
 	ClientIP middleware.ClientIPFunc
 	Health   *handler.Health
 	Admin    *handler.Admin
+	// JMAP serves /.well-known/jmap and /jmap/...; nil leaves them unmounted.
+	JMAP *jmapserver.Server
+	// Czlmail serves /.well-known/czlmail.json; nil leaves it unmounted.
+	Czlmail http.Handler
 }
 
 // New returns the gateway's root handler.
@@ -26,6 +31,18 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /healthz", d.Health)
 	if d.Admin != nil {
 		mux.Handle("/api/admin/", adminAPI(d))
+	}
+	if d.Czlmail != nil {
+		mux.Handle("GET /.well-known/czlmail.json", d.Czlmail)
+	}
+	if j := d.JMAP; j != nil {
+		mux.HandleFunc("GET /.well-known/jmap", j.WellKnown)
+		mux.HandleFunc("GET /jmap/session", j.Session)
+		mux.HandleFunc("POST /jmap/api", j.API)
+		mux.HandleFunc("POST /jmap/upload/{accountId}/{$}", j.Upload)
+		mux.HandleFunc("POST /jmap/upload/{accountId}", j.Upload)
+		mux.HandleFunc("GET /jmap/download/{accountId}/{blobId}/{name}", j.Download)
+		mux.HandleFunc("GET /jmap/eventsource", j.EventSource)
 	}
 	mux.HandleFunc("/", notFound)
 	return middleware.Chain(mux,

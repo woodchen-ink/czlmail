@@ -10,6 +10,8 @@ import (
 
 	"github.com/woodchen-ink/czlmail/gateway/database"
 	"github.com/woodchen-ink/czlmail/gateway/handler"
+	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
+	"github.com/woodchen-ink/czlmail/gateway/service"
 )
 
 func TestHealthAndNotFound(t *testing.T) {
@@ -48,5 +50,47 @@ func TestHealthAndNotFound(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/nope", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown path: %d", rec.Code)
+	}
+}
+
+func TestJMAPMounted(t *testing.T) {
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	j, err := jmapserver.New(jmapserver.Options{
+		BaseURL: "https://gw.example.com", DataDir: t.TempDir(),
+		Auth: service.NoUsers{}, Accounts: service.UpstreamAccounts{}, Log: log,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := jmapserver.GatewayInfo{Version: "2026.12.0", ProtocolVersion: 1, AdminURL: "https://gw.example.com/admin/"}
+	h := New(Deps{
+		Log: log, ClientIP: func(r *http.Request) string { return r.RemoteAddr },
+		JMAP: j, Czlmail: &handler.CzlmailConfig{Gateway: info},
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/.well-known/jmap", nil))
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://gw.example.com/jmap/session" {
+		t.Fatalf("well-known jmap: %d %v", rec.Code, rec.Header())
+	}
+	for _, r := range []*http.Request{
+		httptest.NewRequest("GET", "/jmap/session", nil),
+		httptest.NewRequest("POST", "/jmap/api", nil),
+		httptest.NewRequest("POST", "/jmap/upload/a1/", nil),
+		httptest.NewRequest("GET", "/jmap/download/a1/u1/x", nil),
+		httptest.NewRequest("GET", "/jmap/eventsource", nil),
+	} {
+		rec = httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s: %d", r.Method, r.URL.Path, rec.Code)
+		}
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/.well-known/czlmail.json", nil))
+	want := `{"version":1,"gateway":{"name":"czlmail 网关","adminUrl":"https://gw.example.com/admin/","protocolVersion":1,"version":"2026.12.0"}}` + "\n"
+	if rec.Code != 200 || rec.Body.String() != want {
+		t.Fatalf("czlmail.json: %d %s", rec.Code, rec.Body)
 	}
 }

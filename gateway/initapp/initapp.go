@@ -14,6 +14,8 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/cron"
 	"github.com/woodchen-ink/czlmail/gateway/database"
 	"github.com/woodchen-ink/czlmail/gateway/handler"
+	"github.com/woodchen-ink/czlmail/gateway/middleware"
+	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 	"github.com/woodchen-ink/czlmail/gateway/router"
 	"github.com/woodchen-ink/czlmail/gateway/service"
 )
@@ -53,6 +55,21 @@ func Serve(ctx context.Context, log *slog.Logger, version string) error {
 		return err
 	}
 
+	gateway := jmapserver.GatewayInfo{Version: version, ProtocolVersion: 1, AdminURL: cfg.BaseURL + "/admin/"}
+	jmap, err := jmapserver.New(jmapserver.Options{
+		BaseURL:  cfg.BaseURL,
+		DataDir:  cfg.DataDir,
+		Auth:     service.NoUsers{},
+		Accounts: service.UpstreamAccounts{},
+		Log:      log,
+		TraceID:  middleware.TraceID,
+	})
+	if err != nil {
+		return err
+	}
+	jmap.RegisterCapability(jmapserver.GatewayCapability, gateway)
+	go cron.RunBlobCleanup(ctx, log, jmap.Uploads())
+
 	srv := &http.Server{
 		Addr: cfg.Listen,
 		Handler: router.New(router.Deps{
@@ -60,11 +77,15 @@ func Serve(ctx context.Context, log *slog.Logger, version string) error {
 			ClientIP: cfg.ClientIP,
 			Health:   &handler.Health{DB: db, Version: version, Log: log},
 			Admin:    auth.Admin,
+			JMAP:     jmap,
+			Czlmail:  &handler.CzlmailConfig{Gateway: gateway},
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		// No WriteTimeout: EventSource responses stay open for hours.
 	}
+	// Shutdown waits for idle connections, and an EventSource stream never idles.
+	srv.RegisterOnShutdown(jmap.Close)
 
 	errCh := make(chan error, 1)
 	go func() {
