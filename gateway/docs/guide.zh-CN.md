@@ -255,7 +255,7 @@ Gmail 用 OAuth 授权: 收信走 IMAP, 发信走 Gmail API, 不保存 Gmail 密
 3. 「API 和服务 → OAuth 同意屏幕」(新版控制台叫「Google Auth Platform」, 分为「品牌塑造」「目标对象」「数据访问」):
    - 用户类型选**外部**。如果所有 Gmail 都在你自己的 Google Workspace 里, 可以选**内部**, 那样第 7 步和下面的未验证警告都不涉及。
    - 应用名称、用户支持邮箱、开发者联系邮箱随意填写; 用户登录 Google 时会看到应用名称。
-   - 「数据访问」里添加权限范围 `https://mail.google.com/` (显示为「阅读、撰写、发送和永久删除您在 Gmail 中的所有电子邮件」)。这是受限范围; 网关后台的向导会列出需要的全部范围, 可直接复制。
+   - 「数据访问」里添加权限范围 `https://mail.google.com/` (显示为「阅读、撰写、发送和永久删除您在 Gmail 中的所有电子邮件」)。只需要这一个范围, 它属于受限范围; 邮箱地址由网关从 Gmail 资料里读取, 不需要 `openid` 或 `email`。
 4. 「API 和服务 → 凭据 → 创建凭据 → OAuth 客户端 ID」, 应用类型选 **Web 应用**。
 5. 「已获授权的重定向 URI」添加 `https://mail-gw.example.com/oauth/google/callback`, 也就是 `GATEWAY_BASE_URL` 加 `/oauth/google/callback`, 必须一字不差。后台「OAuth 应用」页会显示正确的值。点「创建」, 复制**客户端 ID** 和**客户端密钥**。
 6. 网关后台「OAuth 应用」→ Google, 按向导把客户端 ID 和密钥填进去。密钥加密保存, 之后不再显示。

@@ -255,7 +255,7 @@ Gmail signs in with OAuth: mail is read over IMAP and sent through the Gmail API
 3. **APIs & Services → OAuth consent screen** (called **Google Auth Platform** in the new console, with Branding, Audience and Data access):
    - User type **External**. If every Gmail account is in your own Google Workspace you can pick **Internal**; then step 7 and the unverified-app warning below do not apply.
    - App name, user support email and developer contact email: anything you like. Users see the app name when they sign in to Google.
-   - Under **Data access**, add the scope `https://mail.google.com/` ("Read, compose, send, and permanently delete all your email from Gmail"). It is a restricted scope. The gateway admin's wizard lists every scope it needs, ready to copy.
+   - Under **Data access**, add the scope `https://mail.google.com/` ("Read, compose, send, and permanently delete all your email from Gmail"). It is the only scope needed, and a restricted one; the gateway reads the address from the Gmail profile, so `openid` and `email` are not needed.
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**, application type **Web application**.
 5. Under **Authorized redirect URIs**, add `https://mail-gw.example.com/oauth/google/callback`: `GATEWAY_BASE_URL` plus `/oauth/google/callback`, exactly. The admin's OAuth apps page shows the right value. Click **Create** and copy the **Client ID** and **Client secret**.
 6. In the gateway admin, OAuth apps → Google, follow the wizard and paste the client ID and secret. The secret is encrypted and never shown again.
