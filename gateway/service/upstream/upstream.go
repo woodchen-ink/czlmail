@@ -48,7 +48,10 @@ type Config struct {
 	// microsoft; filled in by #42 / #43). An *Error of KindAuth means the grant is
 	// gone. Nil for password upstreams.
 	AccessToken func(ctx context.Context) (string, error)
-	Log         *slog.Logger
+	// APIBase is the provider's REST API root for OAuth kinds (the Gmail API
+	// sends mail and lists identities); it goes through Dialer too.
+	APIBase string
+	Log     *slog.Logger
 	// OnRequest, if set, is called for every request sent to the upstream (an IMAP
 	// command, an HTTP call); the admin overview counts them. Nil for connection tests.
 	OnRequest func()

@@ -44,6 +44,8 @@ type App struct {
 	Tasks    *cron.Scheduler
 	// Submission sends mail (EmailSubmission, Identity).
 	Submission *submission.Service
+	// OAuth adds Gmail / Microsoft upstreams and keeps their tokens.
+	OAuth *service.OAuth
 
 	stop context.CancelFunc
 }
@@ -140,6 +142,8 @@ func NewAppWith(cfg *config.Config, db *gorm.DB, log *slog.Logger, version strin
 	sending := submission.New(db, mgr, log, opts.Submission)
 	sending.Register(jmap)
 	auth.Admin.Submission = sending
+	oauthSvc := service.NewOAuth(db, ring, upstreams, mgr, cfg.BaseURL, log)
+	auth.Admin.OAuth = oauthSvc
 
 	rec := metrics.New(db)
 	tasks := cron.NewScheduler(log)
@@ -184,7 +188,7 @@ func NewAppWith(cfg *config.Config, db *gorm.DB, log *slog.Logger, version strin
 		Czlmail:  &handler.CzlmailConfig{Gateway: gateway},
 		AdminWeb: web,
 	})
-	return &App{Handler: h, Auth: auth, JMAP: jmap, Mail: mailSvc, Metrics: rec, Overview: overview, Tasks: tasks, Upstreams: upstreams, Manager: mgr, Submission: sending, stop: stop}, nil
+	return &App{Handler: h, Auth: auth, JMAP: jmap, Mail: mailSvc, Metrics: rec, Overview: overview, Tasks: tasks, Upstreams: upstreams, Manager: mgr, Submission: sending, OAuth: oauthSvc, stop: stop}, nil
 }
 
 // Close stops the background jobs and upstreams, writes the pending metrics and

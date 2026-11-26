@@ -33,6 +33,9 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /healthz", d.Health)
 	if d.Admin != nil {
 		mux.Handle("/api/admin/", adminAPI(d))
+		if d.Admin.OAuth != nil {
+			mux.HandleFunc("GET /oauth/{provider}/callback", d.Admin.OAuthCallback)
+		}
 	}
 	if d.Czlmail != nil {
 		mux.Handle("GET /.well-known/czlmail.json", d.Czlmail)
@@ -105,6 +108,13 @@ func adminAPI(d Deps) http.Handler {
 		handle("PATCH /api/admin/upstreams/{id}/identities/{identityId}", a.UpdateIdentity)
 		handle("DELETE /api/admin/upstreams/{id}/identities/{identityId}", a.DeleteIdentity)
 		handle("POST /api/admin/upstreams/{id}/send-test", a.SendTest)
+	}
+	if a.OAuth != nil {
+		handle("GET /api/admin/oauth-apps", a.ListOAuthApps)
+		handle("PUT /api/admin/oauth-apps/{provider}", a.PutOAuthApp)
+		handle("DELETE /api/admin/oauth-apps/{provider}", a.DeleteOAuthApp)
+		handle("POST /api/admin/upstreams/oauth/{provider}/start", a.StartOAuthUpstream)
+		handle("POST /api/admin/upstreams/{id}/reauth", a.ReauthUpstream)
 	}
 
 	handle("GET /api/admin/settings", a.ListSettings)

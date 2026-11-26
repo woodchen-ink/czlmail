@@ -88,20 +88,12 @@ func (in *upstreamInput) toService(creating bool) (service.UpstreamInput, error)
 		}
 		out.SMTP = ep
 	}
-	if p := in.Proxy; p != nil {
-		switch p.Mode {
-		case model.ProxyFollow, model.ProxyNone:
-		case model.ProxyCustom:
-			if _, err := netx.ParseProxyURL(p.URL); err != nil {
-				return out, errInvalidProxy
-			}
-		default:
-			return out, errInvalidProxy
+	if in.Proxy != nil {
+		p, err := validProxy(in.Proxy)
+		if err != nil {
+			return out, err
 		}
-		if p.Password != nil && len(*p.Password) > maxSecretLen {
-			return out, errInvalidProxy
-		}
-		out.Proxy = &service.ProxyInput{Mode: p.Mode, URL: strings.TrimSpace(p.URL), Password: emptyIsKeep(p.Password)}
+		out.Proxy = p
 	}
 	switch in.SentCopy {
 	case "", upstream.SentCopyAuto, upstream.SentCopyGateway, upstream.SentCopyServer:
@@ -110,6 +102,22 @@ func (in *upstreamInput) toService(creating bool) (service.UpstreamInput, error)
 		return out, errInvalidSentCopy
 	}
 	return out, nil
+}
+
+func validProxy(p *proxyInput) (*service.ProxyInput, error) {
+	switch p.Mode {
+	case model.ProxyFollow, model.ProxyNone:
+	case model.ProxyCustom:
+		if _, err := netx.ParseProxyURL(p.URL); err != nil {
+			return nil, errInvalidProxy
+		}
+	default:
+		return nil, errInvalidProxy
+	}
+	if p.Password != nil && len(*p.Password) > maxSecretLen {
+		return nil, errInvalidProxy
+	}
+	return &service.ProxyInput{Mode: p.Mode, URL: strings.TrimSpace(p.URL), Password: emptyIsKeep(p.Password)}, nil
 }
 
 func validEndpoint(e *endpointInput, defaultUser string) (*service.Endpoint, error) {

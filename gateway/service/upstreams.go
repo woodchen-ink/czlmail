@@ -73,6 +73,7 @@ type Upstreams struct {
 	ring     *crypto.Keyring
 	settings *Settings
 	mgr      *UpstreamManager
+	oauth    *OAuth // set by NewOAuth
 	log      *slog.Logger
 	now      func() time.Time
 }
@@ -191,7 +192,21 @@ func (s *Upstreams) CreateIMAP(ctx context.Context, actor *model.User, ownerPubl
 	if err := s.checkHosts(ctx, up); err != nil {
 		return nil, err
 	}
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.insert(owner, up); err != nil {
+		return nil, err
+	}
+	s.mgr.Start(up)
+	d := s.detail(up, owner.PublicID)
+	return &d, nil
+}
+
+// insert saves a new upstream row; the owner's first upstream becomes the default.
+func (s *Upstreams) insert(owner *model.User, up *model.Upstream) error {
+	up.UserID = owner.ID
+	if up.Status == "" {
+		up.Status, up.StatusSince = jmapserver.UpstreamSyncing, s.now().UTC()
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
 		var n int64
 		if err := tx.Model(&model.Upstream{}).Where("user_id = ?", owner.ID).Count(&n).Error; err != nil {
 			return err
@@ -199,12 +214,6 @@ func (s *Upstreams) CreateIMAP(ctx context.Context, actor *model.User, ownerPubl
 		up.IsDefault = n == 0
 		return tx.Create(up).Error
 	})
-	if err != nil {
-		return nil, err
-	}
-	s.mgr.Start(up)
-	d := s.detail(up, owner.PublicID)
-	return &d, nil
 }
 
 // Update changes an upstream's settings. Anything that affects the connection
@@ -401,6 +410,9 @@ func (s *Upstreams) Delete(actor *model.User, publicID string) error {
 		return err
 	}
 	s.mgr.Remove(up)
+	if s.oauth != nil && s.oauth.IsOAuthKind(up.Kind) {
+		s.oauth.revoke(*up)
+	}
 	return nil
 }
 

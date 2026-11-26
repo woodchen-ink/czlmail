@@ -38,6 +38,7 @@ type Server struct {
 	fail     []string // error codes for the next token requests, in order
 	failAll  string
 	requests []url.Values
+	revoked  []string
 }
 
 type codeGrant struct {
@@ -55,6 +56,7 @@ type accessGrant struct {
 const (
 	AuthorizePath = "/authorize"
 	TokenPath     = "/token"
+	RevokePath    = "/revoke"
 )
 
 // New starts the provider; it is closed when the test ends.
@@ -67,6 +69,7 @@ func New(t testing.TB) *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+AuthorizePath, s.authorize)
 	mux.HandleFunc("POST "+TokenPath, s.token)
+	mux.HandleFunc("POST "+RevokePath, s.revoke)
 	s.Server = httptest.NewServer(mux)
 	t.Cleanup(s.Close)
 	return s
@@ -77,6 +80,16 @@ func (s *Server) AuthURL() string { return s.URL + AuthorizePath }
 
 // TokenURL is the token endpoint.
 func (s *Server) TokenURL() string { return s.URL + TokenPath }
+
+// RevokeURL is the revocation endpoint (RFC 7009 / Google's form: token=...).
+func (s *Server) RevokeURL() string { return s.URL + RevokePath }
+
+// Revoked returns the tokens posted to the revocation endpoint so far.
+func (s *Server) Revoked() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.revoked...)
+}
 
 // AddRefreshToken registers a refresh token for user and returns it.
 func (s *Server) AddRefreshToken(user string) string {
@@ -242,6 +255,33 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// revoke drops a refresh token (and, like Google, every access token of its
+// user) or a single access token.
+func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil || r.PostForm.Get("token") == "" {
+		tokenError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	tok := r.PostForm.Get("token")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.revoked = append(s.revoked, tok)
+	if user, ok := s.refresh[tok]; ok {
+		delete(s.refresh, tok)
+		for k, g := range s.access {
+			if g.user == user {
+				delete(s.access, k)
+			}
+		}
+		return
+	}
+	if _, ok := s.access[tok]; ok {
+		delete(s.access, tok)
+		return
+	}
+	tokenError(w, http.StatusBadRequest, "invalid_token")
 }
 
 func (s *Server) issueLocked(user string) string {
