@@ -81,7 +81,13 @@ type fakeRelay struct {
 	n       int
 	calls   []string
 	pending map[string]string // 登记 id → JMAP 订阅 id
+	// decryptedAs 是每次解密用的登录; nativeSignIns 是最近一次告诉原生壳的附加登录。
+	decryptedAs   []string
+	nativeSignIns []string
 }
+
+// testDeviceAuth 是 16 字节的设备 auth (base64url)。
+const testDeviceAuth = "AAECAwQFBgcICQoLDA0ODw"
 
 func (r *fakeRelay) call(_ context.Context, method, path, secret string, in, out any) error {
 	r.mu.Lock()
@@ -141,17 +147,28 @@ func pushTestApp(t *testing.T) (*App, *store.Store, *fakeRelay) {
 	a := &App{ctx: ctx, log: slog.New(slog.NewTextHandler(io.Discard, nil)), store: st}
 	a.primary.cfg = config.Config{Username: "me@one.example"}
 	a.extra = []*signIn{{id: "s2", cfg: config.Config{Username: "me@two.example"}}}
-	forgetOwnAddresses()
-	t.Cleanup(forgetOwnAddresses)
+	resetOwnAddresses()
+	t.Cleanup(resetOwnAddresses)
 
 	relay := &fakeRelay{regs: map[string]bool{}, pending: map[string]string{}}
 	old, oldEnabled := pushDeps, pushEnabled
 	pushEnabled = true
 	pushDeps = pushHooks{
 		deviceInfo: func(context.Context) (pushInfo, error) {
-			return pushInfo{Token: "tok", P256DH: "key1", Auth: "auth", DeviceID: "dev1"}, nil
+			return pushInfo{Token: "tok", P256DH: "key1", Auth: testDeviceAuth, DeviceID: "dev1"}, nil
 		},
-		decrypt:    func(_ context.Context, body string) (string, error) { return body, nil },
+		decrypt: func(_ context.Context, body, signIn string) (string, error) {
+			relay.mu.Lock()
+			relay.decryptedAs = append(relay.decryptedAs, signIn)
+			relay.mu.Unlock()
+			return body, nil
+		},
+		signIns: func(_ context.Context, prefixes []string) error {
+			relay.mu.Lock()
+			relay.nativeSignIns = slices.Clone(prefixes)
+			relay.mu.Unlock()
+			return nil
+		},
 		relay:      relay.call,
 		verifyPoll: time.Millisecond,
 	}
@@ -216,16 +233,22 @@ func TestPushPerSignIn(t *testing.T) {
 		}
 	}
 
-	// 点开推送: 中转登记 + 服务器账号 id → 本机账号 id。
-	acc, id, ok := a.mailActionTarget("push:" + regs["s2"].ID + "/c/m1")
-	if !ok || acc != "s2~c" || id != "m1" {
-		t.Errorf("s2 的推送应打开 s2~c/m1, 实际 %q %q %v", acc, id, ok)
+	// 每个登录的订阅用自己的 auth: 主登录是设备原来的, 附加登录是派生的 (通知扩展据此认出登录)。
+	primaryKeys := primary.created[0]["keys"].(map[string]string)
+	secondKeys := second.created[0]["keys"].(map[string]string)
+	wantSecond, _ := pushAuthFor(testDeviceAuth, "s2")
+	if primaryKeys["auth"] != testDeviceAuth || secondKeys["auth"] != wantSecond || wantSecond == testDeviceAuth {
+		t.Errorf("auth 不对: 主登录 %q, s2 %q (应为 %q)", primaryKeys["auth"], secondKeys["auth"], wantSecond)
 	}
-	if acc, _, _ := a.mailActionTarget("push:" + regs[""].ID + "/c/m1"); acc != "c" {
-		t.Errorf("主登录的推送应打开 c, 实际 %q", acc)
+	if primaryKeys["p256dh"] != secondKeys["p256dh"] {
+		t.Error("设备公钥应共用")
 	}
-	if _, _, ok := a.mailActionTarget("push:unknown/c/m1"); ok {
-		t.Error("认不出的中转登记不应打开任何邮件")
+	// 验证消息按各自登录的 auth 解密; 原生壳知道 s2 有推送。
+	if !slices.Equal(relay.decryptedAs, []string{"", "s2"}) {
+		t.Errorf("解密用的登录 = %v", relay.decryptedAs)
+	}
+	if !slices.Equal(relay.nativeSignIns, []string{"s2"}) {
+		t.Errorf("告诉原生壳的附加登录 = %v", relay.nativeSignIns)
 	}
 
 	// 续期: 订阅还在, 只更新过期时间与账号, 不新建。
@@ -360,3 +383,26 @@ func TestSetPushCoveredPerSignIn(t *testing.T) {
 		t.Error(push.covered)
 	}
 }
+
+// 附加登录的 auth 派生与原生壳 (CzlPush/PushKeys.swift 的 authFor) 必须一致: 固定一组向量, 两边测试用同一组。
+func TestPushAuthFor(t *testing.T) {
+	if got, _ := pushAuthFor(testDeviceAuth, ""); got != testDeviceAuth {
+		t.Errorf("主登录应原样用设备 auth, 实际 %q", got)
+	}
+	got, err := pushAuthFor(testDeviceAuth, "s2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != pushAuthVectorS2 {
+		t.Errorf("pushAuthFor(s2) = %q, want %q", got, pushAuthVectorS2)
+	}
+	if other, _ := pushAuthFor(testDeviceAuth, "s3"); other == got || len(other) != 22 {
+		t.Errorf("s3 的 auth 应不同且为 16 字节: %q", other)
+	}
+	if _, err := pushAuthFor("!!", "s2"); err == nil {
+		t.Error("坏的设备 auth 应报错")
+	}
+}
+
+// pushAuthVectorS2 = base64url(HMAC-SHA256(00..0f, "czlmail push auth s2")[:16]), 用 Python 独立算出。
+const pushAuthVectorS2 = "F_TuYA2bDaAJIPakrEq5uw"

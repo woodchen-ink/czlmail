@@ -35,8 +35,8 @@ func init() {
 		}
 		return info, nil
 	}
-	pushDeps.decrypt = func(ctx context.Context, body string) (string, error) {
-		plain, err := hostRequest(ctx, "pushDecrypt", map[string]string{"body": body})
+	pushDeps.decrypt = func(ctx context.Context, body, signIn string) (string, error) {
+		plain, err := hostRequest(ctx, "pushDecrypt", map[string]string{"body": body, "signIn": signIn})
 		if err != nil {
 			return "", err
 		}
@@ -45,6 +45,10 @@ func init() {
 			return "", err
 		}
 		return text, nil
+	}
+	pushDeps.signIns = func(ctx context.Context, prefixes []string) error {
+		_, err := hostRequest(ctx, "pushSignIns", map[string]any{"signIns": prefixes})
+		return err
 	}
 }
 

@@ -72,7 +72,7 @@ func (a *App) ensureCacheOwner(ctx context.Context, st *store.Store, cfg config.
 	if err := keychain.Delete(config.KeyringService, aiKeyringKey); err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		a.log.Warn("clear ai key", "err", err)
 	}
-	forgetOwnAddresses()
+	resetOwnAddresses()
 	return st.SetStringSetting(ctx, store.SettingCacheOwner, owner)
 }
 

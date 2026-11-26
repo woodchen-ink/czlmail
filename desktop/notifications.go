@@ -53,19 +53,10 @@ func (a *App) initNotifier() {
 	a.mu.Unlock()
 }
 
-// mailActionTarget 解析邮件通知的 actionID, 返回本机账号 id 与邮件 id。
-//   - 同步弹的通知: "<本机账号 id>/<邮件 id>", 附加登录的账号 id 带前缀 (s2~c), 前缀里没有 "/"。
-//   - iOS 推送通知 (原生壳点开时转来): "push:<中转登记 id>/<服务器账号 id>/<邮件 id>"。推送里只有服务器上的账号 id,
-//     两台服务器的账号 id 常常一样, 按中转登记认出是哪个登录 (每个登录各登记一次, 见 push_relay.go)。
+// mailActionTarget 解析邮件通知的 actionID "<本机账号 id>/<邮件 id>", 返回账号与邮件 id。
+// 同步弹的通知与 iOS 推送通知 (通知扩展按解得开的 auth 认出登录, 拼好带前缀的本机账号 id, 见 push_relay.go) 是同一格式;
+// 附加登录的账号 id 带前缀 (s2~c), 前缀里没有 "/"。
 func (a *App) mailActionTarget(actionID string) (accountID, emailID string, ok bool) {
-	if rest, isPush := strings.CutPrefix(actionID, "push:"); isPush {
-		parts := strings.Split(rest, "/")
-		if len(parts) != 3 || parts[2] == "" {
-			return "", "", false
-		}
-		acc := a.pushAccountFor(parts[0], parts[1])
-		return acc, parts[2], acc != ""
-	}
 	acc, id, found := strings.Cut(actionID, "/")
 	if !found || acc == "" || id == "" {
 		return "", "", false

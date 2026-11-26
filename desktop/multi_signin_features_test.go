@@ -11,10 +11,15 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"git.sr.ht/~rockorager/go-jmap"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
+	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
 // 第 5 步 (#15) 的跨登录功能: 写信身份、自己的地址、通知、提醒与 MCP 的账号选择。
@@ -44,8 +49,8 @@ func multiSignInApp(t *testing.T) (*App, *store.Store) {
 		{id: "s2", cfg: config.Config{ServerHost: "two.example", SessionEndpoint: "https://two.example/jmap", Username: "Me@Two.example", AuthMethod: config.AuthPassword}},
 		{id: "s3", cfg: config.Config{ServerHost: "three.example", SessionEndpoint: "https://three.example/jmap", Username: "old@three.example", SignedOut: true, AuthMethod: config.AuthPassword}, signedOut: true},
 	}
-	forgetOwnAddresses()
-	t.Cleanup(forgetOwnAddresses)
+	resetOwnAddresses()
+	t.Cleanup(resetOwnAddresses)
 	return a, st
 }
 
@@ -214,7 +219,7 @@ func TestMailActionTargetPrefixed(t *testing.T) {
 			t.Errorf("%q → %q %q %v", tc.in, acc, id, ok)
 		}
 	}
-	for _, bad := range []string{"", "c", "/m1", "c/", "push:", "push:r/c"} {
+	for _, bad := range []string{"", "c", "/m1", "c/"} {
 		if _, _, ok := a.mailActionTarget(bad); ok {
 			t.Errorf("%q 不应解析成功", bad)
 		}
@@ -275,5 +280,159 @@ func TestMCPAccountsAcrossSignIns(t *testing.T) {
 	signIns := out["signIns"].([]map[string]any)
 	if len(signIns) != 3 || signIns[1]["id"] != "s2" || signIns[1]["server"] != "two.example" || signIns[2]["signedOut"] != true {
 		t.Errorf("signIns = %v", signIns)
+	}
+}
+
+// 取身份在锁外并行、限时: 一个账号卡住不拖住别的调用方; 取不到的账号沿用上次的身份; 过期后先返回旧结果。
+func TestOwnAddressesParallelAndStale(t *testing.T) {
+	a, _ := multiSignInApp(t)
+	old := fetchOwnIdentities
+	t.Cleanup(func() { fetchOwnIdentities = old })
+
+	var mu sync.Mutex
+	offline := false
+	fetchOwnIdentities = func(_ *App, ctx context.Context, acc string) ([]string, error) {
+		mu.Lock()
+		down := offline
+		mu.Unlock()
+		if acc == "s2~e" && down {
+			<-ctx.Done() // 服务器连不上: 等到超时
+			return nil, ctx.Err()
+		}
+		return []string{"id-" + strings.ReplaceAll(acc, "~", "-") + "@x"}, nil
+	}
+	own := a.ownAddresses()
+	if !own["id-s2-e@x"] || !own["id-c@x"] || !own["me@two.example"] {
+		t.Fatalf("第一次应取全: %v", own)
+	}
+
+	// s2 的服务器连不上: 下一次刷新时它的身份沿用上次的, 其余照常; 期间调用方立刻拿到旧结果。
+	mu.Lock()
+	offline = true
+	mu.Unlock()
+	forgetOwnAddresses()
+	start := time.Now()
+	if got := a.ownAddresses(); !got["id-s2-e@x"] {
+		t.Error("过期后应先返回旧结果")
+	}
+	if time.Since(start) > time.Second {
+		t.Errorf("已有结果时不应等刷新, 用了 %v", time.Since(start))
+	}
+	// 等后台刷新结束 (卡住的那个账号要等到 ownFetchTimeout)。
+	deadline := time.Now().Add(ownFetchTimeout + 5*time.Second)
+	for {
+		ownCache.Lock()
+		done := !ownCache.refreshing && !ownCache.at.IsZero()
+		ttl := ownCache.ttl
+		ownCache.Unlock()
+		if done {
+			if ttl != ownCacheRetry {
+				t.Errorf("有账号没取到时应短缓存, 实际 %v", ttl)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("后台刷新没结束")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := a.ownAddresses(); !got["id-s2-e@x"] || !got["id-c@x"] {
+		t.Errorf("取不到的账号应沿用上次的身份: %v", got)
+	}
+
+	// 主登录换人: 连上次的结果一起丢掉。
+	resetOwnAddresses()
+	ownCache.Lock()
+	empty := ownCache.addrs == nil && ownCache.perAccount == nil
+	ownCache.Unlock()
+	if !empty {
+		t.Error("resetOwnAddresses 应清掉旧结果")
+	}
+}
+
+// 收件人目录合并各登录的邮局目录; 查询失败有负缓存, 连不上的服务器不会每敲一个字重试; 正在查的不重复查也不等。
+func TestDirectoryAcrossSignIns(t *testing.T) {
+	a, _ := multiSignInApp(t)
+	a.primary.client = &jmap.Client{SessionEndpoint: "https://one.example/jmap", Session: &jmap.Session{}}
+	a.primary.sync = &syncer.Syncer{}
+	a.extra[0].client = &jmap.Client{SessionEndpoint: "https://two.example/jmap", Session: &jmap.Session{}}
+	a.extra[0].sync = &syncer.Syncer{}
+	directoryCache.Lock()
+	directoryCache.entries = nil
+	directoryCache.Unlock()
+	old := fetchDirectory
+	t.Cleanup(func() {
+		fetchDirectory = old
+		directoryCache.Lock()
+		directoryCache.entries = nil
+		directoryCache.Unlock()
+	})
+
+	var mu sync.Mutex
+	calls := map[string]int{}
+	release := make(chan struct{})
+	fetchDirectory = func(_ *App, ctx context.Context, rt accountRoute) ([]store.Recipient, error) {
+		mu.Lock()
+		calls[rt.client.SessionEndpoint]++
+		n := calls[rt.client.SessionEndpoint]
+		mu.Unlock()
+		if strings.Contains(rt.client.SessionEndpoint, "two") {
+			if n == 1 {
+				<-release // 第一次查得慢
+				return []store.Recipient{{Email: "bob@two.example"}, {Email: "Alice@one.example"}}, nil
+			}
+			return nil, errors.New("unreachable")
+		}
+		return []store.Recipient{{Email: "alice@one.example", Name: "Alice"}}, nil
+	}
+
+	// s2 正在查 (慢): 另一次调用不等它, 先拿到主登录的。
+	go a.directory()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		started := calls["https://two.example/jmap"] == 1
+		mu.Unlock()
+		if started || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	start := time.Now()
+	got := a.directory()
+	if time.Since(start) > time.Second || len(got) != 1 || got[0].Email != "alice@one.example" {
+		t.Fatalf("s2 查询在路上时应立刻返回主登录的目录, 实际 %v (%v)", got, time.Since(start))
+	}
+	close(release)
+	time.Sleep(100 * time.Millisecond)
+
+	got = a.directory()
+	emails := []string{}
+	for _, r := range got {
+		emails = append(emails, r.Email)
+	}
+	if !slices.Equal(emails, []string{"alice@one.example", "bob@two.example"}) {
+		t.Errorf("合并结果 = %v (主登录在前, 同一地址只列一次)", emails)
+	}
+
+	// s2 过期后再查失败: 沿用上次的结果, 1 分钟内不再查。
+	directoryCache.Lock()
+	for k, e := range directoryCache.entries {
+		if strings.Contains(k, "two") {
+			e.at = time.Now().Add(-directoryTTL - time.Second)
+		}
+	}
+	directoryCache.Unlock()
+	for range 5 {
+		got = a.directory()
+	}
+	mu.Lock()
+	n := calls["https://two.example/jmap"]
+	mu.Unlock()
+	if n != 2 {
+		t.Errorf("失败后应负缓存, s2 实际查了 %d 次", n)
+	}
+	if len(got) != 2 {
+		t.Errorf("查询失败时应沿用上次的目录, 实际 %v", got)
 	}
 }

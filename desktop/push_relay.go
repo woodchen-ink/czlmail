@@ -3,13 +3,17 @@ package main
 // 新邮件推送的平台无关部分: 中转登记、JMAP 推送订阅的建立 / 续期 / 撤销、「推送已覆盖」标记。
 // 只有 iOS 真正运行它 (push_ios.go 接上原生壳与推送循环); 放在不带构建标签的文件里, 桌面上也能跑单元测试。
 //
-// 每个登录 (#15) 各有一份: 推送订阅属于一个 JMAP 会话, 中转登记也按登录分开, 点开推送通知时
-// 由中转登记认出是哪个登录 (通知里只有服务器上的账号 id, 两个服务器的账号 id 常常相同)。
-// 设备的推送密钥 (P-256 + auth) 所有登录共用。
+// 每个登录 (#15) 各有一份: 推送订阅属于一个 JMAP 会话, 中转登记也按登录分开。
+// 设备的 P-256 密钥所有登录共用; auth 按登录派生 (pushAuthFor): 中转发到设备的通知里只有密文,
+// 推送内容里只有服务器上的账号 id (两台服务器的账号 id 常常相同), 通知扩展按哪一把 auth 解得开认出是哪个登录,
+// 再拼出带前缀的本机账号 id 作为 actionId。主登录用设备原来的 auth, 与旧版的订阅兼容。
 
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,8 +57,11 @@ func init() { push.wake = make(chan struct{}, 1) }
 // pushHooks 是推送用到的外部依赖: 原生壳 (设备信息、解密) 与中转。iOS 上接真实实现 (push_ios.go), 测试里换成假的。
 type pushHooks struct {
 	deviceInfo func(ctx context.Context) (pushInfo, error)
-	decrypt    func(ctx context.Context, body string) (string, error)
-	relay      func(ctx context.Context, method, path, secret string, in, out any) error
+	// decrypt 用这个登录的 auth (pushAuthFor) 解密中转暂存的消息。
+	decrypt func(ctx context.Context, body, signIn string) (string, error)
+	// signIns 告诉原生壳哪些附加登录有推送, 通知扩展据此逐个试派生的 auth。旧版原生壳不认这个请求, 错误忽略。
+	signIns func(ctx context.Context, prefixes []string) error
+	relay   func(ctx context.Context, method, path, secret string, in, out any) error
 	// verifyPoll 是等 PushVerification 时两次查询的间隔。
 	verifyPoll time.Duration
 }
@@ -208,6 +215,12 @@ func (a *App) syncPush(ctx context.Context, signIn string, s pushSession, st *st
 	}
 	expires := time.Now().Add(pushTTL).UTC().Format(time.RFC3339)
 
+	auth, err := pushAuthFor(info.Auth, signIn)
+	if err != nil {
+		setPushCovered(signIn, nil)
+		return err
+	}
+
 	subs, err := s.PushSubscriptions(ctx)
 	if err != nil {
 		return err
@@ -241,7 +254,7 @@ func (a *App) syncPush(ctx context.Context, signIn string, s pushSession, st *st
 	subID, err := s.SetPushSubscription(ctx, map[string]any{
 		"deviceClientId": info.DeviceID,
 		"url":            reg.URL,
-		"keys":           map[string]string{"p256dh": info.P256DH, "auth": info.Auth},
+		"keys":           map[string]string{"p256dh": info.P256DH, "auth": auth},
 		"types":          []string{},
 		"expires":        expires,
 		"emailPush":      emailPush,
@@ -252,7 +265,7 @@ func (a *App) syncPush(ctx context.Context, signIn string, s pushSession, st *st
 	reg.SubID, reg.KeyID, reg.Accounts = subID, info.P256DH, nil
 	savePushReg(ctx, st, signIn, reg)
 
-	code, err := a.awaitVerification(ctx, reg, subID)
+	code, err := a.awaitVerification(ctx, signIn, reg, subID)
 	if err != nil {
 		return err
 	}
@@ -344,7 +357,7 @@ func (a *App) ensureRelay(ctx context.Context, signIn string, st *store.Store, r
 }
 
 // awaitVerification 从中转取服务端推来的 PushVerification (同样加密, 交原生壳解密), 返回验证码。
-func (a *App) awaitVerification(ctx context.Context, reg pushRelayReg, subID string) (string, error) {
+func (a *App) awaitVerification(ctx context.Context, signIn string, reg pushRelayReg, subID string) (string, error) {
 	deadline := time.Now().Add(pushVerifyWait)
 	for time.Now().Before(deadline) {
 		var pending struct {
@@ -357,7 +370,7 @@ func (a *App) awaitVerification(ctx context.Context, reg pushRelayReg, subID str
 			if pushDeps.decrypt == nil {
 				break
 			}
-			text, err := pushDeps.decrypt(ctx, m)
+			text, err := pushDeps.decrypt(ctx, m, signIn)
 			if err != nil {
 				continue
 			}
@@ -440,19 +453,22 @@ func (a *App) forgetPush(ctx context.Context, st *store.Store) {
 	savePushReg(ctx, st, accountid.Primary, pushRelayReg{})
 }
 
-// pushAccountFor 把推送通知里的 (中转登记 id, 服务器账号 id) 换成本机账号 id: 点开推送时用。
-// 认不出登记时为空。
-func (a *App) pushAccountFor(relayID, serverAccount string) string {
-	st, err := a.currentStore()
-	if err != nil || relayID == "" || serverAccount == "" {
-		return ""
+// pushAuthLabel 是派生附加登录 auth 的 HMAC 消息前缀, 与原生壳 (CzlPush/PushKeys.swift 的 authFor) 一致, 不能改。
+const pushAuthLabel = "czlmail push auth "
+
+// pushAuthFor 返回这个登录的订阅用的 auth (base64url 无填充): 主登录用设备的 auth;
+// 附加登录用 HMAC-SHA256(设备 auth, pushAuthLabel + 前缀) 的前 16 字节。设备 auth 不出本机, 派生值服务器与中转都推不出别的登录的。
+func pushAuthFor(deviceAuth, signIn string) (string, error) {
+	if signIn == accountid.Primary {
+		return deviceAuth, nil
 	}
-	for signIn, reg := range loadPushRegs(a.ctx, st) {
-		if reg.ID == relayID {
-			return accountid.Join(signIn, serverAccount)
-		}
+	key, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(deviceAuth, "="))
+	if err != nil || len(key) == 0 {
+		return "", fmt.Errorf("2290 push unavailable: bad device auth")
 	}
-	return ""
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(pushAuthLabel + signIn))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:16]), nil
 }
 
 func loadPushRegs(ctx context.Context, st *store.Store) map[string]pushRelayReg {
@@ -494,6 +510,16 @@ func savePushReg(ctx context.Context, st *store.Store, signIn string, reg pushRe
 		raw = string(b)
 	}
 	_ = st.SetStringSetting(ctx, settingPushRelay, raw)
+	if pushDeps.signIns != nil {
+		prefixes := []string{}
+		for id := range regs {
+			if id != accountid.Primary {
+				prefixes = append(prefixes, id)
+			}
+		}
+		sort.Strings(prefixes)
+		_ = pushDeps.signIns(ctx, prefixes)
+	}
 }
 
 var errRelayNotFound = errors.New("push relay subscription not found")
