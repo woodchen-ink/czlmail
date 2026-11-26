@@ -125,7 +125,7 @@ func TestProbeFailures(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rep.IMAP.OK || rep.IMAP.Code != microsoft.CodeProbeIMAPDisabled || rep.IMAP.Msg != "imap_access_disabled" {
+		if rep.IMAP.OK || rep.IMAP.Code != microsoft.CodeProbeIMAPDisabled || rep.IMAP.Msg != "mailbox_not_connected" {
 			t.Errorf("IMAP %+v", rep.IMAP)
 		}
 		if rep.SMTP == nil || !rep.SMTP.OK {

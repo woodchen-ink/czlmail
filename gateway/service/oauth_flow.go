@@ -164,7 +164,7 @@ func (o *OAuth) Start(p *AdminPrincipal, provider string, in OAuthStart) (string
 		if up.Kind != client.Provider.Kind {
 			return "", ErrOAuthKindMismatch
 		}
-		pend.reauth, pend.ownerID, pend.proxy, hint = up.PublicID, up.UserID, nil, up.Email
+		pend.reauth, pend.ownerID, pend.proxy, hint = up.PublicID, up.UserID, nil, signInName(up)
 	} else {
 		owner, err := o.ups.owner(&p.User, in.Owner)
 		if err != nil {
@@ -287,6 +287,11 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 		address, confirmed = client.Provider.Mailbox(tok, login)
 		address = strings.ToLower(address)
 	}
+	// Who the token belongs to, for comparing with the IMAP sign-in (no tokens).
+	claims := tok.IDClaims()
+	o.log.Info("oauth account", "provider", provider, "reauth", pend.reauth, "login", login, "address", address,
+		"address_confirmed", confirmed, "scope", tok.Scope, "id_email", claims["email"],
+		"id_preferred_username", claims["preferred_username"], "id_oid", claims["oid"], "id_tid", claims["tid"])
 
 	if pend.reauth == "" {
 		// The same account again only renews the token: accountId stays.
@@ -302,6 +307,7 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 	}
 	if pend.reauth != "" {
 		if !strings.EqualFold(signInName(row), login) {
+			o.log.Warn("oauth account mismatch", "provider", provider, "account", row.PublicID, "want", signInName(row), "got", login)
 			return nil, ErrOAuthAccountMismatch
 		}
 		if err := o.saveToken(row, tok); err != nil {

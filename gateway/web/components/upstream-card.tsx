@@ -134,7 +134,9 @@ export function UpstreamCard({
                 : errText(card.lastError.code, card.lastError.msg)}
             </span>
             <DocLink
-              topic="statuses"
+              topic={
+                card.lastError.code === 40313 ? "exchangeDisabled" : "statuses"
+              }
               variant="icon"
               className="ml-1 align-middle"
             />

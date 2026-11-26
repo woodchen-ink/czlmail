@@ -37,6 +37,9 @@ type Error struct {
 	Kind ErrorKind
 	Op   string
 	Err  error
+	// Code, when set, is the public status code instead of the kind's default
+	// (a provider-specific condition the admin can act on, e.g. 40313).
+	Code int
 }
 
 func (e *Error) Error() string { return e.Op + ": " + e.Err.Error() }
@@ -44,13 +47,17 @@ func (e *Error) Unwrap() error { return e.Err }
 
 // Status is the jmapserver upstream status for the kind.
 func (e *Error) Status() (string, int) {
+	state, code := jmapserver.UpstreamUnreachable, jmapserver.CodeUpstreamUnreachable
 	switch e.Kind {
 	case KindAuth:
-		return jmapserver.UpstreamAuthRequired, jmapserver.CodeUpstreamAuthRequired
+		state, code = jmapserver.UpstreamAuthRequired, jmapserver.CodeUpstreamAuthRequired
 	case KindThrottled:
-		return jmapserver.UpstreamUnreachable, jmapserver.CodeUpstreamRateLimited
+		code = jmapserver.CodeUpstreamRateLimited
 	}
-	return jmapserver.UpstreamUnreachable, jmapserver.CodeUpstreamUnreachable
+	if e.Code != 0 {
+		code = e.Code
+	}
+	return state, code
 }
 
 // Classify wraps err as an *Error (keeping an existing one).
