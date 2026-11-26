@@ -19,6 +19,7 @@ import (
 
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 	"github.com/woodchen-ink/czlmail/gateway/service/mailindex"
+	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 )
 
 // readBlob reads an uploaded or stored blob of the account, at most limit bytes.
@@ -60,7 +61,7 @@ func blobFailure(err error, prop string) (*SetError, error) {
 
 // store appends a message and reports the created Email.
 func (s *Service) store(ctx context.Context, call *jmapserver.Call, a *account, resp *setResponse, cid string,
-	mailboxID string, raw []byte, keywords []string, receivedAt time.Time) error {
+	mailboxID string, more []string, raw []byte, keywords []string, receivedAt time.Time) error {
 	id, _, err := a.up.Append(ctx, mailboxID, raw, keywords, receivedAt)
 	if err != nil {
 		se, ferr := resp.upstreamFailure(err, setErr("invalidEmail", "the mail server refused the message"))
@@ -74,6 +75,12 @@ func (s *Service) store(ctx context.Context, call *jmapserver.Call, a *account, 
 	if id == "" {
 		resp.notCreated(cid, setErr("serverFail", "the message was stored but could not be found again"))
 		return nil
+	}
+	if ms, ok := a.up.(upstream.MailboxSetter); ok && len(more) > 0 {
+		if _, err := ms.SetMailboxes(ctx, []string{id}, more, nil); err != nil {
+			// Stored in the first mailbox; the client sees mailboxIds on Email/get.
+			s.log.Warn("add mailboxes to a new email", "account", a.id, "email", id, "err", err)
+		}
 	}
 	call.CreatedIDs[cid] = id
 	created := map[string]any{"id": id, "blobId": blobIDMessage(id)}
@@ -133,7 +140,7 @@ func (s *Service) emailImport(ctx context.Context, call *jmapserver.Call) (any, 
 	sort.Strings(cids)
 	for _, cid := range cids {
 		e := args.Emails[cid]
-		mbox, se := singleMailbox(e.MailboxIDs, resolve)
+		mbox, more, se := targetMailboxes(a, e.MailboxIDs, resolve)
 		if se == nil {
 			se = checkKeywords(e.Keywords)
 		}
@@ -158,7 +165,7 @@ func (s *Service) emailImport(ctx context.Context, call *jmapserver.Call) (any, 
 		if e.ReceivedAt != nil {
 			received = *e.ReceivedAt
 		}
-		if err := s.store(ctx, call, a, resp, cid, mbox, raw, keywordList(e.Keywords), received); err != nil {
+		if err := s.store(ctx, call, a, resp, cid, mbox, more, raw, keywordList(e.Keywords), received); err != nil {
 			return nil, err
 		}
 	}
@@ -172,22 +179,29 @@ func (s *Service) emailImport(ctx context.Context, call *jmapserver.Call) (any, 
 	}{resp.AccountID, resp.OldState, resp.NewState, resp.Created, resp.NotCreated}, nil
 }
 
-func singleMailbox(ids map[string]bool, resolve func(string) (string, bool)) (string, *SetError) {
+// targetMailboxes checks the mailboxIds of a new email: the mailbox it is
+// stored in, and the further ones (only upstreams with several mailboxes per
+// email, Gmail labels, take any).
+func targetMailboxes(a *account, ids map[string]bool, resolve func(string) (string, bool)) (string, []string, *SetError) {
 	var out []string
 	for id, on := range ids {
 		real, ok := resolve(id)
 		if !on || !ok {
-			return "", invalidProps("unknown mailbox", "mailboxIds")
+			return "", nil, invalidProps("unknown mailbox", "mailboxIds")
 		}
 		out = append(out, real)
 	}
+	sort.Strings(out)
 	switch len(out) {
 	case 0:
-		return "", invalidProps("an email must be in a mailbox", "mailboxIds")
+		return "", nil, invalidProps("an email must be in a mailbox", "mailboxIds")
 	case 1:
-		return out[0], nil
+		return out[0], nil, nil
 	}
-	return "", errTooManyMailboxes
+	if _, ok := a.up.(upstream.MailboxSetter); !ok {
+		return "", nil, errTooManyMailboxes
+	}
+	return out[0], out[1:], nil
 }
 
 func checkKeywords(kw map[string]bool) *SetError {
@@ -289,7 +303,7 @@ func (s *Service) createEmail(ctx context.Context, call *jmapserver.Call, a *acc
 	if err != nil {
 		return err
 	}
-	mbox, se := singleMailbox(e.MailboxIDs, resolve)
+	mbox, more, se := targetMailboxes(a, e.MailboxIDs, resolve)
 	if se == nil {
 		se = checkKeywords(e.Keywords)
 	}
@@ -312,7 +326,7 @@ func (s *Service) createEmail(ctx context.Context, call *jmapserver.Call, a *acc
 	if e.ReceivedAt != nil {
 		received = *e.ReceivedAt
 	}
-	return s.store(ctx, call, a, resp, cid, mbox, raw, keywordList(e.Keywords), received)
+	return s.store(ctx, call, a, resp, cid, mbox, more, raw, keywordList(e.Keywords), received)
 }
 
 // checkHeaderValues rejects values that would break out of their header field.

@@ -2,6 +2,7 @@ package imap
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,13 @@ import (
 // Every condition is ANDed, as in a JMAP FilterCondition. It returns "" when
 // the filter has nothing for the server.
 func GmailRawQuery(f upstream.SearchFilter) string {
+	q, _ := gmailRawQuery(f)
+	return q
+}
+
+// gmailRawQuery also reports whether every condition could be translated.
+func gmailRawQuery(f upstream.SearchFilter) (string, bool) {
+	ok := true
 	var parts []string
 	field := func(op, v string) {
 		if v = gmSanitize(v); v != "" {
@@ -51,7 +59,15 @@ func GmailRawQuery(f upstream.SearchFilter) string {
 			parts = append(parts, "-has:attachment")
 		}
 	}
-	return strings.Join(parts, " ")
+	for _, h := range f.Header {
+		switch {
+		case len(h) == 2 && strings.EqualFold(h[0], "Message-ID"):
+			field("rfc822msgid", strings.Trim(h[1], "<>"))
+		default:
+			ok = false // Gmail cannot search other headers
+		}
+	}
+	return strings.Join(parts, " "), ok
 }
 
 // gmSanitize drops characters that are Gmail search syntax, so a value cannot
@@ -78,7 +94,10 @@ func gmPhrase(v string) string {
 // SearchText runs X-GM-RAW in All Mail, Trash and Spam and returns the indexed
 // emails that match; see upstream.TextSearcher.
 func (g *Gmail) SearchText(ctx context.Context, f upstream.SearchFilter) ([]string, error) {
-	q := GmailRawQuery(f)
+	q, ok := gmailRawQuery(f)
+	if !ok {
+		return nil, rejected("search", errors.New("Gmail cannot search this header"))
+	}
 	if q == "" {
 		return nil, nil
 	}
@@ -110,6 +129,12 @@ func (g *Gmail) SearchText(ctx context.Context, f upstream.SearchFilter) ([]stri
 		return nil
 	})
 	return out, err
+}
+
+// Search is the per-folder search of the IMAP engine; on Gmail one X-GM-RAW
+// search covers every folder (the caller intersects with the mailbox).
+func (g *Gmail) Search(ctx context.Context, _ string, q upstream.SearchQuery) ([]string, error) {
+	return g.SearchText(ctx, upstream.SearchFilterOf(q))
 }
 
 func chunkUIDs(s imapc.UIDSet, n int) func(func([]uint32) bool) {

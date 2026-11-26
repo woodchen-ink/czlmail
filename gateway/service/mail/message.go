@@ -43,7 +43,9 @@ func loadMessages(idx *mailindex.Store, ids []string) (map[string]*message, erro
 			out[r.ID] = &message{row: r}
 		}
 		var ms []model.IndexMembership
-		if err := idx.DB().Where("email_id IN ?", part).Find(&ms).Error; err != nil {
+		// Hidden mailboxes (Gmail's All Mail) are not in mailboxIds.
+		if err := idx.DB().Table("memberships m").Select("m.*").Joins("JOIN mailboxes b ON b.id = m.mailbox_id").
+			Where("m.email_id IN ? AND b.hidden = ?", part, false).Scan(&ms).Error; err != nil {
 			return nil, err
 		}
 		for _, m := range ms {

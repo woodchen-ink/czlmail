@@ -590,3 +590,66 @@ func gmHexOf(t *testing.T, key string) string {
 	}
 	return string(b)
 }
+
+// jmapCall posts one method call for cred and returns the response arguments.
+func (e *gmailEnv) jmapCall(t *testing.T, method string, args map[string]any) (string, map[string]any) {
+	t.Helper()
+	me := &mailEnv{t: t, gw: e.gw, cred: e.cred}
+	return me.rawCall(method, args)
+}
+
+// Through JMAP: All Mail is not a mailbox, labels are, an email can be in
+// several, and text search runs once on Gmail.
+func TestGmailJMAP(t *testing.T) {
+	e := newGmailEnv(t)
+	e.mail.CreateLabel("Work Projects")
+	e.mail.MustAdd(gmailtest.Inbox, imaptest.Sample("quarterly report"))
+	e.mail.MustAdd(gmailtest.AllMail, imaptest.Sample("filed away"))
+	acct := string(e.gw.AddGmailUpstream(t, e.cred, e.mail, e.api, e.provider))
+
+	_, res := e.jmapCall(t, "Mailbox/get", map[string]any{"accountId": acct})
+	byName := map[string]map[string]any{}
+	for _, x := range res["list"].([]any) {
+		m := x.(map[string]any)
+		if m["role"] == "all" {
+			t.Fatalf("All Mail is listed: %v", m)
+		}
+		byName[m["name"].(string)] = m
+	}
+	inbox, work, archive := byName["INBOX"], byName["Work Projects"], byName["Archive"]
+	if inbox == nil || work == nil || archive == nil || archive["role"] != "archive" || archive["totalEmails"].(float64) != 1 {
+		t.Fatalf("mailboxes %v", byName)
+	}
+	if r := archive["myRights"].(map[string]any); r["mayRename"] != false || r["mayDelete"] != false {
+		t.Fatalf("Archive rights %v", r)
+	}
+
+	_, res = e.jmapCall(t, "Email/query", map[string]any{"accountId": acct, "filter": map[string]any{"text": "quarterly"}})
+	ids, _ := res["ids"].([]any)
+	if len(ids) != 1 {
+		t.Fatalf("text search: %v", res)
+	}
+	id := ids[0].(string)
+
+	_, res = e.jmapCall(t, "Email/set", map[string]any{"accountId": acct, "update": map[string]any{
+		id: map[string]any{"mailboxIds/" + work["id"].(string): true}}})
+	if _, ok := res["updated"].(map[string]any)[id]; !ok {
+		t.Fatalf("add label: %v", res)
+	}
+	mailboxIDs := func() map[string]any {
+		_, r := e.jmapCall(t, "Email/get", map[string]any{"accountId": acct, "ids": []string{id}, "properties": []string{"mailboxIds"}})
+		return r["list"].([]any)[0].(map[string]any)["mailboxIds"].(map[string]any)
+	}
+	if got := mailboxIDs(); len(got) != 2 || got[inbox["id"].(string)] != true || got[work["id"].(string)] != true {
+		t.Fatalf("mailboxIds %v, want Inbox + Work Projects", got)
+	}
+	_, res = e.jmapCall(t, "Email/set", map[string]any{"accountId": acct, "update": map[string]any{
+		id: map[string]any{"mailboxIds/" + inbox["id"].(string): nil}}})
+	if got := mailboxIDs(); len(got) != 1 || got[work["id"].(string)] != true {
+		t.Fatalf("after leaving Inbox: %v (%v)", got, res)
+	}
+	gm := e.mail.ByGmMsgID(gmID(t, e.emailBySubject(t, acct, "quarterly report").UpstreamID))
+	if l := e.mail.LabelsOf(gm); slices.Contains(l, gmailtest.LabelInbox) || !slices.Contains(l, "Work Projects") {
+		t.Fatalf("Gmail labels %v", l)
+	}
+}

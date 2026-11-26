@@ -237,8 +237,23 @@ func (s *Service) search(ctx context.Context, a *account, mailboxes []string, q 
 	if err := a.online(); err != nil {
 		return nil, err
 	}
+	if ts, ok := a.up.(upstream.TextSearcher); ok {
+		// One server search for the whole account (Gmail X-GM-RAW); the
+		// mailbox condition is applied from the index.
+		ids, err := ts.SearchText(ctx, upstream.SearchFilterOf(q))
+		switch {
+		case err == nil:
+			return ids, nil
+		case upstream.IsKind(err, upstream.KindRejected):
+			return nil, &jmapserver.MethodError{Type: "unsupportedFilter", Description: "The mail server cannot run this search."}
+		}
+		if me, ok := unavailable(err); ok {
+			return nil, me
+		}
+		return nil, err
+	}
 	if len(mailboxes) == 0 {
-		if err := a.idx.DB().Model(&model.IndexMailbox{}).Where("no_select = ?", false).Pluck("id", &mailboxes).Error; err != nil {
+		if err := a.idx.DB().Model(&model.IndexMailbox{}).Where("no_select = ? AND hidden = ?", false, false).Pluck("id", &mailboxes).Error; err != nil {
 			return nil, err
 		}
 	}
