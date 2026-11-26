@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 )
 
 // SettingCacheOwner 记录缓存属于哪个登录身份 (会话地址 + 用户名)。
@@ -95,3 +96,30 @@ func (s *Store) ResetPrimaryIdentityData(ctx context.Context, settingKeys []stri
 		return nil
 	})
 }
+
+// RemoveSignInData 删除某个附加登录 (#15) 的全部账号缓存: 账号 id 以 "<前缀>~" 开头的行。
+// 按前缀而不是按 accounts 表逐个删: 账号行可能已先被清掉 (撤销共享), 它的邮件、译文、受信名单却还留着。
+// 其余登录 (含主登录, 账号 id 没有前缀) 的数据不动。
+func (s *Store) RemoveSignInData(ctx context.Context, prefix string) error {
+	if prefix == "" {
+		return wrap(CodeQuery, "remove sign-in data", errEmptySignInPrefix)
+	}
+	p := prefix + "~"
+	return s.WithTx(ctx, func(tx *sql.Tx) error {
+		for _, t := range accountTables {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+t+` WHERE substr(account_id, 1, ?) = ?`, len(p), p); err != nil {
+				return wrap(CodeQuery, "remove sign-in data from "+t, err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM accounts WHERE substr(id, 1, ?) = ?`, len(p), p); err != nil {
+			return wrap(CodeQuery, "remove sign-in accounts", err)
+		}
+		k := "reconciledAt:" + p
+		if _, err := tx.ExecContext(ctx, `DELETE FROM app_settings WHERE substr(key, 1, ?) = ?`, len(k), k); err != nil {
+			return wrap(CodeQuery, "remove sign-in reconcile marks", err)
+		}
+		return nil
+	})
+}
+
+var errEmptySignInPrefix = errors.New("the primary sign-in has no prefix")

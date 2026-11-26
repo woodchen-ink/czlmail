@@ -1414,7 +1414,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
               onImport={importEmails}
               onShortcuts={() => setShowShortcuts(true)}
               onSignOut={async () => {
-                // 有多个登录 (#15) 时退出会连带移除其余登录, 交给设置 → 账户, 那里逐个说明并确认。
+                // 有多个登录 (#15) 时要选退出哪一个, 交给设置 → 账户, 那里逐个说明并确认。
                 const signIns = (await api.listSignIns().catch(() => [])) ?? [];
                 if (signIns.length > 1) {
                   send("navigate", { module: "settings" });

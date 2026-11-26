@@ -83,8 +83,13 @@ func (a *App) startup(ctx context.Context) {
 	for _, s := range file.SignIns {
 		a.extra = append(a.extra, &signIn{id: s.ID, cfg: s.Config})
 	}
-	signIns := a.signInsLocked()
 	a.mu.Unlock()
+	if _, err := a.settleSignedOutPrimary(); err != nil {
+		a.log.Error("clear signed-out primary sign-in", "err", err)
+	}
+	a.mu.RLock()
+	signIns := a.signInsLocked()
+	a.mu.RUnlock()
 
 	dbPath, err := config.DatabasePath()
 	if err != nil {
@@ -299,7 +304,9 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 
 	a.mu.Lock()
 	// 认证期间登录被删掉了: 放弃这次连接, 不启动同步、不写账号缓存。
-	if si.removed {
+	// 用已保存凭据的恢复 (accept 为空) 在认证期间被用户退出了 (signedOut, 或只剩主登录时配置已清空) 也一样放弃,
+	// 否则凭据已删的登录会带着内存里的旧凭据接着同步; 用户自己重新登录 (accept 非空) 不受影响。
+	if si.removed || (accept == nil && (si.signedOut || !si.cfg.Configured())) {
 		a.mu.Unlock()
 		return errNotSignedIn
 	}

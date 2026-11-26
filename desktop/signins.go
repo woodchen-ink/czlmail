@@ -258,23 +258,14 @@ func (a *App) dropSignIn(id string) error {
 
 // forgetSignInData 删掉某个登录的全部账号缓存, 并把这些账号从按账号 id 记的设置里去掉。
 func (a *App) forgetSignInData(st *store.Store, id string) error {
-	accounts, err := st.Accounts(a.ctx)
-	if err != nil {
+	// 账号行可能已被清理掉 (撤销共享), 缓存与设置里却还留着: 按前缀而不是按账号表判断。
+	if err := st.RemoveSignInData(a.ctx, id); err != nil {
 		return err
 	}
-	// 账号行可能已被清理掉 (撤销共享), 设置里却还留着: 按前缀而不是按账号表判断。
-	owned := func(acc string) bool {
+	return a.forgetAccountSettings(st, func(acc string) bool {
 		prefix, _ := accountid.Split(acc)
 		return prefix == id
-	}
-	for _, acc := range accounts {
-		if owned(acc.ID) {
-			if err := st.RemoveAccount(a.ctx, acc.ID); err != nil {
-				return err
-			}
-		}
-	}
-	return a.forgetAccountSettings(st, owned)
+	})
 }
 
 // forgetAccountSettings 把 owned 认领的账号从按账号 id 记的设置 (静音、统一视图排除、默认身份) 里去掉。

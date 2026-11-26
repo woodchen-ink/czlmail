@@ -55,11 +55,14 @@ export function SignInsCard({
   active,
   accounts,
   onSignOut,
+  onSignedOut,
 }: {
   active: boolean;
   accounts: Account[];
   /** 只有主登录时的「退出登录」(回到登录页), 由外面弹确认框。 */
   onSignOut: () => void;
+  /** 主登录已退出、又移除了最后一个其余登录: 回到登录页, 与只有一个登录时退出登录一致。 */
+  onSignedOut: () => void;
 }) {
   useI18n();
   const [list, setList] = useState<SignInInfo[]>([]);
@@ -129,6 +132,11 @@ export function SignInsCard({
     try {
       await api.removeSignIn(s.id);
       toast.success(t("已移除 {0}", s.username));
+      const status = await api.getSessionStatus().catch(() => null);
+      if (status && !status.configured) {
+        onSignedOut();
+        return;
+      }
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -261,7 +269,12 @@ export function SignInsCard({
 
       <Dialog
         open={form !== null}
-        onOpenChange={(open) => !open && setForm(null)}
+        onOpenChange={(open) => {
+          if (open) return;
+          // 浏览器授权还在等时关掉对话框: 一并中止, 否则授权完成后登录会在背后加上。
+          api.cancelSignIn().catch(() => {});
+          setForm(null);
+        }}
       >
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
           <DialogHeader>

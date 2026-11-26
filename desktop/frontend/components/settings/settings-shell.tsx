@@ -634,6 +634,7 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
         active={active}
         accounts={accounts}
         onSignOut={() => setConfirm(true)}
+        onSignedOut={onSignedOut}
       />
 
       {accounts.length > 1 && (

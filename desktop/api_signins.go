@@ -162,15 +162,19 @@ func (a *App) signOutOf(si *signIn) error {
 	// 钥匙串条目按配置文件里的用户名存 (登录时输入的写法), 内存里的已换成服务器返回的写法。
 	var saved config.Config
 	err := config.UpdateFile(func(f *config.File) error {
-		saved, _ = f.SignIn(si.id)
+		var ok bool
+		saved, ok = f.SignIn(si.id)
 		if clear {
 			f.Config = config.Config{}
 			return nil
 		}
+		if !ok {
+			// 正在添加、还没落盘, 或刚被移除: 不能把它当成已退出的登录写回配置。
+			return nil
+		}
 		c := saved
 		c.SignedOut = true
-		f.PutSignIn(si.id, c)
-		return nil
+		return f.SetSignIn(si.id, c)
 	})
 	errs := deleteCredentials(si.id, saved)
 	if si.id == accountid.Primary {
@@ -190,7 +194,32 @@ func (a *App) RemoveSignIn(id string) error {
 	if _, err := a.signInByID(id); err != nil {
 		return err
 	}
-	return a.removeSignIn(id)
+	err := a.removeSignIn(id)
+	if _, e := a.settleSignedOutPrimary(); e != nil {
+		err = errors.Join(err, e)
+	}
+	return err
+}
+
+// settleSignedOutPrimary 在只剩一个已退出的主登录 (其余登录都移除了) 时回到旧版退出登录后的状态:
+// 主登录的配置清空, 界面回登录页, 缓存照旧保留。否则配置还在、什么都连不上, 启动后停在一个空转的邮件页。
+// 报告是否做了清理。
+func (a *App) settleSignedOutPrimary() (bool, error) {
+	a.mu.Lock()
+	if len(a.extra) > 0 || !a.primary.cfg.SignedOut {
+		a.mu.Unlock()
+		return false, nil
+	}
+	a.primary.cfg = config.Config{}
+	a.primary.signedOut = false
+	a.mu.Unlock()
+	a.log.Info("only a signed-out primary sign-in is left, clearing its config")
+	return true, config.UpdateFile(func(f *config.File) error {
+		if len(f.SignIns) == 0 && f.Config.SignedOut {
+			f.Config = config.Config{}
+		}
+		return nil
+	})
 }
 
 func (a *App) signInByID(id string) (*signIn, error) {
