@@ -25,7 +25,7 @@ import (
 //	  }
 //	}
 //
-// czlmail 网关 (gateway/) 也放这个文件, 带 gateway 对象而不是 oauth:
+// czlmail 网关 (woodchen-ink/czlmail-gateway) 也放这个文件, 带 gateway 对象而不是 oauth:
 //
 //	{"version": 1, "gateway": {"name": "czlmail 网关", "adminUrl": "https://mail.example.net/admin/", "protocolVersion": 1, "version": "…"}}
 //

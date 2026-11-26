@@ -438,7 +438,7 @@ const ERROR_MESSAGES: Record<string, () => string> = {
   "3023": () => t("授权被拒绝。"),
   "3024": () => t("授权状态校验失败，请重新登录。"),
   "3025": () => t("服务器未返回授权码。"),
-  // czlmail 网关的上游邮箱码 (gateway/README.md), 随 serverUnavailable 的 czlUpstream 或下载的 503 返回。
+  // czlmail 网关的上游邮箱码 (woodchen-ink/czlmail-gateway 的 README), 随 serverUnavailable 的 czlUpstream 或下载的 503 返回。
   "40110": () => t("这个邮箱在网关里需要重新授权，请到网关后台处理。"),
   "42310": () => t("这个邮箱在网关里已暂停。"),
   "42910": () => t("邮箱服务商暂时限制了网关的访问，请稍后重试。"),

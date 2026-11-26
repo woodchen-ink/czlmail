@@ -111,14 +111,15 @@ end-to-end encrypted with a key that stays on the phone. Source and build notes:
 ## czlmail Gateway
 
 CZL Mail speaks only JMAP. To use it with **Gmail, Outlook / Microsoft 365 or any IMAP mailbox**, run the
-[czlmail gateway](gateway/README.md) on your own server: it connects those mailboxes and serves them to CZL Mail
+[czlmail gateway](https://github.com/woodchen-ink/czlmail-gateway) on your own server: it connects those mailboxes and serves them to CZL Mail
 as one JMAP server, so the client stays pure JMAP. Each mailbox you add in the gateway's admin shows up as its own
 account, new mail is pushed (iPhone background notifications included), and every mailbox can use its own SOCKS5 proxy.
-It ships as a Docker image; credentials stay on your server, encrypted.
+It ships as a Docker image; credentials stay on your server, encrypted. The gateway has its own repository,
+[woodchen-ink/czlmail-gateway](https://github.com/woodchen-ink/czlmail-gateway), with its own [releases](https://github.com/woodchen-ink/czlmail-gateway/releases) and issues.
 
-<p align="center"><img src="gateway/docs/images/en/02-overview-light.jpg" alt="czlmail gateway admin" width="800"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/woodchen-ink/czlmail-gateway/main/docs/images/en/02-overview-light.jpg" alt="czlmail gateway admin" width="800"></p>
 
-Deployment and usage guide: [English](gateway/docs/guide.md) · [简体中文](gateway/docs/guide.zh-CN.md)
+Deployment and usage guide: [English](https://github.com/woodchen-ink/czlmail-gateway/blob/main/docs/guide.md) · [简体中文](https://github.com/woodchen-ink/czlmail-gateway/blob/main/docs/guide.zh-CN.md)
 
 ## MCP: let agents use your mailbox
 

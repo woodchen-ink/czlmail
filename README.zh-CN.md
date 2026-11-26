@@ -98,13 +98,14 @@ MCP 服务提供邮件、草稿、会话、标签、日历、任务、通讯录�
 ## czlmail 网关
 
 CZL Mail 只说 JMAP。想用它收发 **Gmail、Outlook / Microsoft 365 或任何 IMAP 邮箱**，可以在自己的服务器上部署
-[czlmail 网关](gateway/README.md)：网关连接这些邮箱，再作为一个 JMAP 服务器提供给 CZL Mail，客户端保持纯 JMAP。
+[czlmail 网关](https://github.com/woodchen-ink/czlmail-gateway)：网关连接这些邮箱，再作为一个 JMAP 服务器提供给 CZL Mail，客户端保持纯 JMAP。
 在网关后台添加的每个邮箱在 CZL Mail 里都是一个独立账号，新邮件即时推送（包括 iPhone 后台通知），每个邮箱还可以单独走 SOCKS5 代理。
-网关以 Docker 镜像发布，邮箱凭据加密保存在你自己的服务器上。
+网关以 Docker 镜像发布，邮箱凭据加密保存在你自己的服务器上。网关有独立仓库
+[woodchen-ink/czlmail-gateway](https://github.com/woodchen-ink/czlmail-gateway)，版本发布与问题反馈都在那里。
 
-<p align="center"><img src="gateway/docs/images/zh/02-overview-light.jpg" alt="czlmail 网关后台" width="800"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/woodchen-ink/czlmail-gateway/main/docs/images/zh/02-overview-light.jpg" alt="czlmail 网关后台" width="800"></p>
 
-部署与使用教程：[简体中文](gateway/docs/guide.zh-CN.md) · [English](gateway/docs/guide.md)
+部署与使用教程：[简体中文](https://github.com/woodchen-ink/czlmail-gateway/blob/main/docs/guide.zh-CN.md) · [English](https://github.com/woodchen-ink/czlmail-gateway/blob/main/docs/guide.md)
 
 ## MCP：让 Agent 使用你的邮箱
 
