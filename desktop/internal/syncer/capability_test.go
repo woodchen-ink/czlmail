@@ -129,3 +129,24 @@ func TestDropPIMWhenCapabilityGone(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionSwapWhileReading 会话刷新持客户端锁换会话时, 能力检查同时在读 (go test -race 下不报竞争)。
+func TestSessionSwapWhileReading(t *testing.T) {
+	client := &jmap.Client{Session: mailOnlySession()}
+	s := &Syncer{client: client}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 200 {
+			client.Lock()
+			client.Session = mailOnlySession()
+			client.Unlock()
+		}
+	}()
+	for range 200 {
+		s.Lacks("g", jmapx.CalendarsURI)
+		s.accountSupports("g", jmapx.FileNodeURI)
+		s.Accounts()
+	}
+	<-done
+}
