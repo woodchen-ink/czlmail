@@ -3,7 +3,7 @@ import type { Messages } from "./zh-CN"
 
 export const en: Messages = {
   app: {
-    name: "czlmail gateway",
+    name: "czlmail Gateway",
     short: "Gateway",
   },
   common: {

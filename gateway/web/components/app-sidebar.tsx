@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 import { useTheme } from "next-themes"
 
+import { BrandLogo } from "@/components/brand-logo"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -114,9 +115,7 @@ export function AppSidebar({ me }: { me: User }) {
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex h-10 items-center gap-2 px-1.5">
-          <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Mails className="size-4" />
-          </div>
+          <BrandLogo className="size-7" />
           <span className="truncate text-sm font-semibold group-data-[collapsible=icon]:hidden">
             {t.app.name}
           </span>

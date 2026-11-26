@@ -1,7 +1,6 @@
 "use client"
 
-import { Mails } from "lucide-react"
-
+import { BrandLogo } from "@/components/brand-logo"
 import { LanguageMenu } from "@/components/language-menu"
 import { useT } from "@/lib/i18n"
 
@@ -18,9 +17,7 @@ export default function AuthLayout({
         <LanguageMenu />
       </div>
       <div className="mb-6 flex items-center gap-2">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <Mails className="size-4" />
-        </div>
+        <BrandLogo className="size-9" />
         <span className="text-base font-semibold">{t.app.name}</span>
       </div>
       <div className="w-full max-w-sm rounded-2xl border bg-card p-6 shadow-card">

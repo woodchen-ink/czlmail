@@ -5,7 +5,7 @@ import { Providers } from "@/components/providers"
 
 export const metadata: Metadata = {
   // Set again at runtime in the interface language (components/i18n-provider.tsx).
-  title: "czlmail gateway",
+  title: "czlmail Gateway",
   robots: { index: false, follow: false },
 }
 
