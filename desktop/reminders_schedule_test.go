@@ -138,6 +138,12 @@ func reminderTestApp(t *testing.T) (*App, *store.Store) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
+	// 事件所在的账号属于主登录: 只有已登录的登录下的账号才提醒 (reminderAccounts)。
+	if err := st.WithTx(ctx, func(tx *sql.Tx) error {
+		return store.UpsertAccounts(ctx, tx, []store.Account{{ID: "acc", IsPersonal: true}}, nil)
+	}); err != nil {
+		t.Fatal(err)
+	}
 	a := &App{
 		ctx:   ctx,
 		log:   slog.New(slog.NewTextHandler(io.Discard, nil)),

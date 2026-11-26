@@ -141,10 +141,8 @@ func (a *App) SignOutOf(id string) error {
 // 主登录在没有别的登录时照旧清掉配置 (界面回到登录页); 其余情况配置留着并标上 SignedOut,
 // 启动时不连、不提示登录失效, 设置 → 账户里可以重新登录 (同一个用户) 或移除。
 func (a *App) signOutOf(si *signIn) error {
-	if si.id == accountid.Primary {
-		// 先撤推送: 要用到还在的会话 (iOS; 其它平台为空)。
-		a.stopPush()
-	}
+	// 先撤这个登录的推送: 要用到还在的会话 (iOS; 其它平台为空)。
+	a.stopPush(si.id)
 	a.mu.Lock()
 	si.stopLocked()
 	si.reason = ""

@@ -71,7 +71,7 @@ func (a *App) addCalendarTools(server *mcp.Server) {
 		Location     string `json:"location,omitempty"`
 		Description  string `json:"description,omitempty"`
 		AlertMinutes []int  `json:"alertMinutes,omitempty" jsonschema:"提前多少分钟提醒, 如 [15]"`
-		AccountID    string `json:"accountId,omitempty" jsonschema:"与 calendarId 一起指定日历; 都省略时用个人默认日历"`
+		AccountID    string `json:"accountId,omitempty" jsonschema:"与 calendarId 一起指定日历; 都省略时用主登录个人账号的默认日历"`
 		CalendarID   string `json:"calendarId,omitempty" jsonschema:"见 list_calendars"`
 	}
 	mcp.AddTool(server, &mcp.Tool{Name: "create_event", Description: "新建日程(不邀请参加者)。", Annotations: writeTool(false, false)},
@@ -200,7 +200,7 @@ func (a *App) addTaskTools(server *mcp.Server) {
 		Due         string `json:"due,omitempty" jsonschema:"截止时间, 本机时间 YYYY-MM-DDTHH:MM:SS; 省略表示无截止"`
 		DueAllDay   bool   `json:"dueAllDay,omitempty" jsonschema:"截止到某天而不是具体时刻"`
 		Priority    int    `json:"priority,omitempty" jsonschema:"0 无, 1 最高 … 9 最低(常用 1 高 / 5 中 / 9 低)"`
-		AccountID   string `json:"accountId,omitempty" jsonschema:"与 calendarId 一起指定; 都省略时用个人默认日历"`
+		AccountID   string `json:"accountId,omitempty" jsonschema:"与 calendarId 一起指定; 都省略时用主登录个人账号的默认日历"`
 		CalendarID  string `json:"calendarId,omitempty"`
 	}
 	mcp.AddTool(server, &mcp.Tool{Name: "create_task", Description: "新建任务(待办)。", Annotations: writeTool(false, false)},

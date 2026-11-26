@@ -222,6 +222,8 @@ func (a *App) dropSignIn(id string) error {
 	if id == accountid.Primary {
 		return fmt.Errorf("2022 the primary sign-in cannot be removed this way")
 	}
+	// 先撤推送: 会话还在时连服务器上的订阅一起删 (iOS; 其它平台为空)。
+	a.stopPush(id)
 	a.mu.Lock()
 	si := a.signInLocked(id)
 	if si == nil {
@@ -263,6 +265,7 @@ func (a *App) dropSignIn(id string) error {
 			errs = append(errs, err)
 		}
 	}
+	forgetOwnAddresses()
 	a.log.Info("sign-in removed", "signin", id)
 	return errors.Join(errs...)
 }

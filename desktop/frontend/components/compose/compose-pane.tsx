@@ -34,6 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { OptionSelect } from "@/components/option-select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -56,6 +57,7 @@ import {
   type AIConfig,
   type Address,
   type AppSettings,
+  type ComposeIdentityGroup,
   type Identity,
   type Template,
   type UploadedAttachment,
@@ -132,8 +134,14 @@ const LANGUAGES = ["简体中文", "English", "Čeština", "日本語", "한국�
  */
 export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Props) {
   useI18n();
-  const [identities, setIdentities] = useState<Identity[]>([]);
+  // 发件人下拉: 写信账号的身份在前, 有别的登录时再列它们个人账号的身份 (#15)。
+  const [groups, setGroups] = useState<ComposeIdentityGroup[]>([]);
+  // 发件账号: 起初是写信账号, 选了别的账号的身份后跟着换; 草稿、发送、附件都落在这里。
+  const [sendAccount, setSendAccount] = useState(accountId);
   const [identityId, setIdentityId] = useState("");
+  const identities = useMemo(() => groups.find((g) => g.accountId === sendAccount)?.identities ?? [], [groups, sendAccount]);
+  // 原邮件的内嵌部件 (回复、转发), 换发件账号时随附件一起搬过去。
+  const [inlineParts, setInlineParts] = useState<InlinePart[]>(draft.inlineParts ?? []);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [ai, setAI] = useState<AIConfig | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -170,11 +178,11 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
   const quotePreview = useMemo(() => {
     if (!draft.quoteHtml) return "";
     let html = sanitizeInline(draft.quoteHtml);
-    for (const p of draft.inlineParts ?? []) {
-      html = html.split(`cid:${p.cid}`).join(blobUrl(accountId, p));
+    for (const p of inlineParts) {
+      html = html.split(`cid:${p.cid}`).join(blobUrl(sendAccount, p));
     }
     return html;
-  }, [draft.quoteHtml, draft.inlineParts, accountId]);
+  }, [draft.quoteHtml, inlineParts, sendAccount]);
 
   // 从资源管理器把文件拖进写信面板即作为附件上传。写信面板不可见(切到别的模块)时不接管。
   useEffect(() => {
@@ -183,7 +191,7 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
       setDragging(false);
       setUploading(true);
       api
-        .attachPaths(accountId, paths)
+        .attachPaths(sendAccount, paths)
         .then((list) => {
           if (list?.length) {
             setAttachments((prev) => [...prev, ...list]);
@@ -198,8 +206,10 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
     return offDrop;
     // markDirty 是稳定的 useCallback。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId]);
+  }, [sendAccount]);
   const draftId = useRef(draft.draftId ?? "");
+  // 草稿所在的账号: 换了发件账号后, 下一次保存存进新账号, 再删掉这里的旧草稿。
+  const draftAccount = useRef(accountId);
   const dirty = useRef(false);
   const editRevision = useRef(0);
   const saving = useRef<Promise<boolean> | null>(null);
@@ -208,30 +218,33 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      api.listIdentities(accountId).catch(() => []),
+      api.listComposeIdentities(accountId).catch(() => []),
       api.getSettings().catch(() => null),
       api.getAIConfig().catch(() => null),
       api.listTemplates().catch(() => []),
-      api.maxDelayedSend(accountId).catch(() => 0),
-      api.getSessionStatus().catch(() => null),
-    ]).then(([ids, st, aiCfg, tpls, delay, session]) => {
+      api.ownAddresses().catch(() => []),
+    ]).then(([groupList, st, aiCfg, tpls, ownList]) => {
       if (cancelled) return;
-      const list = ids ?? [];
-      setIdentities(list);
+      const all = groupList ?? [];
+      setGroups(all);
+      // 默认身份只在写信账号里选 (回复 / 续编草稿沿用原邮件的账号), 规则不变: 匹配的地址 > 设置 > 登录地址 > 首个。
+      const first = all.find((g) => g.accountId === accountId);
+      const list = first?.identities ?? [];
+      setSendAccount(accountId);
       setSettings(st);
       setAI(aiCfg);
       setTemplates(tpls ?? []);
-      setMaxDelay(delay ?? 0);
       if (st) setReceipt(st.readReceiptDefault);
       const preferred = st?.defaultIdentities?.[accountId];
-      // 没有设置默认身份时, 优先用与登录账号同地址的身份。
-      const login = session?.username?.toLowerCase() ?? "";
+      // 没有设置默认身份时, 优先用与写信账号所属登录同地址的身份。
+      const login = first?.username?.toLowerCase() ?? "";
       const byAddress = (addr: string) => list.find((i) => i.email.toLowerCase() === addr.toLowerCase());
       const matched = (draft.fromCandidates ?? []).map(byAddress).find(Boolean);
       setIdentityId(
         (matched ?? list.find((i) => i.id === preferred) ?? byAddress(login) ?? list[0])?.id ?? "",
       );
-      const own = new Set([login, ...list.map((i) => i.email.toLowerCase())].filter(Boolean));
+      // 自己的地址: 所有登录的登录名与发件身份, 回复时据此不发给自己、从抄送里去掉自己。
+      const own = new Set([login, ...list.map((i) => i.email.toLowerCase()), ...(ownList ?? [])].filter(Boolean));
       const orig = draft.original;
       if (orig && own.has(orig.from.toLowerCase())) {
         // 原收件人里也可能有自己(发给自己的另一个地址), 去掉后为空就保留原样。
@@ -249,6 +262,18 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
       cancelled = true;
     };
   }, [accountId]);
+
+  // 定时发送的上限随发件账号的服务器。
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .maxDelayedSend(sendAccount)
+      .catch(() => 0)
+      .then((delay) => !cancelled && setMaxDelay(delay ?? 0));
+    return () => {
+      cancelled = true;
+    };
+  }, [sendAccount]);
 
   const identity = identities.find((i) => i.id === identityId);
   const signatureHtml = useMemo(() => {
@@ -274,7 +299,7 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
     if (draft.quoteHtml) parts.push(sanitizeInline(draft.quoteHtml));
     const fullHtml = parts.join("");
     return main.ComposeRequest.createFrom({
-      accountId,
+      accountId: sendAccount,
       identityId,
       to: parseAddresses(to),
       cc: parseAddresses(cc),
@@ -286,9 +311,10 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
       references: draft.references ?? [],
       attachments: [
         ...attachments.map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, cid: "" })),
-        ...(draft.inlineParts ?? []).map((p) => ({ blobId: p.blobId, type: p.type, name: p.name, cid: p.cid })),
+        ...inlineParts.map((p) => ({ blobId: p.blobId, type: p.type, name: p.name, cid: p.cid })),
       ],
       draftId: draftId.current,
+      draftAccountId: draftAccount.current,
       requestReadReceipt: receipt,
       sendAt: "",
       sendSeparately: separately,
@@ -309,7 +335,9 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
     const run = (async () => {
       await prev;
       try {
-        draftId.current = await api.saveDraft(buildRequest());
+        const req = buildRequest();
+        draftId.current = await api.saveDraft(req);
+        draftAccount.current = req.accountId;
         return true;
       } catch (err) {
         dirty.current = true;
@@ -321,7 +349,7 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
     return await run;
     // buildRequest 读取的是当前 state, 由下面的定时器在每次变化后重新调度。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sending, identityId, hasContent, to, cc, bcc, subject, html, attachments, receipt, separately, signatureHtml]);
+  }, [sending, identityId, sendAccount, hasContent, to, cc, bcc, subject, html, attachments, inlineParts, receipt, separately, signatureHtml]);
 
   useEffect(() => {
     if (!dirty.current) return;
@@ -354,7 +382,7 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
         if (editRevision.current !== beforeDelete) return false;
         if (draftId.current) {
           try {
-            await api.discardDraft(accountId, draftId.current);
+            await api.discardDraft(draftAccount.current, draftId.current);
             draftId.current = "";
           } catch (err) {
             toast.error(errorMessage(err));
@@ -388,7 +416,7 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
     await saving.current;
     if (draftId.current) {
       try {
-        await api.discardDraft(accountId, draftId.current);
+        await api.discardDraft(draftAccount.current, draftId.current);
       } catch (err) {
         toast.error(errorMessage(err));
         // 断网时删不掉: 草稿留在服务器上, 用户仍可以关掉面板。
@@ -403,7 +431,7 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
     if (uploading) return;
     setUploading(true);
     try {
-      const uploaded = await api.addAttachments(accountId);
+      const uploaded = await api.addAttachments(sendAccount);
       if (uploaded?.length) {
         setAttachments((prev) => [...prev, ...uploaded]);
         markDirty();
@@ -561,6 +589,46 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
   ) : null;
 
   const fromLabel = (i: Identity) => (i.name ? `${i.name} <${i.email}>` : i.email);
+  // 有别的登录时下拉按账号分组, 组名标出登录的用户与服务器 (共享邮箱写邮箱名)。
+  const groupLabel = (g: ComposeIdentityGroup) =>
+    `${g.accountName && g.accountName.toLowerCase() !== g.username.toLowerCase() ? g.accountName : g.username} · ${g.server}`;
+
+  /**
+   * 选发件身份。换到别的账号 (别的登录) 的身份时, 已上传的附件与引用的内嵌图片只在原账号可用,
+   * 先搬到新账号; 搬不过去就保持原来的发件人。草稿下一次保存时存进新账号, 原账号里的旧草稿由后端删掉。
+   */
+  async function chooseIdentity(key: string) {
+    const cut = key.indexOf("/");
+    const acc = key.slice(0, cut);
+    const id = key.slice(cut + 1);
+    if (acc === sendAccount) {
+      setIdentityId(id);
+      markDirty();
+      return;
+    }
+    // 正在进行的保存用的是原账号, 等它落地, 草稿 id 与所在账号才对得上。
+    await saving.current;
+    const refs = [
+      ...attachments.map((a) => main.AttachmentRef.createFrom({ blobId: a.blobId, type: a.type, name: a.name, cid: "" })),
+      ...inlineParts.map((p) => main.AttachmentRef.createFrom({ blobId: p.blobId, type: p.type, name: p.name, cid: p.cid })),
+    ];
+    if (refs.length > 0) {
+      setUploading(true);
+      try {
+        const moved = (await api.transferAttachments(sendAccount, acc, refs)) ?? [];
+        setAttachments((prev) => prev.map((a, i) => ({ ...a, blobId: moved[i]?.blobId ?? a.blobId })) as UploadedAttachment[]);
+        setInlineParts((prev) => prev.map((p, i) => ({ ...p, blobId: moved[attachments.length + i]?.blobId ?? p.blobId })));
+      } catch (err) {
+        toast.error(t("附件没能转到所选发件人的账号，仍用原来的发件人：{0}", errorMessage(err)));
+        return;
+      } finally {
+        setUploading(false);
+      }
+    }
+    setSendAccount(acc);
+    setIdentityId(id);
+    markDirty();
+  }
 
   return (
     <div
@@ -585,16 +653,36 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
 
       <div className="border-border flex shrink-0 flex-col border-b text-sm">
         <Field label={t("发件人")}>
-          <OptionSelect
-            value={identityId}
-            onChange={(v) => {
-              setIdentityId(v);
-              markDirty();
-            }}
-            options={identities.map((i) => [i.id, fromLabel(i)] as const)}
-            className="-ml-2.5 flex-1 border-transparent dark:bg-transparent"
-            aria-label={t("发件人")}
-          />
+          {groups.length > 1 ? (
+            <Select value={identityId ? `${sendAccount}/${identityId}` : ""} onValueChange={chooseIdentity} disabled={uploading || sending}>
+              <SelectTrigger aria-label={t("发件人")} className="-ml-2.5 min-w-0 flex-1 border-transparent dark:bg-transparent">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((g) => (
+                  <SelectGroup key={g.accountId}>
+                    <SelectLabel className="text-muted-foreground truncate text-xs">{groupLabel(g)}</SelectLabel>
+                    {g.identities.map((i) => (
+                      <SelectItem key={i.id} value={`${g.accountId}/${i.id}`}>
+                        {fromLabel(i)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <OptionSelect
+              value={identityId}
+              onChange={(v) => {
+                setIdentityId(v);
+                markDirty();
+              }}
+              options={identities.map((i) => [i.id, fromLabel(i)] as const)}
+              className="-ml-2.5 flex-1 border-transparent dark:bg-transparent"
+              aria-label={t("发件人")}
+            />
+          )}
         </Field>
         <Field
           label={t("收件人")}

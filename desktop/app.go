@@ -113,6 +113,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.initNotifier()
+	go a.runReminders(ctx)
 	a.log.Info("startup done", "since_start", time.Since(processStart).Round(time.Millisecond))
 
 	if !file.Configured() {
@@ -360,6 +361,8 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 	s.OnAccountsChanged = func(diff syncer.AccountDiff) { a.onAccountsChanged(syncCtx, si, client, st, diff) }
 	si.cancelSync = cancel
 	a.mu.Unlock()
+	// 这个登录的身份之前可能没取到 (离线、新加的登录), 让「自己的地址」重新取。
+	forgetOwnAddresses()
 
 	if err := a.persistAccounts(syncCtx, si, client, st); err != nil {
 		a.log.Error("persist accounts", "err", err)
@@ -368,16 +371,17 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 	s.PruneAccounts(syncCtx)
 
 	go a.runReconcile(syncCtx, si, s, st)
-	// 笔记、提醒、正文回填与 iOS 推送目前只跟主登录走: 笔记与网盘设置在主登录的个人网盘里,
-	// 提醒与回填覆盖整个缓存库, 推送登记暂时只有一份 (附加登录的推送见 #15 后续)。
+	// 笔记与正文回填只跟主登录走: 笔记在主登录的个人网盘里, 回填整库只跑一次。
+	// 日程提醒跟随应用 (startup 里启动, 覆盖所有登录); iOS 推送每个登录各一份订阅。
 	if si.id == accountid.Primary {
 		go a.runNotes(syncCtx, s)
-		go a.runReminders(syncCtx)
 		go a.runBodyTextBackfill(syncCtx, st)
-		// 先恢复「推送已生效」的标记, 第一轮同步据此不重复弹推送已经通知过的新信。
-		a.primePush(syncCtx, st)
-		go a.runPush(syncCtx, s, st)
 	}
+	// 先恢复「推送已生效」的标记, 第一轮同步据此不重复弹推送已经通知过的新信。
+	a.primePush(syncCtx, si.id, st)
+	go a.runPush(syncCtx, si.id, s, st)
+	// 这个登录的日历现在能提醒了 (重新登录、新加的登录)。
+	a.planRemindersSoon(false)
 	go func() {
 		if err := s.Run(syncCtx); err != nil {
 			a.log.Error("sync loop exited", "err", err)
@@ -437,6 +441,7 @@ func (a *App) onAccountsChanged(ctx context.Context, si *signIn, client *jmap.Cl
 	if err := a.persistAccounts(ctx, si, client, st); err != nil {
 		a.log.Error("persist accounts", "err", err)
 	}
+	forgetOwnAddresses()
 	a.emit(EventAccountsChanged)
 	a.refreshTrayUnreadSoon()
 	// 推送订阅按账号列出要推的收件箱, 账号变了要重新对齐 (仅 iOS 有实现)。

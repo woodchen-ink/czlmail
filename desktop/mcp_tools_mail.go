@@ -32,14 +32,17 @@ const (
 )
 
 func (a *App) addMailTools(server *mcp.Server) {
-	mcp.AddTool(server, &mcp.Tool{Name: "list_accounts", Description: "列出邮箱账号(个人账号与共享邮箱)。", Annotations: readOnlyTool()},
-		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-			accs, err := a.ListAccounts()
-			return nil, map[string]any{"accounts": accs}, err
-		})
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "list_accounts",
+		Description: "列出邮箱账号(个人账号与共享邮箱)。可能同时登录了几个服务器或用户(signIns), 每个账号的 signIn 标出它属于哪个登录; " +
+			"其它工具省略 accountId 时用 defaultAccountId(主登录的个人账号)。",
+		Annotations: readOnlyTool(),
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		return nil, a.mcpAccountList(), nil
+	})
 
 	type mailboxesIn struct {
-		AccountID string `json:"accountId,omitempty" jsonschema:"账号 id, 省略时为个人账号"`
+		AccountID string `json:"accountId,omitempty" jsonschema:"账号 id, 省略时为主登录的个人账号"`
 	}
 	mcp.AddTool(server, &mcp.Tool{Name: "list_mailboxes", Description: "列出某账号的文件夹(含未读数)与已用过的标签。", Annotations: readOnlyTool()},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in mailboxesIn) (*mcp.CallToolResult, any, error) {
@@ -60,25 +63,27 @@ func (a *App) addMailTools(server *mcp.Server) {
 		})
 
 	type listEmailsIn struct {
-		AccountID string `json:"accountId,omitempty" jsonschema:"账号 id, 省略时为个人账号"`
+		AccountID string `json:"accountId,omitempty" jsonschema:"账号 id, 省略时列出每个登录的个人账号(合并按时间排)"`
 		Mailbox   string `json:"mailbox,omitempty" jsonschema:"文件夹 id、名称或类别(inbox/sent/drafts/archive/junk/trash), 默认 inbox"`
 		Limit     int    `json:"limit,omitempty" jsonschema:"条数, 默认 20, 最多 100"`
 		Offset    int    `json:"offset,omitempty"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_emails",
-		Description: "按时间倒序列出文件夹里的邮件摘要, 同一会话合并为一行(threadCount)。只看未读等条件筛选请用 search_emails。",
+		Name: "list_emails",
+		Description: "按时间倒序列出文件夹里的邮件摘要, 同一会话合并为一行(threadCount)。只看未读等条件筛选请用 search_emails。" +
+			"省略 accountId 时合并每个登录的个人账号, 每封带 accountId。",
 		Annotations: readOnlyTool(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listEmailsIn) (*mcp.CallToolResult, any, error) {
-		acc, err := a.mcpAccount(in.AccountID)
-		if err != nil {
-			return nil, nil, err
+		limit := clamp(in.Limit, 20, 100)
+		if in.AccountID == "" {
+			return a.mcpListAllSignIns(in.Mailbox, limit, in.Offset)
 		}
+		acc := in.AccountID
 		box, err := a.mcpMailbox(acc, in.Mailbox)
 		if err != nil {
 			return nil, nil, err
 		}
-		list, err := a.ListEmails(acc, box, clamp(in.Limit, 20, 100), in.Offset)
+		list, err := a.ListEmails(acc, box, limit, in.Offset)
 		return nil, map[string]any{"accountId": acc, "mailboxId": box, "emails": summarize(list, nil)}, err
 	})
 
@@ -93,7 +98,7 @@ func (a *App) addMailTools(server *mcp.Server) {
 		Unread        bool   `json:"unread,omitempty" jsonschema:"只要未读"`
 		Flagged       bool   `json:"flagged,omitempty" jsonschema:"只要已加星标"`
 		HasAttachment bool   `json:"hasAttachment,omitempty" jsonschema:"只要带附件"`
-		AccountID     string `json:"accountId,omitempty" jsonschema:"省略时搜索全部账号"`
+		AccountID     string `json:"accountId,omitempty" jsonschema:"省略时搜索所有登录的全部账号"`
 		Limit         int    `json:"limit,omitempty" jsonschema:"每个账号的条数, 默认 20, 最多 100"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
@@ -125,6 +130,7 @@ func (a *App) addMailTools(server *mcp.Server) {
 			return nil, nil, err
 		}
 		var results []map[string]any
+		var skipped []map[string]any
 		for _, acc := range accounts {
 			af := f
 			if in.Mailbox != "" {
@@ -140,6 +146,11 @@ func (a *App) addMailTools(server *mcp.Server) {
 			}
 			list, err := a.mcpSearch(ctx, acc, af, clamp(in.Limit, 20, 100))
 			if err != nil {
+				// 省略账号时, 一个登录离线不该让整个搜索失败: 记下来告诉模型哪些账号没搜到。
+				if in.AccountID == "" {
+					skipped = append(skipped, map[string]any{"accountId": acc, "error": err.Error()})
+					continue
+				}
 				return nil, nil, err
 			}
 			for _, e := range summarize(list, a.mailboxNames(acc)) {
@@ -147,11 +158,15 @@ func (a *App) addMailTools(server *mcp.Server) {
 				results = append(results, e)
 			}
 		}
-		return nil, map[string]any{"results": results}, nil
+		out := map[string]any{"results": results}
+		if len(skipped) > 0 {
+			out["skipped"] = skipped
+		}
+		return nil, out, nil
 	})
 
 	type readIn struct {
-		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为个人账号"`
+		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为主登录的个人账号"`
 		EmailID   string `json:"emailId"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
@@ -186,7 +201,7 @@ func (a *App) addMailTools(server *mcp.Server) {
 	})
 
 	type threadIn struct {
-		AccountID     string `json:"accountId,omitempty" jsonschema:"省略时为个人账号"`
+		AccountID     string `json:"accountId,omitempty" jsonschema:"省略时为主登录的个人账号"`
 		EmailID       string `json:"emailId" jsonschema:"会话中任意一封邮件的 id"`
 		IncludeBodies bool   `json:"includeBodies,omitempty" jsonschema:"同时返回每封的正文(每封最多约 8000 字节, 最多 30 封)"`
 	}
@@ -229,7 +244,7 @@ func (a *App) addMailTools(server *mcp.Server) {
 	})
 
 	type attachmentIn struct {
-		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为个人账号"`
+		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为主登录的个人账号"`
 		EmailID   string `json:"emailId"`
 		Index     int    `json:"index" jsonschema:"read_email 返回的附件序号, 从 0 开始"`
 	}
@@ -266,7 +281,7 @@ func (a *App) addMailTools(server *mcp.Server) {
 	})
 
 	type saveAttachmentIn struct {
-		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为个人账号"`
+		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为主登录的个人账号"`
 		EmailID   string `json:"emailId"`
 		Index     *int   `json:"index,omitempty" jsonschema:"read_email 返回的附件序号, 从 0 开始; 省略时保存全部附件"`
 		Directory string `json:"directory,omitempty" jsonschema:"保存到的本机文件夹(绝对路径, 不存在时创建); 省略时存在程序的附件目录"`
@@ -339,28 +354,102 @@ func (a *App) addMailTools(server *mcp.Server) {
 	})
 
 	type identitiesIn struct {
-		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为个人账号"`
+		AccountID string `json:"accountId,omitempty" jsonschema:"省略时列出每个登录的个人账号的身份"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_identities",
-		Description: "列出账号可用的发件身份(地址与别名)。isDefault 是写信时默认使用的身份。",
+		Name: "list_identities",
+		Description: "列出可用的发件身份(地址与别名), 每个身份带所属 accountId。isDefault 是该账号写信时默认使用的身份。" +
+			"create_draft / send_email 选了别的登录的身份时, 邮件在那个身份的账号里创建。",
 		Annotations: readOnlyTool(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in identitiesIn) (*mcp.CallToolResult, any, error) {
-		acc, err := a.mcpAccount(in.AccountID)
-		if err != nil {
-			return nil, nil, err
+		accounts := []string{in.AccountID}
+		if in.AccountID == "" {
+			var err error
+			if accounts, err = a.mcpPersonalAccounts(); err != nil {
+				return nil, nil, err
+			}
 		}
-		ids, err := a.ListIdentities(acc)
-		if err != nil {
-			return nil, nil, err
+		out := []map[string]any{}
+		for i, acc := range accounts {
+			ids, err := a.ListIdentities(acc)
+			if err != nil {
+				// 只有附加登录离线时照样列出能取到的; 主登录或指定的账号取不到才报错。
+				if i == 0 {
+					return nil, nil, err
+				}
+				continue
+			}
+			def, _ := a.pickIdentity(acc, "", nil)
+			for _, id := range ids {
+				out = append(out, map[string]any{"id": id.ID, "name": id.Name, "email": id.Email, "accountId": acc, "isDefault": id.ID == def.ID})
+			}
 		}
-		def, _ := a.pickIdentity(acc, "", nil)
-		out := make([]map[string]any, 0, len(ids))
-		for _, id := range ids {
-			out = append(out, map[string]any{"id": id.ID, "name": id.Name, "email": id.Email, "isDefault": id.ID == def.ID})
-		}
-		return nil, map[string]any{"accountId": acc, "identities": out}, nil
+		return nil, map[string]any{"accountId": accounts[0], "identities": out}, nil
 	})
+}
+
+// mcpAccountList 是 list_accounts 的结果: 账号 (带 signIn 前缀)、各登录的用户与服务器, 以及默认账号。
+func (a *App) mcpAccountList() map[string]any {
+	accs, err := a.ListAccounts()
+	if err != nil {
+		accs = nil
+	}
+	infos, _ := a.ListSignIns()
+	signIns := make([]map[string]any, 0, len(infos))
+	for _, si := range infos {
+		signIns = append(signIns, map[string]any{
+			"id": si.ID, "primary": si.Primary, "username": si.Username, "server": si.Server,
+			"connected": si.Connected, "signedOut": si.SignedOut, "signInRequired": si.SignInRequired,
+		})
+	}
+	def, _ := a.mcpAccount("")
+	return map[string]any{"accounts": accs, "signIns": signIns, "defaultAccountId": def}
+}
+
+// mcpListAllSignIns 是 list_emails 省略账号时: 每个登录的个人账号里同一类文件夹合并, 按收件时间倒序分页。
+// 只有一个登录时与指定主登录个人账号的结果相同。
+func (a *App) mcpListAllSignIns(mailbox string, limit, offset int) (*mcp.CallToolResult, any, error) {
+	accounts, err := a.mcpPersonalAccounts()
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(accounts) == 1 {
+		box, err := a.mcpMailbox(accounts[0], mailbox)
+		if err != nil {
+			return nil, nil, err
+		}
+		list, err := a.ListEmails(accounts[0], box, limit, offset)
+		return nil, map[string]any{"accountId": accounts[0], "mailboxId": box, "emails": summarize(list, nil)}, err
+	}
+	st, err := a.currentStore()
+	if err != nil {
+		return nil, nil, err
+	}
+	var boxes []store.MailboxRef
+	for i, acc := range accounts {
+		box, err := a.mcpMailbox(acc, mailbox)
+		if err != nil {
+			// 主登录也没有这个文件夹才报错; 别的登录没有同名文件夹不算错。
+			if i == 0 {
+				return nil, nil, err
+			}
+			continue
+		}
+		boxes = append(boxes, store.MailboxRef{AccountID: acc, MailboxID: box})
+	}
+	// 与统一视图一样先让每个账号补齐自己的这一页, 合并页才不会漏掉缓存少的账号的邮件。
+	for _, b := range boxes {
+		a.fillMailboxPage(st, b.AccountID, b.MailboxID, limit, offset)
+	}
+	list, err := st.EmailsInMailboxes(a.ctx, boxes, false, limit, offset)
+	if err != nil {
+		return nil, nil, err
+	}
+	emails := summarize(list, nil)
+	for i := range emails {
+		emails[i]["accountId"] = list[i].AccountID
+	}
+	return nil, map[string]any{"accounts": accounts, "emails": emails}, nil
 }
 
 // mcpSearch 先查服务端; 不可达时退回本机缓存的全文检索, 其余条件在这里逐条过滤。

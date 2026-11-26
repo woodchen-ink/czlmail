@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -14,16 +16,35 @@ import (
 
 // 同邮局用户目录: JMAP Principals(RFC 9670)列出服务器上的个人与群组, 写信时可以直接搜到同事。
 
+// directoryCache 按 会话地址 + 服务器账号 id 记各登录的目录: 每个登录是一个邮局 (#15), 换了登录也不能沿用上一个邮局的目录。
+// 锁只保护这张表, 查询在锁外做: 一个登录的服务器连不上时, 别的登录的目录与正在输入的收件人框都不跟着等。
 var directoryCache struct {
 	sync.Mutex
-	// key 是 会话地址 + 服务器账号 id: 换了登录 (另一个服务器或另一个用户) 不能沿用上一个邮局的目录。
-	key  string
-	at   time.Time
-	list []store.Recipient
+	entries map[string]*directoryEntry
 }
 
-// directoryTTL 内复用上次取回的目录; 目录变化很少, 每次按键都请求服务器没有必要。
-const directoryTTL = 10 * time.Minute
+type directoryEntry struct {
+	at   time.Time
+	list []store.Recipient
+	// failed 表示上一次查询失败 (list 是更早一次成功的结果, 可能为空); 失败后 directoryRetry 内不再查。
+	failed bool
+	// fetching 表示正有一次查询在路上, 别的调用方直接用 list, 不另起一次。
+	fetching bool
+}
+
+const (
+	// directoryTTL 内复用上次取回的目录; 目录变化很少, 每次按键都请求服务器没有必要。
+	directoryTTL = 10 * time.Minute
+	// directoryRetry 是查询失败后的负缓存: 连不上的服务器不该每敲一个字重试一次。
+	directoryRetry = time.Minute
+	// directoryTimeout 是一次目录查询的上限。
+	directoryTimeout = 8 * time.Second
+)
+
+// fetchDirectory 向服务器查一个账号所在邮局的目录, 测试里换成假的。
+var fetchDirectory = func(a *App, ctx context.Context, rt accountRoute) ([]store.Recipient, error) {
+	return a.loadDirectory(ctx, rt)
+}
 
 // SearchDirectory 在服务器用户目录里按姓名或地址搜索。服务器不支持或请求失败时返回空列表。
 func (a *App) SearchDirectory(query string) ([]store.Recipient, error) {
@@ -44,19 +65,44 @@ func (a *App) SearchDirectory(query string) ([]store.Recipient, error) {
 	return out, nil
 }
 
+// directory 合并各登录的同邮局目录 (每个登录的个人账号各取一次, 并行), 主登录在前, 同一地址只列一次。
 func (a *App) directory() []store.Recipient {
-	directoryCache.Lock()
-	defer directoryCache.Unlock()
-	accountID := ""
-	if st, err := a.currentStore(); err == nil {
-		accountID = a.personalAccountID(st)
-	}
-	if accountID == "" {
+	accounts, err := a.ListAccounts()
+	if err != nil {
 		return nil
 	}
-	// 不等启动时的会话恢复: 这里持有目录缓存的锁, 填收件人时不该卡住。
+	var targets []string
+	signIns := map[string]bool{}
+	for _, acc := range accounts {
+		if acc.IsPersonal && !signIns[acc.SignIn] {
+			signIns[acc.SignIn] = true
+			targets = append(targets, acc.ID)
+		}
+	}
+	lists := make([][]store.Recipient, len(targets))
+	var wg sync.WaitGroup
+	for i, acc := range targets {
+		wg.Go(func() { lists[i] = a.directoryOf(acc) })
+	}
+	wg.Wait()
+	var out []store.Recipient
+	seen := map[string]bool{}
+	for _, list := range lists {
+		for _, r := range list {
+			if key := strings.ToLower(r.Email); !seen[key] {
+				seen[key] = true
+				out = append(out, r)
+			}
+		}
+	}
+	return out
+}
+
+// directoryOf 取一个账号所在邮局的目录: 缓存新鲜 (或刚失败过、正有查询在路上) 时直接用缓存, 否则在锁外查一次。
+func (a *App) directoryOf(accountID string) []store.Recipient {
+	// 不等启动时的会话恢复: 填收件人时不该卡住。
 	rt, err := a.routeWithin(accountID, 0)
-	if err != nil || rt.sync.Session() == nil {
+	if err != nil || rt.client == nil || rt.sync.Session() == nil {
 		return nil
 	}
 	// 服务器没有成员目录 (Principals) 时不查: 否则每敲一个字都发一次注定失败的请求。
@@ -64,11 +110,44 @@ func (a *App) directory() []store.Recipient {
 		return nil
 	}
 	key := rt.client.SessionEndpoint + " " + rt.serverID
-	if directoryCache.key == key && directoryCache.list != nil && time.Since(directoryCache.at) < directoryTTL {
-		return directoryCache.list
-	}
 
-	req := &jmap.Request{Context: a.ctx}
+	directoryCache.Lock()
+	if directoryCache.entries == nil {
+		directoryCache.entries = map[string]*directoryEntry{}
+	}
+	e := directoryCache.entries[key]
+	if e == nil {
+		e = &directoryEntry{}
+		directoryCache.entries[key] = e
+	}
+	fresh := !e.at.IsZero() && ((!e.failed && time.Since(e.at) < directoryTTL) || (e.failed && time.Since(e.at) < directoryRetry))
+	if fresh || e.fetching {
+		list := e.list
+		directoryCache.Unlock()
+		return list
+	}
+	e.fetching = true
+	directoryCache.Unlock()
+
+	ctx, cancel := context.WithTimeout(a.ctx, directoryTimeout)
+	list, err := fetchDirectory(a, ctx, rt)
+	cancel()
+
+	directoryCache.Lock()
+	defer directoryCache.Unlock()
+	e.fetching, e.at = false, time.Now()
+	if err != nil {
+		a.log.Warn("load principal directory", "account", accountID, "err", err)
+		e.failed = true // 沿用更早一次成功的结果
+		return e.list
+	}
+	e.list, e.failed = list, false
+	return list
+}
+
+// loadDirectory 用 Principal/get 取邮局里能收信的个人与群组。
+func (a *App) loadDirectory(ctx context.Context, rt accountRoute) ([]store.Recipient, error) {
+	req := &jmap.Request{Context: ctx}
 	req.Invoke(&jmapx.Call{Method: "Principal/get", Args: map[string]any{
 		"accountId":  rt.serverID,
 		"ids":        nil,
@@ -76,12 +155,11 @@ func (a *App) directory() []store.Recipient {
 	}})
 	resp, err := rt.do(req)
 	if err != nil {
-		a.log.Warn("load principal directory", "err", err)
-		return nil
+		return nil, err
 	}
 	got, ok := resp.Responses[0].Args.(*jmapx.GetResponse)
 	if !ok {
-		return nil
+		return nil, errors.New("unexpected response to Principal/get")
 	}
 	out := make([]store.Recipient, 0, len(got.List))
 	for _, raw := range got.List {
@@ -100,8 +178,7 @@ func (a *App) directory() []store.Recipient {
 		}
 		out = append(out, store.Recipient{Name: principalName(p.Name, p.Description, p.Email), Email: p.Email})
 	}
-	directoryCache.key, directoryCache.list, directoryCache.at = key, out, time.Now()
-	return out
+	return out, nil
 }
 
 // principalName 选显示名: Stalwart 的 name 是登录名(通常就是地址), 真实姓名多写在 description 里;

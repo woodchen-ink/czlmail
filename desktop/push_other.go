@@ -9,18 +9,7 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
-// 新邮件推送只在 iOS 上需要 (见 push_ios.go): 桌面端常驻托盘收信, Android 由前台服务保持同步。
+// 新邮件推送只在 iOS 上运行 (见 push_ios.go、push_relay.go): 桌面端常驻托盘收信, Android 由前台服务保持同步。
+var pushEnabled = false
 
-func (a *App) primePush(context.Context, *store.Store) {}
-
-func (a *App) runPush(context.Context, *syncer.Syncer, *store.Store) {}
-
-func (a *App) pushCovers(string) bool { return false }
-
-func (a *App) wakePush() {}
-
-func (a *App) pushSettingsChanged() {}
-
-func (a *App) stopPush() {}
-
-func (a *App) forgetPush(context.Context, *store.Store) {}
+func (a *App) runPush(context.Context, string, *syncer.Syncer, *store.Store) {}

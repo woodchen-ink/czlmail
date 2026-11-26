@@ -1362,5 +1362,10 @@
   "写信时从模板开始，可以使用 {{占位符}}。主登录的服务器没有文件存储，模板只保存在本机。": "Start new messages from a template; {{placeholders}} are supported. The primary sign-in's server has no file storage, so templates are kept on this device only.",
   "服务器不支持：{0}": "Not supported by the server: {0}",
   "发送邮件": "Sending mail",
-  "这个账号所在的服务器不支持这项功能。": "The server of this account does not support this feature."
+  "这个账号所在的服务器不支持这项功能。": "The server of this account does not support this feature.",
+  "附件没能转到所选发件人的账号，仍用原来的发件人：{0}": "Attachments couldn't be moved to the selected sender's account, keeping the previous sender: {0}",
+  "附件超过了所选发件人服务器的上传上限。": "An attachment is larger than the selected sender's server accepts.",
+  "列出个人邮箱与共享邮箱，并标出各属于哪个登录": "List personal and shared mailboxes and the sign-in each belongs to",
+  "按时间列出某个文件夹的邮件，不指定账号时合并各个登录的个人邮箱": "List a folder's emails by date; without an account, the personal mailboxes of all sign-ins are combined",
+  "列出各个登录可用的发件地址": "List the sender addresses of all sign-ins"
 }

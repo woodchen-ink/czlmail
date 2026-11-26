@@ -45,15 +45,15 @@ const getToolGroups: () => ({ title: string; tools: { name: string; desc: string
   {
     title: t("邮件"),
     tools: [
-      { name: "list_accounts", desc: t("列出个人邮箱与共享邮箱"), level: "read" },
+      { name: "list_accounts", desc: t("列出个人邮箱与共享邮箱，并标出各属于哪个登录"), level: "read" },
       { name: "list_mailboxes", desc: t("列出文件夹、未读数与标签"), level: "read" },
-      { name: "list_emails", desc: t("按时间列出某个文件夹的邮件"), level: "read" },
+      { name: "list_emails", desc: t("按时间列出某个文件夹的邮件，不指定账号时合并各个登录的个人邮箱"), level: "read" },
       { name: "search_emails", desc: t("在服务器上按关键词、发件人、时间、未读等条件搜索全部文件夹"), level: "read" },
       { name: "read_email", desc: t("读取邮件正文与附件清单"), level: "read" },
       { name: "get_thread", desc: t("读取整个会话的往来"), level: "read" },
       { name: "read_attachment", desc: t("读取文本类附件的内容，图片直接交给模型看"), level: "read" },
       { name: "save_attachment", desc: t("把附件下载到本机（可指定文件夹，不覆盖已有文件），用于整理附件或读取 PDF、Office"), level: "read" },
-      { name: "list_identities", desc: t("列出可用的发件地址"), level: "read" },
+      { name: "list_identities", desc: t("列出各个登录可用的发件地址"), level: "read" },
     ],
   },
   {

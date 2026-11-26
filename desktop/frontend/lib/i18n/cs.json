@@ -1362,5 +1362,10 @@
   "写信时从模板开始，可以使用 {{占位符}}。主登录的服务器没有文件存储，模板只保存在本机。": "Při psaní můžete začít ze šablony a používat {{zástupné symboly}}. Server hlavního přihlášení nemá úložiště souborů, proto se šablony ukládají jen v tomto zařízení.",
   "服务器不支持：{0}": "Server nepodporuje: {0}",
   "发送邮件": "Odesílání e-mailů",
-  "这个账号所在的服务器不支持这项功能。": "Server tohoto účtu tuto funkci nepodporuje."
+  "这个账号所在的服务器不支持这项功能。": "Server tohoto účtu tuto funkci nepodporuje.",
+  "附件没能转到所选发件人的账号，仍用原来的发件人：{0}": "Přílohy se nepodařilo přesunout do účtu vybraného odesílatele, zůstává původní odesílatel: {0}",
+  "附件超过了所选发件人服务器的上传上限。": "Příloha je větší, než server vybraného odesílatele přijme.",
+  "列出个人邮箱与共享邮箱，并标出各属于哪个登录": "Vypsat osobní a sdílené schránky a přihlášení, ke kterému patří",
+  "按时间列出某个文件夹的邮件，不指定账号时合并各个登录的个人邮箱": "Vypsat e-maily ve složce podle data; bez účtu se spojí osobní schránky všech přihlášení",
+  "列出各个登录可用的发件地址": "Vypsat adresy odesílatele všech přihlášení"
 }

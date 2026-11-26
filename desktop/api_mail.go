@@ -163,7 +163,10 @@ type ComposeRequest struct {
 	// Attachments 引用已在服务器上的 blob, 用于作为附件转发。
 	Attachments []AttachmentRef `json:"attachments"`
 	// DraftID 是正在编辑的草稿; 发送或再次保存成功后删除旧版本。
-	DraftID            string `json:"draftId"`
+	DraftID string `json:"draftId"`
+	// DraftAccountID 是 DraftID 所在的账号, 空表示与 AccountID 相同。
+	// 写信时换到别的账号的发件身份后两者不同: 新草稿存进 AccountID, 成功后再删原账号里的旧草稿。
+	DraftAccountID     string `json:"draftAccountId"`
 	RequestReadReceipt bool   `json:"requestReadReceipt"`
 	// SendAt 为 RFC 3339 时间时定时发送, 空表示立即发送。
 	SendAt string `json:"sendAt"`
@@ -206,6 +209,9 @@ func (a *App) SendEmail(req ComposeRequest) error {
 	if err != nil {
 		return err
 	}
+	if draftInOtherAccount(req) {
+		d.ReplaceDraftID = ""
+	}
 	if req.Sign {
 		if d.FromEmail == "" {
 			return fmt.Errorf("1126 sending identity not found")
@@ -215,7 +221,11 @@ func (a *App) SendEmail(req ComposeRequest) error {
 		}
 	}
 	if !req.SendSeparately {
-		return s.Send(a.ctx, d, drafts, sent)
+		if err := s.Send(a.ctx, d, drafts, sent); err != nil {
+			return err
+		}
+		a.replaceDraftElsewhere(req)
+		return nil
 	}
 
 	// 分开发送: 抄送与密送也各自成为单独一封的收件人, 否则他们仍会看到彼此。
@@ -240,6 +250,7 @@ func (a *App) SendEmail(req ComposeRequest) error {
 			return fmt.Errorf("2092 sent %d of %d, failed at %s: %w", i, len(recipients), r.Email, err)
 		}
 	}
+	a.replaceDraftElsewhere(req)
 	return nil
 }
 
@@ -265,7 +276,15 @@ func (a *App) SaveDraft(req ComposeRequest) (string, error) {
 		return "", err
 	}
 	d.SendAt = time.Time{}
-	return s.SaveDraft(a.ctx, d, drafts)
+	other := draftInOtherAccount(req)
+	if other {
+		d.ReplaceDraftID = ""
+	}
+	id, err := s.SaveDraft(a.ctx, d, drafts)
+	if err == nil && other {
+		a.replaceDraftElsewhere(req)
+	}
+	return id, err
 }
 
 // DiscardDraft 删除草稿。

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/pim"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/notify"
@@ -39,6 +40,8 @@ type reminderState struct {
 	fired map[string]time.Time
 }
 
+// runReminders 在启动时开始, 跟随应用运行 (不跟随某个登录的会话): 提醒只读本机缓存,
+// 哪个登录离线都照样按缓存提醒; 只有退出了的登录不提醒 (reminderAccounts)。
 func (a *App) runReminders(ctx context.Context) {
 	state := &reminderState{fired: map[string]time.Time{}}
 	a.planRemindersSoon(true)
@@ -70,7 +73,11 @@ func (a *App) checkReminders(state *reminderState, now time.Time) {
 	if err != nil {
 		return
 	}
-	occs, err := a.expandEvents(st, nil, now.Add(-reminderLookahead), now.Add(reminderLookahead))
+	accounts := a.reminderAccounts(st)
+	if len(accounts) == 0 {
+		return
+	}
+	occs, err := a.expandEvents(st, accounts, now.Add(-reminderLookahead), now.Add(reminderLookahead))
 	if err != nil {
 		return
 	}
@@ -102,6 +109,27 @@ func (a *App) checkReminders(state *reminderState, now time.Time) {
 			a.notifyEvent(o)
 		}
 	}
+}
+
+// reminderAccounts 返回要提醒的账号: 所属登录已配置、没退出、没被移除的账号, 含离线的登录 (按缓存提醒)。
+// 所有登录的日历都提醒 (#15); 没有可提醒的账号时为空。
+func (a *App) reminderAccounts(st *store.Store) []string {
+	accounts, err := st.Accounts(a.ctx)
+	if err != nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	var out []string
+	for _, acc := range accounts {
+		prefix, _ := accountid.Split(acc.ID)
+		si := a.signInLocked(prefix)
+		if si == nil || si.removed || si.signedOut || !si.cfg.Configured() {
+			continue
+		}
+		out = append(out, acc.ID)
+	}
+	return out
 }
 
 // defaultAlerts 是 "账号/日历" → 默认提醒。

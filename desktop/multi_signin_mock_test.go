@@ -181,11 +181,7 @@ func (ta *testApp) store() *store.Store {
 	return st
 }
 
-func resetOwnCache() {
-	ownCache.Lock()
-	ownCache.addrs = nil
-	ownCache.Unlock()
-}
+func resetOwnCache() { resetOwnAddresses() }
 
 // forgetPassword 在测试结束时删掉登录写进钥匙串的密码 (登录时按输入的用户名存)。
 func forgetPassword(t *testing.T, srv *jmaptest.Server, username string) {

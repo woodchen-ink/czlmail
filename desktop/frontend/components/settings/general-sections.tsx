@@ -60,13 +60,19 @@ export function NotificationsSection({ active }: { active: boolean }) {
   useI18n();
   const { settings, save } = useSettings(active);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  // 有多个登录时, 附加登录的邮箱标出服务器, 两个登录的个人邮箱才分得清。
+  const [servers, setServers] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (active)
-      api
-        .listAccounts()
-        .then((list) => setAccounts(list ?? []))
-        .catch(() => setAccounts([]));
+    if (!active) return;
+    api
+      .listAccounts()
+      .then((list) => setAccounts(list ?? []))
+      .catch(() => setAccounts([]));
+    api
+      .listSignIns()
+      .then((list) => setServers(Object.fromEntries((list ?? []).map((s) => [s.id, s.server]))))
+      .catch(() => setServers({}));
   }, [active]);
 
   const muted = new Set(settings?.mutedMailAccounts ?? []);
@@ -94,7 +100,10 @@ export function NotificationsSection({ active }: { active: boolean }) {
           <Card className="gap-0 p-0">
             {accounts.map((a, i) => (
               <div key={a.id} className={i > 0 ? "border-border border-t px-4 py-2.5" : "px-4 py-2.5"}>
-                <Row title={a.name} desc={a.isPersonal ? t("个人邮箱") : t("共享邮箱")}>
+                <Row
+                  title={a.name}
+                  desc={(a.isPersonal ? t("个人邮箱") : t("共享邮箱")) + (a.signIn && servers[a.signIn] ? ` · ${servers[a.signIn]}` : "")}
+                >
                   <Switch
                     checked={mailOn && !muted.has(a.id)}
                     disabled={!settings || !mailOn}

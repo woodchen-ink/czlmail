@@ -79,7 +79,7 @@ func (a *App) addContactFileTools(server *mcp.Server) {
 	})
 
 	type filesIn struct {
-		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为个人账号"`
+		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为主登录的个人账号"`
 		FolderID  string `json:"folderId,omitempty" jsonschema:"省略时为根目录"`
 		Query     string `json:"query,omitempty" jsonschema:"按文件名搜索整个网盘; 给了就忽略 folderId"`
 	}
@@ -117,7 +117,7 @@ func (a *App) addContactFileTools(server *mcp.Server) {
 		})
 
 	type readFileIn struct {
-		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为个人账号"`
+		AccountID string `json:"accountId,omitempty" jsonschema:"省略时为主登录的个人账号"`
 		FileID    string `json:"fileId"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
