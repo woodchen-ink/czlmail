@@ -346,10 +346,9 @@ func (s *Service) applyPlans(ctx context.Context, t *sendTarget, plans []*emailP
 	idx := t.handle.Upstream.Index()
 	old, _ := idx.State(mailindex.TypeEmail)
 	resp := &setResponse{AccountID: t.accountID, OldState: &old}
-	all := map[string]string{}
 	for _, p := range plans {
-		states, serr := p.apply(ctx, t)
-		maps.Copy(all, states)
+		// The index's commit hook pushes the new Email / Mailbox / Thread states.
+		_, serr := p.apply(ctx, t)
 		switch {
 		case p.destroy && serr == nil:
 			resp.Destroyed = append(resp.Destroyed, p.emailID)
@@ -362,6 +361,5 @@ func (s *Service) applyPlans(ctx context.Context, t *sendTarget, plans []*emailP
 		}
 	}
 	resp.NewState, _ = idx.State(mailindex.TypeEmail)
-	s.mgr.Publish(t.accountID, all)
 	return resp
 }

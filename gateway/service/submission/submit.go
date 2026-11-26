@@ -161,7 +161,6 @@ func (s *Service) createOnce(ctx context.Context, t *sendTarget, created map[str
 			s.log.Warn("send failed", "account", t.accountID, "email", emailID, "err", err)
 			return nil, s.sendSetError(t.accountID, err)
 		}
-		s.mgr.Publish(t.accountID, res.States)
 		if res.EmailID != "" {
 			emailID = res.EmailID
 			if plan != nil {
