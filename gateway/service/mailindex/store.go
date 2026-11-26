@@ -53,6 +53,17 @@ type Store struct {
 	mu          sync.RWMutex
 	meta        model.IndexMeta
 	onDelivered func(emailIDs []string)
+	onCommit    func(states map[string]string)
+}
+
+// OnCommit sets fn to run after every commit that changed a state, with the
+// new state of each changed type: sync rounds and gateway writes alike, so
+// push never depends on a caller remembering to publish. Like OnDelivered it
+// runs under the write lock and must not write to the index.
+func (s *Store) OnCommit(fn func(states map[string]string)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onCommit = fn
 }
 
 // OnDelivered sets fn to run after each commit that added emails the sync engine

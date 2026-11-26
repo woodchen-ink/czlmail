@@ -2,6 +2,7 @@ package gatewaytest
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -485,5 +486,83 @@ func TestMailDovecotMailboxesAndImport(t *testing.T) {
 	name, args = e.rawCall("Email/queryChanges", map[string]any{"accountId": e.acct, "sinceQueryState": "x"})
 	if name != "error" || args["type"] != "cannotCalculateChanges" {
 		t.Fatalf("queryChanges %s %v", name, args)
+	}
+}
+
+// Writes from one client reach another client's EventSource at once, without
+// waiting for a sync round.
+func TestMailWritesPushToOtherClients(t *testing.T) {
+	e := newMailEnv(t, func(box *imaptest.Mailbox) {
+		box.AppendSample("INBOX", "First")
+		box.AppendSample("INBOX", "Second")
+	})
+	inbox, trash := e.ids[mailbox.RoleInbox], e.ids[mailbox.RoleTrash]
+	ids := e.query(&email.FilterCondition{InMailbox: inbox})
+	if len(ids) != 2 {
+		t.Fatalf("inbox %v", ids)
+	}
+	b := e.gw.Client(t, e.cred) // the user's second device
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events := e.gw.eventSource(t, ctx, e.cred)
+
+	mailboxState := func(c *jmap.Client) string {
+		req := &jmap.Request{}
+		req.Invoke(&mailbox.Get{Account: e.acct, IDs: []jmap.ID{}})
+		return call[*mailbox.GetResponse](t, c, req).State
+	}
+	// expect waits for a StateChange carrying the Email state after the write,
+	// then checks that B's Email/changes from before shows want.
+	expect := func(what, before, mboxBefore string, res *email.SetResponse, check func(*email.ChangesResponse) bool) {
+		t.Helper()
+		deadline := time.After(2 * time.Second)
+		for {
+			select {
+			case ch := <-events:
+				st := ch[string(e.acct)]
+				if st["Email"] != res.NewState {
+					continue
+				}
+				if st["Mailbox"] == "" || st["Mailbox"] == mboxBefore {
+					t.Fatalf("%s: no Mailbox state in %v", what, st)
+				}
+				req := &jmap.Request{}
+				req.Invoke(&email.Changes{Account: e.acct, SinceState: before})
+				got := call[*email.ChangesResponse](t, b, req)
+				if got.NewState != res.NewState || !check(got) {
+					t.Fatalf("%s: B's changes %+v", what, got)
+				}
+				return
+			case <-deadline:
+				t.Fatalf("%s: no StateChange with Email state %s within 2s", what, res.NewState)
+			}
+		}
+	}
+
+	before, mb := e.state(), mailboxState(b)
+	res := e.set(&email.Set{Update: map[jmap.ID]jmap.Patch{ids[0]: {"keywords/$seen": true}}})
+	expect("mark read", before, mb, res, func(c *email.ChangesResponse) bool { return slices.Equal(c.Updated, []jmap.ID{ids[0]}) })
+
+	before, mb = e.state(), mailboxState(b)
+	res = e.set(&email.Set{Update: map[jmap.ID]jmap.Patch{ids[1]: {"mailboxIds": map[string]bool{string(trash): true}}}})
+	expect("move", before, mb, res, func(c *email.ChangesResponse) bool { return slices.Equal(c.Updated, []jmap.ID{ids[1]}) })
+
+	before, mb = e.state(), mailboxState(b)
+	res = e.set(&email.Set{Destroy: []jmap.ID{ids[0]}})
+	expect("destroy", before, mb, res, func(c *email.ChangesResponse) bool { return slices.Equal(c.Destroyed, []jmap.ID{ids[0]}) })
+
+	// Mailbox/set too.
+	mb = mailboxState(b)
+	req := &jmap.Request{}
+	req.Invoke(&mailbox.Set{Account: e.acct, Create: map[jmap.ID]*mailbox.Mailbox{"n": {Name: "Pushed"}}})
+	created := call[*mailbox.SetResponse](t, e.c, req)
+	deadline := time.After(2 * time.Second)
+	for got := false; !got; {
+		select {
+		case ch := <-events:
+			got = ch[string(e.acct)]["Mailbox"] == created.NewState && created.NewState != mb
+		case <-deadline:
+			t.Fatalf("no Mailbox StateChange for Mailbox/set within 2s")
+		}
 	}
 }

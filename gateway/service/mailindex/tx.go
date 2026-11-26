@@ -2,6 +2,7 @@ package mailindex
 
 import (
 	"errors"
+	"maps"
 	"time"
 
 	"gorm.io/gorm"
@@ -62,6 +63,14 @@ func (s *Store) Write(fn func(*Tx) error) (map[string]string, error) {
 				changed = map[string]string{}
 			}
 			changed[t] = formatState(tx.meta.Generation, typeSeq(&tx.meta, t))
+		}
+	}
+	if changed != nil {
+		s.mu.RLock()
+		hook := s.onCommit
+		s.mu.RUnlock()
+		if hook != nil {
+			hook(maps.Clone(changed))
 		}
 	}
 	return changed, nil

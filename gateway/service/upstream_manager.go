@@ -236,6 +236,9 @@ func (m *UpstreamManager) start(row *model.Upstream) {
 		m.log.Error("open upstream index", "account", row.PublicID, "err", err)
 		return
 	}
+	// Every commit that changes a state is pushed, whoever wrote it (a sync
+	// round, Mailbox/set, Email/set, a sent message).
+	idx.OnCommit(func(states map[string]string) { m.publish(userID, row.PublicID, states) })
 	if deliver != nil {
 		accountID := row.PublicID
 		idx.OnDelivered(func(ids []string) { deliver(userID, accountID, idx, ids) })
@@ -623,11 +626,15 @@ func (e *runnerEvents) StatusChanged(accountID string, st upstream.Status) {
 
 func (e *runnerEvents) Progress(string, int, int) {}
 
-func (e *runnerEvents) Changed(accountID string, states map[string]string) {
-	e.m.mu.Lock()
-	n := e.m.notifier
-	e.m.mu.Unlock()
+// Changed needs no work: the index's commit hook already published the states.
+func (e *runnerEvents) Changed(string, map[string]string) {}
+
+// publish sends an upstream's new states to the user's push connections.
+func (m *UpstreamManager) publish(userID, accountID string, states map[string]string) {
+	m.mu.Lock()
+	n := m.notifier
+	m.mu.Unlock()
 	if n != nil {
-		n.Publish(e.userID, jmapserver.Changes{accountID: states})
+		n.Publish(userID, jmapserver.Changes{accountID: states})
 	}
 }
