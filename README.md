@@ -3,8 +3,9 @@
 <h1 align="center">CZL Mail</h1>
 
 <p align="center">
-A native client for <a href="https://stalw.art">Stalwart</a> over <a href="https://jmap.io">JMAP</a>, on desktop, Android and iPhone —
-mail, calendar, contacts, files and notes, with a built-in <b>MCP server</b> and <b>AI assistant</b>.
+A native <a href="https://jmap.io">JMAP</a> client for <a href="https://stalw.art">Stalwart</a> and other JMAP servers,
+and through the self-hosted <a href="#czlmail-gateway">czlmail gateway</a> also for Gmail, Outlook / Microsoft 365 and any IMAP mailbox.<br>
+Mail, calendar, contacts, files and notes on Windows, macOS, Android and iPhone, with a built-in <b>MCP server</b> and <b>AI assistant</b>.
 </p>
 
 <p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
@@ -13,59 +14,87 @@ mail, calendar, contacts, files and notes, with a built-in <b>MCP server</b> and
 
 <p align="center"><img src="screenshots/mail.png" alt="Mail" width="860"></p>
 
+## Platforms
+
+| Platform | Get it | Notes |
+|---|---|---|
+| **Windows** | [`czlmail-amd64-installer.exe`](https://github.com/woodchen-ink/czlmail/releases/latest) | per-user install, no admin rights; signed auto-update |
+| **macOS** | [`czlmail-darwin-universal.dmg`](https://github.com/woodchen-ink/czlmail/releases/latest) | Intel and Apple silicon, macOS 10.15+; [first launch](#opening-on-macos-for-the-first-time) |
+| **Android** | [`czlmail-android.apk`](https://github.com/woodchen-ink/czlmail/releases/latest/download/czlmail-android.apk) | Android 8.0+; updates inside the app |
+| **iPhone** | [App Store](https://apps.apple.com/app/id6834485924) | iOS 16+, one-time purchase; not yet in mainland China |
+| **Phone browser** | [mail-notes.czl.net](https://mail-notes.czl.net) | read your notes only; [deploy your own](web-phone-note/README.md) |
+
+The desktop and phone apps are one code base with the same features; MCP and folder picking are desktop-only. Details in [Install](#install).
+
+## Works with
+
+- **Stalwart and other JMAP servers.** CZL Mail signs in with an app password, through the browser (OAuth), or through your
+  own identity provider ([SSO](#single-sign-on-sso)). It reads what each server announces and only shows what that server
+  supports: an account without calendars, files or Sieve simply has no such pages.
+- **Gmail, Outlook / Microsoft 365 and IMAP mailboxes** through the [czlmail gateway](#czlmail-gateway), which you host
+  yourself. Each mailbox becomes its own account in CZL Mail; the client stays pure JMAP.
+- **Several servers at once.** Add more sign-ins under Settings → Accounts. Shared mailboxes and every sign-in's accounts can
+  be read together in one unified view, and compose, notifications, reminders, MCP and iPhone push cover all of them.
+
 ## Why this exists
 
 [Bulwark](https://github.com/bulwarkmail/webmail) is an excellent JMAP webmail for Stalwart, and it shaped
-many decisions here. But a webmail lives in a browser tab. CZL Mail exists so that **Stalwart + one native
+many decisions here. But a webmail lives in a browser tab. CZL Mail exists so that **a JMAP server + one native
 app** is the whole setup:
 
-- **Starts instantly.** A native Go + WebView2 binary — no browser, no server-side web app to deploy.
+- **Starts instantly.** A native Go binary with the system WebView: no browser, no server-side web app to deploy.
 - **Opens mail instantly.** Everything is cached in a local SQLite database and kept current over a single
   JMAP push (EventSource) connection. Reading, searching and switching folders hit the disk, not the network.
 - **System-level notifications.** New mail and calendar reminders arrive through the OS notification center,
   and keep arriving with the window closed (tray / menu bar) or at login (autostart). On Android they keep
-  arriving with the app in the background, and tapping one opens that message.
-- **Agents can use your mailbox.** A local MCP server lets Claude, Codex and other agents read, search and
-  send mail, check your calendar and look up contacts — with your consent and a local token.
-- **AI where you need it.** Plug in any OpenAI-compatible Responses API: translate a message in place,
+  arriving with the app in the background; on iPhone they arrive as push notifications even when the app is closed.
+  Tapping one opens that message.
+- **Agents can use your mailbox.** A local MCP server lets Claude, Codex and other agents read, search,
+  organize and send mail, manage your calendar, tasks and notes, and look up contacts, with your consent and a local token.
+- **AI where you need it.** Plug in any OpenAI-compatible Responses API: translate or summarize a message,
   polish or translate a draft, or describe what you want to say and let it draft the reply.
 
 ## Features
 
-**Mail** — multiple accounts and shared mailboxes · rich-text compose with HTML signatures, templates,
-read receipts, "send separately" and scheduled send · drafts auto-save · folder create / rename / move /
-delete · full-text search (CJK-aware) · remote content blocked by default with a trusted-senders list
-shared with Bulwark · batch actions · one-click unsubscribe (RFC 8058) · calendar invitations answered right in the message ·
-attachments open locally with one click · pull an entire folder from the server
+**Mail**: multiple accounts, shared mailboxes and a unified view of all accounts · conversations with a timeline ·
+rich-text compose with HTML signatures, templates, read receipts, "send separately" and scheduled send · drafts auto-save ·
+S/MIME signing and verification · folder create / rename / move / delete, drag messages onto a folder ·
+full-text search (CJK-aware), also across every folder on the server · remote content blocked by default with a
+trusted-senders list shared with Bulwark · verification codes and attachment names shown in the list ·
+batch actions, context menus, undo (Ctrl+Z) and customizable keyboard shortcuts · one-click unsubscribe (RFC 8058) ·
+calendar invitations answered right in the message · attachments open locally with one click · pull an entire folder from the server
 
-**Calendar** — month / week / day / agenda views with multi-day events drawn as connected bars ·
+**Calendar**: month / week / day / agenda views with multi-day events drawn as connected bars ·
 side-panel editor with meeting links, attendees and invitations, RSVP, multiple reminders and recurrence ·
-tasks · calendar management · `.ics` / `webcal:` import · desktop reminders
+tasks · calendar management · `.ics` / `webcal:` import · reminders from the system, also on the phone
 
-**Contacts** — full JSContact editor (photo, name components, organization, addresses, online services,
-anniversaries, categories) · groups · address books · vCard import
+**Contacts**: full JSContact editor (photo, name components, organization, addresses, online services,
+anniversaries, categories) · groups · address books · vCard import · every message exchanged with a contact, filtered by sent and received
 
-**Files** — Stalwart file storage with list / grid views, favorites, cut / copy / paste, drag-and-drop upload
+**Files**: JMAP file storage (Stalwart) with list / grid views, favorites, cut / copy / paste, drag-and-drop upload
 
-**Notes** — plain Markdown files kept in your file storage, editable offline and synced across devices, with daily notes ·
-read them on your phone with the [web reader](web-phone-note/README.md) (hosted at https://mail-notes.czl.net, or deploy your own)
+**Notes**: plain Markdown files kept in your file storage, editable offline and synced across devices, with daily notes
+marked on the calendar and attachment previews · read them on your phone with the [web reader](web-phone-note/README.md)
+(hosted at https://mail-notes.czl.net, or deploy your own)
 
-**Server-side settings** — identities and HTML signatures, vacation auto-reply, Sieve filters
+**AI and MCP**: translation (subject and body, in place, cached), summaries, polish and translate drafts, reply with intent ·
+an MCP server with tools for mail, drafts, threads, labels, calendar, tasks, contacts, files and notes · AI and MCP settings
+sync across your devices through your file storage
+
+**Server-side settings**: identities and HTML signatures, vacation auto-reply, Sieve filters
 (rule builder compatible with Bulwark's rules, plus a raw Sieve editor)
 
-**Desktop integration** — tray / menu bar, autostart, default `mailto:` / `.ics` / `webcal:` handler, signed
-auto-update from GitHub Releases (SHA-256 verified)
+**Desktop integration**: tray / menu bar with unread count, autostart, default `mailto:` / `.ics` / `webcal:` handler,
+remembered window layout, signed auto-update from GitHub Releases (SHA-256 verified)
 
-**Android** — the same app with a single-column phone layout: mail, calendar, contacts, files, notes, search,
-translation and AI summaries · new-mail notifications in the background · system back gesture · credentials
-encrypted with Android Keystore · online updates from GitHub Releases (SHA-256 verified). MCP and folder picking
-are desktop-only. Source and build notes: [android/](android/README.md)
+**Phones**: the same app with a single-column layout: mail, calendar, contacts, files, notes, search, translation and
+AI summaries · system back gesture on Android · credentials in the system keychain (Android Keystore on Android) · iPhone push content is
+end-to-end encrypted with a key that stays on the phone. Source and build notes: [android/](android/README.md)
 
-**iPhone** — the same phone layout and features as Android, on the [App Store](https://apps.apple.com/app/id6834485924) (iOS 16+, one-time
-purchase; not yet available in mainland China). New mail arrives as push notifications even when the app is closed; the
-content is end-to-end encrypted with a key that stays on the phone. Installs and updates go through the App Store.
+**Languages**: English, 简体中文, Čeština and Русский; follows the system language until you pick one
 
 ## Screenshots
+
 
 | Compose with HTML signature | Calendar with multi-day events |
 |---|---|
@@ -251,6 +280,6 @@ on the [releases page](https://github.com/woodchen-ink/czlmail/releases).
 
 ## Acknowledgements
 
-- [Stalwart](https://stalw.art) — the mail server this client is built for
+- [Stalwart](https://stalw.art) — the JMAP mail server this client was first built for
 - [Bulwark](https://github.com/bulwarkmail/webmail) — whose feature set and filter format this client follows
 - [go-jmap](https://git.sr.ht/~rockorager/go-jmap), [Wails](https://wails.io), [TipTap](https://tiptap.dev), [shadcn/ui](https://ui.shadcn.com)
