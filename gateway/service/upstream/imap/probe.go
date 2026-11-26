@@ -32,12 +32,13 @@ func Probe(ctx context.Context, cfg upstream.Config) (*upstream.ProbeReport, err
 	}
 	sc, mechs, err := DialSMTP(ctx, cfg)
 	if err != nil {
-		rep.SMTP = upstream.ProbeFailure(err)
-		rep.SMTP.Auth = mechs
+		f := upstream.ProbeFailure(err)
+		f.Auth = mechs
+		rep.SMTP = &f
 		return rep, nil
 	}
 	sc.Quit()
-	rep.SMTP = upstream.ProbePart{OK: true, Auth: mechs}
+	rep.SMTP = &upstream.ProbePart{OK: true, Auth: mechs}
 	return rep, nil
 }
 

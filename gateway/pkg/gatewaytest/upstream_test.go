@@ -109,7 +109,7 @@ func TestUpstreamLifecycle(t *testing.T) {
 	user := gw.UserAdmin(t, cred)
 
 	// Loopback servers are refused until private networks are allowed.
-	if code, raw := user.Call(t, "POST", "/api/admin/upstreams", IMAPUpstreamBody(mbox), nil); code != 40014 {
+	if code, raw := user.Call(t, "POST", "/api/admin/upstreams", IMAPUpstreamBody(mbox), nil); code != 40035 {
 		t.Fatalf("private network: %d %s", code, raw)
 	}
 	gw.AllowPrivateNetworks(t)

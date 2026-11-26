@@ -146,7 +146,7 @@ JSON under `/api/admin/`, responses `{"code","data","msg"}`. The session is an H
 | `GET /settings`, `PATCH /settings` | admins: settings, update with `{"key": value}`; a secret setting takes a string (`""` keeps it, `null` clears it) |
 | `GET /audit-logs?cursor=&limit=` | admins: audit log, newest first |
 
-Error codes (HTTP status + sequence):
+Error codes (HTTP status + sequence; upstream input errors use the x30 sequence):
 
 | Code | msg | | Code | msg |
 | --- | --- | --- | --- | --- |
@@ -159,12 +159,12 @@ Error codes (HTTP status + sequence):
 | 40006 | `invalid_setting` | | 40400 | `not_found` |
 | 40007 | `wrong_password` | | 40401 | `user_not_found` |
 | 40008 | `invalid_cursor` | | 40402 | `app_password_not_found` |
-| 40009 | `invalid_host` | | 40403 | `upstream_not_found` |
-| 40010 | `invalid_port` | | 40900 | `email_taken` |
-| 40011 | `invalid_tls_mode` | | 40901 | `setup_completed` |
-| 40012 | `invalid_proxy` | | 40902 | `upstream_kind_managed` |
-| 40013 | `missing_password` | | 41500 | `unsupported_media_type` |
-| 40014 | `private_network_not_allowed` | | 42900 | `too_many_requests` |
+| 40030 | `invalid_host` | | 40430 | `upstream_not_found` |
+| 40031 | `invalid_port` | | 40900 | `email_taken` |
+| 40032 | `invalid_tls_mode` | | 40901 | `setup_completed` |
+| 40033 | `invalid_proxy` | | 40930 | `upstream_kind_managed` |
+| 40034 | `missing_password` | | 41500 | `unsupported_media_type` |
+| 40035 | `private_network_not_allowed` | | 42900 | `too_many_requests` |
 | 40100 | `unauthenticated` | | 50000 | `internal_error` |
 | 40101 | `invalid_credentials` | | 50300 | `database_unavailable` |
 
