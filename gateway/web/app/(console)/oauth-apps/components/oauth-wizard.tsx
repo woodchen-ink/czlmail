@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner"
 
 import { FormField } from "@/components/auth-form"
+import { DocLink } from "@/components/doc-link"
 import { CopyButton, CopyField } from "@/components/copy-button"
 import { Spinner } from "@/components/spinner"
 import { Button } from "@/components/ui/button"
@@ -225,6 +226,7 @@ function WizardBody({
     <>
       <DialogHeader>
         <DialogTitle>{t.oauth.wizardTitle(copy.name)}</DialogTitle>
+        <DocLink topic={provider === "google" ? "googleApp" : "microsoftApp"} />
         <DialogDescription asChild>
           <div className="pt-1">
             <Steps steps={copy.steps} current={step} />

@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { ConnectionReport } from "./connection-report"
 import { ServerFields, type ServerDraft } from "./server-fields"
 import { FormField } from "@/components/auth-form"
+import { DocLink } from "@/components/doc-link"
 import { Spinner } from "@/components/spinner"
 import { NotReady } from "@/components/state-views"
 import { Button } from "@/components/ui/button"
@@ -233,6 +234,10 @@ function OAuthStart({
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}
       <DialogFooter>
+        <DocLink
+          topic={provider === "google" ? "gmail" : "microsoft"}
+          className="self-center sm:mr-auto"
+        />
         <Button type="button" variant="ghost" onClick={onBack}>
           <ArrowLeft /> {t.common.back}
         </Button>
@@ -466,6 +471,7 @@ function ImapForm({
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <DialogFooter>
+        <DocLink topic="imap" className="self-center sm:mr-auto" />
         <Button type="button" variant="ghost" onClick={onBack}>
           <ArrowLeft /> {t.common.back}
         </Button>

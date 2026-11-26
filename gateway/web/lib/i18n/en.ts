@@ -17,6 +17,8 @@ export const en: Messages = {
     create: "Create",
     add: "Add",
     copy: "Copy",
+    guide: "View guide",
+    guideTitle: "Open the guide in a new window",
     copied: "Copied",
     retry: "Retry",
     refresh: "Refresh",
@@ -258,6 +260,7 @@ export const en: Messages = {
     folders: "Folders",
     labels: "Labels",
     count: (n: string) => n,
+    oauthAuthFailed: "Authorization expired; authorize again",
   },
   mailboxes: {
     title: "My mailboxes",

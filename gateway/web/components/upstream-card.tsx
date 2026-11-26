@@ -3,6 +3,7 @@
 import * as React from "react"
 import { CircleAlert, Folders, Gauge, Network, RefreshCw } from "lucide-react"
 
+import { DocLink } from "@/components/doc-link"
 import { Panel } from "@/components/panel"
 import { StatusBadge } from "@/components/status-badge"
 import { Progress } from "@/components/ui/progress"
@@ -122,8 +123,16 @@ export function UpstreamCard({
         {card.lastError && (
           <Row icon={CircleAlert} label={t.upstream.lastError} tone="danger">
             <span title={card.lastError.detail || card.lastError.at}>
-              {errText(card.lastError.code, card.lastError.msg)}
+              {/* 40110 on Gmail / Microsoft is a revoked or expired grant, not a password. */}
+              {card.lastError.code === 40110 && card.kind !== "imap"
+                ? t.errors.withCode(t.upstream.oauthAuthFailed, 40110)
+                : errText(card.lastError.code, card.lastError.msg)}
             </span>
+            <DocLink
+              topic="statuses"
+              variant="icon"
+              className="ml-1 align-middle"
+            />
           </Row>
         )}
         {card.initialSync && (

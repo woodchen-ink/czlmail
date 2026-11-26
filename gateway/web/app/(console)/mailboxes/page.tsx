@@ -51,12 +51,14 @@ import {
   type Upstream,
 } from "@/lib/api/upstreams"
 import { useNow } from "@/lib/hooks/use-now"
-import { useT } from "@/lib/i18n"
+import { docUrl } from "@/lib/docs"
+import { useLocale, useT } from "@/lib/i18n"
 import { qk } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 
 function MailboxesPage() {
   const t = useT()
+  const locale = useLocale()
   const qc = useQueryClient()
   const now = useNow()
   const params = useSearchParams()
@@ -97,6 +99,11 @@ function MailboxesPage() {
           t.errors.codes[code] ?? oauthError,
           code
         ),
+        action: {
+          label: t.common.guide,
+          onClick: () =>
+            window.open(docUrl("oauthErrors", locale), "_blank", "noopener"),
+        },
       })
     } else {
       toast.success(
@@ -132,6 +139,7 @@ function MailboxesPage() {
     router,
     qc,
     t,
+    locale,
   ])
 
   const list = useQuery({
@@ -156,6 +164,7 @@ function MailboxesPage() {
   const [removing, setRemoving] = React.useState<Upstream | null>(null)
   const [report, setReport] = React.useState<{
     name: string
+    oauth: boolean
     report: Report
   } | null>(null)
   const [busy, setBusy] = React.useState<string | null>(null)
@@ -192,7 +201,11 @@ function MailboxesPage() {
     onSettled: () => setBusy(null),
     onSuccess: (r) => {
       if (r.kind === "test" && r.report)
-        return setReport({ name: r.u.name || r.u.email, report: r.report })
+        return setReport({
+          name: r.u.name || r.u.email,
+          oauth: r.u.kind !== "imap",
+          report: r.report,
+        })
       if (r.kind === "reauth" && r.url) return window.location.assign(r.url)
       toast.success(
         r.kind === "pause"
@@ -351,7 +364,9 @@ function MailboxesPage() {
               {t.mailboxes.test} · {report?.name}
             </DialogTitle>
           </DialogHeader>
-          {report && <ConnectionReport report={report.report} />}
+          {report && (
+            <ConnectionReport report={report.report} oauth={report.oauth} />
+          )}
         </DialogContent>
       </Dialog>
     </>

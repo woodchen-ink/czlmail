@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { OAuthWizard } from "./components/oauth-wizard"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { CopyButton } from "@/components/copy-button"
+import { DocLink } from "@/components/doc-link"
 import { PageHeader } from "@/components/page-header"
 import { Panel } from "@/components/panel"
 import { Chip } from "@/components/status-badge"
@@ -113,6 +114,7 @@ function ProviderPanel({
               <p className="text-xs text-foreground-subtle">
                 {t.oauth.microsoft.adminConsentHint}
               </p>
+              <DocLink topic="adminConsent" />
             </dd>
           </>
         )}

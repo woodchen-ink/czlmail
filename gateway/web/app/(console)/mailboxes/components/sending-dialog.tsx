@@ -16,6 +16,7 @@ import { toast } from "sonner"
 
 import { FormField } from "@/components/auth-form"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { DocLink } from "@/components/doc-link"
 import { Segmented } from "@/components/segmented"
 import { Spinner } from "@/components/spinner"
 import { Chip } from "@/components/status-badge"
@@ -59,7 +60,11 @@ export function SendingDialog({
 }) {
   return (
     <Dialog open={!!upstream} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      {/* No initial focus: the first focusable element is a guide link. */}
+      <DialogContent
+        className="sm:max-w-2xl"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         {upstream && <SendingBody key={upstream.id} upstream={upstream} />}
       </DialogContent>
     </Dialog>
@@ -88,8 +93,9 @@ function SendingBody({ upstream }: { upstream: Upstream }) {
           {upstream.kind === "gmail" ? (
             // Gmail sends through its API and files the Sent copy itself.
             <section>
-              <h3 className="text-sm font-semibold">
+              <h3 className="flex items-center gap-1 text-sm font-semibold">
                 {t.mailboxes.sentCopyTitle}
+                <DocLink topic="sentCopy" variant="icon" />
               </h3>
               <p className="mt-0.5 text-xs text-foreground-muted">
                 {t.mailboxes.sentCopyByProvider}
@@ -140,7 +146,10 @@ function SentCopySection({ upstream }: { upstream: Upstream }) {
   return (
     <section className="grid gap-3">
       <div>
-        <h3 className="text-sm font-semibold">{t.mailboxes.sentCopyTitle}</h3>
+        <h3 className="flex items-center gap-1 text-sm font-semibold">
+          {t.mailboxes.sentCopyTitle}
+          <DocLink topic="sentCopy" variant="icon" />
+        </h3>
         <p className="mt-0.5 text-xs text-foreground-muted">
           {t.mailboxes.sentCopyHint}
         </p>
@@ -249,7 +258,10 @@ function IdentityList({
     <section className="grid gap-3">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold">{t.mailboxes.identities}</h3>
+          <h3 className="flex items-center gap-1 text-sm font-semibold">
+            {t.mailboxes.identities}
+            <DocLink topic="identities" variant="icon" />
+          </h3>
           <p className="mt-0.5 text-xs text-foreground-muted">
             {t.mailboxes.identitiesHint}
           </p>

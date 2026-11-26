@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { FormField } from "@/components/auth-form"
+import { DocLink } from "@/components/doc-link"
 import { Spinner } from "@/components/spinner"
 import { Button } from "@/components/ui/button"
 import {
@@ -131,6 +132,7 @@ function ProxyForm({
           </>
         )}
         <DialogFooter>
+          <DocLink topic="proxy" className="self-center sm:mr-auto" />
           <Button type="button" variant="ghost" onClick={onClose}>
             {t.common.cancel}
           </Button>

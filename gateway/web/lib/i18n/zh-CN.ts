@@ -17,6 +17,8 @@ export const zhCN = {
     create: "新建",
     add: "添加",
     copy: "复制",
+    guide: "查看教程",
+    guideTitle: "在新窗口打开教程",
     copied: "已复制",
     retry: "重试",
     refresh: "刷新",
@@ -243,6 +245,7 @@ export const zhCN = {
     folders: "文件夹",
     labels: "标签",
     count: (n: string) => `${n} 个`,
+    oauthAuthFailed: "授权已失效, 请重新授权",
   },
   mailboxes: {
     title: "我的邮箱",
