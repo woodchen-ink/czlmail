@@ -13,6 +13,7 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/pkg/imapc"
 	"github.com/woodchen-ink/czlmail/gateway/pkg/netx"
 	"github.com/woodchen-ink/czlmail/gateway/service"
+	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 )
 
 var (
@@ -46,6 +47,8 @@ type upstreamInput struct {
 	IMAP  *endpointInput `json:"imap"`
 	SMTP  *endpointInput `json:"smtp"`
 	Proxy *proxyInput    `json:"proxy"`
+	// SentCopy: auto, gateway or server (see README "Sending").
+	SentCopy string `json:"sentCopy"`
 }
 
 // toService validates the input. creating requires every IMAP field and a password.
@@ -99,6 +102,12 @@ func (in *upstreamInput) toService(creating bool) (service.UpstreamInput, error)
 			return out, errInvalidProxy
 		}
 		out.Proxy = &service.ProxyInput{Mode: p.Mode, URL: strings.TrimSpace(p.URL), Password: emptyIsKeep(p.Password)}
+	}
+	switch in.SentCopy {
+	case "", upstream.SentCopyAuto, upstream.SentCopyGateway, upstream.SentCopyServer:
+		out.SentCopy = in.SentCopy
+	default:
+		return out, errInvalidSentCopy
 	}
 	return out, nil
 }
@@ -316,6 +325,7 @@ type upstreamView struct {
 	Proxy        proxyView          `json:"proxy"`
 	Paused       bool               `json:"paused"`
 	IsDefault    bool               `json:"isDefault"`
+	SentCopy     string             `json:"sentCopy"`
 	Status       upstreamStatusView `json:"status"`
 	Capabilities any                `json:"capabilities"`
 	CreatedAt    *string            `json:"createdAt"`
@@ -345,6 +355,7 @@ func newUpstreamView(d *service.UpstreamDetail) upstreamView {
 		Proxy:        proxyView{Mode: u.ProxyMode, URL: u.ProxyURL, HasPassword: u.ProxyPasswordSealed != ""},
 		Paused:       u.Paused,
 		IsDefault:    u.IsDefault,
+		SentCopy:     u.SentCopy,
 		Status:       st,
 		Capabilities: caps,
 		CreatedAt:    rfc3339(&u.CreatedAt),

@@ -58,6 +58,9 @@ type Upstream struct {
 	// ServerCaps is the JSON upstream.Capabilities seen at the last connection test
 	// or connection, for the admin and the Session's sort options.
 	ServerCaps string `gorm:"type:text"`
+	// SentCopy is how sent mail reaches the Sent folder: auto (not known yet),
+	// gateway (the gateway files the draft) or server (the server saves its own copy).
+	SentCopy string `gorm:"size:16;not null;default:auto"`
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

@@ -12,6 +12,7 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/cron"
 	"github.com/woodchen-ink/czlmail/gateway/middleware"
 	"github.com/woodchen-ink/czlmail/gateway/service"
+	"github.com/woodchen-ink/czlmail/gateway/service/submission"
 )
 
 // Admin serves /api/admin/: setup, sign-in, the signed-in user, app passwords,
@@ -24,6 +25,7 @@ type Admin struct {
 	OverviewSvc   *service.Overview
 	SystemSvc     *service.System
 	Tasks         *cron.Scheduler
+	Submission    *submission.Service
 	ClientIP      func(*http.Request) string
 	SecureCookies bool
 	Log           *slog.Logger

@@ -285,6 +285,9 @@ func (r *round) place(tx *mailindex.Tx, d *folderDelta, f *fetched) error {
 		}
 		return tx.SetKeywords(d.mbox.ID, m.UID, mailindex.FlagsToKeywords(m.Flags), 0)
 	}
+	if bound, err := r.u.bindSentCopy(tx, d.mbox.ID, m, e); bound || err != nil {
+		return err // a sent draft's server copy: it keeps the draft's id, not a new delivery
+	}
 	if err := tx.CreateEmail(e, refs, d.mbox.ID, m.UID, m.ModSeq); err != nil {
 		return err
 	}

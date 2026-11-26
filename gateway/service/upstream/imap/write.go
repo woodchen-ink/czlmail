@@ -161,47 +161,52 @@ func flagsOf(keywords []string) []string {
 // Move moves emails to a mailbox; they keep their ids.
 func (u *Upstream) Move(ctx context.Context, emailIDs []string, toMailboxID string) (map[string]string, error) {
 	return u.writeOp(ctx, func(c *imapc.Client, states map[string]string) error {
-		where, err := u.locate(emailIDs)
-		if err != nil {
-			return err
-		}
-		dest, err := u.mailbox(toMailboxID)
-		if err != nil {
-			return err
-		}
-		for mboxID, list := range where {
-			if mboxID == toMailboxID {
-				continue
-			}
-			src, err := u.mailbox(mboxID)
-			if err != nil {
-				return err
-			}
-			if err := selectRW(ctx, c, src); err != nil {
-				return err
-			}
-			uids := uidsOf(list)
-			var cu *imapc.CopyUID
-			if u.serverCaps().move {
-				cu, err = c.Move(ctx, uids, dest.Name)
-			} else {
-				cu, err = c.Copy(ctx, uids, dest.Name)
-				if err == nil {
-					err = c.Store(ctx, uids, imapc.StoreAdd, []string{`\Deleted`}, nil)
-				}
-				if err == nil {
-					err = c.UIDExpunge(ctx, uids)
-				}
-			}
-			if err != nil {
-				return err
-			}
-			if err := u.rebindOrResync(ctx, c, states, list, src, dest, cu); err != nil {
-				return err
-			}
-		}
-		return nil
+		return u.moveLocked(ctx, c, states, emailIDs, toMailboxID)
 	})
+}
+
+// moveLocked is Move inside a write that already holds the op lock.
+func (u *Upstream) moveLocked(ctx context.Context, c *imapc.Client, states map[string]string, emailIDs []string, toMailboxID string) error {
+	where, err := u.locate(emailIDs)
+	if err != nil {
+		return err
+	}
+	dest, err := u.mailbox(toMailboxID)
+	if err != nil {
+		return err
+	}
+	for mboxID, list := range where {
+		if mboxID == toMailboxID {
+			continue
+		}
+		src, err := u.mailbox(mboxID)
+		if err != nil {
+			return err
+		}
+		if err := selectRW(ctx, c, src); err != nil {
+			return err
+		}
+		uids := uidsOf(list)
+		var cu *imapc.CopyUID
+		if u.serverCaps().move {
+			cu, err = c.Move(ctx, uids, dest.Name)
+		} else {
+			cu, err = c.Copy(ctx, uids, dest.Name)
+			if err == nil {
+				err = c.Store(ctx, uids, imapc.StoreAdd, []string{`\Deleted`}, nil)
+			}
+			if err == nil {
+				err = c.UIDExpunge(ctx, uids)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		if err := u.rebindOrResync(ctx, c, states, list, src, dest, cu); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // rebindOrResync records a move. With COPYUID every email is rebound to its new

@@ -58,6 +58,12 @@ type Gateway struct {
 // Its logs are printed only if the test fails.
 func Start(t testing.TB) *Gateway {
 	t.Helper()
+	return StartWith(t, initapp.Options{})
+}
+
+// StartWith is Start with app options (shorter waits for sending tests).
+func StartWith(t testing.TB, opts initapp.Options) *Gateway {
+	t.Helper()
 	g := &Gateway{}
 	g.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		g.App.Handler.ServeHTTP(w, r)
@@ -83,7 +89,7 @@ func Start(t testing.TB) *Gateway {
 		}
 	})
 	cfg := &config.Config{MasterKey: key, BaseURL: g.URL, DataDir: g.DataDir}
-	g.App, err = initapp.NewApp(cfg, db, slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), "test")
+	g.App, err = initapp.NewAppWith(cfg, db, slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), "test", opts)
 	if err != nil {
 		t.Fatal(err)
 	}

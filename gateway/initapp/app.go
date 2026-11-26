@@ -18,6 +18,7 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/service"
 	"github.com/woodchen-ink/czlmail/gateway/service/mail"
 	"github.com/woodchen-ink/czlmail/gateway/service/metrics"
+	"github.com/woodchen-ink/czlmail/gateway/service/submission"
 	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 )
 
@@ -41,13 +42,25 @@ type App struct {
 	// Secrets source, the expiry of the Microsoft client secret.
 	Overview *service.Overview
 	Tasks    *cron.Scheduler
+	// Submission sends mail (EmailSubmission, Identity).
+	Submission *submission.Service
 
 	stop context.CancelFunc
+}
+
+// Options tune an App for tests; the zero value is production.
+type Options struct {
+	Submission submission.Options
 }
 
 // NewApp loads the keyring, wires the services and starts the background jobs.
 // db must be open; Close stops the jobs and ends EventSource streams.
 func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (*App, error) {
+	return NewAppWith(cfg, db, log, version, Options{})
+}
+
+// NewAppWith is NewApp with test options.
+func NewAppWith(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string, opts Options) (*App, error) {
 	ring, err := service.LoadKeyring(db, cfg.MasterKey)
 	if err != nil {
 		return nil, err
@@ -124,6 +137,9 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 	jmap.ObserveStreams(mgr.SetClients)
 	upstreams := service.NewUpstreams(db, ring, auth.Settings, mgr, log)
 	auth.Admin.Upstreams = upstreams
+	sending := submission.New(db, mgr, log, opts.Submission)
+	sending.Register(jmap)
+	auth.Admin.Submission = sending
 
 	rec := metrics.New(db)
 	tasks := cron.NewScheduler(log)
@@ -140,6 +156,7 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 	ctx, stop := context.WithCancel(context.Background())
 	tasks.Add(cron.PruneTask("push_subscriptions", cleanupEvery, func() (int64, error) { return pushStore.PruneExpired(time.Now()) }))
 	tasks.Add(cron.PruneTask("changelog", cleanupEvery, mgr.Trim))
+	tasks.Add(cron.PruneTask("submissions", cleanupEvery, sending.Prune))
 	mgr.SetMetrics(rec)
 	if err := mgr.Run(ctx, jmap); err != nil {
 		stop()
@@ -167,7 +184,7 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 		Czlmail:  &handler.CzlmailConfig{Gateway: gateway},
 		AdminWeb: web,
 	})
-	return &App{Handler: h, Auth: auth, JMAP: jmap, Mail: mailSvc, Metrics: rec, Overview: overview, Tasks: tasks, Upstreams: upstreams, Manager: mgr, stop: stop}, nil
+	return &App{Handler: h, Auth: auth, JMAP: jmap, Mail: mailSvc, Metrics: rec, Overview: overview, Tasks: tasks, Upstreams: upstreams, Manager: mgr, Submission: sending, stop: stop}, nil
 }
 
 // Close stops the background jobs and upstreams, writes the pending metrics and

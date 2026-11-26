@@ -62,6 +62,8 @@ type UpstreamInput struct {
 	IMAP  *Endpoint
 	SMTP  *Endpoint
 	Proxy *ProxyInput
+	// SentCopy is the sent-copy strategy (upstream.SentCopy*); "" keeps it.
+	SentCopy string
 }
 
 // Upstreams manages the upstream rows of gateway.sqlite. Running them is the
@@ -240,6 +242,9 @@ func (s *Upstreams) apply(up *model.Upstream, in UpstreamInput) error {
 	if in.Email != "" {
 		up.Email = in.Email
 	}
+	if in.SentCopy != "" {
+		up.SentCopy = in.SentCopy
+	}
 	seal := func(col, purpose string, plain *string, dst *string) error {
 		if plain == nil {
 			return nil
@@ -374,6 +379,9 @@ func (s *Upstreams) Delete(actor *model.User, publicID string) error {
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(up).Error; err != nil {
+			return err
+		}
+		if err := deleteAccountRows(tx, []string{up.PublicID}); err != nil {
 			return err
 		}
 		if !up.IsDefault {

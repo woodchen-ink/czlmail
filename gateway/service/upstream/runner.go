@@ -70,6 +70,7 @@ type Runner struct {
 
 	wake    chan struct{} // a client connected: sync everything now
 	metrics Metrics
+	fail    chan error // a JMAP method's upstream failure (Fail)
 
 	mu         sync.Mutex
 	status     Status
@@ -80,7 +81,7 @@ type Runner struct {
 // NewRunner returns a Runner for up. The caller owns up and closes it after Run returns.
 func NewRunner(accountID string, up Upstream, events Events, log *slog.Logger, timing Timing) *Runner {
 	timing.fill()
-	return &Runner{id: accountID, up: up, events: events, log: log, timing: timing, wake: make(chan struct{}, 1), lastClient: time.Now()}
+	return &Runner{id: accountID, up: up, events: events, log: log, timing: timing, wake: make(chan struct{}, 1), fail: make(chan error, 1), lastClient: time.Now()}
 }
 
 // SetMetrics records throttling and push latency; call it before Run.
@@ -99,6 +100,16 @@ func (r *Runner) Status() Status {
 		st.Progress = &p
 	}
 	return st
+}
+
+// Fail reports a failure a JMAP method met outside the runner's own connections
+// (an SMTP 535 while sending): the current session ends with err, which is then
+// handled like a sync failure (authRequired stops the runner).
+func (r *Runner) Fail(err error) {
+	select {
+	case r.fail <- err:
+	default:
+	}
 }
 
 // SetClients tells the runner how many push connections the user has. A new
@@ -252,6 +263,8 @@ func (r *Runner) session(ctx context.Context, backoff *time.Duration) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-watchErr:
+			return err
+		case err := <-r.fail:
 			return err
 		case <-r.wake:
 			if err := r.sync(ctx, SyncRequest{Full: true}); err != nil {

@@ -99,6 +99,13 @@ func adminAPI(d Deps) http.Handler {
 		handle("POST /api/admin/upstreams/{id}/resume", a.ResumeUpstream)
 		handle("POST /api/admin/upstreams/{id}/default", a.DefaultUpstream)
 	}
+	if a.Submission != nil {
+		handle("GET /api/admin/upstreams/{id}/identities", a.ListIdentities)
+		handle("POST /api/admin/upstreams/{id}/identities", a.CreateIdentity)
+		handle("PATCH /api/admin/upstreams/{id}/identities/{identityId}", a.UpdateIdentity)
+		handle("DELETE /api/admin/upstreams/{id}/identities/{identityId}", a.DeleteIdentity)
+		handle("POST /api/admin/upstreams/{id}/send-test", a.SendTest)
+	}
 
 	handle("GET /api/admin/settings", a.ListSettings)
 	handle("PATCH /api/admin/settings", a.UpdateSettings)

@@ -147,6 +147,13 @@ func (a *Accounts) DeleteUser(actor *model.User, publicID string) error {
 			return err
 		}
 		// Their runners stop and index files go on the "deleted" invalidation.
+		var accountIDs []string
+		if err := tx.Model(&model.Upstream{}).Where("user_id = ?", target.ID).Pluck("public_id", &accountIDs).Error; err != nil {
+			return err
+		}
+		if err := deleteAccountRows(tx, accountIDs); err != nil {
+			return err
+		}
 		if err := tx.Where("user_id = ?", target.ID).Delete(&model.Upstream{}).Error; err != nil {
 			return err
 		}
