@@ -476,6 +476,13 @@ func (a *App) runReconcile(ctx context.Context, si *signIn, s *syncer.Syncer, st
 		if prefix, _ := accountid.Split(acc.ID); prefix != si.id {
 			continue
 		}
+		// 升级前缓存的邮件没有附件名, 列表只能显示回形针; 补一次, 补完后这一步只剩一条空查询。
+		if n, err := s.BackfillAttachmentNames(ctx, acc.ID); err != nil {
+			a.log.Warn("backfill attachment names", "account", acc.ID, "err", err)
+		} else if n > 0 {
+			a.log.Info("backfilled attachment names", "account", acc.ID, "emails", n)
+			a.emit(EventMailChanged, acc.ID)
+		}
 		key := "reconciledAt:" + acc.ID
 		if v, _ := st.StringSetting(ctx, key); v != "" {
 			if t, err := time.Parse(time.RFC3339, v); err == nil && time.Since(t) < reconcileInterval {

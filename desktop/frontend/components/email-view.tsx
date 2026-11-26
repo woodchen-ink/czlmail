@@ -17,6 +17,7 @@ import { EmailBanners, UnsubscribeButton, useListHeaders } from "@/components/em
 import { EmailBody } from "@/components/email-body";
 import { EmailDetails } from "@/components/email-details";
 import { EmailToolbar, type ToolbarActions } from "@/components/email-toolbar";
+import { OtpChip } from "@/components/email-chips";
 import { SenderAvatar } from "@/components/sender-avatar";
 import { isSignaturePart, SignatureBadge } from "@/components/signature-badge";
 import { Button } from "@/components/ui/button";
@@ -459,6 +460,12 @@ export function EmailView({
           <h1 className="text-lg leading-snug font-semibold">
             {translation?.subject || email.subject || t("(无主题)")}
           </h1>
+
+          {email.code && (
+            <div className="-mt-2">
+              <OtpChip code={email.code} size="md" />
+            </div>
+          )}
 
           {email.labels && email.labels.length > 0 && (
             <div className="flex flex-wrap gap-1.5">

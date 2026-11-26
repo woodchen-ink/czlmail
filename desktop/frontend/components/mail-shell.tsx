@@ -1432,23 +1432,24 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   const checkedAccounts = new Set([...checked].map((key) => parseEmailKey(key).accountId));
   const checkedAccount = checkedAccounts.size === 1 ? [...checkedAccounts][0] : "";
 
-  /** 列表行的来源: 统一视图标出账号, 搜索结果标出所在文件夹。 */
+  /** 搜索结果标出所在文件夹。 */
   function whereOf(email: EmailSummary): string {
-    const parts: string[] = [];
-    if (unified) {
-      const name = accounts.find((a) => a.id === email.accountId)?.name ?? "";
-      // 账号名是邮箱地址, 列表里只放 @ 前面一段, 完整地址在悬停提示里。
-      if (name) parts.push(name.split("@")[0]);
-    }
-    if (searching) {
-      const boxes = mailboxesByAccount[email.accountId] ?? [];
-      const names = (email.mailboxIds ?? [])
-        .map((id) => boxes.find((m) => m.id === id))
-        .filter((m): m is Mailbox => !!m)
-        .map(mailboxLabel);
-      if (names.length > 0) parts.push(names.join("、"));
-    }
-    return parts.join(" · ");
+    const boxes = mailboxesByAccount[email.accountId] ?? [];
+    return (email.mailboxIds ?? [])
+      .map((id) => boxes.find((m) => m.id === id))
+      .filter((m): m is Mailbox => !!m)
+      .map(mailboxLabel)
+      .join("、");
+  }
+
+  /**
+   * 统一视图与搜索结果里标出邮件属于哪个邮箱。主登录的个人邮箱是绝大多数, 不标;
+   * 共享邮箱与其它登录的邮箱才标, 列表里只放 @ 前面一段, 完整地址在悬停提示里。
+   */
+  function accountOf(email: EmailSummary): { label: string; title: string } | null {
+    const acc = accounts.find((a) => a.id === email.accountId);
+    if (!acc || (acc.isPersonal && !acc.signIn)) return null;
+    return { label: acc.name.split("@")[0], title: acc.name };
   }
 
   return (
@@ -1674,7 +1675,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
               <EmailList
                 onScrollContainer={setListScrollEl}
                 onScrolledAway={setScrolledAway}
-                whereOf={searching || unified ? whereOf : undefined}
+                whereOf={searching ? whereOf : undefined}
+                accountOf={searching || unified ? accountOf : undefined}
                 showRecipients={!searching && ["sent", "drafts", "scheduled"].includes(currentKind)}
                 flat={flatList}
                 checked={checked}

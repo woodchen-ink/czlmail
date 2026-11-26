@@ -1352,5 +1352,8 @@
   "导入证书 (.p12 / .pfx)": "Importovat certifikát (.p12 / .pfx)",
   "删除证书": "Smazat certifikát",
   "导入签名证书": "Importovat podpisový certifikát",
-  "证书文件 (.p12, .pfx)": "Soubory certifikátů (.p12, .pfx)"
+  "证书文件 (.p12, .pfx)": "Soubory certifikátů (.p12, .pfx)",
+  "复制验证码": "Kopírovat kód",
+  "已复制验证码": "Kód zkopírován",
+  "另有 {0} 个附件": "Další přílohy: {0}"
 }

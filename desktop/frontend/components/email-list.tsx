@@ -23,6 +23,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SenderAvatar } from "@/components/sender-avatar";
 import { Checkbox } from "@/components/ui/checkbox";
+import { AttachmentChips, OtpChip } from "@/components/email-chips";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { displayAddressList, listDate } from "@/lib/format";
@@ -58,6 +59,8 @@ interface Props {
   onScrolledAway?: (away: boolean) => void;
   /** 给出时每行标出来源(搜索结果所在文件夹、统一视图里的账号), 返回空串不标。 */
   whereOf?: (email: EmailSummary) => string;
+  /** 给出时在头像下方标出邮件所属的邮箱 (统一视图与搜索里的共享邮箱), 返回 null 不标。 */
+  accountOf?: (email: EmailSummary) => { label: string; title: string } | null;
   /** 已发送、草稿等文件夹: 头像与名字显示收件人, 发件人都是自己。 */
   showRecipients?: boolean;
   /**
@@ -93,6 +96,7 @@ export function EmailList({
   onScrollContainer,
   onScrolledAway,
   whereOf,
+  accountOf,
   showRecipients,
   emptyState,
   draggable = false,
@@ -262,6 +266,7 @@ export function EmailList({
           const isOpen = !flat && !!email.threadId && expanded === tk;
           const members = isOpen ? [...(threads[tk] ?? [])].reverse() : [];
           const where = whereOf?.(email) ?? "";
+          const account = accountOf?.(email) ?? null;
           const isChecked = checked?.has(key) ?? false;
           // 收件人为空的草稿退回显示发件人。
           const party = showRecipients && email.to?.length ? email.to : email.from;
@@ -367,6 +372,15 @@ export function EmailList({
                         />
                       )}
                     </div>
+                    {/* 共享邮箱标记放头像下方, 不占主题行; 负外边距让它最宽可比头像多 8px 而不撑宽头像列 (串联细线按头像列定位)。 */}
+                    {account && (
+                      <span
+                        title={account.title}
+                        className="bg-secondary text-muted-foreground -mx-1 mt-1 max-w-11 truncate rounded-sm px-1 text-[10px] leading-4"
+                      >
+                        {account.label}
+                      </span>
+                    )}
                     {isOpen && members.length > 0 && (
                       <span aria-hidden className="bg-muted-foreground/30 -mb-2.5 w-px flex-1" />
                     )}
@@ -408,6 +422,9 @@ export function EmailList({
                           {count}
                         </button>
                       )}
+                      {email.hasAttachment && (
+                        <Paperclip className="text-muted-foreground size-3.5 shrink-0" aria-label={t("附件")} />
+                      )}
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                         {listDate(email.receivedAt)}
                       </span>
@@ -434,9 +451,6 @@ export function EmailList({
                         >
                           {where}
                         </span>
-                      )}
-                      {email.hasAttachment && (
-                        <Paperclip className="text-muted-foreground size-3.5 shrink-0" />
                       )}
                       {email.signed && (
                         <Shield className="text-muted-foreground size-3.5 shrink-0" aria-label={t("数字签名")} />
@@ -481,6 +495,16 @@ export function EmailList({
                     <p className="text-muted-foreground mt-0.5 truncate text-xs">
                       {email.preview}
                     </p>
+
+                    {/* 验证码与附件名单独一行, 只在有的时候出现; 一行放不下时附件名先缩, 不换行。 */}
+                    {(email.code || (email.attachmentNames?.length ?? 0) > 0) && (
+                      <div className="mt-1.5 flex min-w-0 items-center gap-1.5 overflow-hidden">
+                        {email.code && <OtpChip code={email.code} />}
+                        {email.attachmentNames && email.attachmentNames.length > 0 && (
+                          <AttachmentChips names={email.attachmentNames} />
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>,
               )}

@@ -1,7 +1,7 @@
 package store
 
 // schemaVersion 与 SQLite 的 user_version pragma 对齐, 等于 migrations 的长度。
-const schemaVersion = 13
+const schemaVersion = 14
 
 // migrations 按索引顺序执行, 索引 i 把 schema 从版本 i 升到 i+1。
 // 已发布的迁移不可修改, 只能追加新的一条。
@@ -20,6 +20,7 @@ var migrations = []string{
 	migration011,
 	migration012,
 	migration013,
+	migration014,
 }
 
 // migration001 建立全部四类数据(邮件/日历/通讯录/文件)的基础表。
@@ -358,4 +359,13 @@ ALTER TABLE emails ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]';
 -- 升级前已缓存正文的带附件邮件, 清单是空的且不会再触发拉取。
 -- 让它们的正文缓存失效, 下次打开时连同附件清单一起重拉。
 UPDATE emails SET body_fetched_at = NULL WHERE has_attachment = 1;
+`
+
+// migration014 为邮件增加附件文件名, 供列表直接显示附件。
+//
+// 来自元数据同步时取的 bodyStructure (只多取部件的 name), 与打开邮件时写入的
+// attachments_json 是两回事: 后者带 blobId 等下载信息, 只有拉过正文的邮件才有。
+// NULL 表示还没取过 (升级前缓存的邮件), 由 syncer.BackfillAttachmentNames 补齐。
+const migration014 = `
+ALTER TABLE emails ADD COLUMN attachment_names TEXT;
 `

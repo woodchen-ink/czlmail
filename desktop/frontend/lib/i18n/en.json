@@ -1352,5 +1352,8 @@
   "导入证书 (.p12 / .pfx)": "Import certificate (.p12 / .pfx)",
   "删除证书": "Delete certificate",
   "导入签名证书": "Import signing certificate",
-  "证书文件 (.p12, .pfx)": "Certificate files (.p12, .pfx)"
+  "证书文件 (.p12, .pfx)": "Certificate files (.p12, .pfx)",
+  "复制验证码": "Copy code",
+  "已复制验证码": "Code copied",
+  "另有 {0} 个附件": "{0} more attachments"
 }

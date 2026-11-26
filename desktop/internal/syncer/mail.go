@@ -19,13 +19,13 @@ var emailMetaProperties = []string{
 	"id", "blobId", "threadId", "mailboxIds", "keywords", "size",
 	"receivedAt", "sentAt", "from", "to", "cc", "bcc", "replyTo",
 	"subject", "preview", "hasAttachment", "messageId", "inReplyTo",
-	// bodyStructure 只取每个部件的类型与处置方式 (emailBodyProperties): 用来认出 S/MIME 签名邮件,
-	// 并让签名部件 smime.p7s 不算附件。
+	// bodyStructure 只取每个部件的类型、处置方式与文件名 (emailBodyProperties): 用来认出 S/MIME 签名邮件,
+	// 让签名部件 smime.p7s 不算附件, 并在列表里显示附件名。
 	"bodyStructure",
 }
 
 // emailBodyProperties 限定 bodyStructure 里每个部件返回的字段, 让结构树只有几十个字节。
-var emailBodyProperties = []string{"type", "disposition"}
+var emailBodyProperties = []string{"type", "disposition", "name"}
 
 // errCannotCalculateChanges 是服务端无法基于给定 state 计算增量时返回的类型。
 // 通常因为该 state 过旧已被服务端回收, 唯一出路是丢弃本地 state 重新引导。
@@ -355,6 +355,9 @@ func toStoreEmail(e *email.Email) store.Email {
 		Preview:       e.Preview,
 		HasAttachment: e.HasAttachment,
 	}
+	if e.BodyStructure != nil {
+		out.AttachmentNames = attachmentNames(e.BodyStructure, nil)
+	}
 	if isSigned(e.BodyStructure) {
 		out.Signed = true
 		// 服务器把 smime.p7s 算作附件; 只有签名之外还有真正的附件时才显示回形针。
@@ -415,6 +418,27 @@ func isSigned(p *email.BodyPart) bool {
 	}
 	t := strings.ToLower(p.Type)
 	return t == "multipart/signed" || t == "application/pkcs7-mime" || t == "application/x-pkcs7-mime"
+}
+
+// attachmentNames 收集结构树里附件的文件名, 判断标准同 hasRealAttachment; 没有文件名的附件不列出。
+// 返回值非 nil (没有附件时是空切片), 落库时与"还没取过结构"的 NULL 区分开。
+func attachmentNames(p *email.BodyPart, out []string) []string {
+	if out == nil {
+		out = []string{}
+	}
+	if p == nil {
+		return out
+	}
+	if len(p.SubParts) > 0 {
+		for _, sp := range p.SubParts {
+			out = attachmentNames(sp, out)
+		}
+		return out
+	}
+	if hasRealAttachment(p) && strings.TrimSpace(p.Name) != "" {
+		out = append(out, strings.TrimSpace(p.Name))
+	}
+	return out
 }
 
 // hasRealAttachment 判断结构树里除签名部件外还有没有附件: 标为 attachment 的部件,

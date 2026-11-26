@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/woodchen-ink/czlmail/desktop/internal/otp"
 )
 
 // EmailSummary 是列表视图的一行。刻意不含正文与收件人列表 ——
@@ -24,11 +26,15 @@ type EmailSummary struct {
 	Preview       string    `json:"preview"`
 	HasAttachment bool      `json:"hasAttachment"`
 	// Signed 表示邮件带 S/MIME 签名, 列表里显示盾牌。
-	Signed    bool  `json:"signed"`
-	Size      int64 `json:"size"`
-	IsUnread  bool  `json:"isUnread"`
-	IsFlagged bool  `json:"isFlagged"`
-	IsDraft   bool  `json:"isDraft"`
+	Signed bool `json:"signed"`
+	// AttachmentNames 是附件文件名, 列表里显示成文件标签; 升级前缓存、还没补齐的邮件为空, 只显示回形针。
+	AttachmentNames []string `json:"attachmentNames,omitempty"`
+	// Code 是从主题与摘要 (阅读视图里是正文) 认出的验证码, 认不出为空。
+	Code      string `json:"code,omitempty"`
+	Size      int64  `json:"size"`
+	IsUnread  bool   `json:"isUnread"`
+	IsFlagged bool   `json:"isFlagged"`
+	IsDraft   bool   `json:"isDraft"`
 	// IsPinned 是 $pinned 关键字(与 Bulwark 相同), 置顶的邮件在列表里排在最前。
 	IsPinned bool `json:"isPinned"`
 	// ThreadCount 是同一会话的邮件总数(跨文件夹); 只有列表查询会填, 其它查询为 0。
@@ -88,7 +94,7 @@ const keywordFlags = `
 
 // summaryColumns 是邮件摘要的列, 顺序与 scanSummaries 一致。
 const summaryColumns = `e.account_id, e.id, e.thread_id, e.subject, e.from_json, e.to_json, e.received_at,
-	       e.preview, e.has_attachment, e.signed, e.size,` + keywordFlags
+	       e.preview, e.has_attachment, e.signed, e.size, e.attachment_names,` + keywordFlags
 
 // EmailsByMailbox 分页取某邮箱的邮件: 置顶的在最前, 其余按收件时间倒序。
 //
@@ -180,16 +186,17 @@ var threadCountColumn = `,
 func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 	var out []EmailSummary
 	cols, _ := rows.Columns()
-	withThread := len(cols) > 15
+	withThread := len(cols) > 16
 	for rows.Next() {
 		var e EmailSummary
 		var fromJSON, toJSON string
 		var receivedAt int64
 		var hasAttachment, signed, unread, flagged, draft, pinned int
+		var names sql.NullString
 
 		dest := []any{
 			&e.AccountID, &e.ID, &e.ThreadID, &e.Subject, &fromJSON, &toJSON, &receivedAt,
-			&e.Preview, &hasAttachment, &signed, &e.Size,
+			&e.Preview, &hasAttachment, &signed, &e.Size, &names,
 			&unread, &flagged, &draft, &pinned,
 		}
 		if withThread {
@@ -212,6 +219,10 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 		e.IsFlagged = flagged != 0
 		e.IsDraft = draft != 0
 		e.IsPinned = pinned != 0
+		if e.HasAttachment && names.Valid {
+			_ = json.Unmarshal([]byte(names.String), &e.AttachmentNames)
+		}
+		e.Code = otp.Extract(e.Subject, e.Preview)
 
 		out = append(out, e)
 	}
@@ -312,6 +323,12 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	d.IsDraft = draft != 0
 	d.IsPinned = pinned != 0
 	d.BodyText = bodyText.String
+	// 正文拉过时按正文认, 摘要只有开头一两百字, 验证码可能在更后面。
+	if bodyText.Valid && bodyText.String != "" {
+		d.Code = otp.Extract(d.Subject, bodyText.String)
+	} else {
+		d.Code = otp.Extract(d.Subject, d.Preview)
+	}
 	d.BodyHTML = bodyHTML.String
 	// 旧缓存里纯文本邮件的 body_html 是同一份纯文本(见 syncer.joinBodyValues 的说明),
 	// 当 HTML 渲染会丢掉全部换行。正文不重新拉取, 读的时候顺手丢掉这份假 HTML。

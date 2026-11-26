@@ -31,11 +31,13 @@ type Email struct {
 	Preview       string
 	HasAttachment bool
 	// Signed 表示邮件带 S/MIME 签名 (multipart/signed)。
-	Signed     bool
-	MessageID  string
-	InReplyTo  string
-	MailboxIDs []string
-	Keywords   []string
+	Signed bool
+	// AttachmentNames 是附件文件名 (不含内嵌图片与签名部件); nil 表示这次没取到结构, 保留库里原值。
+	AttachmentNames []string
+	MessageID       string
+	InReplyTo       string
+	MailboxIDs      []string
+	Keywords        []string
 }
 
 // UpsertEmails 批量写入邮件元数据, 以及它们与邮箱、关键字的关联。
@@ -53,8 +55,8 @@ func UpsertEmails(ctx context.Context, tx *sql.Tx, accountID string, emails []Em
 			account_id, id, blob_id, thread_id, subject,
 			from_json, to_json, cc_json, bcc_json, reply_to_json,
 			sent_at, received_at, size, preview, has_attachment,
-			message_id, in_reply_to, signed
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			message_id, in_reply_to, signed, attachment_names
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (account_id, id) DO UPDATE SET
 			blob_id        = excluded.blob_id,
 			thread_id      = excluded.thread_id,
@@ -71,7 +73,8 @@ func UpsertEmails(ctx context.Context, tx *sql.Tx, accountID string, emails []Em
 			has_attachment = excluded.has_attachment,
 			message_id     = excluded.message_id,
 			in_reply_to    = excluded.in_reply_to,
-			signed         = excluded.signed`)
+			signed         = excluded.signed,
+			attachment_names = COALESCE(excluded.attachment_names, emails.attachment_names)`)
 	if err != nil {
 		return wrap(CodeQuery, "prepare email upsert", err)
 	}
@@ -94,7 +97,7 @@ func UpsertEmails(ctx context.Context, tx *sql.Tx, accountID string, emails []Em
 			accountID, e.ID, e.BlobID, e.ThreadID, e.Subject,
 			addrs[0], addrs[1], addrs[2], addrs[3], addrs[4],
 			sentAt, e.ReceivedAt.Unix(), e.Size, e.Preview, boolToInt(e.HasAttachment),
-			e.MessageID, e.InReplyTo, boolToInt(e.Signed),
+			e.MessageID, e.InReplyTo, boolToInt(e.Signed), encodeNames(e.AttachmentNames),
 		); err != nil {
 			return wrap(CodeQuery, "upsert email", err)
 		}
@@ -235,4 +238,57 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// encodeNames 把附件名编码成 JSON; nil 写 NULL, 让 upsert 保留库里原值。
+func encodeNames(names []string) any {
+	if names == nil {
+		return nil
+	}
+	raw, _ := json.Marshal(names)
+	return string(raw)
+}
+
+// EmailsMissingAttachmentNames 列出带附件、但还没有附件名的邮件 (升级前缓存的), 最多 limit 封。
+func (s *Store) EmailsMissingAttachmentNames(ctx context.Context, accountID string, limit int) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id FROM emails
+		WHERE account_id = ? AND has_attachment = 1 AND attachment_names IS NULL
+		ORDER BY received_at DESC
+		LIMIT ?`, accountID, limit)
+	if err != nil {
+		return nil, wrap(CodeQuery, "query emails missing attachment names", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, wrap(CodeQuery, "scan email id", err)
+		}
+		out = append(out, id)
+	}
+	return out, wrap(CodeQuery, "iterate emails missing attachment names", rows.Err())
+}
+
+// SetAttachmentNames 写入附件名。names 里没有的 id 写空数组: 服务器上已经没有这封,
+// 不写的话下一轮还会再查它。
+func (s *Store) SetAttachmentNames(ctx context.Context, accountID string, ids []string, names map[string][]string) error {
+	return s.WithTx(ctx, func(tx *sql.Tx) error {
+		stmt, err := tx.PrepareContext(ctx, `UPDATE emails SET attachment_names = ? WHERE account_id = ? AND id = ?`)
+		if err != nil {
+			return wrap(CodeQuery, "prepare attachment names update", err)
+		}
+		defer stmt.Close()
+		for _, id := range ids {
+			n := names[id]
+			if n == nil {
+				n = []string{}
+			}
+			if _, err := stmt.ExecContext(ctx, encodeNames(n), accountID, id); err != nil {
+				return wrap(CodeQuery, "update attachment names", err)
+			}
+		}
+		return nil
+	})
 }
