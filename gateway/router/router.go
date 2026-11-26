@@ -78,6 +78,19 @@ func adminAPI(d Deps) http.Handler {
 	handle("PATCH /api/admin/users/{id}", a.UpdateUser)
 	handle("DELETE /api/admin/users/{id}", a.DeleteUser)
 
+	if a.Upstreams != nil {
+		handle("GET /api/admin/upstreams", a.ListUpstreams)
+		handle("POST /api/admin/upstreams", a.CreateUpstream)
+		handle("POST /api/admin/upstreams/test", a.TestUpstream)
+		handle("GET /api/admin/upstreams/{id}", a.GetUpstream)
+		handle("PATCH /api/admin/upstreams/{id}", a.UpdateUpstream)
+		handle("DELETE /api/admin/upstreams/{id}", a.DeleteUpstream)
+		handle("POST /api/admin/upstreams/{id}/test", a.TestStoredUpstream)
+		handle("POST /api/admin/upstreams/{id}/pause", a.PauseUpstream)
+		handle("POST /api/admin/upstreams/{id}/resume", a.ResumeUpstream)
+		handle("POST /api/admin/upstreams/{id}/default", a.DefaultUpstream)
+	}
+
 	handle("GET /api/admin/settings", a.ListSettings)
 	handle("PATCH /api/admin/settings", a.UpdateSettings)
 	handle("GET /api/admin/audit-logs", a.ListAudit)

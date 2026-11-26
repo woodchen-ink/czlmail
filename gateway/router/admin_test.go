@@ -32,7 +32,7 @@ func newTestGateway(t *testing.T) (*httptest.Server, *service.Accounts, *service
 	}
 	t.Cleanup(func() { database.Close(db) })
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	sets, _ := service.LoadSettings(db)
+	sets, _ := service.LoadSettings(db, nil)
 	lim := service.NewRateLimiter()
 	inval := service.NewInvalidations()
 	clientIP := func(r *http.Request) string { host, _, _ := strings.Cut(r.RemoteAddr, ":"); return host }

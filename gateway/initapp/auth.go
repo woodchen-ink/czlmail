@@ -8,6 +8,7 @@ import (
 
 	"github.com/woodchen-ink/czlmail/gateway/config"
 	"github.com/woodchen-ink/czlmail/gateway/handler"
+	"github.com/woodchen-ink/czlmail/gateway/pkg/crypto"
 	"github.com/woodchen-ink/czlmail/gateway/service"
 )
 
@@ -23,8 +24,8 @@ type Auth struct {
 	Admin *handler.Admin
 }
 
-func newAuth(db *gorm.DB, cfg *config.Config, log *slog.Logger) (*Auth, error) {
-	settings, err := service.LoadSettings(db)
+func newAuth(db *gorm.DB, cfg *config.Config, log *slog.Logger, ring *crypto.Keyring) (*Auth, error) {
+	settings, err := service.LoadSettings(db, ring)
 	if err != nil {
 		return nil, err
 	}

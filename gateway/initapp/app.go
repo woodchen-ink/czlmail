@@ -15,6 +15,7 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 	"github.com/woodchen-ink/czlmail/gateway/router"
 	"github.com/woodchen-ink/czlmail/gateway/service"
+	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 )
 
 // cleanupEvery is how often expired sessions, audit rows and uploads are pruned.
@@ -26,6 +27,9 @@ type App struct {
 	Handler http.Handler
 	Auth    *Auth
 	JMAP    *jmapserver.Server
+	// Upstreams manages users' upstream mailboxes; Manager runs them.
+	Upstreams *service.Upstreams
+	Manager   *service.UpstreamManager
 
 	stop context.CancelFunc
 }
@@ -37,16 +41,18 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 	if err != nil {
 		return nil, err
 	}
-	auth, err := newAuth(db, cfg, log)
+	auth, err := newAuth(db, cfg, log, ring)
 	if err != nil {
 		return nil, err
 	}
-	gateway := jmapserver.GatewayInfo{Version: version, ProtocolVersion: 1, AdminURL: cfg.BaseURL + "/admin/"}
+	adminURL := cfg.BaseURL + "/admin/"
+	mgr := service.NewUpstreamManager(db, ring, auth.Settings, cfg.DataDir, log, upstream.Timing{})
+	gateway := jmapserver.GatewayInfo{Version: version, ProtocolVersion: 1, AdminURL: adminURL}
 	jmap, err := jmapserver.New(jmapserver.Options{
 		BaseURL:  cfg.BaseURL,
 		DataDir:  cfg.DataDir,
 		Auth:     jmapAuth{auth.Basic},
-		Accounts: service.NewUpstreamAccounts(db),
+		Accounts: service.NewUpstreamAccounts(db, mgr, adminURL),
 		Log:      log,
 		TraceID:  middleware.TraceID,
 	})
@@ -64,8 +70,12 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 	// Disabled user or revoked app password: drop the user's push streams (clients
 	// with a still-valid app password reconnect at once) and the push subscriptions
 	// of the revoked credentials, so a revoked device stops getting mail summaries.
+	// A deleted user's upstreams stop and their index files go.
 	auth.Invalidations.Subscribe(func(ev service.UserInvalidation) {
 		jmap.EndUserStreams(ev.UserPublicID)
+		if ev.Reason == "deleted" {
+			go mgr.RemoveUser(ev.UserPublicID)
+		}
 		if ev.Reason == "email_changed" {
 			return // same credentials, same mailboxes
 		}
@@ -77,8 +87,17 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 			}
 		}()
 	})
+	// Push connections steer polling: a client connecting syncs everything now,
+	// none for 30 minutes slows polling down.
+	jmap.ObserveStreams(mgr.SetClients)
+	upstreams := service.NewUpstreams(db, ring, auth.Settings, mgr, log)
+	auth.Admin.Upstreams = upstreams
 
 	ctx, stop := context.WithCancel(context.Background())
+	if err := mgr.Run(ctx, jmap); err != nil {
+		stop()
+		return nil, err
+	}
 	cron.StartCleanup(ctx, log, cleanupEvery, map[string]cron.Pruner{
 		"admin_sessions": auth.Accounts.PruneSessions,
 		"audit_logs":     auth.Audit.Prune,
@@ -87,6 +106,7 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 			return int64(n), err
 		},
 		"push_subscriptions": func() (int64, error) { return pushStore.PruneExpired(time.Now()) },
+		"changelog": mgr.Trim,
 	})
 
 	h := router.New(router.Deps{
@@ -97,11 +117,12 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 		JMAP:     jmap,
 		Czlmail:  &handler.CzlmailConfig{Gateway: gateway},
 	})
-	return &App{Handler: h, Auth: auth, JMAP: jmap, stop: stop}, nil
+	return &App{Handler: h, Auth: auth, JMAP: jmap, Upstreams: upstreams, Manager: mgr, stop: stop}, nil
 }
 
-// Close stops the background jobs and ends all EventSource streams.
+// Close stops the background jobs and upstreams and ends all EventSource streams.
 func (a *App) Close() {
 	a.stop()
+	a.Manager.Stop()
 	a.JMAP.Close()
 }

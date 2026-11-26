@@ -40,7 +40,7 @@ func newEnv(t *testing.T) *env {
 	}
 	t.Cleanup(func() { database.Close(db) })
 	clock := &fakeClock{t: time.Date(2026, 11, 26, 8, 0, 0, 0, time.UTC)}
-	sets, err := LoadSettings(db)
+	sets, err := LoadSettings(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

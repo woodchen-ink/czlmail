@@ -132,6 +132,12 @@ func (s *Server) RegisterCapability(uri string, value any) {
 // Changes is the per-user change bus feeding EventSource connections.
 func (s *Server) Changes() *Bus { return s.bus }
 
+// Publish records changed states of the user's accounts for push (see Bus.Publish).
+func (s *Server) Publish(userID string, changed Changes) { s.bus.Publish(userID, changed) }
+
+// ObserveStreams registers fn to learn each user's number of push connections.
+func (s *Server) ObserveStreams(fn func(userID string, conns int)) { s.bus.Observe(fn) }
+
 // Uploads is the store of uploaded blobs, for methods that consume them.
 func (s *Server) Uploads() *UploadStore { return s.uploads }
 

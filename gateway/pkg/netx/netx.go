@@ -222,3 +222,11 @@ func classifySOCKS(err error) error {
 func (d *direct) Dial(network, addr string) (net.Conn, error) {
 	return d.DialContext(context.Background(), network, addr)
 }
+
+// CheckHost resolves host with the system resolver and returns ErrPrivateAddress
+// when any of its addresses is internal. Resolution errors are returned as is.
+func CheckHost(ctx context.Context, host string) error {
+	d := &direct{resolver: net.DefaultResolver}
+	_, _, err := d.resolve(ctx, net.JoinHostPort(host, "0"))
+	return err
+}

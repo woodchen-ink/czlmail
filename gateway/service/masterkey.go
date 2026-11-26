@@ -57,6 +57,9 @@ type SealedColumn struct {
 	IDColumn string // the row's public id, used in the AAD
 	Column   string // the sealed column
 	Purpose  string // crypto purpose
+	// Where narrows the rows (written in code, never from input), for tables
+	// where only some rows hold a sealed value, such as settings.
+	Where string
 }
 
 var (
@@ -146,6 +149,13 @@ func rotateColumn(tx *gorm.DB, ring *crypto.Keyring, c SealedColumn) (int, error
 		n++
 	}
 	return n, nil
+}
+
+func whereOrTrue(w string) string {
+	if w == "" {
+		return "1 = 1"
+	}
+	return w
 }
 
 func readKeyMeta(db *gorm.DB) (uint32, string, error) {

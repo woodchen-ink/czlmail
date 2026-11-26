@@ -32,6 +32,12 @@ var adminErrors = []struct {
 	{service.ErrInvalidSetting, apiError{400, 40006, "invalid_setting"}},
 	{service.ErrWrongPassword, apiError{400, 40007, "wrong_password"}},
 	{service.ErrInvalidCursor, apiError{400, 40008, "invalid_cursor"}},
+	{errInvalidHost, apiError{400, 40009, "invalid_host"}},
+	{errInvalidPort, apiError{400, 40010, "invalid_port"}},
+	{errInvalidTLSMode, apiError{400, 40011, "invalid_tls_mode"}},
+	{errInvalidProxy, apiError{400, 40012, "invalid_proxy"}},
+	{errMissingPassword, apiError{400, 40013, "missing_password"}},
+	{service.ErrPrivateNetwork, apiError{400, 40014, "private_network_not_allowed"}},
 	{service.ErrUnauthenticated, apiError{401, 40100, "unauthenticated"}},
 	{service.ErrInvalidCredentials, apiError{401, 40101, "invalid_credentials"}},
 	{service.ErrAccountDisabled, apiError{401, 40102, "account_disabled"}},
@@ -41,8 +47,10 @@ var adminErrors = []struct {
 	{service.ErrRegistrationClosed, apiError{403, 40303, "registration_closed"}},
 	{service.ErrUserNotFound, apiError{404, 40401, "user_not_found"}},
 	{service.ErrAppPasswordNotFound, apiError{404, 40402, "app_password_not_found"}},
+	{service.ErrUpstreamNotFound, apiError{404, 40403, "upstream_not_found"}},
 	{service.ErrEmailTaken, apiError{409, 40900, "email_taken"}},
 	{service.ErrSetupCompleted, apiError{409, 40901, "setup_completed"}},
+	{service.ErrUpstreamKindReadOnly, apiError{409, 40902, "upstream_kind_managed"}},
 }
 
 // fail writes the public form of err; unknown errors are logged and become 50000.
