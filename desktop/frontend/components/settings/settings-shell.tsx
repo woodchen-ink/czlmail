@@ -114,9 +114,9 @@ type Section =
 const DESKTOP_ONLY: Section[] = ["integration", "shortcuts"];
 
 /** 依赖服务器能力的设置: 没有任何账号支持时不显示, 部分支持时分区内只列支持的账号。 */
-const SECTION_FEATURE: Partial<Record<Section, Feature>> = {
+const SECTION_FEATURE: Partial<Record<Section, Feature | "scheduled">> = {
   identities: "submission",
-  scheduled: "submission",
+  scheduled: "scheduled",
   vacation: "vacation",
   filters: "sieve",
   calendars: "calendars",

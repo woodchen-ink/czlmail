@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 )
 
@@ -228,6 +229,19 @@ func ClearObjects(ctx context.Context, tx *sql.Tx, table, accountID string) erro
 	}
 	_, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE account_id = ?`, accountID)
 	return wrap(CodeQuery, "clear "+table, err)
+}
+
+// ObjectsEmpty 报告某账号在某张 PIM 表里是否一行都没有。
+func (s *Store) ObjectsEmpty(ctx context.Context, table, accountID string) (bool, error) {
+	if !pimTables[table] {
+		return false, &Error{Code: CodeQuery, Msg: "unknown table " + table}
+	}
+	var one int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM `+table+` WHERE account_id = ? LIMIT 1`, accountID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	return false, wrap(CodeQuery, "probe "+table, err)
 }
 
 // PIM 表名。DeleteObjects / ClearObjects 拼接表名, 只允许这些值。

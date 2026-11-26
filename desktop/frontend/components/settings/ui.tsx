@@ -73,7 +73,7 @@ export function useSettings(active: boolean) {
  * 设置页里按账号操作的部分(过滤器、自动回复、文件夹)用的账号选择。默认个人账号。
  * 给了 feature 时只列服务器支持这项功能的账号。
  */
-export function useAccounts(active: boolean, feature?: Feature) {
+export function useAccounts(active: boolean, feature?: Feature | "scheduled") {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState("");
 

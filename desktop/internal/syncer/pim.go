@@ -53,10 +53,7 @@ func pimKindFor(dt store.DataType) (pimKind, bool) {
 
 // accountSupports 报告账号是否公布了某能力。
 func (s *Syncer) accountSupports(accountID string, uri jmap.URI) bool {
-	if s.client.Session == nil {
-		return false
-	}
-	acc, ok := s.client.Session.Accounts[s.server(accountID)]
+	acc, ok := s.account(accountID)
 	if !ok {
 		return false
 	}
@@ -67,10 +64,7 @@ func (s *Syncer) accountSupports(accountID string, uri jmap.URI) bool {
 // Lacks 报告账号所在的服务器明确没有公布某能力: 会话已取得、账号在会话里, 而能力表里没有它。
 // 会话还没恢复 (离线、启动中) 时为假, 照常发请求, 失败按离线处理, 不当作不支持。
 func (s *Syncer) Lacks(accountID string, uri jmap.URI) bool {
-	if s.client.Session == nil {
-		return false
-	}
-	acc, ok := s.client.Session.Accounts[s.server(accountID)]
+	acc, ok := s.account(accountID)
 	if !ok {
 		return false
 	}
@@ -84,6 +78,33 @@ func (s *Syncer) Require(accountID string, uri jmap.URI) error {
 		return capability.Unsupported(capability.FeatureOf(uri))
 	}
 	return nil
+}
+
+// dropPIM 清掉服务器已不再公布这类能力的账号的本机缓存与 state。调用方持有 s.mu。
+//
+// 缓存只是服务器的镜像: 不清的话日历里还画着旧日程、到点照弹提醒, 通讯录与收件人补全还列着旧联系人,
+// 而这些对象已经无法再同步或修改。在这一处清掉, 所有读路径 (日程、提醒、联系人、补全、网盘) 自然一致,
+// 不用逐处按能力过滤。state 一起删: 能力恢复后 (服务器升级、管理员重新开启、一次瞬时异常) 下一轮全量引导回来, 不丢数据。
+// 能力还在但账号没有权限 (共享账号被角色禁掉) 不走这里, 那种情况同步失败只记日志, 保留缓存。
+func (s *Syncer) dropPIM(ctx context.Context, accountID string, k pimKind) error {
+	state, err := s.store.State(ctx, accountID, k.dataType)
+	if err != nil {
+		return err
+	}
+	empty, err := s.store.ObjectsEmpty(ctx, k.table, accountID)
+	if err != nil {
+		return err
+	}
+	if state == "" && empty {
+		return nil
+	}
+	s.log.Info("server no longer advertises capability, clearing cache", "account", accountID, "type", k.typeName)
+	return s.store.WithTx(ctx, func(tx *sql.Tx) error {
+		if err := store.ClearObjects(ctx, tx, k.table, accountID); err != nil {
+			return err
+		}
+		return store.ResetState(ctx, tx, accountID, k.dataType)
+	})
 }
 
 // SupportsFiles 报告账号所在的服务器是否提供文件存储 (FileNode)。
@@ -101,7 +122,11 @@ func (s *Syncer) syncPIM(ctx context.Context, accountID string) {
 }
 
 func (s *Syncer) syncPIMKind(ctx context.Context, accountID string, k pimKind) error {
-	if !s.accountSupports(accountID, jmapx.URIFor(k.typeName)) {
+	uri := jmapx.URIFor(k.typeName)
+	if s.Lacks(accountID, uri) {
+		return s.dropPIM(ctx, accountID, k)
+	}
+	if !s.accountSupports(accountID, uri) {
 		return nil
 	}
 	local, err := s.store.State(ctx, accountID, k.dataType)

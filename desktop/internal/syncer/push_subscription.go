@@ -32,10 +32,7 @@ type EmailPushConfig struct {
 // SupportsEmailPush 报告账号是否公布了新邮件推送扩展。
 // 只看账号级能力: go-jmap 解析会话时丢掉它不认识的会话级能力, Session.Capabilities 里永远查不到 emailpush。
 func (s *Syncer) SupportsEmailPush(accountID string) bool {
-	if s.client.Session == nil {
-		return false
-	}
-	acc, ok := s.client.Session.Accounts[s.server(accountID)]
+	acc, ok := s.account(accountID)
 	if !ok {
 		return false
 	}

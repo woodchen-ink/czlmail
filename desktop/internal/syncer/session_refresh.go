@@ -52,7 +52,7 @@ func (s *Syncer) RequestSessionRefresh() {
 
 // knowsAccount 报告当前会话里是否有该账号。
 func (s *Syncer) knowsAccount(accountID jmap.ID) bool {
-	sess := s.client.Session
+	sess := s.session()
 	if sess == nil {
 		return false
 	}
@@ -83,7 +83,7 @@ func (s *Syncer) watchSession(ctx context.Context) {
 func (s *Syncer) refreshSession(ctx context.Context) error {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
-	before := s.client.Session
+	before := s.session()
 	if before == nil {
 		return nil
 	}
@@ -159,7 +159,7 @@ const missingConfirmations = 2
 
 // pruneAccounts 删掉连续 missingConfirmations 次不在会话里的账号的缓存, 返回删掉的账号。调用方持有 sessionMu。
 func (s *Syncer) pruneAccounts(ctx context.Context) []string {
-	sess := s.client.Session
+	sess := s.session()
 	if sess == nil {
 		return nil
 	}

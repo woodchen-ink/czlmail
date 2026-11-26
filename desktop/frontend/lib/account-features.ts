@@ -12,13 +12,19 @@ import type { capability, store } from "@/wailsjs/go/models";
  */
 export type Feature = Exclude<keyof capability.Features, "maxDelayedSend">;
 
-/** 账号是否有某功能。旧后端没有 features 字段时按支持处理。 */
-export function supports(account: Pick<store.Account, "features"> | undefined, feature: Feature): boolean {
-  return account?.features?.[feature] ?? true;
+/**
+ * 账号是否有某功能。旧后端没有 features 字段时按支持处理。
+ * "scheduled" 是定时发送: 要能发信且服务器给了 maxDelayedSend > 0。
+ */
+export function supports(account: Pick<store.Account, "features"> | undefined, feature: Feature | "scheduled"): boolean {
+  const f = account?.features;
+  if (!f) return true;
+  if (feature === "scheduled") return f.submission && f.maxDelayedSend > 0;
+  return f[feature] ?? true;
 }
 
 /** 只留下有某功能的账号。 */
-export function withFeature<T extends Pick<store.Account, "features">>(accounts: T[], feature: Feature): T[] {
+export function withFeature<T extends Pick<store.Account, "features">>(accounts: T[], feature: Feature | "scheduled"): T[] {
   return accounts.filter((a) => supports(a, feature));
 }
 
@@ -82,7 +88,7 @@ export function useAccounts(): store.Account[] | null {
 }
 
 /** 是否至少有一个账号有某功能; 账号还没读到或一个账号都没有时为真 (不藏)。 */
-export function anyAccountSupports(accounts: store.Account[] | null, feature: Feature): boolean {
+export function anyAccountSupports(accounts: store.Account[] | null, feature: Feature | "scheduled"): boolean {
   return !accounts || accounts.length === 0 || accounts.some((a) => supports(a, feature));
 }
 

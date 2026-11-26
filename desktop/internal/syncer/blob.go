@@ -192,10 +192,11 @@ func (s *Syncer) uploadBlob(ctx context.Context, accountID, contentType string, 
 
 // MaxUploadBytes 返回服务器允许的单个上传大小, 未知时返回 0。
 func (s *Syncer) MaxUploadBytes() int64 {
-	if s.client.Session == nil {
+	sess := s.session()
+	if sess == nil {
 		return 0
 	}
-	c, ok := s.client.Session.Capabilities[jmap.CoreURI].(*core.Core)
+	c, ok := sess.Capabilities[jmap.CoreURI].(*core.Core)
 	if !ok {
 		return 0
 	}

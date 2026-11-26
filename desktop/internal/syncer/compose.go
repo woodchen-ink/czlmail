@@ -400,10 +400,7 @@ func (s *Syncer) destroyEmail(ctx context.Context, accountID, id string) error {
 
 // MaxDelayedSend 返回服务器允许的最长定时发送秒数, 不支持时为 0。
 func (s *Syncer) MaxDelayedSend(accountID string) int {
-	if s.client.Session == nil {
-		return 0
-	}
-	acc, ok := s.client.Session.Accounts[s.server(accountID)]
+	acc, ok := s.account(accountID)
 	if !ok {
 		return 0
 	}

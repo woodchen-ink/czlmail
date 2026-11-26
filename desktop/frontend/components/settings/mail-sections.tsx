@@ -639,7 +639,7 @@ function flatten(list: Mailbox[]): { m: Mailbox; depth: number }[] {
 
 export function ScheduledSection({ active }: { active: boolean }) {
   useI18n();
-  const { accounts, accountId, setAccountId } = useAccounts(active, "submission");
+  const { accounts, accountId, setAccountId } = useAccounts(active, "scheduled");
   const [items, setItems] = useState<ScheduledItem[] | null>(null);
 
   const load = useCallback(async () => {

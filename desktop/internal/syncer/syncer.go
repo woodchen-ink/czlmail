@@ -104,10 +104,11 @@ func New(client *jmap.Client, st *store.Store, log *slog.Logger) *Syncer {
 // readCoreLimits 从会话里取服务端公布的批量上限。超出上限的请求会被整个拒绝,
 // 因此这些值必须在构造批次前就位, 不能等到第一次 413 再退让。
 func (s *Syncer) readCoreLimits() {
-	if s.client.Session == nil {
+	sess := s.session()
+	if sess == nil {
 		return
 	}
-	c, ok := s.client.Session.Capabilities[jmap.CoreURI].(*core.Core)
+	c, ok := sess.Capabilities[jmap.CoreURI].(*core.Core)
 	if !ok {
 		return
 	}
@@ -122,13 +123,35 @@ func (s *Syncer) readCoreLimits() {
 		"maxCallsInRequest", s.maxCallsInRequest)
 }
 
+// Session 是 session 的导出版, 供直接拼 JMAP 请求的调用方读会话。
+func (s *Syncer) Session() *jmap.Session { return s.session() }
+
+// session 在客户端锁内取当前会话: refreshSession 持同一把锁换上新会话, 不加锁读是数据竞争。
+// 会话对象换上后不再修改, 拿到后可以在锁外读。
+func (s *Syncer) session() *jmap.Session {
+	s.client.Lock()
+	defer s.client.Unlock()
+	return s.client.Session
+}
+
+// account 返回会话里的某个账号 (本机账号 id); 没有会话或会话里没有它时 ok 为假。
+func (s *Syncer) account(accountID string) (jmap.Account, bool) {
+	sess := s.session()
+	if sess == nil {
+		return jmap.Account{}, false
+	}
+	acc, ok := sess.Accounts[s.server(accountID)]
+	return acc, ok
+}
+
 // Accounts 列出会话下全部账号的本机账号 id。
 func (s *Syncer) Accounts() []string {
-	if s.client.Session == nil {
+	sess := s.session()
+	if sess == nil {
 		return nil
 	}
-	out := make([]string, 0, len(s.client.Session.Accounts))
-	for id := range s.client.Session.Accounts {
+	out := make([]string, 0, len(sess.Accounts))
+	for id := range sess.Accounts {
 		out = append(out, s.local(id))
 	}
 	return out
@@ -165,10 +188,7 @@ func (s *Syncer) syncAccount(ctx context.Context, accountID string, afterMail fu
 }
 
 func (s *Syncer) isPersonal(accountID string) bool {
-	if s.client.Session == nil {
-		return false
-	}
-	acc, ok := s.client.Session.Accounts[s.server(accountID)]
+	acc, ok := s.account(accountID)
 	return ok && acc.IsPersonal
 }
 
