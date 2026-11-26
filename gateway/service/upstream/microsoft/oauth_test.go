@@ -132,3 +132,44 @@ func TestParseIDToken(t *testing.T) {
 		t.Error("malformed token accepted")
 	}
 }
+
+func TestMailboxAddress(t *testing.T) {
+	work := microsoft.IDClaims{TenantID: "t1"}
+	personal := microsoft.IDClaims{TenantID: microsoft.PersonalTenant}
+	cases := []struct {
+		claims    microsoft.IDClaims
+		login     string
+		confirmed bool
+	}{
+		{work, "adele@contoso.test", true},
+		{work, "adele@gmail.com", true}, // a work account's sign-in name is its address
+		{personal, "me@outlook.com", true},
+		{personal, "me@hotmail.co.uk", true},
+		{personal, "me@live.cn", true},
+		{personal, "me@msn.com", true},
+		{personal, "chenwuink@gmail.com", false},
+		{personal, "me@example.org", false},
+		{personal, "me@outlook.example.org", false},
+		{personal, "me@hotmail.com.au", true},
+	}
+	for _, c := range cases {
+		addr, ok := microsoft.MailboxAddress(c.claims, c.login)
+		if addr != c.login || ok != c.confirmed {
+			t.Errorf("%s (tid %s): %q %v", c.login, c.claims.TenantID, addr, ok)
+		}
+	}
+}
+
+func TestGeneratedAddress(t *testing.T) {
+	for addr, want := range map[string]bool{
+		"outlook_0123456789ABCDEF@outlook.com": true,
+		"outlook_a1b2c3d4e5f6a7b8@outlook.com": true,
+		"outlook_team@outlook.com":             false,
+		"outlook_0123456789abcdef@hotmail.com": false,
+		"me@outlook.com":                       false,
+	} {
+		if got := microsoft.GeneratedAddress(addr); got != want {
+			t.Errorf("%s: %v", addr, got)
+		}
+	}
+}

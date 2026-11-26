@@ -255,6 +255,9 @@ export const en: Messages = {
     proxyDefault: "Default proxy",
     proxyCustom: "Custom",
     owner: "Owner",
+    address: "Address",
+    addressPending:
+      "Mailbox address not confirmed; set it in Name and address before sending",
     since: (s: string) => `Since ${s}`,
     default: "Default",
     folders: "Folders",
@@ -405,6 +408,16 @@ export const en: Messages = {
     noSignature: "No signature",
     passwordTitle: (name: string) => `Update password · ${name}`,
     passwordSaved: "Password updated; reconnecting",
+    rename: "Name and address",
+    renameTitle: (name: string) => `Name and address · ${name}`,
+    renameHint:
+      "The name is the account name in czlmail; the address is the From of sent mail and the primary identity.",
+    accountName: "Name",
+    mailboxAddress: "Mailbox address",
+    signInName: (login: string) => `Signs in as ${login}`,
+    addressPendingHint:
+      "This Microsoft account was registered with another provider's address and the gateway has not found its Outlook address in its mail yet. Send a message at outlook.live.com: its From is the address (usually outlook_…@outlook.com).",
+    renameSaved: "Saved",
   },
   appPasswords: {
     title: "App passwords",

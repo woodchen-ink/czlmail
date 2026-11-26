@@ -240,6 +240,8 @@ export const zhCN = {
     proxyDefault: "默认代理",
     proxyCustom: "自定义",
     owner: "所属用户",
+    address: "地址",
+    addressPending: "邮箱地址待确认, 发信前请在「名称与地址」里填写",
     since: (s: string) => `自 ${s}`,
     default: "默认",
     folders: "文件夹",
@@ -386,6 +388,16 @@ export const zhCN = {
     // Password dialog
     passwordTitle: (name: string) => `更新密码 · ${name}`,
     passwordSaved: "密码已更新, 正在重新连接",
+    // Name and address dialog
+    rename: "名称与地址",
+    renameTitle: (name: string) => `名称与地址 · ${name}`,
+    renameHint: "名称是 czlmail 里显示的账号名; 地址是发信用的 From 与主身份。",
+    accountName: "名称",
+    mailboxAddress: "邮箱地址",
+    signInName: (login: string) => `登录账号: ${login}`,
+    addressPendingHint:
+      "这个 Microsoft 账号是用其他邮箱注册的, 网关还没从邮件里找到它的 Outlook 地址。在 outlook.live.com 发一封信, 发件人那一栏就是它 (通常是 outlook_…@outlook.com)。",
+    renameSaved: "已保存",
   },
   appPasswords: {
     title: "应用密码",

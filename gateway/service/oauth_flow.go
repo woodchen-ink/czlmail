@@ -273,17 +273,25 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 		// Google's granular consent lets the user untick the mail scope.
 		return nil, ErrOAuthScopeDenied
 	}
-	email, err := client.Provider.Email(ctx, hc, client.Provider, tok)
+	login, err := client.Provider.Email(ctx, hc, client.Provider, tok)
 	if err != nil {
 		o.log.Warn("oauth mailbox address", "provider", provider, "err", err)
 		return nil, fmt.Errorf("%w: %w", ErrOAuthExchange, err)
 	}
-	email = strings.ToLower(email)
+	// login signs in (XOAUTH2, IMAPUsername); address is the mailbox's own
+	// address (Email, the primary identity). They differ for a personal
+	// Microsoft account registered with another provider's address.
+	login = strings.ToLower(login)
+	address, confirmed := login, true
+	if client.Provider.Mailbox != nil {
+		address, confirmed = client.Provider.Mailbox(tok, login)
+		address = strings.ToLower(address)
+	}
 
 	if pend.reauth == "" {
-		// The same address again only renews the token: accountId stays.
+		// The same account again only renews the token: accountId stays.
 		var existing model.Upstream
-		err := o.db.Where("user_id = ? AND kind = ? AND lower(email) = ?", pend.ownerID, client.Provider.Kind, email).First(&existing).Error
+		err := o.db.Where("user_id = ? AND kind = ? AND lower(imap_username) = ?", pend.ownerID, client.Provider.Kind, login).First(&existing).Error
 		switch {
 		case err == nil:
 			row = &existing
@@ -293,7 +301,7 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 		}
 	}
 	if pend.reauth != "" {
-		if !strings.EqualFold(row.Email, email) {
+		if !strings.EqualFold(signInName(row), login) {
 			return nil, ErrOAuthAccountMismatch
 		}
 		if err := o.saveToken(row, tok); err != nil {
@@ -304,11 +312,13 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 	}
 
 	pv := client.Provider
-	row.Email, row.Name = email, pend.name
+	row.Email, row.Name, row.AddressPending = address, pend.name, !confirmed
 	if row.Name == "" {
-		row.Name = email
+		if row.Name, err = o.ups.defaultName(pend.ownerID, pv.Label, address, confirmed); err != nil {
+			return nil, err
+		}
 	}
-	row.IMAPHost, row.IMAPPort, row.IMAPTLS, row.IMAPUsername = pv.IMAP.Host, pv.IMAP.Port, pv.IMAP.TLS, email
+	row.IMAPHost, row.IMAPPort, row.IMAPTLS, row.IMAPUsername = pv.IMAP.Host, pv.IMAP.Port, pv.IMAP.TLS, login
 	row.SMTPHost, row.SMTPPort, row.SMTPTLS = pv.SMTP.Host, pv.SMTP.Port, pv.SMTP.TLS
 	if pv.SentCopy != "" {
 		row.SentCopy = pv.SentCopy
@@ -389,4 +399,13 @@ func AdminConsentAnswer(q url.Values) (handled bool, err error) {
 		e = "no admin_consent"
 	}
 	return true, fmt.Errorf("%w: admin consent: %s", ErrOAuthDenied, e)
+}
+
+// signInName is the OAuth account an upstream signs in as (rows from before
+// the sign-in name was stored apart have it in Email only).
+func signInName(row *model.Upstream) string {
+	if row.IMAPUsername != "" {
+		return row.IMAPUsername
+	}
+	return row.Email
 }

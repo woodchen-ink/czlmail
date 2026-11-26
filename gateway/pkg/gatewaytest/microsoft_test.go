@@ -1,17 +1,22 @@
 package gatewaytest
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/woodchen-ink/czlmail/gateway/model"
 	"github.com/woodchen-ink/czlmail/gateway/pkg/gmailtest"
 	"github.com/woodchen-ink/czlmail/gateway/pkg/imapc"
 	"github.com/woodchen-ink/czlmail/gateway/pkg/oauthtest"
 	"github.com/woodchen-ink/czlmail/gateway/service/oauth"
 	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
+	"github.com/woodchen-ink/czlmail/gateway/service/upstream/microsoft"
 )
 
 // microsoftFixture is a gateway whose Microsoft provider points at an oauthtest
@@ -229,5 +234,127 @@ func TestMicrosoftAdminConsentCallback(t *testing.T) {
 	// Without the admin consent state it is an ordinary callback: no session.
 	if q := get("admin_consent=True&state=other"); q.Get("oauthError") != "invalid_oauth_state" {
 		t.Errorf("foreign state: %v", q)
+	}
+}
+
+// microsoftIdentities returns the email addresses of the account's identities.
+func microsoftIdentities(t *testing.T, gw *Gateway, cred Credentials, acct string) []string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{
+		"using":       []string{"urn:ietf:params:jmap:core", "urn:ietf:params:jmap:submission"},
+		"methodCalls": []any{[]any{"Identity/get", map[string]any{"accountId": acct}, "0"}},
+	})
+	req, _ := http.NewRequest("POST", gw.URL+"/jmap/api", bytes.NewReader(body))
+	req.SetBasicAuth(cred.Email, cred.AppPassword)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	var calls [][]json.RawMessage
+	if err := json.Unmarshal(raw, &struct {
+		MethodResponses *[][]json.RawMessage `json:"methodResponses"`
+	}{&calls}); err != nil || len(calls) != 1 || len(calls[0]) != 3 {
+		t.Fatalf("Identity/get: %s", raw)
+	}
+	var args struct {
+		List []struct {
+			Email string `json:"email"`
+		} `json:"list"`
+	}
+	if err := json.Unmarshal(calls[0][1], &args); err != nil {
+		t.Fatalf("Identity/get: %s", raw)
+	}
+	var emails []string
+	for _, i := range args.List {
+		emails = append(emails, i.Email)
+	}
+	return emails
+}
+
+type microsoftRow struct {
+	Name           string `json:"name"`
+	Email          string `json:"email"`
+	AddressPending bool   `json:"addressPending"`
+	IMAP           struct {
+		Username string `json:"username"`
+	} `json:"imap"`
+}
+
+// A personal Microsoft account registered with a Gmail address: it signs in as
+// that address, but its mailbox (and so its From) is outlook_<hex>@outlook.com,
+// which only its mail shows. Until it is found the name says "(Outlook)", so it
+// is not confused with the Gmail mailbox of the same address.
+func TestMicrosoftExternalAddressAccount(t *testing.T) {
+	f := newMicrosoftFixture(t)
+	f.idp.TenantID = microsoft.PersonalTenant
+	const login, own = "wood@gmail.test", "outlook_0123456789abcdef@outlook.com"
+	mail := gmailtest.New(t, gmailtest.Options{Account: login, Tokens: f.idp})
+	if _, _, err := mail.Add(gmailtest.Inbox, []byte("From: Outlook Team <no-reply@microsoft.test>\r\nTo: "+own+"\r\nSubject: Welcome\r\n\r\nhi\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	cred := f.gw.NewUser(t)
+	// The user's Gmail mailbox, named by its address.
+	var user struct{ ID uint }
+	f.gw.DB.Raw("SELECT id FROM users WHERE email = ?", cred.Email).Scan(&user)
+	if err := f.gw.DB.Create(&model.Upstream{PublicID: "gmailtwin" + randHex(4), UserID: user.ID, Kind: model.UpstreamKindGmail, Name: login, Email: login, Paused: true}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	id := f.add(t, cred, mail)
+	a := f.gw.UserAdmin(t, cred)
+	deadline := time.Now().Add(30 * time.Second)
+	var row microsoftRow
+	for {
+		a.Do(t, "GET", "/api/admin/upstreams/"+id, nil, &row)
+		if !row.AddressPending || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if row.AddressPending || row.Email != own || row.Name != own || row.IMAP.Username != login {
+		t.Fatalf("after the first sync: %+v", row)
+	}
+	if ids := microsoftIdentities(t, f.gw, cred, id); len(ids) != 1 || ids[0] != own {
+		t.Errorf("identities %v", ids)
+	}
+
+	// Re-authorisation matches the sign-in name, not the (now different) address.
+	var reauth struct{ URL string }
+	a.Do(t, "POST", "/api/admin/upstreams/"+id+"/reauth", nil, &reauth)
+	if q := f.authorize(t, a, reauth.URL); q.Get("reauthorized") != id {
+		t.Errorf("reauth: %v", q)
+	}
+	// So does adding the same account again.
+	var start struct{ URL string }
+	a.Do(t, "POST", "/api/admin/upstreams/oauth/microsoft/start", map[string]any{}, &start)
+	if q := f.authorize(t, a, start.URL); q.Get("reauthorized") != id {
+		t.Errorf("same account again: %v", q)
+	}
+}
+
+// Without mail that shows its address, the mailbox stays pending under a
+// labelled name until the admin sets the address.
+func TestMicrosoftExternalAddressPending(t *testing.T) {
+	f := newMicrosoftFixture(t)
+	f.idp.TenantID = microsoft.PersonalTenant
+	mail := gmailtest.New(t, gmailtest.Options{Account: "wood@gmail.test", Tokens: f.idp})
+	cred := f.gw.NewUser(t)
+	id := f.add(t, cred, mail)
+	a := f.gw.UserAdmin(t, cred)
+	time.Sleep(time.Second) // the scan runs after the first sync
+	var row microsoftRow
+	a.Do(t, "GET", "/api/admin/upstreams/"+id, nil, &row)
+	if !row.AddressPending || row.Email != "wood@gmail.test" || row.Name != "wood@gmail.test (Outlook)" {
+		t.Fatalf("pending: %+v", row)
+	}
+	a.Do(t, "PATCH", "/api/admin/upstreams/"+id, map[string]any{"email": "outlook_fedcba9876543210@outlook.com", "name": "Outlook"}, &row)
+	if row.AddressPending || row.Email != "outlook_fedcba9876543210@outlook.com" || row.Name != "Outlook" || row.IMAP.Username != "wood@gmail.test" {
+		t.Fatalf("after PATCH: %+v", row)
+	}
+	if ids := microsoftIdentities(t, f.gw, cred, id); len(ids) != 1 || ids[0] != "outlook_fedcba9876543210@outlook.com" {
+		t.Errorf("identities %v", ids)
 	}
 }

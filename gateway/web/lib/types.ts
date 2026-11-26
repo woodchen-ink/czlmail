@@ -76,6 +76,8 @@ export interface UpstreamCard {
   proxy: { mode: "default" | "custom"; host: string } | null
   /** Folders (Gmail: labels); undefined when this API does not say, null before the first sync. */
   mailboxes?: number | null
+  /** email is only the OAuth sign-in name; the mailbox's own address is not known yet. */
+  addressPending?: boolean
 }
 
 export interface TrendPoint {

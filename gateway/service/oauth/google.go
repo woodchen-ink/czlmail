@@ -32,6 +32,7 @@ func init() {
 		IMAP:    upstream.Endpoint{Host: "imap.gmail.com", Port: 993, TLS: imapc.TLSImplicit},
 		APIBase: "https://gmail.googleapis.com",
 		Email:   gmailProfileEmail,
+		Label:   "Gmail",
 	})
 }
 

@@ -44,6 +44,19 @@ type Provider struct {
 	// handed to the upstream as Config.APIBase.
 	APIBase string
 
+	// Label tells this provider's mailboxes apart in default names
+	// ("Outlook", "Gmail"): "me@x.com (Outlook)" next to a Gmail mailbox of the
+	// same sign-in address.
+	Label string
+	// Mailbox maps the sign-in name Email returned to the mailbox's own address.
+	// confirmed is false when the address is not known yet (a personal
+	// Microsoft account signed in with a Gmail address): the gateway then looks
+	// for it in the first synced mail and the admin may set it. Nil: the
+	// sign-in name is the address.
+	Mailbox func(tok *Token, login string) (address string, confirmed bool)
+	// OwnAddress recognises the mailbox's own address among the addresses of
+	// its mail, for mailboxes whose address is pending. Nil: never looked for.
+	OwnAddress func(addr string) bool
 	// Email returns the address of the mailbox tok belongs to (from an API with
 	// the access token, or from tok.IDToken). c goes through the upstream's proxy.
 	Email func(ctx context.Context, c *http.Client, p *Provider, tok *Token) (string, error)

@@ -35,6 +35,12 @@ func init() {
 		// Exchange files every message submitted over SMTP in Sent Items.
 		SentCopy:   upstream.SentCopyServer,
 		Email:      microsoftEmail,
+		Label:      "Outlook",
+		OwnAddress: microsoft.GeneratedAddress,
+		Mailbox: func(tok *Token, login string) (string, bool) {
+			claims, _ := microsoft.ParseIDToken(tok.IDToken)
+			return microsoft.MailboxAddress(claims, login)
+		},
 		WithTenant: microsoftTenant,
 		ClassifyError: func(status int, body []byte) error {
 			te := microsoft.ParseTokenError(status, body)

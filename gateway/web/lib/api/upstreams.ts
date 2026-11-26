@@ -83,6 +83,11 @@ export interface UpstreamView {
   capabilities: Capabilities
   /** How sent mail reaches the Sent folder (#41). */
   sentCopy: SentCopy
+  /**
+   * email is only the OAuth sign-in name (a personal Microsoft account registered
+   * with another provider's address); PATCH email sets the mailbox's own address.
+   */
+  addressPending: boolean
   /** Folders (Gmail: labels) in the index; null until the first sync is done. */
   mailboxes: number | null
   createdAt: string | null
@@ -229,6 +234,7 @@ export function toUpstream(v: UpstreamView): Upstream {
     view: v,
     isDefault: v.isDefault,
     paused: v.paused,
+    addressPending: v.addressPending,
   }
 }
 
