@@ -30,9 +30,6 @@ func TestCzlmailSendFlow(t *testing.T) {
 	resp := gatewaytest.Do(t, c, pre)
 	before, ok := resp.Responses[0].Args.(*email.GetResponse)
 	if !ok {
-		if me, isErr := resp.Responses[0].Args.(*jmap.MethodError); isErr && me.Type == "unknownMethod" {
-			t.Skip("Email/set and Email/changes come with #40")
-		}
 		t.Fatalf("Email/get: %#v", resp.Responses[0].Args)
 	}
 
