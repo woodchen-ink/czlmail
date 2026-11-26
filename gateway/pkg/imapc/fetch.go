@@ -402,12 +402,24 @@ func parseDisposition(v Value) (string, map[string]string) {
 // message. It returns false when the server sent no such message.
 func (c *Client) FetchBody(ctx context.Context, uid uint32, section string, w io.Writer) (bool, error) {
 	found := false
-	err := c.FetchSink(ctx, strconv.FormatUint(uint64(uid), 10), []string{"BODY.PEEK[" + section + "]"}, FetchOptions{UID: true},
+	var werr error
+	err := c.FetchSink(ctx, strconv.FormatUint(uint64(uid), 10), []string{"UID", "BODY.PEEK[" + section + "]"}, FetchOptions{UID: true},
 		func(m *Message) {
-			if m.UID == uid || m.UID == 0 {
-				found = true
+			if m.UID != uid {
+				return // an unsolicited FLAGS update of another message
+			}
+			body, ok := m.Sections[sectionKey("BODY["+strings.ToUpper(section)+"]")]
+			if !ok {
+				return
+			}
+			found = true
+			if body != "" { // sent as a quoted string, not a streamed literal
+				_, werr = io.WriteString(w, body)
 			}
 		},
 		func(int64) io.Writer { return w })
+	if err == nil {
+		err = werr
+	}
 	return found, err
 }

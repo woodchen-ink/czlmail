@@ -57,13 +57,24 @@ func uidsOf(list []placed) imapc.UIDSet {
 	return out
 }
 
-// selectRW selects a mailbox for writing, reusing the current selection.
-func selectRW(ctx context.Context, c *imapc.Client, name string) error {
-	if sel := c.Selected(); sel != nil && sel.Name == name && !sel.ReadOnly {
-		return nil
+// errStaleUIDs means the folder's UIDVALIDITY changed since the index was synced:
+// the stored UIDs may now name other messages, so nothing is written.
+var errStaleUIDs = errors.New("folder was rebuilt on the server; sync first")
+
+// selectRW selects m for writing (reusing the current selection) and checks that
+// its UIDVALIDITY is still the indexed one.
+func selectRW(ctx context.Context, c *imapc.Client, m *model.IndexMailbox) error {
+	sel := c.Selected()
+	if sel == nil || sel.Name != m.Name || sel.ReadOnly {
+		var err error
+		if sel, err = c.Select(ctx, m.Name, imapc.SelectOptions{}); err != nil {
+			return err
+		}
 	}
-	_, err := c.Select(ctx, name, imapc.SelectOptions{})
-	return err
+	if m.UIDValidity != 0 && sel.UIDValidity != m.UIDValidity {
+		return &upstream.Error{Kind: upstream.KindUnreachable, Op: "select", Err: errStaleUIDs}
+	}
+	return nil
 }
 
 // writeOp runs a write under the op lock on a work connection.
@@ -83,17 +94,17 @@ func (u *Upstream) commit(states map[string]string, fn func(*mailindex.Tx) error
 
 // SetKeywords adds and removes keywords on emails.
 func (u *Upstream) SetKeywords(ctx context.Context, emailIDs []string, add, remove []string) (map[string]string, error) {
-	where, err := u.locate(emailIDs)
-	if err != nil {
-		return nil, err
-	}
 	return u.writeOp(ctx, func(c *imapc.Client, states map[string]string) error {
+		where, err := u.locate(emailIDs)
+		if err != nil {
+			return err
+		}
 		for mboxID, list := range where {
 			m, err := u.mailbox(mboxID)
 			if err != nil {
 				return err
 			}
-			if err := selectRW(ctx, c, m.Name); err != nil {
+			if err := selectRW(ctx, c, m); err != nil {
 				return err
 			}
 			modseq := map[uint32]uint64{}
@@ -149,15 +160,15 @@ func flagsOf(keywords []string) []string {
 
 // Move moves emails to a mailbox; they keep their ids.
 func (u *Upstream) Move(ctx context.Context, emailIDs []string, toMailboxID string) (map[string]string, error) {
-	where, err := u.locate(emailIDs)
-	if err != nil {
-		return nil, err
-	}
-	dest, err := u.mailbox(toMailboxID)
-	if err != nil {
-		return nil, err
-	}
 	return u.writeOp(ctx, func(c *imapc.Client, states map[string]string) error {
+		where, err := u.locate(emailIDs)
+		if err != nil {
+			return err
+		}
+		dest, err := u.mailbox(toMailboxID)
+		if err != nil {
+			return err
+		}
 		for mboxID, list := range where {
 			if mboxID == toMailboxID {
 				continue
@@ -166,7 +177,7 @@ func (u *Upstream) Move(ctx context.Context, emailIDs []string, toMailboxID stri
 			if err != nil {
 				return err
 			}
-			if err := selectRW(ctx, c, src.Name); err != nil {
+			if err := selectRW(ctx, c, src); err != nil {
 				return err
 			}
 			uids := uidsOf(list)
@@ -224,22 +235,22 @@ func (u *Upstream) resync(ctx context.Context, c *imapc.Client, states map[strin
 
 // Copy copies emails; the copies are new emails.
 func (u *Upstream) Copy(ctx context.Context, emailIDs []string, toMailboxID string) ([]string, map[string]string, error) {
-	where, err := u.locate(emailIDs)
-	if err != nil {
-		return nil, nil, err
-	}
-	dest, err := u.mailbox(toMailboxID)
-	if err != nil {
-		return nil, nil, err
-	}
 	created := map[string]string{} // source email → copy
 	states, err := u.writeOp(ctx, func(c *imapc.Client, states map[string]string) error {
+		where, err := u.locate(emailIDs)
+		if err != nil {
+			return err
+		}
+		dest, err := u.mailbox(toMailboxID)
+		if err != nil {
+			return err
+		}
 		for mboxID, list := range where {
 			src, err := u.mailbox(mboxID)
 			if err != nil {
 				return err
 			}
-			if err := selectRW(ctx, c, src.Name); err != nil {
+			if err := selectRW(ctx, c, src); err != nil {
 				return err
 			}
 			cu, err := c.Copy(ctx, uidsOf(list), dest.Name)
@@ -365,17 +376,17 @@ func headerValue(raw []byte, name string) string {
 
 // Destroy permanently removes emails (\Deleted + UID EXPUNGE).
 func (u *Upstream) Destroy(ctx context.Context, emailIDs []string) (map[string]string, error) {
-	where, err := u.locate(emailIDs)
-	if err != nil {
-		return nil, err
-	}
 	return u.writeOp(ctx, func(c *imapc.Client, states map[string]string) error {
+		where, err := u.locate(emailIDs)
+		if err != nil {
+			return err
+		}
 		for mboxID, list := range where {
 			m, err := u.mailbox(mboxID)
 			if err != nil {
 				return err
 			}
-			if err := selectRW(ctx, c, m.Name); err != nil {
+			if err := selectRW(ctx, c, m); err != nil {
 				return err
 			}
 			uids := uidsOf(list)

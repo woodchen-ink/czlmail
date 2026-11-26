@@ -21,6 +21,9 @@ var (
 	ErrUpstreamNotFound     = errors.New("upstream not found")
 	ErrPrivateNetwork       = errors.New("host is in a private network")
 	ErrUpstreamKindReadOnly = errors.New("this upstream kind is set up by its own flow")
+	// ErrPasswordRequired: the server, port, TLS mode or username changed, so the
+	// stored password is not sent anywhere new without being entered again.
+	ErrPasswordRequired = errors.New("password required for the changed server")
 )
 
 // Sealed columns of the upstreams table.
@@ -252,22 +255,39 @@ func (s *Upstreams) apply(up *model.Upstream, in UpstreamInput) error {
 		*dst = v
 		return nil
 	}
+	hadIMAP := up.PasswordSealed != ""
+	hadSMTP := up.SMTPPasswordSealed != "" || hadIMAP
 	if e := in.IMAP; e != nil {
+		if e.Username == "" {
+			e.Username = up.Email
+		}
+		moved := e.Host != up.IMAPHost || e.Port != up.IMAPPort || e.TLS != up.IMAPTLS || e.Username != up.IMAPUsername
+		if moved && hadIMAP && e.Password == nil {
+			return ErrPasswordRequired
+		}
 		up.IMAPHost, up.IMAPPort, up.IMAPTLS, up.IMAPUsername = e.Host, e.Port, e.TLS, e.Username
 		if err := seal("password_sealed", crypto.PurposeUpstreamSecret, e.Password, &up.PasswordSealed); err != nil {
 			return err
 		}
 	}
 	if e := in.SMTP; e != nil {
+		moved := e.Host != up.SMTPHost || e.Port != up.SMTPPort || e.TLS != up.SMTPTLS || e.Username != up.SMTPUsername
+		if moved && hadSMTP && up.SMTPHost != "" && e.Password == nil {
+			return ErrPasswordRequired
+		}
 		up.SMTPHost, up.SMTPPort, up.SMTPTLS, up.SMTPUsername = e.Host, e.Port, e.TLS, e.Username
 		if err := seal("smtp_password_sealed", crypto.PurposeUpstreamSecret, e.Password, &up.SMTPPasswordSealed); err != nil {
 			return err
 		}
 	}
 	if p := in.Proxy; p != nil {
+		oldProxyURL := up.ProxyURL
 		up.ProxyMode = p.Mode
 		up.ProxyURL = ""
 		if p.Mode == model.ProxyCustom {
+			if p.URL != oldProxyURL && p.Password == nil {
+				up.ProxyPasswordSealed = "" // never send the old proxy password to a new proxy
+			}
 			up.ProxyURL = p.URL
 			if err := seal("proxy_password_sealed", crypto.PurposeProxySecret, p.Password, &up.ProxyPasswordSealed); err != nil {
 				return err

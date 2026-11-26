@@ -380,8 +380,15 @@ func (tx *Tx) Attach(o Orphan, mailboxID string, uid uint32, modseq uint64) erro
 	}
 	if o.From != mailboxID {
 		tx.record(TypeEmail, o.ID, KindUpdated)
-		tx.record(TypeMailbox, o.From, KindCounts)
 		tx.record(TypeMailbox, mailboxID, KindCounts)
+		// The folder it left may be gone already (moved out, then deleted).
+		var n int64
+		if err := tx.db.Model(&model.IndexMailbox{}).Where("id = ?", o.From).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			tx.record(TypeMailbox, o.From, KindCounts)
+		}
 	}
 	return nil
 }

@@ -165,7 +165,7 @@ func TestUTF7AndSets(t *testing.T) {
 func TestStreamedLiteral(t *testing.T) {
 	body := "Subject: x\r\n\r\nhello\r\n"
 	c := serve(t, "* OK hi",
-		step{"UID FETCH 3 (BODY.PEEK[])", "* 1 FETCH (UID 3 BODY[] {" + itoa(len(body)) + "}\r\n" + body + ")\r\nTAG OK\r\n"})
+		step{"UID FETCH 3 (UID BODY.PEEK[])", "* 1 FETCH (UID 3 BODY[] {" + itoa(len(body)) + "}\r\n" + body + ")\r\nTAG OK\r\n"})
 	var buf bytes.Buffer
 	found, err := c.FetchBody(context.Background(), 3, "", &buf)
 	if err != nil || !found || buf.String() != body {

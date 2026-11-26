@@ -93,20 +93,30 @@ func (r *round) run(ctx context.Context) error {
 	if len(candidates) == 0 {
 		return nil
 	}
-	if err := r.examine(ctx, candidates, hinted, full); err != nil {
+	if err := r.examine(ctx, candidates, hinted, false); err != nil {
 		return err
 	}
-	if err := r.apply(ctx); err != nil {
-		return err
-	}
-	// Messages that vanished here may have moved to a folder this round did not
-	// look at; check every folder before calling them deleted.
-	if r.matcher.unmatched() > 0 && !full {
+	// A message that appeared or vanished here may have moved from or to a folder
+	// this round did not look at. Check the others by STATUS before importing, so
+	// the move is matched (same id) instead of showing up as a new message.
+	if !full && r.anyChanged() {
 		if err := r.sweep(ctx); err != nil {
 			return err
 		}
 	}
+	if err := r.apply(ctx); err != nil {
+		return err
+	}
 	return r.finish(ready)
+}
+
+func (r *round) anyChanged() bool {
+	for _, d := range r.deltas {
+		if len(d.newUIDs) > 0 || len(d.vanished) > 0 || d.reset {
+			return true
+		}
+	}
+	return false
 }
 
 // list runs LIST (with STATUS when the server has LIST-STATUS) and reconciles folders.
@@ -136,7 +146,9 @@ func (r *round) loadMailboxes() error {
 }
 
 // examine decides which candidates changed and computes their deltas.
-func (r *round) examine(ctx context.Context, candidates []*model.IndexMailbox, hinted map[string]bool, full bool) error {
+// In a sweep, STATUS is always asked and a folder counts as changed only when its
+// counts or UIDs moved (the flag-window compare of the plain tier waits for its turn).
+func (r *round) examine(ctx context.Context, candidates []*model.IndexMailbox, hinted map[string]bool, sweep bool) error {
 	slices.SortFunc(candidates, func(a, b *model.IndexMailbox) int {
 		if d := a.SortOrder - b.SortOrder; d != 0 {
 			return d
@@ -148,7 +160,7 @@ func (r *round) examine(ctx context.Context, candidates []*model.IndexMailbox, h
 			continue
 		}
 		st := r.statuses[m.Name]
-		if st == nil && !r.caps.qresync {
+		if st == nil && (!r.caps.qresync || sweep) {
 			var err error
 			if st, err = r.c.Status(ctx, m.Name); err != nil {
 				if isOperational(err) {
@@ -159,7 +171,7 @@ func (r *round) examine(ctx context.Context, candidates []*model.IndexMailbox, h
 			r.statuses[m.Name] = st
 		}
 		r.checked[m.ID] = true
-		if !r.needsSync(m, st, hinted[m.Name] || r.req.Deep) {
+		if !r.needsSync(m, st, hinted[m.Name] || r.req.Deep, sweep) {
 			r.u.checked(m.ID, m.Role, false, r.req.Idle, r.now)
 			continue
 		}
@@ -177,12 +189,15 @@ func (r *round) examine(ctx context.Context, candidates []*model.IndexMailbox, h
 
 // needsSync compares STATUS with the stored sync point. Without CONDSTORE a flag
 // change is invisible to STATUS, so due folders are always compared (window).
-func (r *round) needsSync(m *model.IndexMailbox, st *imapc.Status, forced bool) bool {
+func (r *round) needsSync(m *model.IndexMailbox, st *imapc.Status, forced, sweep bool) bool {
 	if st == nil || m.UIDValidity == 0 || forced {
 		return true
 	}
 	if st.UIDValidity != m.UIDValidity || st.UIDNext != m.UIDNext || st.Messages != m.Messages {
 		return true
+	}
+	if sweep && !(r.caps.condstore && st.HasModSeq) {
+		return false
 	}
 	if r.caps.condstore && st.HasModSeq {
 		return st.HighestModSeq != m.HighestModSeq
@@ -217,10 +232,9 @@ func (r *round) apply(ctx context.Context) error {
 	} else if err := r.write(r.matcher.refresh); err != nil {
 		return err
 	}
-	if r.total == 0 {
-		for _, d := range r.deltas {
-			r.total += len(d.newUIDs)
-		}
+	r.total = 0
+	for _, d := range r.deltas {
+		r.total += len(d.newUIDs)
 	}
 	for _, d := range r.deltas {
 		if d.imported {
@@ -234,7 +248,8 @@ func (r *round) apply(ctx context.Context) error {
 	return nil
 }
 
-// sweep checks every folder not looked at yet, so moved messages are matched.
+// sweep compares the folders not looked at yet by STATUS (their message counts
+// change with a move); only those that changed get a delta.
 func (r *round) sweep(ctx context.Context) error {
 	if !r.listed {
 		if err := r.list(ctx); err != nil {
@@ -247,17 +262,7 @@ func (r *round) sweep(ctx context.Context) error {
 			rest = append(rest, m)
 		}
 	}
-	before := len(r.deltas)
-	if err := r.examine(ctx, rest, nil, false); err != nil {
-		return err
-	}
-	if len(r.deltas) == before {
-		return nil
-	}
-	for _, d := range r.deltas[before:] {
-		r.total += len(d.newUIDs)
-	}
-	return r.apply(ctx)
+	return r.examine(ctx, rest, nil, true)
 }
 
 // finish destroys what never turned up again, commits the folders' sync points,
@@ -269,6 +274,9 @@ func (r *round) finish(wasReady bool) error {
 			return err
 		}
 		for _, d := range r.deltas {
+			if d.skip {
+				continue
+			}
 			m := d.mbox
 			point := map[string]any{
 				"uid_validity": d.next.UIDValidity, "uid_next": d.next.UIDNext,

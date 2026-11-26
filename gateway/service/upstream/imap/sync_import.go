@@ -206,6 +206,29 @@ func previewSource(m *imapc.Message) *imapc.BodyPart {
 	return previewPart(m.Body)
 }
 
+// fetchMetaTolerant is fetchMeta that survives a NO for some messages (Gmail:
+// "Some messages could not be FETCHed"): the batch is split until the failing
+// UIDs are isolated and skipped, so one broken message cannot stall the sync.
+// Skipped UIDs are tried again next round.
+func (u *Upstream) fetchMetaTolerant(ctx context.Context, c *imapc.Client, uids []uint32) ([]*fetched, error) {
+	msgs, err := u.fetchMeta(ctx, c, uids)
+	var se *imapc.StatusError
+	if err == nil || !errors.As(err, &se) || se.Status != "NO" {
+		return msgs, err
+	}
+	if len(uids) == 1 {
+		u.log.Warn("skipping a message the server cannot fetch", "uid", uids[0], "err", err)
+		return nil, nil
+	}
+	half := len(uids) / 2
+	a, err := u.fetchMetaTolerant(ctx, c, uids[:half])
+	if err != nil {
+		return nil, err
+	}
+	b, err := u.fetchMetaTolerant(ctx, c, uids[half:])
+	return append(a, b...), err
+}
+
 // importFolder fetches the folder's new messages in batches, newest first, and
 // commits each batch: a continued orphan is re-attached, anything else created.
 func (r *round) importFolder(ctx context.Context, d *folderDelta) error {
@@ -214,12 +237,18 @@ func (r *round) importFolder(ctx context.Context, d *folderDelta) error {
 	}
 	if sel := r.c.Selected(); sel == nil || sel.Name != d.mbox.Name {
 		if _, err := r.c.Select(ctx, d.mbox.Name, imapc.SelectOptions{ReadOnly: true}); err != nil {
+			if isOperational(err) {
+				// The folder went away meanwhile: keep its old sync point, the next
+				// LIST removes it.
+				d.skip = true
+				return nil
+			}
 			return err
 		}
 	}
 	for start := 0; start < len(d.newUIDs); start += importBatch {
 		batch := d.newUIDs[start:min(start+importBatch, len(d.newUIDs))]
-		msgs, err := r.u.fetchMeta(ctx, r.c, batch)
+		msgs, err := r.u.fetchMetaTolerant(ctx, r.c, batch)
 		if err != nil {
 			return err
 		}

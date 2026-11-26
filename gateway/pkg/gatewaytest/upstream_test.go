@@ -193,6 +193,15 @@ func TestUpstreamLifecycle(t *testing.T) {
 	// Fixing the password recovers it.
 	user.Do(t, "PATCH", "/api/admin/upstreams/"+badID, map[string]any{"imap": IMAPUpstreamBody(other)["imap"]}, nil)
 	gw.WaitUpstream(t, cred, badID, "ok", 20*time.Second)
+	// Pointing it at another server needs the password again (it is never sent
+	// to a new host on its own), and changes nothing.
+	moved := map[string]any{"host": "imap.elsewhere.invalid", "port": 993, "tls": "tls", "username": other.Name}
+	if code, raw := user.Call(t, "PATCH", "/api/admin/upstreams/"+badID, map[string]any{"imap": moved}, nil); code != 40034 {
+		t.Fatalf("host change without password: %d %s", code, raw)
+	}
+	if code, raw := user.Call(t, "POST", "/api/admin/upstreams/"+badID+"/test", map[string]any{"imap": moved}, nil); code != 40034 {
+		t.Fatalf("test with stored password on another host: %d %s", code, raw)
+	}
 
 	// Pause and resume; the Session state follows.
 	before := gw.session(t, cred).State

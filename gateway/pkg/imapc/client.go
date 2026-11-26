@@ -238,8 +238,13 @@ func (c *Client) execute(ctx context.Context, name string, handle func(*Response
 		return nil, ErrClosed
 	default:
 	}
-	stop := context.AfterFunc(ctx, func() { c.conn.SetDeadline(time.Unix(1, 0)) })
+	// A cancelled command cannot be abandoned mid-stream: cancelling closes the
+	// connection (deadline tricks lose against the per-response deadline below).
+	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	c.conn.SetDeadline(time.Now().Add(c.opts.Timeout))
 	defer c.conn.SetDeadline(time.Time{})
 
@@ -258,7 +263,15 @@ func (c *Client) execute(ctx context.Context, name string, handle func(*Response
 		c.conn.SetDeadline(time.Now().Add(c.opts.Timeout)) // long FETCH: time out on silence, not on size
 		switch resp.Tag {
 		case "+":
-			continue // only expected inside writeCommand
+			if name == "AUTHENTICATE" {
+				// SASL-IR answered with an error challenge (XOAUTH2): reply empty
+				// to get the tagged NO instead of waiting for a timeout.
+				c.bw.WriteString("\r\n")
+				if err := c.bw.Flush(); err != nil {
+					return nil, c.fail(ctx, err)
+				}
+			}
+			continue
 		case "*":
 			c.untagged(resp, handle)
 			if resp.Type == "BYE" && name != "LOGOUT" {

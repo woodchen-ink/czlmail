@@ -150,7 +150,7 @@ type Prober func(ctx context.Context, cfg Config) (*ProbeReport, error)
 
 // ProbeReport is the outcome of a connection test.
 type ProbeReport struct {
-	IMAP ProbePart `json:"imap"`
+	IMAP ProbePart  `json:"imap"`
 	SMTP *ProbePart `json:"smtp"` // nil when no SMTP server is configured
 }
 

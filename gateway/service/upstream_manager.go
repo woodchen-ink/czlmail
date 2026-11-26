@@ -54,6 +54,7 @@ type UpstreamManager struct {
 	running  map[string]*managed // by accountId
 	statuses map[string]string   // accountId → last status written, to detect changes
 	clients  map[string]int      // user public id → push connections
+	locks    map[string]*sync.Mutex
 	stopped  bool
 }
 
@@ -70,7 +71,7 @@ type managed struct {
 // NewUpstreamManager returns a manager; Start launches the upstreams.
 func NewUpstreamManager(db *gorm.DB, ring *crypto.Keyring, settings *Settings, dataDir string, log *slog.Logger, timing upstream.Timing) *UpstreamManager {
 	m := &UpstreamManager{db: db, ring: ring, settings: settings, dataDir: dataDir, log: log, timing: timing,
-		running: map[string]*managed{}, statuses: map[string]string{}, clients: map[string]int{}}
+		running: map[string]*managed{}, statuses: map[string]string{}, clients: map[string]int{}, locks: map[string]*sync.Mutex{}}
 	settings.OnChange(m.settingsChanged)
 	return m
 }
@@ -130,8 +131,28 @@ func (r *managed) stop() {
 	r.idx.Close()
 }
 
+// accountLock serialises starting and stopping one upstream, so two restarts
+// (an admin change and a settings change) never leave two runners on one index.
+func (m *UpstreamManager) accountLock(id string) *sync.Mutex {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	l := m.locks[id]
+	if l == nil {
+		l = &sync.Mutex{}
+		m.locks[id] = l
+	}
+	return l
+}
+
 // Start runs an upstream (paused ones only get their status).
 func (m *UpstreamManager) Start(row *model.Upstream) {
+	l := m.accountLock(row.PublicID)
+	l.Lock()
+	defer l.Unlock()
+	m.start(row)
+}
+
+func (m *UpstreamManager) start(row *model.Upstream) {
 	userID, err := m.userPublicID(row.UserID)
 	if err != nil {
 		m.log.Error("upstream owner missing", "account", row.PublicID, "err", err)
@@ -187,10 +208,19 @@ func (m *UpstreamManager) Start(row *model.Upstream) {
 	}()
 }
 
-// Restart stops and starts an upstream after its settings changed.
+// Restart stops an upstream and starts it again from its current row (read inside
+// the lock, so a restart never runs with settings older than the last save, and a
+// deleted upstream stays stopped).
 func (m *UpstreamManager) Restart(row *model.Upstream) {
+	l := m.accountLock(row.PublicID)
+	l.Lock()
+	defer l.Unlock()
 	m.stopOne(row.PublicID)
-	m.Start(row)
+	var fresh model.Upstream
+	if err := m.db.Where("public_id = ?", row.PublicID).First(&fresh).Error; err != nil {
+		return
+	}
+	m.start(&fresh)
 }
 
 // Renamed refreshes the row a runner reports with (name, default) and tells clients.
@@ -208,6 +238,9 @@ func (m *UpstreamManager) Renamed(row *model.Upstream) {
 
 // Remove stops an upstream whose row was deleted and deletes its index.
 func (m *UpstreamManager) Remove(row *model.Upstream) {
+	l := m.accountLock(row.PublicID)
+	l.Lock()
+	defer l.Unlock()
 	m.stopOne(row.PublicID)
 	m.mu.Lock()
 	delete(m.statuses, row.PublicID)
@@ -231,8 +264,11 @@ func (m *UpstreamManager) RemoveUser(userPublicID string) {
 	}
 	m.mu.Unlock()
 	for _, id := range ids {
+		l := m.accountLock(id)
+		l.Lock()
 		m.stopOne(id)
 		_ = mailindex.Remove(m.dataDir, id)
+		l.Unlock()
 	}
 	var rows []model.Upstream
 	if err := m.db.Find(&rows).Error; err == nil {

@@ -37,6 +37,7 @@ var adminErrors = []struct {
 	{errInvalidTLSMode, apiError{400, 40032, "invalid_tls_mode"}},
 	{errInvalidProxy, apiError{400, 40033, "invalid_proxy"}},
 	{errMissingPassword, apiError{400, 40034, "missing_password"}},
+	{service.ErrPasswordRequired, apiError{400, 40034, "missing_password"}},
 	{service.ErrPrivateNetwork, apiError{400, 40035, "private_network_not_allowed"}},
 	{service.ErrUnauthenticated, apiError{401, 40100, "unauthenticated"}},
 	{service.ErrInvalidCredentials, apiError{401, 40101, "invalid_credentials"}},

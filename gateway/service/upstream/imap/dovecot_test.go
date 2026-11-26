@@ -198,6 +198,18 @@ func testSync(t *testing.T, srv *imaptest.Server) {
 		t.Fatalf("move changes %+v", ch)
 	}
 
+	// And back into INBOX, again with only INBOX hinted (an IDLE push): Archive is
+	// checked before importing, so the message keeps its id instead of appearing twice.
+	emailState = h.state(mailindex.TypeEmail)
+	backUID := h.box.Move("Archive", newUID, "INBOX")
+	h.sync(upstream.SyncRequest{Mailboxes: []string{"INBOX"}})
+	if got := h.emailIn("INBOX", backUID); got != e1.ID {
+		t.Fatalf("moved back: id %s, want %s", got, e1.ID)
+	}
+	if ch := h.changes(mailindex.TypeEmail, emailState); !slices.Equal(ch.Updated, []string{e1.ID}) || len(ch.Created)+len(ch.Destroyed) != 0 {
+		t.Fatalf("move back changes %+v", ch)
+	}
+
 	// Expunge: destroyed.
 	emailState = h.state(mailindex.TypeEmail)
 	h.box.Expunge("INBOX", replyUID)

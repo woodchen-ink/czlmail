@@ -23,6 +23,7 @@ type folderDelta struct {
 	newUIDs  []uint32 // not indexed yet, newest first
 	next     syncPoint
 	removed  bool // applyRemovals committed
+	skip     bool // the folder could not be selected for import: keep its sync point
 	imported bool
 }
 
