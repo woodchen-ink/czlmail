@@ -24,7 +24,7 @@ type apiResp struct {
 	Data json.RawMessage `json:"data"`
 }
 
-func newTestGateway(t *testing.T) (*httptest.Server, *service.Accounts, *service.BasicAuthenticator, func() []model.AuditLog) {
+func newTestGateway(t *testing.T, web ...http.Handler) (*httptest.Server, *service.Accounts, *service.BasicAuthenticator, func() []model.AuditLog) {
 	t.Helper()
 	db, err := database.Open(t.TempDir())
 	if err != nil {
@@ -43,6 +43,12 @@ func newTestGateway(t *testing.T) (*httptest.Server, *service.Accounts, *service
 		Log: log, ClientIP: clientIP,
 		Health: &handler.Health{DB: db, Version: "test", Log: log},
 		Admin:  &handler.Admin{Accounts: acc, Settings: sets, Audit: audit, ClientIP: clientIP, Log: log},
+		AdminWeb: func() http.Handler {
+			if len(web) > 0 {
+				return web[0]
+			}
+			return nil
+		}(),
 	}))
 	t.Cleanup(srv.Close)
 	audits := func() []model.AuditLog {

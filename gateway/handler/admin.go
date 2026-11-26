@@ -9,17 +9,21 @@ import (
 
 	"github.com/woodchen-ink/go-web-utils/cookieutil"
 
+	"github.com/woodchen-ink/czlmail/gateway/cron"
 	"github.com/woodchen-ink/czlmail/gateway/middleware"
 	"github.com/woodchen-ink/czlmail/gateway/service"
 )
 
 // Admin serves /api/admin/: setup, sign-in, the signed-in user, app passwords,
-// users, settings and the audit log.
+// users, settings, the audit log, the overview and the system pages.
 type Admin struct {
 	Accounts      *service.Accounts
 	Settings      *service.Settings
 	Audit         *service.Audit
 	Upstreams     *service.Upstreams
+	OverviewSvc   *service.Overview
+	SystemSvc     *service.System
+	Tasks         *cron.Scheduler
 	ClientIP      func(*http.Request) string
 	SecureCookies bool
 	Log           *slog.Logger

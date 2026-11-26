@@ -25,6 +25,7 @@ const (
 	EnvListen         = "GATEWAY_LISTEN"
 	EnvDataDir        = "GATEWAY_DATA_DIR"
 	EnvTrustedProxies = "GATEWAY_TRUSTED_PROXIES"
+	EnvWebDir         = "GATEWAY_WEB_DIR"
 )
 
 // MasterKeySize is the length of the decoded master key in bytes.
@@ -41,9 +42,20 @@ type Config struct {
 	Listen string
 	// DataDir holds gateway.sqlite, the per-upstream databases and temporary blobs.
 	DataDir string
+	// WebDir is the admin web build (gateway/web/out), served under /admin/.
+	WebDir string
 	// Proxies decides which forwarding headers are trusted for the client IP;
 	// nil when no proxy is trusted. Use ClientIP rather than reading it directly.
 	Proxies *iputil.TrustedProxies
+
+	trustedProxies string // as configured, for PublicEnv
+}
+
+// EnvVar is a startup variable as the admin's system page shows it.
+type EnvVar struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Secret bool   `json:"secret"` // Value is only "set"
 }
 
 // Load reads and validates the environment.
@@ -75,7 +87,10 @@ func load(getenv func(string) string) (*Config, error) {
 		BaseURL:   base,
 		Listen:    orDefault(getenv(EnvListen), ":8080"),
 		DataDir:   orDefault(getenv(EnvDataDir), "/data"),
+		WebDir:    orDefault(getenv(EnvWebDir), "web/out"),
 		Proxies:   proxies,
+
+		trustedProxies: strings.TrimSpace(getenv(EnvTrustedProxies)),
 	}, nil
 }
 
@@ -164,6 +179,19 @@ func orDefault(v, def string) string {
 		return v
 	}
 	return def
+}
+
+// PublicEnv lists the startup variables for the admin's system page, with the master
+// key reduced to "set".
+func (c *Config) PublicEnv() []EnvVar {
+	return []EnvVar{
+		{Name: EnvMasterKey, Value: "set", Secret: true},
+		{Name: EnvBaseURL, Value: c.BaseURL},
+		{Name: EnvListen, Value: c.Listen},
+		{Name: EnvDataDir, Value: c.DataDir},
+		{Name: EnvWebDir, Value: c.WebDir},
+		{Name: EnvTrustedProxies, Value: c.trustedProxies},
+	}
 }
 
 // SecureCookies reports whether admin cookies get the Secure flag: always, unless the

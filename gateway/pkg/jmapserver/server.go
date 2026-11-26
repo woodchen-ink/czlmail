@@ -146,6 +146,9 @@ func (s *Server) Uploads() *UploadStore { return s.uploads }
 // the user is disabled). It returns how many connections were closed.
 func (s *Server) EndUserStreams(userID string) int { return s.bus.EndUser(userID) }
 
+// StreamCount returns the user's open EventSource connections; "" counts all users.
+func (s *Server) StreamCount(userID string) int { return s.bus.Count(userID) }
+
 // Close ends all EventSource connections and push deliveries; call it before
 // http.Server.Shutdown, which otherwise waits for streams that never go idle.
 func (s *Server) Close() {

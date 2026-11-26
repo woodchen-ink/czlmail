@@ -12,8 +12,7 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 )
 
-// Deps are the handlers the router mounts. Later work packages add the admin
-// web pages (/admin/, /setup).
+// Deps are the handlers the router mounts.
 type Deps struct {
 	Log      *slog.Logger
 	ClientIP middleware.ClientIPFunc
@@ -23,6 +22,9 @@ type Deps struct {
 	JMAP *jmapserver.Server
 	// Czlmail serves /.well-known/czlmail.json; nil leaves it unmounted.
 	Czlmail http.Handler
+	// AdminWeb serves the admin pages under /admin/ (handler.NewAdminWeb); nil leaves
+	// them unmounted.
+	AdminWeb http.Handler
 }
 
 // New returns the gateway's root handler.
@@ -43,6 +45,13 @@ func New(d Deps) http.Handler {
 		mux.HandleFunc("POST /jmap/upload/{accountId}", j.Upload)
 		mux.HandleFunc("GET /jmap/download/{accountId}/{blobId}/{name}", j.Download)
 		mux.HandleFunc("GET /jmap/eventsource", j.EventSource)
+	}
+	if d.AdminWeb != nil {
+		// After /api/: the API answers JSON 404 itself and never falls through to pages.
+		mux.Handle(handler.AdminWebPrefix+"/", d.AdminWeb)
+		mux.Handle(handler.AdminWebPrefix, d.AdminWeb)
+		mux.HandleFunc("GET /setup", handler.LegacySetup)
+		mux.HandleFunc("GET /{$}", handler.AdminHome)
 	}
 	mux.HandleFunc("/", notFound)
 	return middleware.Chain(mux,
@@ -94,6 +103,12 @@ func adminAPI(d Deps) http.Handler {
 	handle("GET /api/admin/settings", a.ListSettings)
 	handle("PATCH /api/admin/settings", a.UpdateSettings)
 	handle("GET /api/admin/audit-logs", a.ListAudit)
+
+	handle("GET /api/admin/overview", a.Overview)
+	handle("GET /api/admin/system", a.System)
+	handle("POST /api/admin/system/master-key-backup", a.ConfirmMasterKeyBackup)
+	handle("GET /api/admin/system/tasks", a.ListTasks)
+	handle("POST /api/admin/system/tasks/{name}/run", a.RunTask)
 
 	m.HandleFunc("/", notFound)
 	return middleware.Chain(m,

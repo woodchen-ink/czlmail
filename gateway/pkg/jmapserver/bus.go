@@ -220,6 +220,23 @@ func (b *Bus) EndUser(userID string) int {
 	return n
 }
 
+// Count returns how many connections the user has open; "" counts every user's.
+func (b *Bus) Count(userID string) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if userID != "" {
+		if hub := b.users[userID]; hub != nil {
+			return len(hub.subs)
+		}
+		return 0
+	}
+	n := 0
+	for _, hub := range b.users {
+		n += len(hub.subs)
+	}
+	return n
+}
+
 // CloseAll closes every connection.
 func (b *Bus) CloseAll() {
 	b.mu.Lock()
