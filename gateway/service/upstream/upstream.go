@@ -8,6 +8,7 @@ package upstream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -89,6 +90,21 @@ type SyncRequest struct {
 	Progress func(done, total int)
 }
 
+// ErrNotFound means an email or mailbox id is not in the index, or the message
+// is gone from the server. Implementations wrap it in an *Error of KindRejected.
+var ErrNotFound = errors.New("upstream: not found")
+
+// SearchQuery holds the search criteria the index cannot answer; every non-empty
+// field must match (AND). Values are matched as substrings, case-insensitively,
+// as IMAP SEARCH does.
+type SearchQuery struct {
+	Text []string // anywhere in the headers or body
+	Body []string // in the body
+	Bcc  []string
+	// Header lists [name] (the header exists) or [name, value] (it contains value).
+	Header [][]string
+}
+
 // Hint is a change the watcher saw. Mailbox "" means "something, check all".
 type Hint struct{ Mailbox string }
 
@@ -112,6 +128,10 @@ type Upstream interface {
 	// FetchSection streams one MIME part (IMAP section, e.g. "1.2"), still in its
 	// transfer encoding as stored; the part's encoding is in the body structure.
 	FetchSection(ctx context.Context, emailID, section string, w io.Writer) error
+
+	// Search runs a server-side search in one mailbox and returns the matching
+	// email ids (only those in the index). The caller fans out over mailboxes.
+	Search(ctx context.Context, mailboxID string, q SearchQuery) ([]string, error)
 
 	// Writes go to the server first and to the index right after; the returned
 	// states are the new states of the changed types.

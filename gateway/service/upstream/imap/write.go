@@ -16,7 +16,7 @@ import (
 )
 
 // ErrNotFound means an email or mailbox id is not in the index.
-var ErrNotFound = errors.New("imap: not found")
+var ErrNotFound = upstream.ErrNotFound
 
 func rejected(op string, err error) error {
 	return &upstream.Error{Kind: upstream.KindRejected, Op: op, Err: err}

@@ -285,7 +285,11 @@ func (r *round) place(tx *mailindex.Tx, d *folderDelta, f *fetched) error {
 		}
 		return tx.SetKeywords(d.mbox.ID, m.UID, mailindex.FlagsToKeywords(m.Flags), 0)
 	}
-	return tx.CreateEmail(e, refs, d.mbox.ID, m.UID, m.ModSeq)
+	if err := tx.CreateEmail(e, refs, d.mbox.ID, m.UID, m.ModSeq); err != nil {
+		return err
+	}
+	tx.Delivered(e.ID)
+	return nil
 }
 
 func itoa(n int) string {

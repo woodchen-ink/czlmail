@@ -17,6 +17,8 @@ type Tx struct {
 	meta    model.IndexMeta
 	pending map[changeKey]string
 	order   []changeKey
+	// delivered are emails the sync engine found new on the server, for push.
+	delivered []string
 }
 
 type changeKey struct{ typ, id string }
@@ -45,6 +47,14 @@ func (s *Store) Write(fn func(*Tx) error) (map[string]string, error) {
 	if !tx.meta.Ready {
 		return nil, nil
 	}
+	if len(tx.delivered) > 0 {
+		s.mu.RLock()
+		hook := s.onDelivered
+		s.mu.RUnlock()
+		if hook != nil {
+			hook(tx.delivered)
+		}
+	}
 	var changed map[string]string
 	for _, t := range Types {
 		if !before.Ready || typeSeq(&before, t) != typeSeq(&tx.meta, t) {
@@ -65,6 +75,15 @@ func (tx *Tx) Ready() bool { return tx.meta.Ready }
 
 // SetReady marks the first import finished; the states start at "<gen>-0".
 func (tx *Tx) SetReady() { tx.meta.Ready = true }
+
+// Delivered marks an email created in this transaction as newly arrived on the
+// server (not created by a gateway write), so the OnDelivered hook sees it once
+// the transaction commits. Nothing is reported before the first import finished.
+func (tx *Tx) Delivered(emailID string) {
+	if tx.meta.Ready {
+		tx.delivered = append(tx.delivered, emailID)
+	}
+}
 
 // SetLastFullSync records a nightly full compare.
 func (tx *Tx) SetLastFullSync(t time.Time) { tx.meta.LastFullSync = &t }
