@@ -9,6 +9,7 @@ require (
 	github.com/woodchen-ink/go-web-utils v1.10.0
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.62.0
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/text v0.44.0
 	gorm.io/gorm v1.31.2
 )
@@ -23,7 +24,6 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	modernc.org/libc v1.22.5 // indirect
 	modernc.org/mathutil v1.5.0 // indirect

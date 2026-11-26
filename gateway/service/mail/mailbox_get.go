@@ -53,6 +53,7 @@ SELECT ms.mailbox_id AS mailbox_id,
        COUNT(DISTINCT e.thread_id) AS total_threads,
        COUNT(DISTINCT CASE WHEN ms.mailbox_id IN (SELECT id FROM bin) THEN uta.thread_id ELSE ut.thread_id END) AS unread_threads
 FROM memberships ms
+JOIN mailboxes b ON b.id = ms.mailbox_id AND b.hidden = 0
 JOIN emails e ON e.id = ms.email_id AND e.orphaned_from = ''
 LEFT JOIN ut ON ut.thread_id = e.thread_id
 LEFT JOIN ut_all uta ON uta.thread_id = e.thread_id
@@ -60,7 +61,8 @@ GROUP BY ms.mailbox_id`
 
 func loadMailboxes(idx *mailindex.Store) ([]model.IndexMailbox, map[string]mailboxCounts, error) {
 	var boxes []model.IndexMailbox
-	if err := idx.DB().Order("sort_order, name").Find(&boxes).Error; err != nil {
+	// Hidden rows (Gmail's All Mail) are synced folders, not mailboxes.
+	if err := idx.DB().Where("hidden = ?", false).Order("sort_order, name").Find(&boxes).Error; err != nil {
 		return nil, nil, err
 	}
 	var rows []mailboxCounts
@@ -85,6 +87,10 @@ func leafName(m *model.IndexMailbox) string {
 }
 
 func rightsOf(m *model.IndexMailbox) mailboxRights {
+	if m.Virtual && (m.Label == "" || strings.HasPrefix(m.Label, `\`)) {
+		// Gmail's system labels and Archive: usable, not renamable.
+		return mailboxRights{MayReadItems: true, MayAddItems: true, MayRemoveItems: true, MaySetSeen: true, MaySetKeywords: true, MaySubmit: true}
+	}
 	if m.NoSelect {
 		return mailboxRights{MayCreateChild: m.Delimiter != "", MayRename: true, MayDelete: true}
 	}
@@ -169,6 +175,17 @@ func (s *Service) mailboxChanges(_ context.Context, call *jmapserver.Call) (any,
 	a, ch, err := s.changes(call, mailindex.TypeMailbox)
 	if err != nil {
 		return nil, err
+	}
+	// Hidden rows never reach clients, so neither do their changes.
+	var hidden []string
+	if err := a.idx.DB().Model(&model.IndexMailbox{}).Where("hidden = ?", true).Pluck("id", &hidden).Error; err != nil {
+		return nil, err
+	}
+	if len(hidden) > 0 {
+		drop := func(ids []string) []string {
+			return slices.DeleteFunc(ids, func(id string) bool { return slices.Contains(hidden, id) })
+		}
+		ch.Created, ch.Updated, ch.Destroyed = drop(ch.Created), drop(ch.Updated), drop(ch.Destroyed)
 	}
 	resp := struct {
 		changesResponse
@@ -280,7 +297,7 @@ func (s *Service) mailboxQuery(_ context.Context, call *jmapserver.Call) (any, e
 	}
 	state := a.state(mailindex.TypeMailbox)
 	var boxes []model.IndexMailbox
-	if err := a.idx.DB().Order("name").Find(&boxes).Error; err != nil {
+	if err := a.idx.DB().Where("hidden = ?", false).Order("name").Find(&boxes).Error; err != nil {
 		return nil, err
 	}
 	for _, c := range args.Sort {

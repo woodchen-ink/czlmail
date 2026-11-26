@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,14 @@ type SearchFilter struct {
 	Before, After                          *time.Time // receivedAt
 	MinSize, MaxSize                       int64
 	HasAttachment                          *bool
+	// Header lists [name] or [name, value] conditions; a server that cannot
+	// search a header answers KindRejected.
+	Header [][]string
+}
+
+// SearchFilterOf is the SearchFilter of a per-folder SearchQuery.
+func SearchFilterOf(q SearchQuery) SearchFilter {
+	return SearchFilter{Text: strings.Join(q.Text, " "), Body: strings.Join(q.Body, " "), Bcc: strings.Join(q.Bcc, " "), Header: q.Header}
 }
 
 // TextSearcher is implemented by upstreams that search on the server (Gmail:

@@ -40,6 +40,17 @@ type IndexMailbox struct {
 	SortOrder  int
 	// UpstreamID is the OBJECTID MAILBOXID.
 	UpstreamID string `gorm:"size:255;index"`
+	// Hidden rows are folders the engine syncs that are not JMAP mailboxes
+	// (Gmail's [Gmail]/All Mail, the source of the labels). Readers skip them and
+	// their memberships.
+	Hidden bool `gorm:"not null;default:false"`
+	// Virtual rows have no IMAP folder of their own: their memberships are derived
+	// from a source folder's messages (Gmail labels, the Archive mailbox), with
+	// the source folder's UID. The engine never selects them.
+	Virtual bool `gorm:"not null;default:false"`
+	// Label is the Gmail label a virtual mailbox stands for, as X-GM-LABELS
+	// shows it (\Inbox, \Sent, \Draft, Work/Projects); "" for Archive.
+	Label string `gorm:"size:255"`
 	// Sync point, committed with the index rows it covers.
 	UIDValidity   uint32
 	UIDNext       uint32
@@ -87,7 +98,10 @@ type IndexEmail struct {
 	// move, or a UIDVALIDITY reset). The round either re-attaches or destroys it, so
 	// readers treat a non-empty value as "not found".
 	OrphanedFrom string `gorm:"size:32;index"`
-	CreatedAt    time.Time
+	// TrashLabels are the Gmail labels (JSON []string) an email had when the
+	// gateway moved it to Trash, restored when it leaves Trash again.
+	TrashLabels string `gorm:"type:text"`
+	CreatedAt   time.Time
 }
 
 func (IndexEmail) TableName() string { return "emails" }

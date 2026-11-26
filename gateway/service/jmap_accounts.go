@@ -67,13 +67,18 @@ func (a *UpstreamAccounts) UserSession(ctx context.Context, userPublicID string)
 	return us, nil
 }
 
-func mailAccountCapability(*model.Upstream) map[string]any {
+func mailAccountCapability(row *model.Upstream) map[string]any {
 	// Sorting and paging come from the index (service/mail), which has every
 	// sortable field, so the options do not depend on the server's SORT.
 	sorts := []string{"receivedAt", "sentAt", "size", "subject", "from", "to", "hasKeyword",
 		"allInThreadHaveKeyword", "someInThreadHaveKeyword"}
+	// IMAP: one folder per message. Gmail: labels, any number (null).
+	var perEmail any = 1
+	if row.Kind == model.UpstreamKindGmail {
+		perEmail = nil
+	}
 	return map[string]any{
-		"maxMailboxesPerEmail":       1,
+		"maxMailboxesPerEmail":       perEmail,
 		"maxMailboxDepth":            nil,
 		"maxSizeMailboxName":         490,
 		"maxSizeAttachmentsPerEmail": jmapserver.MaxSizeUpload,

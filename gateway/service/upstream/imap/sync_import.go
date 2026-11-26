@@ -253,8 +253,12 @@ func (r *round) importFolder(ctx context.Context, d *folderDelta) error {
 			return err
 		}
 		if err := r.write(func(tx *mailindex.Tx) error {
+			lr, err := r.u.labelRowsFor(tx)
+			if err != nil {
+				return err
+			}
 			for _, f := range msgs {
-				if err := r.place(tx, d, f); err != nil {
+				if err := r.place(tx, lr, d, f); err != nil {
 					return err
 				}
 			}
@@ -270,7 +274,7 @@ func (r *round) importFolder(ctx context.Context, d *folderDelta) error {
 	return nil
 }
 
-func (r *round) place(tx *mailindex.Tx, d *folderDelta, f *fetched) error {
+func (r *round) place(tx *mailindex.Tx, lr *labelRows, d *folderDelta, f *fetched) error {
 	m := f.msg
 	has, err := tx.HasUID(d.mbox.ID, m.UID)
 	if err != nil || has {
@@ -283,12 +287,18 @@ func (r *round) place(tx *mailindex.Tx, d *folderDelta, f *fetched) error {
 		if err := tx.Attach(o, d.mbox.ID, m.UID, m.ModSeq); err != nil {
 			return err
 		}
-		return tx.SetKeywords(d.mbox.ID, m.UID, mailindex.FlagsToKeywords(m.Flags), 0)
+		if err := tx.SetKeywords(d.mbox.ID, m.UID, mailindex.FlagsToKeywords(m.Flags), 0); err != nil {
+			return err
+		}
+		return r.u.placeLabels(tx, lr, d.mbox, o.ID, m)
 	}
 	if bound, err := r.u.bindSentCopy(tx, d.mbox.ID, m, e); bound || err != nil {
 		return err // a sent draft's server copy: it keeps the draft's id, not a new delivery
 	}
 	if err := tx.CreateEmail(e, refs, d.mbox.ID, m.UID, m.ModSeq); err != nil {
+		return err
+	}
+	if err := r.u.placeLabels(tx, lr, d.mbox, e.ID, m); err != nil {
 		return err
 	}
 	tx.Delivered(e.ID)

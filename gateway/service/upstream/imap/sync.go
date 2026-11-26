@@ -83,7 +83,7 @@ func (r *round) run(ctx context.Context) error {
 
 	var candidates []*model.IndexMailbox
 	for _, m := range r.byName {
-		if m.NoSelect {
+		if m.NoSelect || m.Virtual {
 			continue
 		}
 		if full || hinted[m.Name] || r.u.isDue(m.ID, r.now) {
@@ -99,7 +99,7 @@ func (r *round) run(ctx context.Context) error {
 	// A message that appeared or vanished here may have moved from or to a folder
 	// this round did not look at. Check the others by STATUS before importing, so
 	// the move is matched (same id) instead of showing up as a new message.
-	if !full && r.anyChanged() {
+	if r.anyChanged() {
 		if err := r.sweep(ctx); err != nil {
 			return err
 		}
@@ -190,7 +190,7 @@ func (r *round) examine(ctx context.Context, candidates []*model.IndexMailbox, h
 // needsSync compares STATUS with the stored sync point. Without CONDSTORE a flag
 // change is invisible to STATUS, so due folders are always compared (window).
 func (r *round) needsSync(m *model.IndexMailbox, st *imapc.Status, forced, sweep bool) bool {
-	if st == nil || m.UIDValidity == 0 || forced {
+	if st == nil || m.UIDValidity == 0 || forced || r.u.relabelling(m) {
 		return true
 	}
 	if st.UIDValidity != m.UIDValidity || st.UIDNext != m.UIDNext || st.Messages != m.Messages {
@@ -213,6 +213,9 @@ func (r *round) apply(ctx context.Context) error {
 				continue // applied before a sweep; a second DetachAll would undo the import
 			}
 			if err := d.applyRemovals(tx); err != nil {
+				return err
+			}
+			if err := r.u.applyFlagLabels(tx, d); err != nil {
 				return err
 			}
 		}
@@ -256,9 +259,19 @@ func (r *round) sweep(ctx context.Context) error {
 			return err
 		}
 	}
+	// Every folder without changes this round is checked again with a fresh
+	// STATUS: one judged unchanged from this round's LIST-STATUS may have
+	// received the moved message after that snapshot (another client moving
+	// INBOX → Trash between our LIST and our SELECT of INBOX).
+	has := map[string]bool{}
+	for _, d := range r.deltas {
+		has[d.mbox.ID] = true
+	}
 	var rest []*model.IndexMailbox
 	for _, m := range r.byName {
-		if !m.NoSelect && !r.checked[m.ID] {
+		if !m.NoSelect && !m.Virtual && !has[m.ID] {
+			delete(r.statuses, m.Name)
+			r.checked[m.ID] = false
 			rest = append(rest, m)
 		}
 	}
@@ -306,6 +319,9 @@ func (r *round) finish(wasReady bool) error {
 	}
 	for _, d := range r.deltas {
 		r.u.checked(d.mbox.ID, d.mbox.Role, d.changed(), r.req.Idle, r.now)
+		if d.relabel {
+			r.u.gm.relabel.Store(false)
+		}
 	}
 	return nil
 }
@@ -318,6 +334,29 @@ func (r *round) reconcileMailboxes(ctx context.Context, entries []*imapc.ListEnt
 	var existing []model.IndexMailbox
 	if err := r.u.idx.DB().Find(&existing).Error; err != nil {
 		return err
+	}
+	// Gmail: only All Mail, Trash and Spam are synced folders; the other
+	// folders are labels, reconciled as virtual mailboxes below.
+	all := entries
+	var kinds []gmailEntry
+	allMailName := ""
+	if r.u.gm != nil {
+		kinds = make([]gmailEntry, len(entries))
+		entries = nil
+		for i, e := range all {
+			k, ok := classifyGmail(e)
+			if !ok {
+				k = gmailEntry{}
+			}
+			kinds[i] = k
+			if k.sync {
+				entries = append(entries, e)
+				if k.hidden {
+					allMailName = e.Name
+				}
+			}
+		}
+		existing = slices.DeleteFunc(existing, func(m model.IndexMailbox) bool { return m.Virtual })
 	}
 	byName := map[string]*model.IndexMailbox{}
 	byUpstream := map[string]*model.IndexMailbox{}
@@ -405,6 +444,9 @@ func (r *round) reconcileMailboxes(ctx context.Context, entries []*imapc.ListEnt
 			m := p.row
 			role := roleOf(p.e)
 			m.Name, m.Delimiter, m.Role, m.NoSelect = p.e.Name, p.e.Delimiter, role, noSelect(p.e)
+			if r.u.gm != nil {
+				m.Hidden = role == "all"
+			}
 			m.ParentID = ids[parentName(p.e.Name, p.e.Delimiter)]
 			m.SortOrder = sortOrder(role)
 			attrs, _ := json.Marshal(p.e.Attrs)
@@ -418,12 +460,15 @@ func (r *round) reconcileMailboxes(ctx context.Context, entries []*imapc.ListEnt
 				}
 				continue
 			}
-			visible := before.Name != m.Name || before.ParentID != m.ParentID || before.Role != m.Role || before.NoSelect != m.NoSelect
+			visible := before.Name != m.Name || before.ParentID != m.ParentID || before.Role != m.Role || before.NoSelect != m.NoSelect || before.Hidden != m.Hidden
 			if visible || before.Attrs != m.Attrs || before.Delimiter != m.Delimiter || before.UpstreamID != m.UpstreamID || before.SortOrder != m.SortOrder {
 				if err := tx.UpdateMailbox(m, visible); err != nil {
 					return err
 				}
 			}
+		}
+		if r.u.gm != nil {
+			return r.u.reconcileLabels(tx, all, kinds, allMailName)
 		}
 		return nil
 	})

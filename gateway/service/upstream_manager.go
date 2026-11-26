@@ -47,6 +47,7 @@ type UpstreamManager struct {
 	dataDir  string
 	log      *slog.Logger
 	timing   upstream.Timing
+	oauth    *OAuth // set by NewOAuth
 
 	mu       sync.Mutex
 	ctx      context.Context
@@ -512,7 +513,7 @@ func (m *UpstreamManager) Config(row *model.Upstream) (upstream.Config, error) {
 	if smtpUser == "" {
 		smtpUser = row.IMAPUsername
 	}
-	return upstream.Config{
+	cfg := upstream.Config{
 		AccountID: row.PublicID,
 		Kind:      row.Kind,
 		Email:     row.Email,
@@ -520,7 +521,24 @@ func (m *UpstreamManager) Config(row *model.Upstream) (upstream.Config, error) {
 		SMTP:      upstream.Endpoint{Host: row.SMTPHost, Port: row.SMTPPort, TLS: row.SMTPTLS, Username: smtpUser, Password: smtpPass},
 		Dialer:    netx.New(netx.Options{Proxy: proxy, AllowPrivate: m.settings.Bool(SettingAllowPrivateNetworks)}),
 		Log:       m.log,
-	}, nil
+	}
+	if m.oauth != nil {
+		if p, ok := m.oauth.providerForKind(row.Kind); ok {
+			cfg.AccessToken = m.oauth.accessTokenFunc(row.PublicID, cfg.Dialer)
+			cfg.TokenRejected = m.oauth.tokenRejected(row.PublicID)
+			cfg.APIBase = p.APIBase
+		}
+	}
+	return cfg, nil
+}
+
+// dialer is the dialer of an upstream's connections (its proxy, the guard).
+func (m *UpstreamManager) dialer(row *model.Upstream) (netx.Dialer, error) {
+	proxy, err := m.proxyFor(row)
+	if err != nil {
+		return nil, err
+	}
+	return netx.New(netx.Options{Proxy: proxy, AllowPrivate: m.settings.Bool(SettingAllowPrivateNetworks)}), nil
 }
 
 // proxyFor resolves an upstream's proxy mode to a proxy, or nil for direct.

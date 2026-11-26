@@ -10,6 +10,7 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/model"
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 	"github.com/woodchen-ink/czlmail/gateway/service/mailindex"
+	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 )
 
 func (s *Service) emailSet(ctx context.Context, call *jmapserver.Call) (any, error) {
@@ -62,13 +63,16 @@ func (s *Service) emailSet(ctx context.Context, call *jmapserver.Call) (any, err
 // against the index: the keywords and mailbox to end up with.
 type EmailPatch struct {
 	Keywords  mailindex.Keywords
-	MailboxID string
+	MailboxID string   // the one mailbox (servers with maxMailboxesPerEmail 1)
+	Mailboxes []string // every mailbox, sorted
 }
 
-// patchState is one email's current keywords and mailboxes.
+// patchState is one email's current keywords and mailboxes. multi: the
+// upstream allows several mailboxes per email (Gmail labels).
 type patchState struct {
 	keywords  mailindex.Keywords
 	mailboxes []string
+	multi     bool
 }
 
 var errTooManyMailboxes = setErr("tooManyMailboxes", "an email is in exactly one mailbox on this server", "mailboxIds")
@@ -160,13 +164,15 @@ func applyEmailPatch(cur patchState, patch map[string]json.RawMessage, resolveMa
 	if len(boxes) == 0 {
 		return nil, invalidProps("an email must be in a mailbox", "mailboxIds")
 	}
-	if len(boxes) > 1 {
+	if len(boxes) > 1 && !cur.multi {
 		return nil, errTooManyMailboxes
 	}
 	out := &EmailPatch{Keywords: kw}
 	for id := range boxes {
 		out.MailboxID = id
+		out.Mailboxes = append(out.Mailboxes, id)
 	}
+	sort.Strings(out.Mailboxes)
 	return out, nil
 }
 
@@ -190,7 +196,7 @@ func validKeyword(k string) bool {
 
 func (s *Service) mailboxResolver(call *jmapserver.Call, a *account) (func(string) (string, bool), error) {
 	var ids []string
-	if err := a.idx.DB().Model(&model.IndexMailbox{}).Where("no_select = ?", false).Pluck("id", &ids).Error; err != nil {
+	if err := a.idx.DB().Model(&model.IndexMailbox{}).Where("no_select = ? AND hidden = ?", false, false).Pluck("id", &ids).Error; err != nil {
 		return nil, err
 	}
 	known := map[string]bool{}
@@ -224,7 +230,10 @@ func (s *Service) updateEmails(ctx context.Context, call *jmapserver.Call, a *ac
 	}
 	type kwKey struct{ add, remove string }
 	moves := map[string][]string{} // target mailbox → client ids
-	kwOps := map[kwKey][]string{}  // keyword change → client ids
+	setter, multi := a.up.(upstream.MailboxSetter)
+	labelOps := map[kwKey][]string{} // (add, remove) mailboxes → client ids (MailboxSetter)
+	labelSets := map[kwKey][2][]string{}
+	kwOps := map[kwKey][]string{} // keyword change → client ids
 	kwSets := map[kwKey][2][]string{}
 	wroteBefore := resp.wrote
 	var order []string
@@ -238,13 +247,32 @@ func (s *Service) updateEmails(ctx context.Context, call *jmapserver.Call, a *ac
 			resp.notUpdated(id, errNotFound)
 			continue
 		}
-		cur := patchState{keywords: mailindex.ParseKeywords(m.row.Keywords), mailboxes: m.mailboxes}
+		cur := patchState{keywords: mailindex.ParseKeywords(m.row.Keywords), mailboxes: m.mailboxes, multi: multi}
 		p, se := applyEmailPatch(cur, updates[id], resolve)
 		if se != nil {
 			resp.notUpdated(id, se)
 			continue
 		}
-		if !slices.Contains(m.mailboxes, p.MailboxID) || len(m.mailboxes) != 1 {
+		switch {
+		case multi:
+			var add, remove []string
+			for _, b := range p.Mailboxes {
+				if !slices.Contains(m.mailboxes, b) {
+					add = append(add, b)
+				}
+			}
+			for _, b := range m.mailboxes {
+				if !slices.Contains(p.Mailboxes, b) {
+					remove = append(remove, b)
+				}
+			}
+			sort.Strings(remove)
+			if len(add)+len(remove) > 0 {
+				key := kwKey{strings.Join(add, " "), strings.Join(remove, " ")}
+				labelOps[key] = append(labelOps[key], id)
+				labelSets[key] = [2][]string{add, remove}
+			}
+		case !slices.Contains(m.mailboxes, p.MailboxID) || len(m.mailboxes) != 1:
 			moves[p.MailboxID] = append(moves[p.MailboxID], id)
 		}
 		var add, remove []string
@@ -301,6 +329,33 @@ func (s *Service) updateEmails(ctx context.Context, call *jmapserver.Call, a *ac
 		if _, err := a.up.Move(ctx, realIDs(clientIDs, realOf), target); err != nil {
 			if isNotFound(err) {
 				// The target mailbox (or an email) went away since the patch was checked.
+				for _, id := range clientIDs {
+					delete(resp.Updated, id)
+					failed[id] = true
+					resp.notUpdated(id, invalidProps("unknown mailbox", "mailboxIds"))
+				}
+				continue
+			}
+			if ferr := fail(clientIDs, err, refused); ferr != nil {
+				return ferr
+			}
+			continue
+		}
+		for _, id := range clientIDs {
+			moved[id] = true
+		}
+		resp.wrote = true
+	}
+	lkeys := make([]kwKey, 0, len(labelOps))
+	for k := range labelOps {
+		lkeys = append(lkeys, k)
+	}
+	sort.Slice(lkeys, func(i, j int) bool { return lkeys[i].add+"|"+lkeys[i].remove < lkeys[j].add+"|"+lkeys[j].remove })
+	for _, key := range lkeys {
+		clientIDs := labelOps[key]
+		set := labelSets[key]
+		if _, err := setter.SetMailboxes(ctx, realIDs(clientIDs, realOf), set[0], set[1]); err != nil {
+			if isNotFound(err) {
 				for _, id := range clientIDs {
 					delete(resp.Updated, id)
 					failed[id] = true

@@ -26,6 +26,7 @@ type Admin struct {
 	SystemSvc     *service.System
 	Tasks         *cron.Scheduler
 	Submission    *submission.Service
+	OAuth         *service.OAuth
 	ClientIP      func(*http.Request) string
 	SecureCookies bool
 	Log           *slog.Logger

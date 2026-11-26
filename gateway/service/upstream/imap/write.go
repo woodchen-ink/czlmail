@@ -30,7 +30,9 @@ type placed struct {
 // locate groups emails by mailbox.
 func (u *Upstream) locate(emailIDs []string) (map[string][]placed, error) {
 	var rows []model.IndexMembership
-	if err := u.idx.DB().Where("email_id IN ?", emailIDs).Find(&rows).Error; err != nil {
+	// Virtual memberships (Gmail labels) carry another folder's UID.
+	if err := u.idx.DB().Table("memberships m").Select("m.*").Joins("JOIN mailboxes b ON b.id = m.mailbox_id").
+		Where("m.email_id IN ? AND b.virtual = ?", emailIDs, false).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := map[string][]placed{}
@@ -309,6 +311,10 @@ func (u *Upstream) importUIDs(ctx context.Context, c *imapc.Client, states map[s
 		return nil, err
 	}
 	err = u.commit(states, func(tx *mailindex.Tx) error {
+		lr, err := u.labelRowsFor(tx)
+		if err != nil {
+			return err
+		}
 		for _, f := range msgs {
 			has, err := tx.HasUID(m.ID, f.msg.UID)
 			if err != nil {
@@ -320,6 +326,9 @@ func (u *Upstream) importUIDs(ctx context.Context, c *imapc.Client, states map[s
 			e, refs := toEmail(f.msg, u.stableKey(f.msg), u.threadKey(f.msg))
 			e.Preview = f.preview
 			if err := tx.CreateEmail(e, refs, m.ID, f.msg.UID, f.msg.ModSeq); err != nil {
+				return err
+			}
+			if err := u.placeLabels(tx, lr, m, e.ID, f.msg); err != nil {
 				return err
 			}
 			out[f.msg.UID] = e.ID
@@ -552,7 +561,9 @@ func (u *Upstream) FetchRaw(ctx context.Context, emailID string, w io.Writer) er
 // lock, so reading never waits for a sync round.
 func (u *Upstream) FetchSection(ctx context.Context, emailID, section string, w io.Writer) error {
 	var ms model.IndexMembership
-	if err := u.idx.DB().First(&ms, "email_id = ?", emailID).Error; err != nil {
+	err := u.idx.DB().Table("memberships m").Select("m.*").Joins("JOIN mailboxes b ON b.id = m.mailbox_id").
+		Where("m.email_id = ? AND b.virtual = ?", emailID, false).Limit(1).Scan(&ms).Error
+	if err != nil || ms.EmailID == "" {
 		return rejected("fetch", fmt.Errorf("%w: email %s", ErrNotFound, emailID))
 	}
 	m, err := u.mailbox(ms.MailboxID)

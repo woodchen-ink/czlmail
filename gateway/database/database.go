@@ -33,7 +33,7 @@ func Open(dataDir string) (*gorm.DB, error) {
 		return nil, err
 	}
 	if err := db.AutoMigrate(&model.Meta{}, &model.Setting{}, &model.User{}, &model.AdminSession{}, &model.AppPassword{}, &model.AuditLog{}, &model.PushSubscription{}, &model.Upstream{}, &model.UpstreamMetricHour{},
-		&model.EmailSubmission{}, &model.Identity{}, &model.ObjectChange{}, &model.ObjectChangeFloor{}); err != nil {
+		&model.EmailSubmission{}, &model.Identity{}, &model.ObjectChange{}, &model.ObjectChangeFloor{}, &model.OAuthApp{}); err != nil {
 		return nil, fmt.Errorf("migrate %s: %w", MainFile, err)
 	}
 	return db, nil
