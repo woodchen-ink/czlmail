@@ -59,6 +59,11 @@ function workspace() {
     sonner: { toast: { error: (value) => errors.push(value), success: (value) => notices.push(value), warning: (value) => notices.push(value) } },
     "react-resizable-panels": { usePanelRef: () => ({ current: null }) },
     "@/lib/api": { api: { listAccounts: async () => [{ id: "account", isPersonal: true }] }, errorMessage: (err) => err.message },
+    // 主登录的服务器有文件存储: 笔记照常可用 (能力隐藏的界面另有测试)。
+    "@/lib/account-features": {
+      usePrimarySupports: () => true,
+      primaryPersonal: (accounts) => accounts.find((a) => a.isPersonal && !a.signIn),
+    },
     "@/lib/notes/api": { noteApi, noteEvents: {} },
     "@/lib/notes/use-note-document": { useNoteDocument: () => doc },
     "@/lib/i18n": { t: (value, ...values) => values.reduce((text, item, index) => text.replace(`{${index}}`, item), value) },
