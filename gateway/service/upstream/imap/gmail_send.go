@@ -153,7 +153,7 @@ func (g *Gmail) dropDraft(ctx context.Context, c *imapc.Client, states map[strin
 	if d.src == mb.lr.allMail {
 		return errors.New("gmail: draft not found in Trash after moving it")
 	}
-	if err := selectRW(ctx, c, d.src.Name); err != nil {
+	if err := selectRW(ctx, c, d.src); err != nil {
 		return err
 	}
 	uids := imapc.UIDSet{d.uid}

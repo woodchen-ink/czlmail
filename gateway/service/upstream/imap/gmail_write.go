@@ -284,7 +284,7 @@ func (g *Gmail) run(ctx context.Context, mb *gmMailboxes, p *gmPlan) (map[string
 		all := mb.lr.allMail
 		touched := map[string]*gmEmail{} // All Mail emails whose labels changed
 		if len(p.addLabel) > 0 || len(p.removeLabel) > 0 {
-			if err := selectRW(ctx, c, all.Name); err != nil {
+			if err := selectRW(ctx, c, all); err != nil {
 				return err
 			}
 			for _, l := range sortedKeys(p.addLabel) {
@@ -348,7 +348,7 @@ func (g *Gmail) moveOut(ctx context.Context, c *imapc.Client, states map[string]
 		bySrc[e.src] = append(bySrc[e.src], e)
 	}
 	for src, list := range bySrc {
-		if err := selectRW(ctx, c, src.Name); err != nil {
+		if err := selectRW(ctx, c, src); err != nil {
 			return err
 		}
 		uids := make(imapc.UIDSet, len(list))
@@ -472,7 +472,7 @@ func (g *Gmail) restore(ctx context.Context, c *imapc.Client, states map[string]
 		groups[k] = append(groups[k], e)
 	}
 	for k, list := range groups {
-		if err := selectRW(ctx, c, k.src.Name); err != nil {
+		if err := selectRW(ctx, c, k.src); err != nil {
 			return err
 		}
 		uids := make(imapc.UIDSet, len(list))
@@ -512,7 +512,7 @@ func (g *Gmail) restore(ctx context.Context, c *imapc.Client, states map[string]
 		}
 	}
 	// The other labels, on All Mail.
-	if err := selectRW(ctx, c, all.Name); err != nil {
+	if err := selectRW(ctx, c, all); err != nil {
 		return err
 	}
 	byLabel := map[string][]*gmEmail{}
@@ -612,7 +612,7 @@ func (g *Gmail) Destroy(ctx context.Context, emailIDs []string) (map[string]stri
 			}
 		}
 		for src, list := range bySrc {
-			if err := selectRW(ctx, c, src.Name); err != nil {
+			if err := selectRW(ctx, c, src); err != nil {
 				return err
 			}
 			uids := make(imapc.UIDSet, len(list))
