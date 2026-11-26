@@ -3,8 +3,9 @@
 <h1 align="center">CZL Mail</h1>
 
 <p align="center">
-为 <a href="https://stalw.art">Stalwart</a> 打造的 <a href="https://jmap.io">JMAP</a> 原生客户端，桌面、Android 与 iPhone ——
-邮件、日历、通讯录、网盘、笔记，内置 <b>MCP 服务</b> 与 <b>AI 助手</b>。
+<a href="https://jmap.io">JMAP</a> 原生客户端，直接连接 <a href="https://stalw.art">Stalwart</a> 等 JMAP 服务器；
+配上自部署的 <a href="#czlmail-网关">czlmail 网关</a>，Gmail、Outlook / Microsoft 365 和任意 IMAP 邮箱也能用。<br>
+邮件、日历、通讯录、网盘、笔记，覆盖 Windows、macOS、Android 与 iPhone，内置 <b>MCP 服务</b> 与 <b>AI 助手</b>。
 </p>
 
 <p align="center"><a href="README.md">English</a> · <b>简体中文</b></p>
@@ -13,49 +14,74 @@
 
 <p align="center"><img src="screenshots/mail.png" alt="邮件" width="860"></p>
 
+## 平台
+
+| 平台 | 获取 | 说明 |
+|---|---|---|
+| **Windows** | [`czlmail-amd64-installer.exe`](https://github.com/woodchen-ink/czlmail/releases/latest) | 按用户安装，不需要管理员权限；自动更新 |
+| **macOS** | [`czlmail-darwin-universal.dmg`](https://github.com/woodchen-ink/czlmail/releases/latest) | Intel 与 Apple 芯片通用，macOS 10.15+；已经 Apple 公证 |
+| **Android** | [`czlmail-android.apk`](https://github.com/woodchen-ink/czlmail/releases/latest/download/czlmail-android.apk) | Android 8.0+；在应用内更新 |
+| **iPhone** | [App Store](https://apps.apple.com/app/id6834485924) | iOS 16+，买断制；中国大陆暂未上架 |
+| **手机浏览器** | [mail-notes.czl.net](https://mail-notes.czl.net) | 只读查看笔记；[可自行部署](web-phone-note/README.zh-CN.md) |
+
+桌面端与手机端是同一套代码、同样的功能，只有 MCP 和选择文件夹限桌面端。安装细节见[安装](#安装)。
+
+## 能连哪些邮箱
+
+- **Stalwart 与其他 JMAP 服务器。** 可以用应用专用密码、浏览器授权（OAuth）或你自己的身份提供商（[单点登录](#单点登录sso)）登录。
+  客户端按每台服务器公布的能力显示功能，服务器没有日历、网盘或 Sieve，对应页面就不出现。
+- **Gmail、Outlook / Microsoft 365 与 IMAP 邮箱**，通过自部署的 [czlmail 网关](#czlmail-网关)。每个邮箱在 CZL Mail 里是一个独立账号，客户端仍然只说 JMAP。
+- **同时登录多台服务器。** 在「设置 → 账户」里添加更多登录。共享邮箱和所有登录下的账号可以放进同一个统一视图里看；
+  写信、通知、提醒、MCP 和 iPhone 推送都覆盖全部登录。
+
 ## 为什么要写这个项目
 
 [Bulwark](https://github.com/bulwarkmail/webmail) 是 Stalwart 上很好的 JMAP 网页邮箱，本项目的很多设计都参考了它。
-但网页邮箱始终活在浏览器标签页里。CZL Mail 的目标是：**只要 Stalwart + 一个原生客户端**，不再需要单独部署 Bulwark。
+但网页邮箱始终活在浏览器标签页里。CZL Mail 的目标是：**一台 JMAP 服务器加一个原生客户端**就够了，不用再单独部署网页邮箱。
 
-- **原生启动，秒开。** Go + WebView2 原生程序，不依赖浏览器，也不用在服务器上部署网页应用。
+- **原生启动，秒开。** Go 原生程序加系统自带的 WebView，不依赖浏览器，也不用在服务器上部署网页应用。
 - **邮件缓存，打开即看。** 所有邮件缓存在本地 SQLite，通过一条 JMAP 推送（EventSource）连接实时保持同步；
   阅读、搜索、切换文件夹读的是本地磁盘，而不是等网络。
 - **系统级通知。** 新邮件和日程提醒走操作系统通知中心；关掉窗口驻留托盘（macOS 为菜单栏）、开机自启后都能及时收到。
-  Android 上退到后台照常收到，点通知直接打开那封邮件。
-- **让 Agent 使用你的邮箱。** 内置本地 MCP 服务，Claude、Codex 等 Agent 可以读取、搜索、发送邮件，查看日程、查找联系人 ——
+  Android 退到后台照常收信，iPhone 关掉 App 也能收到推送，点通知直接打开那封邮件。
+- **让 Agent 使用你的邮箱。** 内置本地 MCP 服务，Claude、Codex 等 Agent 可以读取、搜索、整理和发送邮件，管理日程、任务和笔记，查找联系人；
   需要你在软件里开启，并使用本地令牌。
-- **AI 就在手边。** 接入任意兼容 OpenAI Responses API 的模型：一键原地翻译邮件、润色或翻译草稿、
+- **AI 就在手边。** 接入任意兼容 OpenAI Responses API 的模型：翻译或总结邮件、润色或翻译草稿，
   说出回复意图让 AI 帮你起草。
 
 ## 功能
 
-**邮件** —— 多账号与共享邮箱 · 富文本写信（HTML 签名、模板、已读回执、分开发送、定时发送）· 草稿自动保存 ·
-文件夹新建 / 重命名 / 移动 / 删除 · 全文搜索（支持中文）· 默认拦截远程内容，信任发件人名单与 Bulwark 共用 ·
-批量操作 · 一键退订（RFC 8058）· 在邮件里直接回复日历邀请 ·
-附件一键本地打开 · 右键从服务器拉取整个文件夹
+**邮件** —— 多账号、共享邮箱、所有账号的统一视图 · 会话按时间线展开 · 富文本写信（HTML 签名、模板、已读回执、分开发送、定时发送）·
+草稿自动保存 · S/MIME 签名与验签 · 文件夹新建 / 重命名 / 移动 / 删除，邮件可拖到文件夹 · 全文搜索（支持中文），也能搜服务器上的全部文件夹 ·
+默认拦截远程内容，信任发件人名单与 Bulwark 共用 · 列表直接显示验证码和附件名 · 批量操作、右键菜单、撤销（Ctrl+Z）、自定义快捷键 ·
+一键退订（RFC 8058）· 在邮件里直接回复日历邀请 · 附件一键本地打开 · 右键从服务器拉取整个文件夹
 
 **日历** —— 月 / 周 / 天 / 议程视图，跨天日程连成横条显示 · 右侧编辑面板（会议链接、参加者与邀请、回复邀请、
-多个提醒、重复规则）· 任务 · 日历管理 · 导入 `.ics` / `webcal:` · 桌面提醒
+多个提醒、重复规则）· 任务 · 日历管理 · 导入 `.ics` / `webcal:` · 系统提醒，手机上同样准时
 
-**通讯录** —— 完整的 JSContact 编辑（照片、姓名分量、工作单位、地址、在线服务、纪念日、类别）· 群组 · 通讯录管理 · 导入 vCard
+**通讯录** —— 完整的 JSContact 编辑（照片、姓名分量、工作单位、地址、在线服务、纪念日、类别）· 群组 · 通讯录管理 · 导入 vCard ·
+查看和某个联系人的全部往来邮件，可按收发筛选
 
-**网盘** —— Stalwart 文件存储，列表 / 网格视图、收藏、剪切 / 复制 / 粘贴、拖入窗口上传
+**网盘** —— JMAP 文件存储（Stalwart），列表 / 网格视图、收藏、剪切 / 复制 / 粘贴、拖入窗口上传
 
-**笔记** —— 普通 Markdown 文件存在你的网盘里，可离线编辑、多设备同步，支持日记 ·
+**笔记** —— 普通 Markdown 文件存在你的网盘里，可离线编辑、多设备同步；日记会标在日历上，附件可预览 ·
 手机上用[网页阅读器](web-phone-note/README.zh-CN.md)查看（公开实例 https://mail-notes.czl.net，也可自己部署）
+
+**AI 与 MCP** —— 翻译（主题和正文原地替换，结果缓存）、总结、润色与翻译草稿、按意图回复 ·
+MCP 服务提供邮件、草稿、会话、标签、日历、任务、通讯录、网盘和笔记的工具 · AI 与 MCP 设置经网盘在设备间同步
 
 **服务端设置** —— 发件身份与 HTML 签名、假期自动回复、Sieve 过滤规则（规则编辑器与 Bulwark 互通，另有原始 Sieve 编辑器）
 
-**桌面集成** —— 托盘 / 菜单栏、开机自启、设为默认的 `mailto:` / `.ics` / `webcal:` 应用、基于 GitHub Releases 的自动更新（SHA-256 校验）
+**桌面集成** —— 托盘 / 菜单栏显示未读数、开机自启、设为默认的 `mailto:` / `.ics` / `webcal:` 应用、记住窗口布局、
+基于 GitHub Releases 的自动更新（SHA-256 校验）
 
-**Android** —— 同一套程序，按手机单栏排布：邮件、日历、通讯录、网盘、笔记、搜索、翻译与 AI 总结 · 后台收信并弹通知 ·
-系统返回手势 · 凭据用 Android Keystore 加密 · 从 GitHub Releases 在线更新（SHA-256 校验）。MCP 与选择文件夹只在桌面端提供。
-源码与构建说明见 [android/](android/README.md)
+**手机** —— 同一套程序，按手机单栏排布：邮件、日历、通讯录、网盘、笔记、搜索、翻译与 AI 总结 · Android 支持系统返回手势 ·
+凭据存在系统钥匙串（Android 上用 Android Keystore）· iPhone 推送内容用只存在手机上的密钥端到端加密。源码与构建说明见 [android/](android/README.md)
 
-**iPhone** —— 界面与功能同 Android 版，在 [App Store](https://apps.apple.com/app/id6834485924) 上架（iOS 16+，买断制付费；中国大陆暂未上架），关掉 App 也能收到新邮件推送，内容用只存在手机上的密钥端到端加密；经 App Store 安装与更新。
+**界面语言** —— 简体中文、English、Čeština、Русский；没选过时跟随系统语言
 
 ## 截图
+
 
 | 写信（HTML 签名） | 日历（跨天日程连成横条） |
 |---|---|
@@ -68,6 +94,17 @@
 | MCP：接入 AI Agent | 设置 |
 |---|---|
 | <img src="screenshots/mcp.png" alt="MCP"> | <img src="screenshots/settings.png" alt="设置"> |
+
+## czlmail 网关
+
+CZL Mail 只说 JMAP。想用它收发 **Gmail、Outlook / Microsoft 365 或任何 IMAP 邮箱**，可以在自己的服务器上部署
+[czlmail 网关](gateway/README.md)：网关连接这些邮箱，再作为一个 JMAP 服务器提供给 CZL Mail，客户端保持纯 JMAP。
+在网关后台添加的每个邮箱在 CZL Mail 里都是一个独立账号，新邮件即时推送（包括 iPhone 后台通知），每个邮箱还可以单独走 SOCKS5 代理。
+网关以 Docker 镜像发布，邮箱凭据加密保存在你自己的服务器上。
+
+<p align="center"><img src="gateway/docs/images/zh/02-overview-light.jpg" alt="czlmail 网关后台" width="800"></p>
+
+部署与使用教程：[简体中文](gateway/docs/guide.zh-CN.md) · [English](gateway/docs/guide.md)
 
 ## MCP：让 Agent 使用你的邮箱
 
@@ -118,22 +155,15 @@ claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp 
 
 ### macOS 首次打开
 
-程序没有 Apple 开发者签名，系统会拦下第一次打开。打开 DMG，把 **CZL Mail** 拖进「应用程序」，然后任选一种：
-
-- 在「应用程序」里**右键 CZL Mail → 打开**，在弹窗里再点「打开」（macOS 14 及更早）；
-- macOS 15 起右键打开不再生效：先双击一次，再到**系统设置 → 隐私与安全性**，在底部点「仍要打开」；
-- 或者在终端执行下面这条命令去掉下载隔离标记，之后正常双击即可：
-
-  ```bash
-  xattr -cr "/Applications/CZL Mail.app"
-  ```
-
-提示"已损坏，无法打开"也是同一原因，用上面的命令处理。请先拖进「应用程序」再打开：
-直接在 DMG 或下载文件夹里运行时，系统会把程序放到临时的随机路径，开机自启无法记住它的位置。
+程序使用 Developer ID 签名并经过 Apple 公证。打开 DMG，把 **CZL Mail** 拖进「应用程序」，再从「应用程序」里打开即可。
+请先拖进「应用程序」再运行：直接在 DMG 或下载文件夹里运行时，系统会把程序放到临时的随机路径，开机自启无法记住它的位置。
 
 关闭窗口后程序驻留在菜单栏（图标旁显示未读数），点 Dock 图标或菜单栏「打开 CZL Mail」恢复窗口，⌘Q 退出。
 
-登录时填写服务器地址、邮箱，以及在 Stalwart 里生成的**应用专用密码**。
+### 登录
+
+- **JMAP 服务器**（如 Stalwart）：填服务器地址、邮箱和在这台服务器上生成的**应用专用密码**；服务器支持时也可以用浏览器授权（OAuth / [单点登录](#单点登录sso)）。
+- **通过 [czlmail 网关](#czlmail-网关)接入 Gmail、Outlook 或 IMAP**：填网关地址、登录网关用的邮箱，以及网关后台生成的**应用专用密码**。
 
 ## 单点登录（SSO）
 
@@ -214,6 +244,6 @@ Android 版另外需要 JDK 21 与 Android SDK + NDK，见 [android/README.md](a
 
 ## 致谢
 
-- [Stalwart](https://stalw.art) —— 本客户端服务的邮件服务器
+- [Stalwart](https://stalw.art) —— 本客户端最初为它打造的 JMAP 邮件服务器
 - [Bulwark](https://github.com/bulwarkmail/webmail) —— 功能设计与过滤规则格式的参考
 - [go-jmap](https://git.sr.ht/~rockorager/go-jmap)、[Wails](https://wails.io)、[TipTap](https://tiptap.dev)、[shadcn/ui](https://ui.shadcn.com)
