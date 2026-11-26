@@ -809,7 +809,7 @@ func (tx *Tx) MergeOrphans() (int, error) {
 	for _, o := range orphans {
 		// Only a recent twin: a half-seen move is one or two rounds old, while an
 		// old twin is a genuine second copy that must keep its own id.
-		q := tx.db.Model(&model.IndexEmail{}).Where("created_at >= ?", time.Now().Add(-mergeWindow)).Where("id <> ? AND orphaned_from = '' AND EXISTS ("+
+		q := tx.db.Model(&model.IndexEmail{}).Where("created_at >= ?", time.Now().UTC().Add(-mergeWindow)).Where("id <> ? AND orphaned_from = '' AND EXISTS ("+
 			"SELECT 1 FROM memberships m JOIN mailboxes b ON b.id = m.mailbox_id WHERE m.email_id = emails.id AND b.virtual = ?)", o.ID, false)
 		if o.UpstreamID != "" {
 			q = q.Where("upstream_id = ?", o.UpstreamID)
