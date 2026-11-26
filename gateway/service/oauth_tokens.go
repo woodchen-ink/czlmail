@@ -138,6 +138,20 @@ func (o *OAuth) accessTokenFunc(accountID string, dialer netx.Dialer) func(ctx c
 	}
 }
 
+// tokenOwner is upstream.Config.TokenOwner: the account of the grant cached for
+// accountID, "-" when unknown (grants made before accounts were recorded).
+func (o *OAuth) tokenOwner(accountID string) func() string {
+	return func() string {
+		e := o.entry(accountID)
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		if e.tok == nil {
+			return "-"
+		}
+		return e.tok.Account.String()
+	}
+}
+
 // tokenRejected is upstream.Config.TokenRejected: the cached access token is
 // dropped when it is the one the server refused, so the next call refreshes.
 func (o *OAuth) tokenRejected(accountID string) func(token string) {

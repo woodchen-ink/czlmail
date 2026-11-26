@@ -568,6 +568,7 @@ func (m *UpstreamManager) Config(row *model.Upstream) (upstream.Config, error) {
 			m.oauth.logStart(row)
 			cfg.AccessToken = m.oauth.accessTokenFunc(row.PublicID, cfg.Dialer)
 			cfg.TokenRejected = m.oauth.tokenRejected(row.PublicID)
+			cfg.TokenOwner = m.oauth.tokenOwner(row.PublicID)
 			cfg.APIBase = p.APIBase
 		}
 	}
