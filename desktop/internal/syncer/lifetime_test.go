@@ -71,3 +71,44 @@ func TestStoppedSyncerNeitherCallsNorWrites(t *testing.T) {
 		t.Fatalf("stopped syncer sent %d requests", len(calls))
 	}
 }
+
+// 会话停掉 (ctx 取消) 时推送连接立即断开, Run 返回, 服务器上不留连接。
+func TestRunReleasesPushStreamOnCancel(t *testing.T) {
+	srv := jmaptest.New(t)
+	u := srv.AddUser("me@x.test", "pw")
+	u.Grant(srv.AddAccount("a", "me@x.test"), true)
+	client := &jmap.Client{SessionEndpoint: srv.SessionURL()}
+	client.WithBasicAuth("me@x.test", "pw")
+	if err := client.Authenticate(); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "c.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := New(client, st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for srv.StreamCount(u) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("push stream never connected")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after cancel")
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for srv.StreamCount(u) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("push stream left open on the server")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
