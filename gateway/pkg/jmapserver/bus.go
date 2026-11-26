@@ -9,17 +9,24 @@ import (
 type Changes map[string]map[string]string
 
 // Bus collects state changes per user and delivers them to that user's
-// EventSource connections. Changes published within the debounce window are
+// EventSource connections and, when push is enabled, to the sink feeding the
+// user's push subscriptions. Changes published within the debounce window are
 // merged into one StateChange, which may cover several accounts.
 type Bus struct {
 	window time.Duration
 	mu     sync.Mutex
 	users  map[string]*userHub
+	// wants reports whether the sink wants a user's changes (the user has push
+	// subscriptions); it is called with mu held. sink gets each flushed batch.
+	wants func(userID string) bool
+	sink  func(userID string, changed Changes, mails []NewMail)
 }
 
+// userHub exists while the user has connections or a pending flush.
 type userHub struct {
 	subs    map[*subscription]struct{}
 	pending Changes
+	mails   []NewMail
 	timer   *time.Timer
 }
 
@@ -40,19 +47,61 @@ func NewBus(window time.Duration) *Bus {
 	return &Bus{window: window, users: map[string]*userHub{}}
 }
 
+// setSink makes flushes also go to sink for the users wants accepts.
+func (b *Bus) setSink(wants func(userID string) bool, sink func(userID string, changed Changes, mails []NewMail)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.wants, b.sink = wants, sink
+}
+
 // Publish records changed states of the user's accounts. With no connection
-// open the changes are dropped: a client always resynchronises when it connects.
+// open and no push subscription the changes are dropped: a client always
+// resynchronises when it connects.
 func (b *Bus) Publish(userID string, changed Changes) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	hub := b.users[userID]
-	if hub == nil || len(hub.subs) == 0 {
+	hub := b.hubForPublish(userID)
+	if hub == nil {
 		return
 	}
 	if hub.pending == nil {
 		hub.pending = Changes{}
 	}
 	hub.pending.merge(changed)
+	b.armLocked(userID, hub)
+}
+
+// publishMail queues new messages for the push sink; EventSource connections
+// only see the accompanying state changes.
+func (b *Bus) publishMail(userID string, mails []NewMail) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.wants == nil || !b.wants(userID) {
+		return
+	}
+	hub := b.hubForPublish(userID)
+	hub.mails = append(hub.mails, mails...)
+	b.armLocked(userID, hub)
+}
+
+// hubForPublish returns the hub collecting the user's changes, creating one
+// when only the push sink wants them, or nil when nobody does.
+func (b *Bus) hubForPublish(userID string) *userHub {
+	hub := b.users[userID]
+	if hub != nil && (len(hub.subs) > 0 || hub.timer != nil) {
+		return hub
+	}
+	if b.wants == nil || !b.wants(userID) {
+		return nil
+	}
+	if hub == nil {
+		hub = &userHub{subs: map[*subscription]struct{}{}}
+		b.users[userID] = hub
+	}
+	return hub
+}
+
+func (b *Bus) armLocked(userID string, hub *userHub) {
 	if hub.timer == nil {
 		hub.timer = time.AfterFunc(b.window, func() { b.flush(userID, hub) })
 	}
@@ -64,15 +113,25 @@ func (b *Bus) flush(userID string, hub *userHub) {
 		b.mu.Unlock()
 		return // the hub was closed meanwhile
 	}
-	pending := hub.pending
-	hub.pending, hub.timer = nil, nil
+	pending, mails := hub.pending, hub.mails
+	hub.pending, hub.mails, hub.timer = nil, nil, nil
 	subs := make([]*subscription, 0, len(hub.subs))
 	for s := range hub.subs {
 		subs = append(subs, s)
 	}
+	if len(hub.subs) == 0 {
+		delete(b.users, userID) // kept only for this flush
+	}
+	sink := b.sink
+	if sink != nil && b.wants != nil && !b.wants(userID) {
+		sink = nil
+	}
 	b.mu.Unlock()
 	for _, s := range subs {
 		s.deliver(pending)
+	}
+	if sink != nil && (len(pending) > 0 || len(mails) > 0) {
+		sink(userID, pending, mails)
 	}
 }
 
@@ -97,7 +156,7 @@ func (b *Bus) unsubscribe(s *subscription) {
 		return
 	}
 	delete(hub.subs, s)
-	if len(hub.subs) == 0 {
+	if len(hub.subs) == 0 && hub.timer == nil {
 		b.dropLocked(s.userID, hub)
 	}
 }
@@ -110,6 +169,7 @@ func (b *Bus) dropLocked(userID string, hub *userHub) {
 }
 
 // EndUser closes all of the user's connections and returns how many there were.
+// A pending flush still reaches the push sink.
 func (b *Bus) EndUser(userID string) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -121,7 +181,10 @@ func (b *Bus) EndUser(userID string) int {
 		s.close()
 	}
 	n := len(hub.subs)
-	b.dropLocked(userID, hub)
+	clear(hub.subs)
+	if hub.timer == nil {
+		b.dropLocked(userID, hub)
+	}
 	return n
 }
 

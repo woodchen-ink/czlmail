@@ -40,6 +40,13 @@ type Authenticator interface {
 	Authenticate(r *http.Request) (userID string, err error)
 }
 
+// CredentialAuthenticator is an optional Authenticator extension that also names
+// the credential (such as an app password) a request used. Push subscriptions
+// remember it, so revoking the credential can delete them.
+type CredentialAuthenticator interface {
+	AuthenticateWithCredential(r *http.Request) (userID, credentialID string, err error)
+}
+
 // RetryAfterError is an Authenticator error meaning "too many failed attempts":
 // the server answers 429 with Retry-After instead of 401.
 type RetryAfterError interface {
@@ -79,6 +86,7 @@ type Server struct {
 	bus     *Bus
 	reqs    *userLimiter
 	upl     *userLimiter
+	push    *pusher // nil until EnablePush
 	mu      sync.RWMutex
 }
 
@@ -132,9 +140,14 @@ func (s *Server) Uploads() *UploadStore { return s.uploads }
 // the user is disabled). It returns how many connections were closed.
 func (s *Server) EndUserStreams(userID string) int { return s.bus.EndUser(userID) }
 
-// Close ends all EventSource connections; call it before http.Server.Shutdown,
-// which otherwise waits for streams that never go idle.
-func (s *Server) Close() { s.bus.CloseAll() }
+// Close ends all EventSource connections and push deliveries; call it before
+// http.Server.Shutdown, which otherwise waits for streams that never go idle.
+func (s *Server) Close() {
+	s.bus.CloseAll()
+	if s.push != nil {
+		s.push.close()
+	}
+}
 
 func (s *Server) url(path string) string { return s.opts.BaseURL + path }
 

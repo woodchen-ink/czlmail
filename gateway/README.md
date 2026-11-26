@@ -112,7 +112,7 @@ Only the gateway's own credentials produce 401; problems with an upstream mailbo
 
 ## JMAP endpoints
 
-All endpoints except the two `.well-known` files use HTTP Basic with the user's app password. Only invalid credentials answer 401 (429 with `Retry-After` after too many failures); a failing mailbox never does. Disabling a user or revoking an app password ends that user's EventSource streams.
+All endpoints except the two `.well-known` files use HTTP Basic with the user's app password. Only invalid credentials answer 401 (429 with `Retry-After` after too many failures); a failing mailbox never does. Disabling a user or revoking an app password ends that user's EventSource streams; disabling or deleting a user also deletes their push subscriptions, and revoking an app password deletes the ones created with it.
 
 | Endpoint | |
 | --- | --- |
@@ -132,11 +132,23 @@ Each upstream mailbox is one account (`isPersonal: true`). czlmail extensions:
 - Account capability `https://czl.net/jmap/upstream`: `kind` (`imap`, `gmail`, `microsoft`), `status` (`ok`, `syncing`, `authRequired`, `unreachable`, `paused`), `statusSince`, `code`, `reauthUrl`, `initialSync` (`{"done":1200,"total":48000}` while the first import runs, else null). An account never leaves the Session because its upstream fails; its status changes, so does the Session `state`, and the user's EventSource streams are closed so the client re-reads the Session.
 - A call that needs an unavailable upstream fails with `serverUnavailable` plus `czlUpstream: {status, code}`.
 
+### Push (iOS background notifications)
+
+czlmail on iOS is suspended seconds after it leaves the foreground, so it asks the gateway to push new mail to the CZL Connect push relay (`https://connect.czl.net/api/push`), which turns it into an APNs notification. It works exactly as with Stalwart; nothing needs to be configured.
+
+- `PushSubscription/get` and `/set` (RFC 8620 §7.2, `using` core). `url` must be `https://`; it and `keys` are write-only. A new subscription gets an encrypted `PushVerification` at once and receives nothing else until the client sets `verificationCode`. `expires` is capped at 7 days (null or missing means 7 days); expired subscriptions disappear and are pruned every 6 hours. At most 32 per user.
+- Messages are encrypted with the subscription's `keys` (RFC 8291, `aes128gcm`, one record) and sent with `TTL` and `Urgency`. Transient failures (network, 429, 5xx) are retried 5 times with exponential backoff; 404 and 410 delete the subscription; other 4xx drop the message.
+- New-mail push (draft-ietf-jmap-emailpush): session capability `urn:ietf:params:jmap:emailpush` (`{}`), and on every mail account `{"filterConditions":[…],"maxFilterDepth":4,"countProperties":[]}` (no `EmailCount`). The `emailPush` property maps an accountId to `{filter, properties, urgency}`; matching delivered messages are sent as `{"@type":"EmailPush","accountId","emails":[…],"state"}`. Filters support `inMailbox`, `inMailboxOtherThan`, `hasKeyword`, `notKeyword`, `from`, `to`, `cc`, `bcc`, `subject` and `AND`/`OR`/`NOT`.
+- One message's plaintext stays within 2600 bytes: the relay drops the ciphertext from the APNs payload (4 KB, base64url) beyond about 2900 bytes and the phone then only shows "New mail". Messages are batched while they fit and split otherwise; a message too large alone keeps the longest prefix of the requested `properties`.
+- `StateChange` pushes follow `types` (czlmail sends `[]`, so only `EmailPush`). Push uses the same 500 ms debounce as EventSource.
+- Push URLs that resolve to private, loopback or link-local addresses are refused, at creation and again at connect time, unless `security.allow_private_networks` is on. Redirects are not followed.
+- `url` and `keys.auth` are sealed in `push_subscriptions` (purpose `push-key`).
+
 Upstream codes: 40110 `authRequired`, 50210 `unreachable`, 42910 `unreachable` because the provider throttles the gateway, 50310 `syncing`, 42310 `paused`.
 
 Request-level codes (problem JSON): 40020 `not_json`, 40021 `not_request`, 40022 `unknown_capability`, 40023 `limit_exceeded` (with `limit`), 40024 `invalid_query`, 40100 `unauthenticated`, 40301 `no_upstream`, 40420 `account_not_found`, 40421 `blob_not_found`, 41320 `upload_too_large`, 42900 `too_many_requests`, 50000 `internal_error`, 50320 `upstream_unavailable`. JMAP codes use the x20 sequence and upstream codes x10 so they stay apart from the admin API's; 40301 means `no_upstream` on `/jmap/session` and `forbidden` in the admin API.
 
-The engine is `pkg/jmapserver` (RFC 8620 Core, no mail semantics): authentication and the user's accounts are injected (`Authenticator`, `AccountSource`), methods are registered with `Register(name, capability, fn)`, downloads of blob ids other than uploads (`u…`) go to a `BlobSource` registered for the id's first letter, and changes are published with `Changes().Publish(userID, {accountId: {type: state}})`.
+The engine is `pkg/jmapserver` (RFC 8620 Core, no mail semantics): authentication and the user's accounts are injected (`Authenticator`, `AccountSource`), methods are registered with `Register(name, capability, fn)`, downloads of blob ids other than uploads (`u…`) go to a `BlobSource` registered for the id's first letter, and changes are published with `Changes().Publish(userID, {accountId: {type: state}})`. `EnablePush(ctx, PushOptions{Store, …})` adds PushSubscription and emailpush; the mail layer reports every delivered message with `NewMail(userID, jmapserver.NewMail{…})` (sender, recipients, subject, mailboxes and keywords for filters, plus the Email/get-shaped properties to push) next to its `Publish`. Accounts with `urn:ietf:params:jmap:mail` get the emailpush account capability automatically.
 
 ## Development
 
@@ -149,7 +161,7 @@ GATEWAY_MASTER_KEY=$(openssl rand -base64 32) GATEWAY_BASE_URL=http://localhost:
 - Separate Go module (`github.com/woodchen-ink/czlmail/gateway`); it does not import `desktop/`.
 - Top-level packages: `config` (startup env), `database` (SQLite, pure Go), `model`, `service` (business logic and data access), `handler`, `router`, `middleware`, `initapp`, `cron`, `pkg` (`pkg/crypto` for sealed secrets and argon2id password hashes, `pkg/jmapserver` for the JMAP Core engine; `pkg/*test` are test helpers, see Testing).
 - Settings are registered once in `service/settings.go` (key, type, default) and read through `service.Settings`; never query the `settings` table directly.
-- JMAP endpoints authenticate with `service.BasicAuthenticator.Authenticate` (`ErrUnauthenticated` → 401, `*service.RateLimitError` → 429) and subscribe to `service.Invalidations` to close the EventSource connections of users whose credentials were revoked.
+- JMAP endpoints authenticate with `service.BasicAuthenticator` through `initapp.jmapAuth`, which also reports the app password used (`ErrUnauthenticated` → 401, `*service.RateLimitError` → 429), and subscribe to `service.Invalidations` to close the EventSource connections and delete the push subscriptions of revoked credentials.
 - JMAP tests drive the server with go-jmap, the client library czlmail uses.
 - `initapp.NewApp(cfg, db, log, version)` assembles the whole gateway (services, router, background jobs); `Serve` and the end-to-end tests both use it, so tests run the real routes.
 - A table column holding a sealed secret must call `service.RegisterSealedColumn` so `rotate-key` re-encrypts it. Seal with the row's public id in the AAD, never the auto-increment key.

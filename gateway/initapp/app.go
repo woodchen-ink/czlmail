@@ -33,7 +33,8 @@ type App struct {
 // NewApp loads the keyring, wires the services and starts the background jobs.
 // db must be open; Close stops the jobs and ends EventSource streams.
 func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (*App, error) {
-	if _, err := service.LoadKeyring(db, cfg.MasterKey); err != nil {
+	ring, err := service.LoadKeyring(db, cfg.MasterKey)
+	if err != nil {
 		return nil, err
 	}
 	auth, err := newAuth(db, cfg, log)
@@ -44,7 +45,7 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 	jmap, err := jmapserver.New(jmapserver.Options{
 		BaseURL:  cfg.BaseURL,
 		DataDir:  cfg.DataDir,
-		Auth:     auth.Basic,
+		Auth:     jmapAuth{auth.Basic},
 		Accounts: service.NewUpstreamAccounts(db),
 		Log:      log,
 		TraceID:  middleware.TraceID,
@@ -53,9 +54,29 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 		return nil, err
 	}
 	jmap.RegisterCapability(jmapserver.GatewayCapability, gateway)
-	// Disabled user or revoked app password: drop the user's push streams. Clients
-	// with a still-valid app password reconnect at once.
-	auth.Invalidations.Subscribe(func(ev service.UserInvalidation) { jmap.EndUserStreams(ev.UserPublicID) })
+	pushStore := service.NewPushStore(db, ring)
+	if err := jmap.EnablePush(context.Background(), jmapserver.PushOptions{
+		Store:                pushStore,
+		AllowPrivateNetworks: func() bool { return auth.Settings.Bool(service.SettingAllowPrivateNetworks) },
+	}); err != nil {
+		return nil, err
+	}
+	// Disabled user or revoked app password: drop the user's push streams (clients
+	// with a still-valid app password reconnect at once) and the push subscriptions
+	// of the revoked credentials, so a revoked device stops getting mail summaries.
+	auth.Invalidations.Subscribe(func(ev service.UserInvalidation) {
+		jmap.EndUserStreams(ev.UserPublicID)
+		if ev.Reason == "email_changed" {
+			return // same credentials, same mailboxes
+		}
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := jmap.DropPushSubscriptions(ctx, ev.UserPublicID, ev.AppPasswordID); err != nil {
+				log.Error("drop push subscriptions", "user", ev.UserPublicID, "err", err)
+			}
+		}()
+	})
 
 	ctx, stop := context.WithCancel(context.Background())
 	cron.StartCleanup(ctx, log, cleanupEvery, map[string]cron.Pruner{
@@ -65,6 +86,7 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 			n, err := jmap.Uploads().Cleanup(time.Now())
 			return int64(n), err
 		},
+		"push_subscriptions": func() (int64, error) { return pushStore.PruneExpired(time.Now()) },
 	})
 
 	h := router.New(router.Deps{

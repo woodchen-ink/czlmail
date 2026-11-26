@@ -28,8 +28,11 @@ func (s *Server) Register(name, capability string, fn MethodFunc) {
 // Call is one method invocation with its references already resolved.
 type Call struct {
 	UserID string
-	Name   string
-	CallID string
+	// CredentialID is the credential the request authenticated with, when the
+	// Authenticator reports one.
+	CredentialID string
+	Name         string
+	CallID       string
 	// Args are the resolved arguments as a JSON object.
 	Args json.RawMessage
 	// CreatedIDs is the request's creation id → server id map, shared by all
@@ -38,8 +41,12 @@ type Call struct {
 
 	capability string
 	session    *session
+	using      map[string]bool
 	extra      []invocation
 }
+
+// Using reports whether the request's `using` contains the capability.
+func (c *Call) Using(uri string) bool { return c.using[uri] }
 
 // Decode unmarshals the arguments; a failure is invalidArguments.
 func (c *Call) Decode(v any) error {
