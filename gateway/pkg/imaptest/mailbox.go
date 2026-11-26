@@ -173,6 +173,23 @@ func (m *Mailbox) Move(from string, uid imap.UID, to string) imap.UID {
 	return uids[0]
 }
 
+// Copy copies one message (Dovecot keeps its X-GUID) and returns its UID in
+// the destination. Copy then Expunge is what a server's MOVE looks like to
+// another session while it runs.
+func (m *Mailbox) Copy(from string, uid imap.UID, to string) imap.UID {
+	m.t.Helper()
+	m.selectBox(from)
+	data, err := m.C.Copy(imap.UIDSetNum(uid), to).Wait()
+	if err != nil {
+		m.t.Fatalf("imaptest: copy %q uid %d to %q: %v", from, uid, to, err)
+	}
+	uids, _ := data.DestUIDs.Nums()
+	if len(uids) != 1 {
+		m.t.Fatalf("imaptest: copy %q uid %d: COPYUID %v", from, uid, data.DestUIDs)
+	}
+	return uids[0]
+}
+
 // Expunge permanently removes one message.
 func (m *Mailbox) Expunge(name string, uid imap.UID) {
 	m.t.Helper()

@@ -17,6 +17,7 @@ const idleRenew = 25 * time.Minute
 func (u *Upstream) Watch(ctx context.Context, hint func(upstream.Hint)) error {
 	var selected string
 	onEvent := func(r *imapc.Response) {
+		u.log.Debug("watch event", "type", r.Type, "num", r.Num)
 		switch r.Type {
 		case "STATUS":
 			if name, _ := imapc.ParseStatus(r); name != "" {

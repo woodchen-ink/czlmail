@@ -3,6 +3,7 @@ package imap
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -102,6 +103,12 @@ func (r *round) run(ctx context.Context) error {
 	if r.anyChanged() {
 		if err := r.sweep(ctx); err != nil {
 			return err
+		}
+	}
+	if r.u.log.Enabled(ctx, slog.LevelDebug) {
+		for _, d := range r.deltas {
+			r.u.log.Debug("sync folder", "mailbox", d.mbox.Name, "vanished", len(d.vanished), "new", len(d.newUIDs),
+				"flags", len(d.flags), "reset", d.reset, "full", full, "hinted", r.req.Mailboxes)
 		}
 	}
 	if err := r.apply(ctx); err != nil {
@@ -283,8 +290,17 @@ func (r *round) sweep(ctx context.Context) error {
 func (r *round) finish(wasReady bool) error {
 	now := r.now.UTC()
 	err := r.write(func(tx *mailindex.Tx) error {
-		if _, err := tx.DestroyOrphans(); err != nil {
+		if m, err := tx.MergeOrphans(); err != nil {
 			return err
+		} else if m > 0 {
+			r.u.log.Debug("sync merged half-seen moves", "count", m)
+		}
+		n, err := tx.DestroyOrphans()
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			r.u.log.Debug("sync destroyed orphans", "count", n)
 		}
 		for _, d := range r.deltas {
 			if d.skip {
