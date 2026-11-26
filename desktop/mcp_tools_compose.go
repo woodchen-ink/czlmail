@@ -123,12 +123,13 @@ func (a *App) mcpCompose(in composeIn) (ComposeRequest, error) {
 			for _, att := range visibleAttachments(orig) {
 				req.Attachments = append(req.Attachments, AttachmentRef{BlobID: att.BlobID, Type: att.Type, Name: att.Name})
 			}
+			// 与界面的转发 (mail-shell forwardDraft) 同一套原文, 按界面语言翻译。
 			header := []string{
-				"-------- 转发的邮件 --------",
-				"发件人：" + addressLine(orig.From),
-				"时间：" + when,
-				"收件人：" + addressLine(orig.To),
-				"主题：" + orig.Subject,
+				a.t("-------- 转发的邮件 --------"),
+				a.t("发件人：{0}", addressLine(orig.From)),
+				a.t("时间：{0}", when),
+				a.t("收件人：{0}", addressLine(orig.To)),
+				a.t("主题：{0}", orig.Subject),
 			}
 			quoteText = strings.Join(header, "\n") + "\n\n" + original
 			quoteHTML = `<div class="czl-quote" style="` + quoteStyle + `"><div style="` + forwardMetaStyle + `">` +
@@ -158,7 +159,7 @@ func (a *App) mcpCompose(in composeIn) (ComposeRequest, error) {
 					req.References = append(req.References, r)
 				}
 			}
-			intro := fmt.Sprintf("在 %s，%s 写道：", when, addressLine(orig.From))
+			intro := a.t("在 {0}，{1} 写道：", when, addressLine(orig.From))
 			quoteText = intro + "\n" + quoteLines(original)
 			quoteHTML = `<div class="czl-quote" style="` + quoteStyle + `"><div style="` + quoteMetaStyle + `">` +
 				html.EscapeString(intro) + `</div><blockquote style="` + quoteBlockStyle + `">` +

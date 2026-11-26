@@ -23,7 +23,6 @@ import {
   Keyboard,
   ListFilter,
   Loader2,
-  LogOut,
   MessageSquare,
   Palette,
   PenLine,
@@ -67,7 +66,6 @@ import {
   errorMessage,
   onEvent,
   type Account,
-  type SessionStatus,
   type Template,
   type UpdateInfo,
 } from "@/lib/api";
@@ -86,6 +84,7 @@ import {
 import { FoldersSection, IdentitiesSection, ScheduledSection, VacationSection } from "@/components/settings/mail-sections";
 import { AddressBooksSection, CalendarsSection } from "@/components/settings/pim-sections";
 import { Card, Divider, Row, SectionTitle, useSettings } from "@/components/settings/ui";
+import { SignInsCard } from "@/components/settings/sign-ins-section";
 import { store } from "@/wailsjs/go/models";
 import { listen } from "@/lib/app-bus";
 
@@ -613,7 +612,6 @@ function ImageCacheCard({ active }: { active: boolean }) {
 
 function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut: () => void }) {
   useI18n();
-  const [status, setStatus] = useState<SessionStatus | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [confirm, setConfirm] = useState(false);
   const [purgeOpen, setPurgeOpen] = useState(false);
@@ -624,7 +622,6 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
 
   useEffect(() => {
     if (!active) return;
-    api.getSessionStatus().then(setStatus).catch(() => {});
     const loadAccounts = () => api.listAccounts().then((a) => setAccounts(a ?? [])).catch(() => {});
     loadAccounts();
     return onEvent(Events.accountsChanged, loadAccounts);
@@ -633,13 +630,12 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
   return (
     <>
       <SectionTitle title={t("账户")} />
-      <Card>
-        <Row title={status?.username || t("未登录")} desc={status ? t("服务器 {0} · {1}", status.server, status.connected ? t("已连接") : t("离线")) : ""}>
-          <Button variant="outline" size="sm" onClick={() => setConfirm(true)}>
-            <LogOut className="size-4" />
-            {t("退出登录")}</Button>
-        </Row>
-      </Card>
+      <SignInsCard
+        active={active}
+        accounts={accounts}
+        onSignOut={() => setConfirm(true)}
+        onSignedOut={onSignedOut}
+      />
 
       {accounts.length > 1 && (
         <>

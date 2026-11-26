@@ -26,7 +26,7 @@ import { listen } from "@/lib/app-bus";
 import { toggleTask } from "@/lib/notes/live-editing";
 import { useNoteDocument } from "@/lib/notes/use-note-document";
 import { useNoteSync } from "@/lib/notes/use-note-sync";
-import { BrowserOpenURL } from "@/wailsjs/runtime/runtime";
+import { openExternal } from "@/lib/external";
 import { getLocale, t } from "@/lib/i18n";
 import { useCompact } from "@/lib/use-compact";
 import { useEdgeSwipe } from "@/lib/use-edge-swipe";
@@ -268,7 +268,7 @@ export function NotesShell({ active }: { active: boolean }) {
   /** Links are either explicit external navigation or vault-scoped local resolution. */
   async function follow(href: string) {
     await run(async () => {
-      if (/^https?:\/\//i.test(href)) { BrowserOpenURL(href); return; }
+      if (/^https?:\/\//i.test(href)) { openExternal(href); return; }
       const note = doc.getNote(); if (!note) return;
       const result = await noteApi.previewLink(note.vaultId, note.id, href);
       const entry = result.entry;
@@ -365,7 +365,7 @@ export function NotesShell({ active }: { active: boolean }) {
             onTrash={() => { setSelected(doc.note); setAction("trash"); }}
             onBack={compact ? () => setMobileDoc(false) : undefined} />}
         {doc.error && <div className="text-destructive flex items-center gap-3 px-4 py-2 text-sm"><span>{doc.error}</span><Button variant="outline" size="sm" onClick={() => void run(doc.recover)}>{t("将当前编辑另存为恢复笔记")}</Button></div>}
-        {attachmentPreview && <div className="min-h-0 flex-1"><NoteAttachmentPane item={attachmentPreview} onExternal={() => void run(async () => { if (attachmentPreview.src) BrowserOpenURL(attachmentPreview.src); else await noteApi.openLink(attachmentPreview.vaultId, attachmentPreview.noteId, attachmentPreview.path); })} /></div>}
+        {attachmentPreview && <div className="min-h-0 flex-1"><NoteAttachmentPane item={attachmentPreview} onExternal={() => void run(async () => { if (attachmentPreview.src) openExternal(attachmentPreview.src); else await noteApi.openLink(attachmentPreview.vaultId, attachmentPreview.noteId, attachmentPreview.path); })} /></div>}
         <div hidden={!!attachmentPreview} onClickCapture={(event) => {
           const target = event.target as HTMLElement;
           const image = target.closest<HTMLImageElement>("img[data-note-path], img[data-note-remote]");

@@ -115,7 +115,7 @@ func (a *App) restoreWithRetry(si *signIn, cfg config.Config) {
 
 		// 等待期间用户可能已经自己登录、退出或换了账号, 这时不该再拿旧配置去连。
 		a.mu.RLock()
-		superseded := si.removed || si.client != nil || si.reason != "" ||
+		superseded := si.removed || si.signedOut || si.client != nil || si.reason != "" ||
 			si.cfg.SessionEndpoint != cfg.SessionEndpoint || si.cfg.AuthMethod != cfg.AuthMethod
 		a.mu.RUnlock()
 		if superseded {
@@ -153,7 +153,8 @@ func (a *App) suspectCredentials(si *signIn, client *jmap.Client, cfg config.Con
 // requireSignIn 停掉这个登录的同步并提示用户重新登录。client 非空时只在它仍是该登录的当前会话时生效。
 func (a *App) requireSignIn(si *signIn, client *jmap.Client, reason error) {
 	a.mu.Lock()
-	if client != nil && si.client != client {
+	// 用户已退出或移除的登录凭据本来就删了, 不算失效, 不提示重新登录。
+	if (client != nil && si.client != client) || si.signedOut || si.removed {
 		a.mu.Unlock()
 		return
 	}

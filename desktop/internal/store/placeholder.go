@@ -50,6 +50,8 @@ type PlaceholderContext struct {
 	SenderName    string
 	RecipientName string
 	Now           time.Time
+	// DayOfWeek 是界面语言里的星期名, 空则用中文 (周一…)。
+	DayOfWeek string
 }
 
 // ApplyPlaceholders 替换文本中的占位符。
@@ -60,10 +62,13 @@ func ApplyPlaceholders(text string, values map[string]string, ctx PlaceholderCon
 	if ctx.Now.IsZero() {
 		ctx.Now = time.Now()
 	}
+	if ctx.DayOfWeek == "" {
+		ctx.DayOfWeek = weekdayZh(ctx.Now.Weekday())
+	}
 
 	builtin := map[string]string{
 		PlaceholderDate:       ctx.Now.Format("2006-01-02"),
-		PlaceholderDayOfWeek:  weekdayZh(ctx.Now.Weekday()),
+		PlaceholderDayOfWeek:  ctx.DayOfWeek,
 		PlaceholderSenderName: ctx.SenderName,
 		PlaceholderRecipient:  ctx.RecipientName,
 	}

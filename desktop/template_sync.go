@@ -96,6 +96,10 @@ func (a *App) SyncTemplates() error {
 	if len(localChanges) > 0 {
 		if err := st.WithTx(ctx, func(tx *sql.Tx) error {
 			for _, t := range localChanges {
+				// 同步文件里没有名字的模板在本机补一个界面语言的名字, 上传时 templateToEntry 再还原为空。
+				if t.Name == "" {
+					t.Name = a.t(untitledTemplate)
+				}
 				if err := store.PutSyncedTemplate(ctx, tx, t); err != nil {
 					return err
 				}
@@ -173,14 +177,30 @@ func entryToTemplate(e templateEntry) store.SyncedTemplate {
 		IsFavorite: e.IsFavorite, DefaultTo: e.DefaultTo, DefaultCC: e.DefaultCC, DefaultBCC: e.DefaultBCC,
 		CreatedAt: parseISO(e.CreatedAt), UpdatedAt: parseISO(e.UpdatedAt),
 	}}
-	if t.Name == "" {
-		t.Name = "(未命名模板)"
-	}
 	t.DeletedAt = parseISO(e.DeletedAt)
 	return t
 }
 
+// untitledTemplate 是本机给无名模板补的名字 (按界面语言翻译), 只在本机显示, 不写进同步文件。
+const untitledTemplate = "(未命名模板)"
+
+// isUntitledPlaceholder 判断名字是不是某种语言的补名, 换过界面语言后旧语言的补名也能认出来。
+func isUntitledPlaceholder(name string) bool {
+	if name == untitledTemplate {
+		return true
+	}
+	for _, locale := range catalog.Locales() {
+		if catalog.T(locale, untitledTemplate) == name {
+			return true
+		}
+	}
+	return false
+}
+
 func templateToEntry(t store.SyncedTemplate) templateEntry {
+	if isUntitledPlaceholder(t.Name) {
+		t.Name = ""
+	}
 	e := templateEntry{
 		ID: t.ID, Name: t.Name, Subject: t.Subject, Body: t.Body, IsHTML: t.IsHTML, Category: t.Category,
 		IsFavorite: t.IsFavorite, DefaultTo: t.DefaultTo, DefaultCC: t.DefaultCC, DefaultBCC: t.DefaultBCC,

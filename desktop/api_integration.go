@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 )
@@ -40,10 +41,36 @@ func (a *App) SetAutostart(on bool) (IntegrationStatus, error) {
 
 // OpenDefaultAppsSettings 打开系统的默认应用设置页; macOS 上直接设为默认。
 func (a *App) OpenDefaultAppsSettings() error {
-	if err := platform.RegisterHandlers(); err != nil {
+	if err := a.registerHandlers(); err != nil {
 		return err
 	}
 	return platform.OpenDefaultAppsSettings()
+}
+
+var (
+	// registerHandlersMu 让启动时与换语言后的登记依次进行: 后一次总用当时的语言写, 不会被前一次的旧文字盖掉。
+	registerHandlersMu sync.Mutex
+	// handlersRegistered 表示本进程登记过 (启动或打开默认应用设置时)。换语言只刷新登记过的,
+	// 没走 startup 的进程 (测试) 不会把注册表指向自己。
+	handlersRegistered atomic.Bool
+)
+
+// registerHandlers 按界面当前语言登记协议与文件关联。启动与打开默认应用设置时调用。
+func (a *App) registerHandlers() error {
+	registerHandlersMu.Lock()
+	defer registerHandlersMu.Unlock()
+	handlersRegistered.Store(true)
+	return platform.RegisterHandlers(a.t)
+}
+
+// refreshHandlers 在界面换语言后重新登记, 让系统「默认应用」里的说明跟着换语言。
+func (a *App) refreshHandlers() {
+	if !handlersRegistered.Load() {
+		return
+	}
+	if err := a.registerHandlers(); err != nil && a.log != nil {
+		a.log.Warn("register handlers", "err", err)
+	}
 }
 
 // OpenRequest 是一个外部打开请求。

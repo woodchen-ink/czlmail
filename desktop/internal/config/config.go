@@ -37,6 +37,9 @@ type Config struct {
 	Scopes      []string `json:"scopes"`
 	// Username 在会话建立后由服务器给出, 仅用于界面显示与密钥库的条目名。
 	Username string `json:"username"`
+	// SignedOut 表示用户退出了这个登录, 但还有别的登录在用: 配置与缓存留着, 凭据已删, 启动时不连。
+	// 重新登录 (同一个用户) 后清掉。
+	SignedOut bool `json:"signedOut,omitempty"`
 }
 
 const (

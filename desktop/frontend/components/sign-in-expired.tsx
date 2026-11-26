@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Events, api, errorMessage, onEvent, type SessionStatus } from "@/lib/api";
+import { send } from "@/lib/app-bus";
 
 const TOAST_ID = "sign-in-required";
 
@@ -61,7 +62,10 @@ export function SignInExpired({ onReauth }: { onReauth: (status: SessionStatus) 
     };
     check(false);
     const offRequired = onEvent(Events.signInRequired, () => check(true));
-    const offConnected = onEvent(Events.connected, () => {
+    const offConnected = onEvent(Events.connected, async () => {
+      // 连上的可能是别的登录 (#15): 主登录仍失效时提示留着。
+      const s = await api.getSessionStatus().catch(() => null);
+      if (cancelled || s?.signInRequired) return;
       snoozed = false;
       setOpen(false);
       setStatus(null);
@@ -74,6 +78,47 @@ export function SignInExpired({ onReauth }: { onReauth: (status: SessionStatus) 
       toast.dismiss(TOAST_ID);
     };
   }, [remind]);
+
+  // 其余登录 (#15) 失效时不弹窗打断: 主登录的邮件照常收发, 留一条常驻提示, 点了去设置 → 账户重新登录。
+  useEffect(() => {
+    let cancelled = false;
+    const shown = new Set<string>();
+    const check = async () => {
+      try {
+        const list = (await api.listSignIns()) ?? [];
+        if (cancelled) return;
+        const now = new Set<string>();
+        for (const s of list) {
+          if (s.primary || !s.signInRequired) continue;
+          now.add(s.id);
+          toast.warning(t("{0} 的登录已失效，同步已暂停", s.username), {
+            id: TOAST_ID + ":" + s.id,
+            duration: Infinity,
+            action: {
+              label: t("处理"),
+              onClick: () => {
+                send("navigate", { module: "settings" });
+                // 设置模块可能刚挂载, 等它订阅后再发。
+                setTimeout(() => send("openSettings", { section: "account" }), 0);
+              },
+            },
+          });
+        }
+        for (const id of shown) if (!now.has(id)) toast.dismiss(TOAST_ID + ":" + id);
+        shown.clear();
+        now.forEach((id) => shown.add(id));
+      } catch {
+        // 取不到状态时不打扰。
+      }
+    };
+    check();
+    const offs = [Events.signInRequired, Events.connected, Events.accountsChanged].map((e) => onEvent(e, check));
+    return () => {
+      cancelled = true;
+      offs.forEach((off) => off());
+      shown.forEach((id) => toast.dismiss(TOAST_ID + ":" + id));
+    };
+  }, []);
 
   function later() {
     snoozed = true;
@@ -106,6 +151,7 @@ export function SignInExpired({ onReauth }: { onReauth: (status: SessionStatus) 
             {t("邮件服务器不再接受本机保存的登录凭据，同步已暂停。已缓存的邮件仍可查看，重新登录后继续同步，无需重新下载。")}
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {status.username && <p className="truncate text-sm font-medium">{status.username}</p>}
         <p className="text-muted-foreground text-xs leading-relaxed">
           {t("原因：{0}", errorMessage(status.signInReason))}
         </p>

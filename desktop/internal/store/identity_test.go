@@ -80,3 +80,49 @@ func TestRemoveAccount(t *testing.T) {
 		t.Fatalf("reconciledAt:s = %q, want cleared", v)
 	}
 }
+
+// 移除附加登录按前缀删: 账号行已不在的孤儿数据一起删; 主登录与前缀相近的别的登录 (s22) 不动。
+func TestRemoveSignInData(t *testing.T) {
+	ctx := context.Background()
+	s := openTemp(t)
+	mail := []Email{{ID: "m1", Subject: "hello", ReceivedAt: time.Unix(1700000005, 0)}}
+	if err := s.WithTx(ctx, func(tx *sql.Tx) error {
+		if err := UpsertAccounts(ctx, tx, []Account{{ID: "c", IsPersonal: true}, {ID: "s2~c", IsPersonal: true}, {ID: "s22~c", IsPersonal: true}}, nil); err != nil {
+			return err
+		}
+		for _, acc := range []string{"c", "s2~c", "s2~gone", "s22~c"} {
+			if err := UpsertEmails(ctx, tx, acc, mail); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"reconciledAt:s2~c", "reconciledAt:s22~c", "reconciledAt:c"} {
+		if err := s.SetStringSetting(ctx, k, "1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := s.RemoveSignInData(ctx, "s2"); err != nil {
+		t.Fatal(err)
+	}
+	for acc, want := range map[string]bool{"c": true, "s2~c": false, "s2~gone": false, "s22~c": true} {
+		if _, err := s.Email(ctx, acc, "m1"); (err == nil) != want {
+			t.Errorf("mail of %s kept=%v, want %v", acc, err == nil, want)
+		}
+	}
+	accs, _ := s.Accounts(ctx)
+	if len(accs) != 2 {
+		t.Errorf("accounts = %+v, want c and s22~c", accs)
+	}
+	for k, want := range map[string]bool{"reconciledAt:s2~c": false, "reconciledAt:s22~c": true, "reconciledAt:c": true} {
+		if v, _ := s.StringSetting(ctx, k); (v != "") != want {
+			t.Errorf("%s kept=%v, want %v", k, v != "", want)
+		}
+	}
+	if err := s.RemoveSignInData(ctx, ""); err == nil {
+		t.Error("an empty prefix must be refused: it would match the primary sign-in")
+	}
+}

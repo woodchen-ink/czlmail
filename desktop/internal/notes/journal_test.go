@@ -20,8 +20,10 @@ func TestFormatDateTokens(t *testing.T) {
 			t.Errorf("%q: got %q want %q", layout, got, want)
 		}
 	}
-	if got := FormatDate("dddd ddd", day, "en"); got != "Friday Fri" {
-		t.Errorf("english weekday: %q", got)
+	for lang, want := range map[string]string{"en": "Friday Fri", "cs": "pátek pá", "ru": "пятница пт", "zh-CN": "星期五 周五", "fr": "Friday Fri"} {
+		if got := FormatDate("dddd ddd", day, lang); got != want {
+			t.Errorf("%s weekday: got %q want %q", lang, got, want)
+		}
 	}
 	got := ExpandTemplate("# {{title}}\ncreated: {{date}} {{time}}\n{{date:YYYY/MM}} {{ other }}", day, "2025-03-21-星期五", "zh")
 	if got != "# 2025-03-21-星期五\ncreated: 2025-03-21 09:05\n2025/03 {{ other }}" {
@@ -56,6 +58,12 @@ func TestEnsureNoteCreatesOnceAndReadsTemplates(t *testing.T) {
 	}
 	if _, err = s.ReadPath(vault, "模板/missing.md"); err != ErrNotFound {
 		t.Fatalf("missing template: %v", err)
+	}
+	// HasFolder decides whether an old default journal folder is kept; notes are not folders.
+	for path, want := range map[string]bool{"dailynote": true, "dailynote/2025/03": true, "DailyNote": true, "日记": false, "模板/日记.md": false, "dailynote/2025/03/2025-03-21-星期五.md": false} {
+		if got := s.HasFolder(vault, path); got != want {
+			t.Errorf("HasFolder(%q) = %v, want %v", path, got, want)
+		}
 	}
 }
 

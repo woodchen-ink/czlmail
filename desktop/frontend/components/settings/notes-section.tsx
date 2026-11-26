@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card, Row, SectionTitle } from "@/components/settings/ui";
 import { errorMessage } from "@/lib/api";
 import { flushNotes, noteApi, type JournalConfig, type NoteConfig } from "@/lib/notes/api";
-import { t } from "@/lib/i18n";
+import { getLocale, t } from "@/lib/i18n";
 import { isNative } from "@/lib/native-bridge";
 
 /** Local module and MCP permissions are independent of mail settings and cross-device preferences. */
@@ -22,21 +22,22 @@ export function NotesSection({ active }: { active: boolean }) {
   useEffect(() => {
     if (!active) return;
     void noteApi.config().then(setConfig).catch((err) => toast.error(errorMessage(err)));
-    void noteApi.journalConfig().then(setJournal).catch((err) => toast.error(errorMessage(err)));
+    void noteApi.journalConfig(getLocale()).then(setJournal).catch((err) => toast.error(errorMessage(err)));
   }, [active]);
-  /** Journal fields save shortly after typing stops, and again on blur where the backend fills defaults. */
+  /** Journal fields save shortly after typing stops, and again on blur, where the backend shows the defaults again
+   *  for an emptied folder or file name. An empty folder means the default folder; "/" is the notes root. */
   const journalTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   function editJournal(patch: Partial<JournalConfig>) {
     if (!journal) return;
     const next = { ...journal, ...patch };
     setJournal(next);
     clearTimeout(journalTimer.current);
-    journalTimer.current = setTimeout(() => void noteApi.setJournalConfig(next).catch((err) => toast.error(errorMessage(err))), 400);
+    journalTimer.current = setTimeout(() => void noteApi.setJournalConfig(next, getLocale()).catch((err) => toast.error(errorMessage(err))), 400);
   }
   async function saveJournal() {
     if (!journal) return;
     clearTimeout(journalTimer.current);
-    try { setJournal(await noteApi.setJournalConfig(journal)); }
+    try { setJournal(await noteApi.setJournalConfig(journal, getLocale())); }
     catch (err) { toast.error(errorMessage(err)); }
   }
   /** Persist before changing visible navigation; a failed editor flush aborts disabling. */
@@ -86,7 +87,7 @@ export function NotesSection({ active }: { active: boolean }) {
     </Card>
     <SectionTitle small title={t("日记")} desc={t("笔记页「今日日记」一键打开当天日记，没有就按模板新建。位置和文件名支持 YYYY、MM、DD、dddd（星期）等日期写法，与 Obsidian 相同；这些设置会同步到其他设备。")} />
     <Card>
-      <Row title={t("日记目录")} desc={t("例如 dailynote/YYYY/MM，留空则放在笔记根目录。")}>
+      <Row title={t("日记目录")} desc={t("例如 dailynote/YYYY/MM；填 / 放在笔记根目录，留空用默认目录。")}>
         <Input className="w-56" aria-label={t("日记目录")} value={journal?.folder ?? ""} disabled={!journal || !config?.enabled} onChange={(event) => editJournal({ folder: event.target.value })} onBlur={() => void saveJournal()} />
       </Row>
       <Row title={t("日记文件名")} desc={t("例如 YYYY-MM-DD-dddd 得到 2025-03-21-星期五。")}>

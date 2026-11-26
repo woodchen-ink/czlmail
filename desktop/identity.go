@@ -20,6 +20,20 @@ func identitySettings() []string {
 	return append(keys, settingAIKeyUpdatedAt, "mutedMailAccounts", settingUnifiedExcluded, "defaultIdentities", "pushRelay")
 }
 
+// primaryOnlySettings 是 identitySettings 里只属于主登录、可以整个删的部分 (同步的 AI 设置与推送登记);
+// 按账号 id 记的列表类设置不在其中, 还有别的登录时只去掉主登录的条目 (forgetAccountSettings)。
+func primaryOnlySettings() []string {
+	keys := append([]string{}, aiSyncedSettings...)
+	return append(keys, settingAIKeyUpdatedAt, "pushRelay")
+}
+
+// hasOtherSignIns 报告除主登录外是否还有登录 (#15)。
+func (a *App) hasOtherSignIns() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return len(a.extra) > 0
+}
+
 // ensureCacheOwner 在会话建立后、同步开始前确认本机缓存属于这次登录的身份, 不是就清空。
 //
 // 退出登录保留缓存, 同一个人重新登录不必重新引导; 但换成另一个人 (或另一台服务器) 时,
@@ -40,7 +54,18 @@ func (a *App) ensureCacheOwner(ctx context.Context, st *store.Store, cfg config.
 
 	a.log.Info("signed in as a different identity, clearing local cache")
 	a.forgetPush(ctx, st)
-	if err := st.ResetIdentityData(ctx, identitySettings()); err != nil {
+	if a.hasOtherSignIns() {
+		// 别的登录 (#15) 的缓存、受信名单、译文不属于主登录的上一个人, 留着; 只清主登录的那份。
+		if err := st.ResetPrimaryIdentityData(ctx, primaryOnlySettings()); err != nil {
+			return err
+		}
+		if err := a.forgetAccountSettings(st, func(acc string) bool {
+			prefix, _ := accountid.Split(acc)
+			return prefix == accountid.Primary
+		}); err != nil {
+			return err
+		}
+	} else if err := st.ResetIdentityData(ctx, identitySettings()); err != nil {
 		return err
 	}
 	if err := keychain.Delete(config.KeyringService, aiKeyringKey); err != nil && !errors.Is(err, keychain.ErrNotFound) {

@@ -10,7 +10,7 @@ import { t } from "@/lib/i18n";
 
 import * as App from "@/wailsjs/go/main/App";
 import { EventsOn } from "@/wailsjs/runtime/runtime";
-import type { main, store, syncer } from "@/wailsjs/go/models";
+import type { main, smime, store, syncer } from "@/wailsjs/go/models";
 import { localUrl } from "@/lib/native-bridge";
 
 export type Account = store.Account;
@@ -20,8 +20,11 @@ export type EmailDetail = store.EmailDetail;
 export type Address = store.Address;
 export type Identity = main.Identity;
 export type SessionStatus = main.SessionStatus;
+export type SignInInfo = main.SignInInfo;
 export type AppSettings = main.AppSettings;
 export type ComposeRequest = main.ComposeRequest;
+export type SigningCertificate = smime.Certificate;
+export type SignatureCheck = smime.Verification;
 export type Attachment = store.Attachment;
 export type UploadedAttachment = main.UploadedAttachment;
 export type Calendar = store.Calendar;
@@ -139,6 +142,16 @@ export const api = {
   signOut: guard(App.SignOut),
   retrySession: guard(App.RetrySession),
 
+  // 多个登录 (设置 → 账户)。id 是登录前缀, 主登录为空串。
+  listSignIns: guard(App.ListSignIns),
+  addSignInWithPassword: guard(App.AddSignInWithPassword),
+  addSignInOAuth: guard(App.AddSignInOAuth),
+  signInAgainWithPassword: guard(App.SignInAgainWithPassword),
+  signInAgainOAuth: guard(App.SignInAgainOAuth),
+  retrySignIn: guard(App.RetrySignIn),
+  signOutOf: guard(App.SignOutOf),
+  removeSignIn: guard(App.RemoveSignIn),
+
   listAccounts: guard(App.ListAccounts),
   listMailboxes: guard(App.ListMailboxes),
   listEmails: guard(App.ListEmails),
@@ -192,6 +205,11 @@ export const api = {
   untrustSender: guard(App.UntrustSender),
   listTrustedSenders: guard(App.ListTrustedSenders),
   getSettings: guard(App.GetSettings),
+  listSigningCertificates: guard(App.ListSigningCertificates),
+  pickSigningCertificate: guard(App.PickSigningCertificate),
+  importSigningCertificate: guard(App.ImportSigningCertificate),
+  removeSigningCertificate: guard(App.RemoveSigningCertificate),
+  verifySignature: guard(App.VerifySignature),
   saveSettings: guard(App.SaveSettings),
   getVersion: guard(App.GetVersion),
 
@@ -320,6 +338,10 @@ const ERROR_MESSAGES: Record<string, () => string> = {
   "2015": () => t("读取系统钥匙串中的登录凭据失败，请重新登录。"),
   "2018": () => t("无法把登录凭据保存到系统钥匙串，请确认系统钥匙串可用。"),
   "2020": () => t("本机没有找到保存的登录凭据。"),
+  "2021": () => t("这个登录已经不存在，可能刚被移除。"),
+  "2022": () => t("主登录不能单独移除，请使用退出登录。"),
+  "2023": () => t("这个账号已经登录过了。"),
+  "2024": () => t("这里登录的是另一个账号。要使用另一个账号，请把它作为新的登录添加。"),
   "2030": () => t("这个账号没有「已删除」文件夹。"),
   "2031": () => t("这个账号没有「归档」文件夹。"),
   "2033": () => t("标签名不能为空。"),
@@ -388,6 +410,17 @@ const ERROR_MESSAGES: Record<string, () => string> = {
   "2224": () => t("这封邮件没有日历邀请。"),
   "2225": () => t("这个账号没有日历。"),
   "2226": () => t("这封邮件没有请求已读回执。"),
+  "2227": () => t("这个链接的协议不受支持，已拒绝打开。"),
+  "2400": () => t("这个发件地址还没有选择签名证书，请在设置 → 发件身份与签名中选择。"),
+  "2401": () => t("签名证书尚未生效。"),
+  "2402": () => t("签名证书已过期，邮件没有发送。"),
+  "2403": () => t("这张证书不能用于邮件签名。"),
+  "2404": () => t("签名证书上没有这个发件地址。"),
+  "2405": () => t("系统证书存储里找不到签名证书，请在设置中重新选择。"),
+  "2406": () => t("无法签名，邮件没有发送。"),
+  "2407": () => t("证书密码不对。"),
+  "2408": () => t("这不是可用的证书文件，需要包含私钥的 .p12 或 .pfx 文件。"),
+  "2409": () => t("这张证书不能用于邮件签名：证书上没有邮箱地址，或密钥类型不支持。"),
   "2300": () => t("接口地址必须以 http:// 或 https:// 开头。"),
   "2302": () => t("AI 还没有配置好：请填写接口地址、模型名称和 API Key 后保存。"),
   "2309": () => t("AI 没有返回内容（模型可能把输出都用在了思考上），可以把思考档位调低后重试。"),

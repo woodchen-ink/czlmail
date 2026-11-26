@@ -165,7 +165,8 @@ func bundleID() string {
 }
 
 // RegisterHandlers 让 LaunchServices 登记本程序的协议与文件类型。每次启动执行, 程序挪位置后自动更新。
-func RegisterHandlers() error {
+// 说明文字来自 Info.plist, 用不到 t。
+func RegisterHandlers(func(string, ...any) string) error {
 	if bundleID() == "" {
 		return nil
 	}

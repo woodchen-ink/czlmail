@@ -189,6 +189,8 @@ type AppSettings struct {
 	MutedMailAccounts []string `json:"mutedMailAccounts"`
 	// UnifiedExcludedAccounts 是不并入侧栏「全部账号」的账号 (如出站归档这类只偶尔查看的共享邮箱)。
 	UnifiedExcludedAccounts []string `json:"unifiedExcludedAccounts"`
+	// SmimeSigning 是 发件地址(小写) → S/MIME 签名证书与是否默认签名。
+	SmimeSigning map[string]SmimeChoice `json:"smimeSigning"`
 }
 
 var boolSettings = []struct {
@@ -229,6 +231,8 @@ func (a *App) GetSettings() (AppSettings, error) {
 	}
 	s.MutedMailAccounts = a.accountListSetting(st, "mutedMailAccounts")
 	s.UnifiedExcludedAccounts = a.accountListSetting(st, settingUnifiedExcluded)
+	raw, _ := st.StringSetting(a.ctx, settingSmime)
+	s.SmimeSigning = smimeSettings(raw)
 	return s, nil
 }
 
@@ -258,6 +262,13 @@ func (a *App) SaveSettings(s AppSettings) error {
 	ids, _ := json.Marshal(s.DefaultIdentities)
 	if err := st.SetStringSetting(a.ctx, "defaultIdentities", string(ids)); err != nil {
 		return err
+	}
+	// 旧前端不认识这个字段, 发来的是 nil: 不覆盖已有设置。
+	if s.SmimeSigning != nil {
+		smimeRaw, _ := json.Marshal(normalizeSmime(s.SmimeSigning))
+		if err := st.SetStringSetting(a.ctx, settingSmime, string(smimeRaw)); err != nil {
+			return err
+		}
 	}
 	for key, list := range map[string][]string{
 		"mutedMailAccounts":    s.MutedMailAccounts,

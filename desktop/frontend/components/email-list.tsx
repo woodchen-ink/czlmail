@@ -17,6 +17,7 @@ import {
   MessagesSquare,
   Paperclip,
   Pin,
+  Shield,
   Star,
   Trash2,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { displayAddressList, listDate } from "@/lib/format";
 import { api, type EmailSummary } from "@/lib/api";
 import { emailKey } from "@/lib/email-key";
+import { threadKey, threadRows } from "@/lib/thread-rows";
 import { endEmailDrag, onEmailDrag, startEmailDrag } from "@/lib/email-drag";
 
 interface Props {
@@ -37,7 +39,8 @@ interface Props {
   selectedKey: string;
   loading: boolean;
   hasMore: boolean;
-  onSelect: (key: string) => void;
+  /** member: 展开会话里的成员行传自己的摘要, 它不在 emails 里 (调用方要据此认出草稿)。 */
+  onSelect: (key: string, member?: EmailSummary) => void;
   onLoadMore: () => void;
   onToggleFlag: (email: EmailSummary) => void;
   onDelete?: (email: EmailSummary) => void;
@@ -68,6 +71,11 @@ interface Props {
   emptyState?: React.ReactNode;
   /** 行可以拖到侧栏的文件夹上移动 (见 lib/email-drag)。 */
   draggable?: boolean;
+  /**
+   * 每封邮件各占一行, 不按会话合并、不能展开 (草稿、定时发送: 每封是一件单独待处理的事,
+   * 同 Outlook; 合并后较早的草稿藏在会话行下面, 展开区又混进收发的往来)。
+   */
+  flat?: boolean;
 }
 
 export function EmailList({
@@ -90,6 +98,7 @@ export function EmailList({
   showRecipients,
   emptyState,
   draggable = false,
+  flat = false,
 }: Props) {
   useI18n();
   // 正被拖走的邮件键: 这些行变淡, 看得出拖的是哪几封。
@@ -130,25 +139,8 @@ export function EmailList({
   const [expanded, setExpanded] = useState("");
   const [threads, setThreads] = useState<Record<string, EmailSummary[]>>({});
 
-  // 同一会话在列表里只占一行(最新那封), 其余收进展开区。
-  const rows = useMemo(() => {
-    const byThread = new Map<string, { head: EmailSummary; unread: boolean }>();
-    const out: { head: EmailSummary; unread: boolean }[] = [];
-    for (const e of emails) {
-      const key = threadKey(e);
-      const existing = byThread.get(key);
-      if (existing) {
-        existing.unread ||= e.isUnread;
-        // 会话行始终代表其中最新的一封。
-        if (new Date(e.receivedAt).getTime() > new Date(existing.head.receivedAt).getTime()) existing.head = e;
-        continue;
-      }
-      const row = { head: e, unread: e.isUnread };
-      byThread.set(key, row);
-      out.push(row);
-    }
-    return out;
-  }, [emails]);
+  const rows = useMemo(() => threadRows(emails, flat), [emails, flat]);
+
 
   // 列表刷新(新邮件到达、标记已读)后, 展开的会话重新读取。
   // 按会话行代表的那封读取: 它在回收站之外时, 删到回收站的往来不再列出。
@@ -180,15 +172,15 @@ export function EmailList({
   async function expandThread(email: EmailSummary) {
     const key = threadKey(email);
     if (expanded === key) return;
-    if (!email.threadId || (email.threadCount ?? 0) < 2) {
+    if (flat || !email.threadId || (email.threadCount ?? 0) < 2) {
       setExpanded("");
       return;
     }
     setExpanded(key);
-    if (!threads[key]) {
-      const list = (await api.threadEmails(email.accountId, email.id).catch(() => [])) ?? [];
-      setThreads((prev) => ({ ...prev, [key]: applyOverlay(list) }));
-    }
+    // 先显示上次读到的成员, 再重新读一次: 会话收起期间可能多了往来 (例如离开写信面板时存下的草稿),
+    // 那时的列表刷新不会重读收起的会话。
+    const list = (await api.threadEmails(email.accountId, email.id).catch(() => [])) ?? [];
+    setThreads((prev) => ({ ...prev, [key]: applyOverlay(list) }));
   }
 
   // 从通讯录、通知或链接打开的邮件可能在屏幕外, 选中变化后把那一行滚进视野。
@@ -266,8 +258,10 @@ export function EmailList({
         {rows.map(({ head: email, unread }) => {
           const key = emailKey(email);
           const tk = threadKey(email);
-          const count = email.threadCount ?? 0;
-          const isOpen = !!email.threadId && expanded === tk;
+          const count = flat ? 0 : (email.threadCount ?? 0);
+          // 会话里有草稿 (多半是没写完的回复, 可能在草稿箱里) 时会话行标红, 同 Outlook; 草稿数含本行自己。
+          const drafts = Math.max(flat ? 0 : (email.draftCount ?? 0), email.isDraft ? 1 : 0);
+          const isOpen = !flat && !!email.threadId && expanded === tk;
           const members = isOpen ? [...(threads[tk] ?? [])].reverse() : [];
           const where = whereOf?.(email) ?? "";
           const isChecked = checked?.has(key) ?? false;
@@ -307,20 +301,13 @@ export function EmailList({
                     }
                   }}
                   className={cn(
-                    "group border-border relative flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
+                    "group border-border flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
                     "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
                     ((highlightSelected && key === selectedKey) || isChecked) && "bg-muted",
                     childSelected && "bg-secondary",
                     dragging.has(key) && "opacity-40",
                   )}
                 >
-                  {/* 展开的会话: 从头像下方的条数按钮引出一条点线, 串起下面的成员行 (见 ThreadRail)。 */}
-                  {isOpen && (
-                    <span
-                      aria-hidden
-                      className="border-muted-foreground/40 pointer-events-none absolute top-[72px] bottom-0 left-[29px] border-l-2 border-dotted"
-                    />
-                  )}
                   {/* 未读用头像旁的色点而不是整行加粗：整行加粗在长列表里显得噪杂，
                     色点在扫视时反而更容易定位。 */}
                   {onCheck && (checked?.size ?? 0) > 0 && (
@@ -338,79 +325,44 @@ export function EmailList({
                       />
                     </span>
                   )}
-                  {/* 会话的条数按钮放在头像正下方: 展开后时间线的点线就从它下面接出来,
-                      发件人一行也不再被按钮挤占。 */}
-                  <div className="mt-0.5 flex w-9 shrink-0 flex-col items-center gap-0.5">
-                    <div className="relative shrink-0">
-                      {/* 头像就是选择按钮(同 Bulwark): 鼠标移到头像上才变成对勾, 移到行的其它位置头像照常显示;
-                          选中的邮件头像保持对勾, 进入多选后左侧再出现一列勾选框。 */}
-                      <button
-                        type="button"
-                        title={onCheck ? t("选择") : undefined}
-                        aria-label={t("选择邮件")}
-                        aria-pressed={isChecked}
-                        disabled={!onCheck}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onCheck?.(key, e.shiftKey);
-                        }}
-                        className="group/avatar relative block size-9 rounded-full"
-                      >
-                        <SenderAvatar
-                          email={party?.[0]?.email ?? ""}
-                          name={party?.[0]?.name}
-                          className="size-9"
-                        />
-                        {onCheck && (
-                          <span
-                            className={cn(
-                              "bg-accent text-accent-foreground absolute inset-0 flex items-center justify-center rounded-full transition-opacity",
-                              isChecked
-                                ? "opacity-100"
-                                : "opacity-0 group-hover/avatar:opacity-100",
-                            )}
-                          >
-                            <Check className="size-5" strokeWidth={2.5} />
-                          </span>
-                        )}
-                      </button>
-                      {unread && (
+                  <div className="relative mt-0.5 shrink-0">
+                    {/* 头像就是选择按钮(同 Bulwark): 鼠标移到头像上才变成对勾, 移到行的其它位置头像照常显示;
+                        选中的邮件头像保持对勾, 进入多选后左侧再出现一列勾选框。 */}
+                    <button
+                      type="button"
+                      title={onCheck ? t("选择") : undefined}
+                      aria-label={t("选择邮件")}
+                      aria-pressed={isChecked}
+                      disabled={!onCheck}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCheck?.(key, e.shiftKey);
+                      }}
+                      className="group/avatar relative block size-9 rounded-full"
+                    >
+                      <SenderAvatar
+                        email={party?.[0]?.email ?? ""}
+                        name={party?.[0]?.name}
+                        className="size-9"
+                      />
+                      {onCheck && (
                         <span
-                          className="bg-accent ring-background absolute -top-0.5 -left-0.5 size-2.5 rounded-full ring-2"
-                          aria-label={t("未读")}
-                        />
-                      )}
-                    </div>
-                    {count > 1 && (
-                      <button
-                        type="button"
-                        aria-label={
-                          isOpen ? t("收起会话") : t("展开会话，共 {0} 封", count)
-                        }
-                        aria-expanded={isOpen}
-                        title={
-                          isOpen ? t("收起会话") : t("展开会话（共 {0} 封）", count)
-                        }
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleThread(email);
-                        }}
-                        className={cn(
-                          "flex h-5 shrink-0 items-center gap-0.5 rounded-md border px-1 text-[11px] leading-none tabular-nums transition-colors",
-                          isOpen
-                            ? "border-accent bg-card text-foreground"
-                            : "border-border text-muted-foreground hover:border-accent hover:text-foreground",
-                        )}
-                      >
-                        <MessagesSquare className="size-3" />
-                        {count}
-                        <ChevronDown
                           className={cn(
-                            "size-3 transition-transform",
-                            isOpen && "rotate-180",
+                            "bg-accent text-accent-foreground absolute inset-0 flex items-center justify-center rounded-full transition-opacity",
+                            isChecked
+                              ? "opacity-100"
+                              : "opacity-0 group-hover/avatar:opacity-100",
                           )}
-                        />
-                      </button>
+                        >
+                          <Check className="size-5" strokeWidth={2.5} />
+                        </span>
+                      )}
+                    </button>
+                    {unread && (
+                      <span
+                        className="bg-accent ring-background absolute -top-0.5 -left-0.5 size-2.5 rounded-full ring-2"
+                        aria-label={t("未读")}
+                      />
                     )}
                   </div>
 
@@ -426,6 +378,37 @@ export function EmailList({
                           ? t("致：{0}", displayAddressList(email.to))
                           : displayAddressList(email.from) || t("(无发件人)")}
                       </span>
+                      {count > 1 && (
+                        <button
+                          type="button"
+                          aria-label={
+                            isOpen ? t("收起会话") : t("展开会话，共 {0} 封", count)
+                          }
+                          aria-expanded={isOpen}
+                          title={
+                            isOpen ? t("收起会话") : t("展开会话（共 {0} 封）", count)
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleThread(email);
+                          }}
+                          className={cn(
+                            "flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-xs tabular-nums transition-colors",
+                            isOpen
+                              ? "border-accent bg-card text-foreground"
+                              : "border-border text-muted-foreground hover:border-accent hover:text-foreground",
+                          )}
+                        >
+                          <MessagesSquare className="size-3.5" />
+                          {count}
+                          <ChevronDown
+                            className={cn(
+                              "size-3.5 transition-transform",
+                              isOpen && "rotate-180",
+                            )}
+                          />
+                        </button>
+                      )}
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                         {listDate(email.receivedAt)}
                       </span>
@@ -438,6 +421,11 @@ export function EmailList({
                           unread ? "text-foreground" : "text-muted-foreground",
                         )}
                       >
+                        {drafts > 0 && (
+                          <span className="text-destructive">
+                            {drafts > 1 ? t("[草稿：{0}]", drafts) : t("[草稿]")}{" "}
+                          </span>
+                        )}
                         {email.subject || t("(无主题)")}
                       </span>
                       {where && (
@@ -450,6 +438,9 @@ export function EmailList({
                       )}
                       {email.hasAttachment && (
                         <Paperclip className="text-muted-foreground size-3.5 shrink-0" />
+                      )}
+                      {email.signed && (
+                        <Shield className="text-muted-foreground size-3.5 shrink-0" aria-label={t("数字签名")} />
                       )}
                       {email.isPinned && (
                         <Pin className="text-accent size-3.5 shrink-0" aria-label={t("已固定")} />
@@ -500,14 +491,9 @@ export function EmailList({
                     <li className="text-muted-foreground px-12 py-2 text-xs">
                       {t("载入中…")}</li>
                   )}
-                  {members.map((m, i) => (
+                  {members.map((m) => (
                     <Fragment key={emailKey(m)}>
-                      <li className="relative">
-                        <ThreadRail
-                          first={i === 0}
-                          last={i === members.length - 1}
-                          selected={highlightSelected && emailKey(m) === selectedKey}
-                        />
+                      <li>
                         {/* 与会话行一样可以右键、加星标、删除; 行里有按钮, 所以外层不能是 button。 */}
                         {wrapRow(
                           m,
@@ -516,12 +502,12 @@ export function EmailList({
                             tabIndex={0}
                             data-email-key={emailKey(m)}
                             {...dragProps(m)}
-                            onClick={() => onSelect(emailKey(m))}
+                            onClick={() => onSelect(emailKey(m), m)}
                             onKeyDown={(e) => {
                               if (e.target !== e.currentTarget) return;
                               if (e.key === "Enter" || e.key === " ") {
                                 e.preventDefault();
-                                onSelect(emailKey(m));
+                                onSelect(emailKey(m), m);
                               }
                             }}
                             aria-current={
@@ -566,10 +552,14 @@ export function EmailList({
                                 m.isUnread ? "text-foreground" : "text-muted-foreground",
                               )}
                             >
+                              {m.isDraft && <span className="text-destructive">{t("[草稿]")} </span>}
                               {m.preview}
                             </span>
                             {m.hasAttachment && (
                               <Paperclip className="text-muted-foreground size-3 shrink-0" />
+                            )}
+                            {m.signed && (
+                              <Shield className="text-muted-foreground size-3 shrink-0" aria-label={t("数字签名")} />
                             )}
                             {onDelete && (
                               <button
@@ -632,32 +622,4 @@ export function EmailList({
       <div ref={sentinelRef} className="h-1" />
     </ScrollArea>
   );
-}
-
-/**
- * 展开会话左侧的时间线: 点线接着会话行头像下方的那段往下走, 每封成员邮件一个圆点。
- * 线和圆点只画在成员行原有的左内边距里, 不占额外的宽度或高度。
- * 每段线从本行圆点画到下一行圆点 (成员行等高, 所以高度正好是一行), 接缝都被圆点盖住,
- * 点线不会在行与行之间断开或叠点。选中的成员圆点填强调色。
- */
-function ThreadRail({ first, last, selected }: { first: boolean; last: boolean; selected: boolean }) {
-  const line = "border-muted-foreground/40 pointer-events-none absolute left-[29px] border-l-2 border-dotted";
-  return (
-    <>
-      {first && <span aria-hidden className={cn(line, "-top-1 bottom-1/2")} />}
-      {!last && <span aria-hidden className={cn(line, "top-1/2 h-full")} />}
-      <span
-        aria-hidden
-        className={cn(
-          "pointer-events-none absolute top-1/2 left-[25px] z-10 size-2.5 -translate-y-1/2 rounded-full border-2",
-          selected ? "border-accent bg-accent" : "border-muted-foreground/50 bg-card",
-        )}
-      />
-    </>
-  );
-}
-
-/** 会话分组的键。没有会话 id 的邮件自成一组。 */
-function threadKey(e: EmailSummary): string {
-  return `${e.accountId}/${e.threadId || e.id}`;
 }

@@ -1042,7 +1042,7 @@ function ContactDetailPane({
                 </InfoRow>
               ))}
               {detail.onlineServices?.map((s, i) => (
-                <InfoRow key={`s${i}`} icon={Globe} label={s.service || s.label || t("在线服务")}>
+                <InfoRow key={`s${i}`} icon={Globe} label={s.service || s.label || (s.link ? t("网站") : t("在线服务"))}>
                   <span className="select-text">{s.uri}</span>
                 </InfoRow>
               ))}
