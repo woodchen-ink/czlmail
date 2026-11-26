@@ -7,6 +7,8 @@ export const qk = {
   overview: (range: TrendRange, scope?: string) =>
     ["overview", "dashboard", { range, scope }] as const,
   upstreams: ["mail", "upstreams", null] as const,
+  identities: (upstreamId: string) =>
+    ["mail", "identities", { upstreamId }] as const,
   appPasswords: ["mail", "app-passwords", null] as const,
   users: ["admin", "users", null] as const,
   oauthApps: ["admin", "oauth-apps", null] as const,

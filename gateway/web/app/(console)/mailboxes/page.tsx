@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Ellipsis,
+  Send,
   KeyRound,
   Mails,
   Network,
@@ -22,6 +23,7 @@ import { AddMailboxDialog } from "./components/add-mailbox-dialog"
 import { ConnectionReport } from "./components/connection-report"
 import { PasswordDialog } from "./components/password-dialog"
 import { ProxyDialog } from "./components/proxy-dialog"
+import { SendingDialog } from "./components/sending-dialog"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { PageHeader } from "@/components/page-header"
 import { Panel } from "@/components/panel"
@@ -78,6 +80,18 @@ function MailboxesPage() {
     queryFn: upstreamsApi.list,
     refetchInterval: 30_000,
   })
+
+  // ?sending=<id> opens that mailbox's sending settings (data-bound detail, deep-linkable).
+  const sendingId = params.get("sending")
+  const sendingFor = list.data?.find((u) => u.id === sendingId) ?? null
+  const setSending = (id: string | null) => {
+    const next = new URLSearchParams(params.toString())
+    if (id) next.set("sending", id)
+    else next.delete("sending")
+    const qs = next.toString()
+    if (id) router.push(`${pathname}?${qs}`, { scroll: false })
+    else router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }
   const [proxyFor, setProxyFor] = React.useState<Upstream | null>(null)
   const [passwordFor, setPasswordFor] = React.useState<Upstream | null>(null)
   const [removing, setRemoving] = React.useState<Upstream | null>(null)
@@ -178,6 +192,9 @@ function MailboxesPage() {
             <KeyRound /> {t.mailboxes.reauth}
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem onClick={() => setSending(u.id)}>
+          <Send /> {t.mailboxes.sending}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setProxyFor(u)}>
           <Network /> {t.mailboxes.proxySettings}
         </DropdownMenuItem>
@@ -247,6 +264,10 @@ function MailboxesPage() {
       )}
 
       <AddMailboxDialog open={adding} onOpenChange={setAdding} />
+      <SendingDialog
+        upstream={sendingFor}
+        onOpenChange={(o) => !o && setSending(null)}
+      />
       <ProxyDialog
         upstream={proxyFor}
         onOpenChange={(o) => !o && setProxyFor(null)}
