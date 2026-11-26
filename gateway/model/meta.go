@@ -18,7 +18,7 @@ const (
 )
 
 // Setting is one admin-editable configuration value, stored as JSON.
-// Keys are grouped by prefix (site., oauth., proxy., sync., limits.) and registered
+// Keys are grouped by prefix (site., security., oauth., proxy., sync., limits.) and registered
 // with their type and default in one place; business code never reads this table directly.
 type Setting struct {
 	Key       string `gorm:"primaryKey;size:128"`

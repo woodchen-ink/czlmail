@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/woodchen-ink/czlmail/gateway/config"
+	"github.com/woodchen-ink/czlmail/gateway/cron"
 	"github.com/woodchen-ink/czlmail/gateway/database"
 	"github.com/woodchen-ink/czlmail/gateway/handler"
 	"github.com/woodchen-ink/czlmail/gateway/router"
@@ -40,6 +41,17 @@ func Serve(ctx context.Context, log *slog.Logger, version string) error {
 	if _, err := service.LoadKeyring(db, cfg.MasterKey); err != nil {
 		return err
 	}
+	auth, err := newAuth(db, cfg, log)
+	if err != nil {
+		return err
+	}
+	cron.StartCleanup(ctx, log, 6*time.Hour, map[string]cron.Pruner{
+		"admin_sessions": auth.Accounts.PruneSessions,
+		"audit_logs":     auth.Audit.Prune,
+	})
+	if err := printSetupLink(auth.Accounts, cfg.BaseURL, log); err != nil {
+		return err
+	}
 
 	srv := &http.Server{
 		Addr: cfg.Listen,
@@ -47,6 +59,7 @@ func Serve(ctx context.Context, log *slog.Logger, version string) error {
 			Log:      log,
 			ClientIP: cfg.ClientIP,
 			Health:   &handler.Health{DB: db, Version: version, Log: log},
+			Admin:    auth.Admin,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,

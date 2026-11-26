@@ -165,3 +165,7 @@ func orDefault(v, def string) string {
 	}
 	return def
 }
+
+// SecureCookies reports whether admin cookies get the Secure flag: always, unless the
+// gateway is served over http://localhost for development.
+func (c *Config) SecureCookies() bool { return strings.HasPrefix(c.BaseURL, "https://") }
