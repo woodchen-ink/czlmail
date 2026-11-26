@@ -116,6 +116,39 @@ The answer reports the IMAP sign-in with the server's capabilities (`condstore`,
 
 The first sync imports every folder's message metadata, newest first, in batches of 500. Until it finishes the account shows `syncing` with `initialSync: {done, total}`; mail methods answer `serverUnavailable` (50310). Message bodies are fetched on demand.
 
+### Add a Gmail account
+
+Gmail is read over IMAP and sent through the Gmail API, both signed in with OAuth (scope `https://mail.google.com/`). Google requires an OAuth app of your own, created once per gateway in Google Cloud. Your users never see Google Cloud: they click "Add Gmail" and sign in to Google.
+
+**1. Create the OAuth app** (once, as a site admin)
+
+1. Open [console.cloud.google.com](https://console.cloud.google.com/), create a project (top bar → project picker → *New project*, any name, e.g. "Mail gateway").
+2. *APIs & Services → Library*: search **Gmail API** and click *Enable*. Without it sending fails with 403.
+3. *APIs & Services → OAuth consent screen* (called *Google Auth Platform → Branding / Audience* in the new console):
+   - User type **External** (or **Internal** if every mailbox is in your own Google Workspace; then steps 6 and the warning below do not apply).
+   - App name, user support email and developer contact email: anything you like; your users see the app name on Google's sign-in page.
+   - *Data access / Scopes*: add `https://mail.google.com/` (listed as "Read, compose, send, and permanently delete all your email from Gmail"). It is a restricted scope; no other scope is needed (the address is read from the Gmail profile, not from `openid` / `email`).
+4. *APIs & Services → Credentials → Create credentials → OAuth client ID*:
+   - Application type **Web application**.
+   - *Authorized redirect URIs*: `<GATEWAY_BASE_URL>/oauth/google/callback`, exactly, e.g. `https://mail-gw.example.com/oauth/google/callback` (the admin's "OAuth apps" page shows the right value).
+   - *Create*, then copy the **Client ID** and **Client secret**.
+5. In the gateway admin, *Settings → OAuth apps → Google*, paste the client ID and secret (or `PUT /api/admin/oauth-apps/google` with `{"clientId", "clientSecret"}`). The secret is encrypted and never shown again.
+6. Back on the consent screen (*Audience*), set **Publishing status** to **In production** (*Publish app*). In *Testing* status Google expires refresh tokens after **7 days**: every Gmail mailbox would drop to `authRequired` a week after it was added, and only the listed test users can sign in at all.
+
+**Unverified app warning.** A published External app with a restricted scope that Google has not verified shows "Google hasn't verified this app" on sign-in. For a self-hosted gateway that is expected: click *Advanced → Go to <app name> (unsafe)*. Unverified apps are limited to 100 users over the app's lifetime; verification (a security assessment for restricted scopes) is only worth it beyond that.
+
+**2. Add a mailbox** (each user)
+
+*Mailboxes → Add → Gmail*, optionally with the address (preselected on Google's page) and a proxy. Through the API: `POST /api/admin/upstreams/oauth/google/start` with `{"email", "name", "proxy"}` returns `{url}`; open it in the same browser. After signing in, Google sends the browser back to `/oauth/google/callback`, which adds the mailbox and redirects to `/admin/mailboxes/?added=<accountId>` (or `?oauthError=<msg>&code=<n>`).
+
+- The request is tied to your admin session, valid once and for 10 minutes; Google is asked for offline access with consent every time, so a refresh token always comes back.
+- Adding an address you already have only renews its token: the account id (and czlmail's data) stay.
+- A mailbox in `authRequired` (password changed, access removed in the Google account, app secret replaced) is fixed with *Re-authorize* (`POST /upstreams/{id}/reauth` → `{url}`), same account id. It has to be the same address.
+- The token exchange, IMAP and the Gmail API all go through the mailbox's proxy. Access tokens are refreshed 5 minutes before they expire; a refused refresh (`invalid_grant`) stops only that mailbox.
+- Deleting the mailbox revokes the gateway's access at Google.
+
+**How Gmail looks in czlmail.** Labels are mailboxes and a message can be in several (`maxMailboxesPerEmail` is null). Inbox, Sent and Drafts are the `\Inbox`, `\Sent` and `\Draft` labels; your labels keep their hierarchy; mail without any label is in **Archive**. Starred is the flagged keyword; Important and the inbox categories are not shown. Only All Mail, Trash and Spam are synced, so every message is fetched once, whatever its labels. Moving a message changes its labels, archiving removes only Inbox, Trash and Spam are real moves (restoring from Trash brings the labels back), and deleting for good empties it from Trash. Ids come from Gmail (`X-GM-MSGID`, threads `X-GM-THRID`), so they survive relabelling and Trash. Server search uses Gmail's own search (`X-GM-RAW`). Sending goes through the Gmail API in the right conversation; the identities are Gmail's *Send mail as* addresses (refreshed every 6 hours; edit them in Gmail).
+
 ### Proxies
 
 Every connection of a mailbox (IMAP, SMTP, and for Gmail / Microsoft also OAuth and their APIs) can go through a SOCKS5 proxy. Host names are resolved by the proxy.
@@ -172,6 +205,9 @@ JSON under `/api/admin/`, responses `{"code","data","msg"}`. The session is an H
 | `POST /upstreams/{id}/test`, `/pause`, `/resume`, `/default` | test the saved settings (optionally with changes, not saved); pause; resume; make it the primary account |
 | `PATCH /upstreams/{id}` with `{"sentCopy": "auto"\|"gateway"\|"server"}`, `POST /upstreams/{id}/send-test` | how sent mail reaches Sent (see Sending); test send → `{ok, sentCopy, serverSaves, waitedMs, code?, msg?, detail?}` |
 | `GET /upstreams/{id}/identities`, `POST …/identities`, `PATCH …/identities/{identityId}`, `DELETE …/identities/{identityId}` | sending identities `{id, source, email, name, replyTo, bcc, textSignature, htmlSignature, mayDelete, updatedAt}`; `source` is `primary` (the mailbox address), `alias` (yours, `*@domain` allowed) or `provider` (Gmail send-as); only aliases can be deleted, only an alias's address can change |
+| `POST /upstreams/oauth/{provider}/start` | add a Gmail (`google`) or Microsoft mailbox: `{user?, name?, email?, proxy?}` → `{url}` of the provider's sign-in page |
+| `POST /upstreams/{id}/reauth` | OAuth mailboxes: `{url}` to sign in again (same account id) |
+| `GET /oauth-apps`, `PUT /oauth-apps/{provider}`, `DELETE /oauth-apps/{provider}` | admins: OAuth apps `[{provider, configured, clientId, hasSecret, redirectUri, scopes, tenant?, secretExpiresAt, updatedAt}]`; set with `{clientId, clientSecret?, tenant?, secretExpiresAt?}` (secret left out or `""` keeps it; required the first time) |
 | `GET /settings`, `PATCH /settings` | admins: settings, update with `{"key": value}`; a secret setting takes a string (`""` keeps it, `null` clears it) |
 | `GET /audit-logs?cursor=&limit=` | admins: audit log, newest first |
 | `GET /overview?scope=mine\|all&range=24h\|7d\|30d` | upstream cards, `statusCounts`, `onlineClients`, `todos` and `trend`; `scope` defaults to `all` for admins and must be `mine` for users |
@@ -209,7 +245,11 @@ Error codes (HTTP status + sequence; upstream input errors use the x30 sequence)
 | 40101 | `invalid_credentials` | | 50000 | `internal_error` |
 | 40431 | `identity_not_found` | | 50300 | `database_unavailable` |
 
+OAuth codes: 40038 `missing_client_secret`, 40039 `invalid_oauth_state`, 40040 `invalid_secret_expiry`, 40041 `invalid_client_id`, 40330 `oauth_denied`, 40331 `oauth_scope_denied`, 40432 `oauth_provider_not_found`, 40934 `oauth_app_not_configured`, 40935 `oauth_account_mismatch`, 40936 `oauth_kind_mismatch`, 50230 `oauth_exchange_failed`.
+
 Connection tests report per server: 40110 `authentication_failed`, 40311 `private_network_not_allowed`, 42910 `rate_limited`, 50210 `unreachable` / `timeout` / `connection_closed`, 50211 `proxy_failed`, 50212 `tls_failed`, 50213 `server_rejected`.
+
+`GET /oauth/{provider}/callback` (outside `/api`) is where the provider sends the browser back; it answers with a redirect to `/admin/mailboxes/` carrying `added`, `reauthorized` or `oauthError` + `code`.
 
 Only the gateway's own credentials produce 401; problems with an upstream mailbox never do.
 

@@ -459,18 +459,13 @@ func (c *Client) LoginXOAuth2(ctx context.Context, user, accessToken string) err
 }
 
 func (c *Client) authenticate(ctx context.Context, mech, ir string) error {
-	var err error
-	if c.caps["SASL-IR"] {
-		_, err = c.Execute(ctx, "AUTHENTICATE", nil, Atom(mech), Atom(ir))
-	} else {
-		err = c.authenticateContinued(ctx, mech, ir)
-	}
-	return c.afterAuth(ctx, err)
+	return c.afterAuth(ctx, c.authenticateContinued(ctx, mech, ir, c.caps["SASL-IR"]))
 }
 
-// authenticateContinued sends the initial response after the server's "+".
-// An error challenge (XOAUTH2 failure details) is answered with an empty line.
-func (c *Client) authenticateContinued(ctx context.Context, mech, ir string) error {
+// authenticateContinued sends the initial response with the command (SASL-IR)
+// or after the server's "+". An error challenge (XOAUTH2 failure details, which
+// Gmail sends before failing) is answered with an empty line.
+func (c *Client) authenticateContinued(ctx context.Context, mech, ir string, inline bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	stop := context.AfterFunc(ctx, func() { c.conn.SetDeadline(time.Unix(1, 0)) })
