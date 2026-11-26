@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sync"
 	"testing"
@@ -91,9 +93,26 @@ func testLogger() *slog.Logger {
 // newTestApp 在临时配置目录里起一个还没登录过的 App。
 func newTestApp(t *testing.T) *testApp {
 	t.Helper()
-	signInTestConfig(t)
+	isolateConfig(t)
 	resetOwnCache()
 	return startTestApp(t, filepath.Join(t.TempDir(), "cache.db"))
+}
+
+// isolateConfig 给测试一个独立的数据目录 (config.json、笔记库)。
+// macOS 上不能改 HOME: 钥匙串命令 security 按 HOME 找登录钥匙串, 找不到就卡住等输入;
+// 那里改用独立的实例名 (数据目录 ~/Library/Application Support/czlmail-<实例>), 测试结束删掉。
+func isolateConfig(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		signInTestConfig(t)
+		return
+	}
+	t.Setenv("CZLMAIL_INSTANCE", fmt.Sprintf("go-test-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	dir, err := config.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 }
 
 // startTestApp 按当前配置目录与缓存库起 App, 与 startup 一样读配置、开库、后台恢复已保存的登录。
