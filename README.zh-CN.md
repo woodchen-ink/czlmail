@@ -19,7 +19,7 @@
 | 平台 | 获取 | 说明 |
 |---|---|---|
 | **Windows** | [`czlmail-amd64-installer.exe`](https://github.com/woodchen-ink/czlmail/releases/latest) | 按用户安装，不需要管理员权限；自动更新 |
-| **macOS** | [`czlmail-darwin-universal.dmg`](https://github.com/woodchen-ink/czlmail/releases/latest) | Intel 与 Apple 芯片通用，macOS 10.15+；[首次打开](#macos-首次打开) |
+| **macOS** | [`czlmail-darwin-universal.dmg`](https://github.com/woodchen-ink/czlmail/releases/latest) | Intel 与 Apple 芯片通用，macOS 10.15+；已经 Apple 公证 |
 | **Android** | [`czlmail-android.apk`](https://github.com/woodchen-ink/czlmail/releases/latest/download/czlmail-android.apk) | Android 8.0+；在应用内更新 |
 | **iPhone** | [App Store](https://apps.apple.com/app/id6834485924) | iOS 16+，买断制；中国大陆暂未上架 |
 | **手机浏览器** | [mail-notes.czl.net](https://mail-notes.czl.net) | 只读查看笔记；[可自行部署](web-phone-note/README.zh-CN.md) |
@@ -155,22 +155,15 @@ claude mcp add --scope user --transport http czlmail http://127.0.0.1:47830/mcp 
 
 ### macOS 首次打开
 
-程序没有 Apple 开发者签名，系统会拦下第一次打开。打开 DMG，把 **CZL Mail** 拖进「应用程序」，然后任选一种：
-
-- 在「应用程序」里**右键 CZL Mail → 打开**，在弹窗里再点「打开」（macOS 14 及更早）；
-- macOS 15 起右键打开不再生效：先双击一次，再到**系统设置 → 隐私与安全性**，在底部点「仍要打开」；
-- 或者在终端执行下面这条命令去掉下载隔离标记，之后正常双击即可：
-
-  ```bash
-  xattr -cr "/Applications/CZL Mail.app"
-  ```
-
-提示"已损坏，无法打开"也是同一原因，用上面的命令处理。请先拖进「应用程序」再打开：
-直接在 DMG 或下载文件夹里运行时，系统会把程序放到临时的随机路径，开机自启无法记住它的位置。
+程序使用 Developer ID 签名并经过 Apple 公证。打开 DMG，把 **CZL Mail** 拖进「应用程序」，再从「应用程序」里打开即可。
+请先拖进「应用程序」再运行：直接在 DMG 或下载文件夹里运行时，系统会把程序放到临时的随机路径，开机自启无法记住它的位置。
 
 关闭窗口后程序驻留在菜单栏（图标旁显示未读数），点 Dock 图标或菜单栏「打开 CZL Mail」恢复窗口，⌘Q 退出。
 
-登录时填写服务器地址、邮箱，以及在 Stalwart 里生成的**应用专用密码**。
+### 登录
+
+- **JMAP 服务器**（如 Stalwart）：填服务器地址、邮箱和在这台服务器上生成的**应用专用密码**；服务器支持时也可以用浏览器授权（OAuth / [单点登录](#单点登录sso)）。
+- **通过 [czlmail 网关](#czlmail-网关)接入 Gmail、Outlook 或 IMAP**：填网关地址、登录网关用的邮箱，以及网关后台生成的**应用专用密码**。
 
 ## 单点登录（SSO）
 

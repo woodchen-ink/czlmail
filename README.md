@@ -19,7 +19,7 @@ Mail, calendar, contacts, files and notes on Windows, macOS, Android and iPhone,
 | Platform | Get it | Notes |
 |---|---|---|
 | **Windows** | [`czlmail-amd64-installer.exe`](https://github.com/woodchen-ink/czlmail/releases/latest) | per-user install, no admin rights; signed auto-update |
-| **macOS** | [`czlmail-darwin-universal.dmg`](https://github.com/woodchen-ink/czlmail/releases/latest) | Intel and Apple silicon, macOS 10.15+; [first launch](#opening-on-macos-for-the-first-time) |
+| **macOS** | [`czlmail-darwin-universal.dmg`](https://github.com/woodchen-ink/czlmail/releases/latest) | Intel and Apple silicon, macOS 10.15+; notarized |
 | **Android** | [`czlmail-android.apk`](https://github.com/woodchen-ink/czlmail/releases/latest/download/czlmail-android.apk) | Android 8.0+; updates inside the app |
 | **iPhone** | [App Store](https://apps.apple.com/app/id6834485924) | iOS 16+, one-time purchase; not yet in mainland China |
 | **Phone browser** | [mail-notes.czl.net](https://mail-notes.czl.net) | read your notes only; [deploy your own](web-phone-note/README.md) |
@@ -173,26 +173,19 @@ What changed in each version: [release notes](https://github.com/woodchen-ink/cz
 
 ### Opening on macOS for the first time
 
-The app is not signed with an Apple Developer ID, so macOS blocks the first launch. Open the DMG, drag
-**CZL Mail** into Applications, then do one of the following:
-
-- In Applications, **right-click CZL Mail → Open**, then click Open in the dialog (macOS 14 and earlier);
-- On macOS 15 and later right-click → Open no longer works: launch it once, then go to
-  **System Settings → Privacy & Security** and click **Open Anyway** at the bottom;
-- Or remove the download quarantine flag in Terminal, after which it opens normally:
-
-  ```bash
-  xattr -cr "/Applications/CZL Mail.app"
-  ```
-
-"is damaged and can't be opened" has the same cause and the same fix. Move the app to Applications before
-opening it: when run straight from the DMG or Downloads, macOS runs it from a random temporary path and
-autostart cannot remember where it is.
+The app is signed with a Developer ID and notarized by Apple. Open the DMG, drag **CZL Mail** into Applications
+and open it from there. Move it to Applications before the first launch: when run straight from the DMG or Downloads,
+macOS runs it from a random temporary path and autostart cannot remember where it is.
 
 Closing the window keeps the app in the menu bar (with the unread count next to the icon); click the Dock icon
 or **Open CZL Mail** in the menu bar to bring the window back, and ⌘Q to quit.
 
-Sign in with your server address, email and an **app password** generated in Stalwart.
+### Signing in
+
+- **A JMAP server** (such as Stalwart): its address, your email and an **app password** generated on that server,
+  or browser sign-in (OAuth / [SSO](#single-sign-on-sso)) if the server offers it.
+- **Gmail, Outlook or IMAP through the [czlmail gateway](#czlmail-gateway)**: the gateway's address, your gateway email
+  and an **app password** generated in the gateway's admin.
 
 ## Single sign-on (SSO)
 
