@@ -83,6 +83,8 @@ export interface UpstreamView {
   capabilities: Capabilities
   /** How sent mail reaches the Sent folder (#41). */
   sentCopy: SentCopy
+  /** Folders (Gmail: labels) in the index; null until the first sync is done. */
+  mailboxes: number | null
   createdAt: string | null
 }
 
@@ -130,6 +132,18 @@ export interface IdentityInput {
   bcc?: IdentityAddress[]
   textSignature?: string
   htmlSignature?: string
+}
+
+/**
+ * POST /upstreams/oauth/{provider}/start. The callback sends the browser back to
+ * /admin/mailboxes/ with ?added=<id>, ?reauthorized=<id> or ?oauthError=<msg>&code=<n>.
+ */
+export interface OAuthStartInput {
+  /** Login hint: preselects the account on the consent page. */
+  email?: string
+  /** Account name; defaults to the address. */
+  name?: string
+  proxy?: { mode: ProxyMode; url?: string; password?: string }
 }
 
 /** A mailbox for the pages: the overview card plus what the actions need. */
@@ -211,6 +225,7 @@ export function toUpstream(v: UpstreamView): Upstream {
         : v.proxy.mode === "follow"
           ? { mode: "default", host: "" }
           : { mode: "custom", host: proxyHost(v.proxy.url) },
+    mailboxes: v.mailboxes ?? null,
     view: v,
     isDefault: v.isDefault,
     paused: v.paused,
@@ -240,7 +255,7 @@ export const upstreamsApi = {
       imap?: { host: string; port: number; tls: TlsMode }
       smtp?: { host: string; port: number; tls: TlsMode }
     }>(`/upstreams/autoconfig?email=${encodeURIComponent(email)}`),
-  /** TODO(#42/#43): consent URL to re-authorise a Gmail / Microsoft mailbox. */
+  /** Consent URL to re-authorise a Gmail / Microsoft mailbox. */
   reauth: (id: string) => api.post<{ url: string }>(`${path(id)}/reauth`),
   setSentCopy: (id: string, sentCopy: SentCopy) =>
     api.patch<UpstreamView>(path(id), { sentCopy }),
@@ -256,7 +271,7 @@ export const upstreamsApi = {
     ),
   deleteIdentity: (id: string, identityId: string) =>
     api.del<object>(`${path(id)}/identities/${encodeURIComponent(identityId)}`),
-  /** TODO(#42/#43): start adding a Gmail / Microsoft mailbox; returns the consent URL. */
-  startOAuth: (provider: "google" | "microsoft") =>
-    api.post<{ url: string }>(`/upstreams/oauth/${provider}/start`),
+  /** Starts adding a Gmail / Microsoft mailbox; returns the consent URL. */
+  startOAuth: (provider: "google" | "microsoft", body: OAuthStartInput = {}) =>
+    api.post<{ url: string }>(`/upstreams/oauth/${provider}/start`, body),
 }

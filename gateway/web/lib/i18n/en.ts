@@ -17,6 +17,8 @@ export const en: Messages = {
     create: "Create",
     add: "Add",
     copy: "Copy",
+    guide: "View guide",
+    guideTitle: "Open the guide in a new window",
     copied: "Copied",
     retry: "Retry",
     refresh: "Refresh",
@@ -117,6 +119,11 @@ export const en: Messages = {
       40035:
         "Private network addresses are not allowed; turn them on in Settings · Network & security",
       40036: "Invalid Sent copy mode",
+      40038: "A client secret is required the first time",
+      40039:
+        "This authorization expired or was not started here; please try again",
+      40040: "Invalid secret expiry date",
+      40041: "Invalid client ID",
       40037: "Invalid sending identity; check the address",
       40100: "Your session has ended. Sign in again.",
       40101: "Wrong email or password",
@@ -126,12 +133,16 @@ export const en: Messages = {
       40300: "The page is out of date. Reload and try again.",
       40301: "You do not have permission",
       40302: "You cannot change your own role or status, or delete yourself",
+      40330: "Authorization was cancelled on the consent page",
+      40331:
+        "Mail access was not granted; authorize again and allow access to mail",
       40303: "Sign-up is closed on this gateway",
       40400: "Not found",
       40401: "User not found",
       40402: "App password not found",
       40403: "Task not found",
       40430: "Mailbox not found",
+      40432: "The gateway does not support this provider",
       40431: "Sending identity not found",
       40900: "This email is already registered",
       40901: "The gateway is already set up",
@@ -141,9 +152,13 @@ export const en: Messages = {
       40931: "The main address and provider identities cannot be deleted",
       40932:
         "The mailbox is not running; resume it or fix its connection first",
+      40934: "The administrator has not configured this provider's OAuth app",
+      40935: "The authorized account is not this mailbox's address",
+      40936: "The authorized account is a different kind of mailbox",
       40933: "Test sending is not available for this kind of mailbox",
       41500: "The request is malformed",
       42900: "Too many attempts. Try again later.",
+      50230: "Could not get tokens from the provider; please try again later",
       50000: "Internal gateway error",
       50300: "The database is temporarily unavailable",
     } as Record<number, string>,
@@ -167,6 +182,10 @@ export const en: Messages = {
     40110:
       "Authentication failed; check the username and password (app password)",
     40311: "Private network addresses are not allowed",
+    40312:
+      "SMTP AUTH is turned off for this mailbox or its organization; an admin can enable Authenticated SMTP in the Microsoft 365 admin center",
+    40313:
+      "Exchange has IMAP turned off for this mailbox, or the signed-in account is not its owner; an admin can enable IMAP in the Microsoft 365 admin center",
     50211: "Could not connect through the proxy",
     50212: "TLS handshake failed; check the encryption mode and port",
     50213: "The server rejected the request",
@@ -238,6 +257,10 @@ export const en: Messages = {
     owner: "Owner",
     since: (s: string) => `Since ${s}`,
     default: "Default",
+    folders: "Folders",
+    labels: "Labels",
+    count: (n: string) => n,
+    oauthAuthFailed: "Authorization expired; authorize again",
   },
   mailboxes: {
     title: "My mailboxes",
@@ -278,6 +301,16 @@ export const en: Messages = {
     oauthNotConfigured:
       "An admin has not set up the OAuth app for this provider yet",
     oauthGo: "Authorize",
+    oauthLoginHint: "Email address (optional)",
+    oauthLoginHintHint: "Preselects this account on the consent page",
+    oauthAdded: "Mailbox added; first sync started",
+    oauthReauthorized: "Authorized again",
+    oauthFailed: "Authorization did not finish",
+    adminConsentGranted:
+      "The organization admin consented; members can now add Microsoft mailboxes",
+    sentCopyServerPreset:
+      "Exchange files sent mail in Sent itself, so new mailboxes start with “Server saves”",
+    sentCopyByProvider: "Gmail files sent mail in Sent itself; nothing to set",
     stepAccount: "Account",
     stepServers: "Servers",
     stepTest: "Test",
@@ -498,6 +531,10 @@ export const en: Messages = {
         "Microsoft client secrets last at most 24 months. When one expires, every Microsoft mailbox must be re-authorized. Enter the expiry date and the gateway reminds you 30 days ahead.",
       s3: "Enter the application (client) ID, the client secret value and its expiry date.",
       consoleRegister: "App registrations",
+      adminConsent: "Admin consent",
+      adminConsentOpen: "Open consent page",
+      adminConsentHint:
+        "If a work or school organization requires admin approval, send this link to its global admin; after one consent, members can authorize directly",
     },
   },
   settings: {

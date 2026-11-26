@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { ConnectionReport } from "./connection-report"
 import { ServerFields, type ServerDraft } from "./server-fields"
 import { FormField } from "@/components/auth-form"
+import { DocLink } from "@/components/doc-link"
 import { Spinner } from "@/components/spinner"
 import { NotReady } from "@/components/state-views"
 import { Button } from "@/components/ui/button"
@@ -23,7 +24,11 @@ import {
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { isNotReady } from "@/lib/api/client"
-import { oauthAppsApi } from "@/lib/api/oauth-apps"
+import {
+  oauthAppsApi,
+  type OAuthApp,
+  type OAuthProvider,
+} from "@/lib/api/oauth-apps"
 import {
   upstreamsApi,
   probeOk,
@@ -96,6 +101,16 @@ export function AddMailboxDialog({
 function AddMailboxBody({ onClose }: { onClose: () => void }) {
   const t = useT()
   const [provider, setProvider] = React.useState<Provider | null>(null)
+  // GET /oauth-apps lists the providers this gateway build supports (site
+  // admins only); without that answer every provider is offered and the start
+  // call reports what is missing.
+  const apps = useQuery({
+    queryKey: qk.oauthApps,
+    queryFn: oauthAppsApi.list,
+    retry: false,
+  })
+  const offers = (p: OAuthProvider) =>
+    !apps.data || apps.data.some((a) => a.provider === p)
   return (
     <>
       <DialogHeader>
@@ -112,25 +127,34 @@ function AddMailboxBody({ onClose }: { onClose: () => void }) {
             hint={t.mailboxes.providerImapHint}
             onClick={() => setProvider("imap")}
           />
-          <ProviderButton
-            mark="G"
-            title={t.mailboxes.providerGoogle}
-            hint={t.mailboxes.providerGoogleHint}
-            onClick={() => setProvider("google")}
-          />
-          <ProviderButton
-            mark="M"
-            title={t.mailboxes.providerMicrosoft}
-            hint={t.mailboxes.providerMicrosoftHint}
-            onClick={() => setProvider("microsoft")}
-          />
+          {offers("google") && (
+            <ProviderButton
+              mark="G"
+              title={t.mailboxes.providerGoogle}
+              hint={t.mailboxes.providerGoogleHint}
+              onClick={() => setProvider("google")}
+            />
+          )}
+          {offers("microsoft") && (
+            <ProviderButton
+              mark="M"
+              title={t.mailboxes.providerMicrosoft}
+              hint={t.mailboxes.providerMicrosoftHint}
+              onClick={() => setProvider("microsoft")}
+            />
+          )}
         </div>
       )}
       {provider === "imap" && (
         <ImapForm onBack={() => setProvider(null)} onDone={onClose} />
       )}
       {(provider === "google" || provider === "microsoft") && (
-        <OAuthStart provider={provider} onBack={() => setProvider(null)} />
+        <OAuthStart
+          provider={provider}
+          app={apps.data?.find((a) => a.provider === provider)}
+          appsError={apps.error}
+          onBack={() => setProvider(null)}
+        />
       )}
     </>
   )
@@ -138,29 +162,47 @@ function AddMailboxBody({ onClose }: { onClose: () => void }) {
 
 function OAuthStart({
   provider,
+  app,
+  appsError,
   onBack,
 }: {
-  provider: "google" | "microsoft"
+  provider: OAuthProvider
+  /** undefined while GET /oauth-apps has not answered or is not allowed. */
+  app: OAuthApp | undefined
+  appsError: unknown
   onBack: () => void
 }) {
   const t = useT()
   const me = useMe()
-  const apps = useQuery({ queryKey: qk.oauthApps, queryFn: oauthAppsApi.list })
+  const [email, setEmail] = React.useState("")
+  const [error, setError] = React.useState("")
   const start = useMutation({
-    mutationFn: () => upstreamsApi.startOAuth(provider),
+    mutationFn: () =>
+      upstreamsApi.startOAuth(
+        provider,
+        email.trim() ? { email: email.trim() } : {}
+      ),
+    meta: { silent: true },
     onSuccess: ({ url }) => window.location.assign(url),
+    onError: (e) => setError(errorText(e)),
   })
-  const app = apps.data?.find((a) => a.provider === provider)
   const name =
     provider === "google" ? t.oauth.google.name : t.oauth.microsoft.name
+  // Known to be missing only when the admin could read the app settings.
+  const missing = app ? !app.configured : false
 
   return (
-    <div className="grid gap-4">
-      {apps.isPending ? (
-        <Spinner className="mx-auto my-6" />
-      ) : isNotReady(apps.error) ? (
+    <form
+      className="grid gap-4"
+      onSubmit={(e) => {
+        e.preventDefault()
+        setError("")
+        start.mutate()
+      }}
+    >
+      {isNotReady(appsError) ? (
         <NotReady className="py-6" />
-      ) : !app?.configured ? (
+      ) : missing ? (
         <div className="rounded-lg border border-warning-border bg-warning-soft px-3 py-2.5 text-sm text-warning">
           {t.mailboxes.oauthNotConfigured}
           {isAdminRole(me.data?.role) && (
@@ -173,25 +215,38 @@ function OAuthStart({
           )}
         </div>
       ) : (
-        <p className="text-sm text-foreground-muted">
-          {provider === "google"
-            ? t.mailboxes.providerGoogleHint
-            : t.mailboxes.providerMicrosoftHint}
-        </p>
+        <>
+          <p className="text-sm text-foreground-muted">
+            {provider === "google"
+              ? t.mailboxes.providerGoogleHint
+              : t.mailboxes.providerMicrosoftHint}
+          </p>
+          <FormField
+            id="oauth-email"
+            label={t.mailboxes.oauthLoginHint}
+            type="email"
+            autoComplete="off"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            hint={t.mailboxes.oauthLoginHintHint}
+          />
+        </>
       )}
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <DialogFooter>
-        <Button variant="ghost" onClick={onBack}>
+        <DocLink
+          topic={provider === "google" ? "gmail" : "microsoft"}
+          className="self-center sm:mr-auto"
+        />
+        <Button type="button" variant="ghost" onClick={onBack}>
           <ArrowLeft /> {t.common.back}
         </Button>
-        <Button
-          disabled={!app?.configured || start.isPending}
-          onClick={() => start.mutate()}
-        >
+        <Button type="submit" disabled={missing || start.isPending}>
           {start.isPending && <Spinner />}
           {t.mailboxes.oauthGo} · {name}
         </Button>
       </DialogFooter>
-    </div>
+    </form>
   )
 }
 
@@ -416,6 +471,7 @@ function ImapForm({
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <DialogFooter>
+        <DocLink topic="imap" className="self-center sm:mr-auto" />
         <Button type="button" variant="ghost" onClick={onBack}>
           <ArrowLeft /> {t.common.back}
         </Button>

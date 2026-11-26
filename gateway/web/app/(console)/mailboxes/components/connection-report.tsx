@@ -2,6 +2,7 @@
 
 import { CircleCheck, CircleX } from "lucide-react"
 
+import { DocLink } from "@/components/doc-link"
 import { useUpstreamErrorText } from "@/components/upstream-card"
 import {
   capabilityNames,
@@ -12,7 +13,14 @@ import {
 import { useT } from "@/lib/i18n"
 
 /** Result of "test connection": IMAP and SMTP, the watch mode the capabilities allow, and the capabilities. */
-export function ConnectionReport({ report }: { report: ProbeReport }) {
+/** oauth: a Gmail / Microsoft mailbox, where 40110 is an expired grant, not a password. */
+export function ConnectionReport({
+  report,
+  oauth,
+}: {
+  report: ProbeReport
+  oauth?: boolean
+}) {
   const t = useT()
   const errText = useUpstreamErrorText()
   const watch = watchModeOf(report.imap.capabilities)
@@ -28,13 +36,27 @@ export function ConnectionReport({ report }: { report: ProbeReport }) {
       <span className="w-12 shrink-0 font-medium">{label}</span>
       <div className="min-w-0">
         <p className={part.ok ? "text-foreground-muted" : "text-destructive"}>
-          {part.ok ? okText : errText(part.code ?? 0, part.msg ?? "")}
+          {part.ok
+            ? okText
+            : oauth && part.code === 40110
+              ? t.errors.withCode(t.upstream.oauthAuthFailed, 40110)
+              : errText(part.code ?? 0, part.msg ?? "")}
         </p>
         {/* The mail server's own reply: helps the owner fix their settings. */}
         {!part.ok && part.detail && (
           <p className="mt-0.5 font-mono text-xs break-all text-foreground-subtle">
             {part.detail}
           </p>
+        )}
+        {!part.ok && (
+          <DocLink
+            className="mt-1"
+            topic={
+              part.code === 40312 || part.code === 40313
+                ? "exchangeDisabled"
+                : "testCodes"
+            }
+          />
         )}
       </div>
     </div>

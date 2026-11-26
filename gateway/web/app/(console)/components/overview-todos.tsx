@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { CircleAlert, KeyRound, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
+import { DocLink } from "@/components/doc-link"
 import { Panel, PanelHeader } from "@/components/panel"
 import { Spinner } from "@/components/spinner"
 import { Button } from "@/components/ui/button"
@@ -37,7 +38,10 @@ export function OverviewTodos({ todos }: { todos: Todo[] }) {
 
   return (
     <Panel>
-      <PanelHeader title={`${t.overview.todos} · ${todos.length}`} />
+      <PanelHeader
+        title={`${t.overview.todos} · ${todos.length}`}
+        actions={<DocLink topic="statuses" />}
+      />
       <ul className="divide-y">
         {todos.map((todo, i) => {
           const Icon =

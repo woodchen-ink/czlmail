@@ -323,6 +323,21 @@ func TestGmailLabelsAndWrites(t *testing.T) {
 			t.Errorf("hidden label %q has a mailbox", k)
 		}
 	}
+	// The admin's mailbox card counts the labels, not the hidden All Mail.
+	visible := map[string]bool{}
+	for _, mb := range mbs {
+		if !mb.Hidden {
+			visible[mb.ID] = true
+		}
+	}
+	var views []struct {
+		ID        string
+		Mailboxes *int
+	}
+	e.gw.UserAdmin(t, e.cred).Do(t, "GET", "/api/admin/upstreams", nil, &views)
+	if len(views) != 1 || views[0].ID != acct || views[0].Mailboxes == nil || *views[0].Mailboxes != len(visible) {
+		t.Fatalf("upstream mailboxes = %+v, want %d", views, len(visible))
+	}
 	if mbs["archive"].Name != "[Gmail]/Archive" || mbs["drafts"].ID != "" && mbs[`\Draft`].Role != "drafts" {
 		t.Fatalf("archive %q, drafts role %q", mbs["archive"].Name, mbs[`\Draft`].Role)
 	}

@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner"
 
 import { FormField } from "@/components/auth-form"
+import { DocLink } from "@/components/doc-link"
 import { CopyButton, CopyField } from "@/components/copy-button"
 import { Spinner } from "@/components/spinner"
 import { Button } from "@/components/ui/button"
@@ -218,13 +219,14 @@ function WizardBody({
   const canSave =
     ready &&
     clientId.trim() &&
-    (secret || app?.configured) &&
+    (secret || app?.hasSecret) &&
     (provider === "google" || expires)
 
   return (
     <>
       <DialogHeader>
         <DialogTitle>{t.oauth.wizardTitle(copy.name)}</DialogTitle>
+        <DocLink topic={provider === "google" ? "googleApp" : "microsoftApp"} />
         <DialogDescription asChild>
           <div className="pt-1">
             <Steps steps={copy.steps} current={step} />
@@ -310,8 +312,8 @@ function WizardBody({
               label={t.oauth.clientSecret}
               type="password"
               autoComplete="new-password"
-              required={!app?.configured}
-              hint={app?.configured ? t.oauth.clientSecretKeep : undefined}
+              required={!app?.hasSecret}
+              hint={app?.hasSecret ? t.oauth.clientSecretKeep : undefined}
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
             />
@@ -352,8 +354,11 @@ function WizardBody({
             {t.common.cancel}
           </Button>
         )}
+        {/* Distinct keys: reusing one element would turn the clicked "Next"
+            into the form's submit button before the click's default action. */}
         {last ? (
           <Button
+            key="save"
             type="submit"
             form="oauth-form"
             disabled={!canSave || save.isPending}
@@ -362,7 +367,7 @@ function WizardBody({
             {t.common.save}
           </Button>
         ) : (
-          <Button onClick={() => setStep(step + 1)}>
+          <Button key="next" type="button" onClick={() => setStep(step + 1)}>
             {t.common.next} <ArrowRight />
           </Button>
         )}

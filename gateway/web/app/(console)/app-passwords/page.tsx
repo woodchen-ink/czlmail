@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { CreatedDialog } from "./components/created-dialog"
 import { FormField } from "@/components/auth-form"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { DocLink } from "@/components/doc-link"
 import { PageHeader } from "@/components/page-header"
 import { Spinner } from "@/components/spinner"
 import { EmptyState, ErrorState } from "@/components/state-views"
@@ -74,9 +75,12 @@ export default function AppPasswordsPage() {
         title={t.appPasswords.title}
         subtitle={t.appPasswords.subtitle}
         actions={
-          <Button onClick={() => setCreating(true)}>
-            <Plus /> {t.appPasswords.create}
-          </Button>
+          <>
+            <DocLink topic="signIn" />
+            <Button onClick={() => setCreating(true)}>
+              <Plus /> {t.appPasswords.create}
+            </Button>
+          </>
         }
       />
       <TablePanel>

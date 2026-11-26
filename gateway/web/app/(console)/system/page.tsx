@@ -5,6 +5,7 @@ import * as React from "react"
 import { AuditTab } from "./components/audit-tab"
 import { StatusTab } from "./components/status-tab"
 import { TasksTab } from "./components/tasks-tab"
+import { DocLink } from "@/components/doc-link"
 import { PageHeader } from "@/components/page-header"
 import { Segmented } from "@/components/segmented"
 import { useQueryParam } from "@/lib/hooks/use-query-param"
@@ -25,11 +26,14 @@ function SystemPage() {
         title={t.system.title}
         subtitle={t.system.subtitle}
         actions={
-          <Segmented
-            value={tab}
-            onChange={setTab}
-            options={TABS.map((v) => ({ value: v, label: t.system.tabs[v] }))}
-          />
+          <>
+            <DocLink topic="upgrade" />
+            <Segmented
+              value={tab}
+              onChange={setTab}
+              options={TABS.map((v) => ({ value: v, label: t.system.tabs[v] }))}
+            />
+          </>
         }
       />
       {tab === "status" && <StatusTab />}

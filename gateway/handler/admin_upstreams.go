@@ -336,6 +336,7 @@ type upstreamView struct {
 	SentCopy     string             `json:"sentCopy"`
 	Status       upstreamStatusView `json:"status"`
 	Capabilities any                `json:"capabilities"`
+	Mailboxes    *int               `json:"mailboxes"` // folders (Gmail: labels); null until the first sync is done
 	CreatedAt    *string            `json:"createdAt"`
 }
 
@@ -366,6 +367,7 @@ func newUpstreamView(d *service.UpstreamDetail) upstreamView {
 		SentCopy:     u.SentCopy,
 		Status:       st,
 		Capabilities: caps,
+		Mailboxes:    d.Mailboxes,
 		CreatedAt:    rfc3339(&u.CreatedAt),
 	}
 }

@@ -51,12 +51,14 @@ import {
   type Upstream,
 } from "@/lib/api/upstreams"
 import { useNow } from "@/lib/hooks/use-now"
-import { useT } from "@/lib/i18n"
+import { docUrl } from "@/lib/docs"
+import { useLocale, useT } from "@/lib/i18n"
 import { qk } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 
 function MailboxesPage() {
   const t = useT()
+  const locale = useLocale()
   const qc = useQueryClient()
   const now = useNow()
   const params = useSearchParams()
@@ -74,6 +76,71 @@ function MailboxesPage() {
     if (open) router.push(`${pathname}?${qs}`, { scroll: false })
     else router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
+
+  // The OAuth callback lands here with ?added=<id>, ?reauthorized=<id> or
+  // ?oauthError=<msg>&code=<n>: say how it went once, then drop those params
+  // (an added mailbox stays highlighted through ?focus=).
+  const handled = React.useRef("")
+  const added = params.get("added")
+  const reauthorized = params.get("reauthorized")
+  const oauthError = params.get("oauthError")
+  const oauthCode = params.get("code")
+  // A tenant admin's consent (the link on the OAuth apps page) also lands here.
+  const consent = params.get("adminConsent")
+  React.useEffect(() => {
+    if (!added && !reauthorized && !oauthError && !consent) return
+    const key = `${added}|${reauthorized}|${oauthError}|${oauthCode}|${consent}`
+    if (handled.current === key) return
+    handled.current = key
+    if (oauthError) {
+      const code = Number(oauthCode) || 0
+      toast.error(t.mailboxes.oauthFailed, {
+        description: t.errors.withCode(
+          t.errors.codes[code] ?? oauthError,
+          code
+        ),
+        action: {
+          label: t.common.guide,
+          onClick: () =>
+            window.open(docUrl("oauthErrors", locale), "_blank", "noopener"),
+        },
+      })
+    } else {
+      toast.success(
+        added
+          ? t.mailboxes.oauthAdded
+          : reauthorized
+            ? t.mailboxes.oauthReauthorized
+            : t.mailboxes.adminConsentGranted
+      )
+    }
+    const next = new URLSearchParams(params.toString())
+    for (const k of [
+      "added",
+      "reauthorized",
+      "oauthError",
+      "code",
+      "adminConsent",
+    ])
+      next.delete(k)
+    const id = added || reauthorized
+    if (id) next.set("focus", id)
+    const qs = next.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    qc.invalidateQueries({ queryKey: qk.upstreams })
+  }, [
+    added,
+    reauthorized,
+    oauthError,
+    oauthCode,
+    consent,
+    params,
+    pathname,
+    router,
+    qc,
+    t,
+    locale,
+  ])
 
   const list = useQuery({
     queryKey: qk.upstreams,
@@ -97,6 +164,7 @@ function MailboxesPage() {
   const [removing, setRemoving] = React.useState<Upstream | null>(null)
   const [report, setReport] = React.useState<{
     name: string
+    oauth: boolean
     report: Report
   } | null>(null)
   const [busy, setBusy] = React.useState<string | null>(null)
@@ -133,7 +201,11 @@ function MailboxesPage() {
     onSettled: () => setBusy(null),
     onSuccess: (r) => {
       if (r.kind === "test" && r.report)
-        return setReport({ name: r.u.name || r.u.email, report: r.report })
+        return setReport({
+          name: r.u.name || r.u.email,
+          oauth: r.u.kind !== "imap",
+          report: r.report,
+        })
       if (r.kind === "reauth" && r.url) return window.location.assign(r.url)
       toast.success(
         r.kind === "pause"
@@ -292,7 +364,9 @@ function MailboxesPage() {
               {t.mailboxes.test} · {report?.name}
             </DialogTitle>
           </DialogHeader>
-          {report && <ConnectionReport report={report.report} />}
+          {report && (
+            <ConnectionReport report={report.report} oauth={report.oauth} />
+          )}
         </DialogContent>
       </Dialog>
     </>
