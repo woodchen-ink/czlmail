@@ -789,3 +789,66 @@ func (tx *Tx) ReplaceContent(emailID string, e *model.IndexEmail, refs []string,
 	tx.record(TypeMailbox, mailboxID, KindCounts)
 	return nil
 }
+
+// mergeWindow is how recent a twin must be to be taken for the copy half of a move.
+const mergeWindow = 30 * time.Minute
+
+// MergeOrphans gives each orphan the place of its twin: an email with the
+// same stable key (else the same Message-ID, size and date) that is placed in a
+// real folder. That is a move another session saw half-done: the copy in the
+// destination was indexed as a new email while the source still had the
+// message, and the source lost it only now. The orphan takes the twin's
+// memberships and keywords and keeps its id; the twin is destroyed (a client
+// that never saw it sees nothing). It runs before DestroyOrphans.
+func (tx *Tx) MergeOrphans() (int, error) {
+	orphans, err := tx.Orphans()
+	if err != nil || len(orphans) == 0 {
+		return 0, err
+	}
+	merged := 0
+	for _, o := range orphans {
+		// Only a recent twin: a half-seen move is one or two rounds old, while an
+		// old twin is a genuine second copy that must keep its own id.
+		q := tx.db.Model(&model.IndexEmail{}).Where("created_at >= ?", time.Now().UTC().Add(-mergeWindow)).Where("id <> ? AND orphaned_from = '' AND EXISTS ("+
+			"SELECT 1 FROM memberships m JOIN mailboxes b ON b.id = m.mailbox_id WHERE m.email_id = emails.id AND b.virtual = ?)", o.ID, false)
+		if o.UpstreamID != "" {
+			q = q.Where("upstream_id = ?", o.UpstreamID)
+		} else {
+			if o.MessageID == "" {
+				continue
+			}
+			q = q.Where("upstream_id = '' AND message_id = ? AND size = ? AND received_at = ?", o.MessageID, o.Size, o.ReceivedAt)
+		}
+		var twin model.IndexEmail
+		if err := q.Order("created_at DESC").Limit(1).Find(&twin).Error; err != nil {
+			return merged, err
+		}
+		if twin.ID == "" {
+			continue
+		}
+		var mboxes []string
+		if err := tx.db.Model(&Membership{}).Where("email_id = ?", twin.ID).Pluck("mailbox_id", &mboxes).Error; err != nil {
+			return merged, err
+		}
+		if err := tx.db.Model(&Membership{}).Where("email_id = ?", twin.ID).Update("email_id", o.ID).Error; err != nil {
+			return merged, err
+		}
+		err := tx.db.Model(&model.IndexEmail{}).Where("id = ?", o.ID).Updates(map[string]any{
+			"orphaned_from": "", "keywords": twin.Keywords, "seen": twin.Seen, "flagged": twin.Flagged,
+			"draft": twin.Draft, "answered": twin.Answered,
+		}).Error
+		if err != nil {
+			return merged, err
+		}
+		if err := tx.DestroyEmail(twin.ID); err != nil { // no memberships left: only the row goes
+			return merged, err
+		}
+		tx.record(TypeEmail, o.ID, KindUpdated)
+		tx.record(TypeMailbox, o.From, KindCounts)
+		for _, m := range mboxes {
+			tx.record(TypeMailbox, m, KindCounts)
+		}
+		merged++
+	}
+	return merged, nil
+}
