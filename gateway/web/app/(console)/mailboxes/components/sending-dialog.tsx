@@ -171,6 +171,11 @@ function SentCopySection({ upstream }: { upstream: Upstream }) {
           {t.mailboxes.sentCopyAutoHint}
         </p>
       )}
+      {mode === "server" && upstream.kind === "microsoft" && !result && (
+        <p className="text-xs text-foreground-subtle">
+          {t.mailboxes.sentCopyServerPreset}
+        </p>
+      )}
       {result && (
         <div
           className={cn(

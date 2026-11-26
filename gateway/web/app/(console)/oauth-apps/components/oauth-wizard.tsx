@@ -352,8 +352,11 @@ function WizardBody({
             {t.common.cancel}
           </Button>
         )}
+        {/* Distinct keys: reusing one element would turn the clicked "Next"
+            into the form's submit button before the click's default action. */}
         {last ? (
           <Button
+            key="save"
             type="submit"
             form="oauth-form"
             disabled={!canSave || save.isPending}
@@ -362,7 +365,7 @@ function WizardBody({
             {t.common.save}
           </Button>
         ) : (
-          <Button onClick={() => setStep(step + 1)}>
+          <Button key="next" type="button" onClick={() => setStep(step + 1)}>
             {t.common.next} <ArrowRight />
           </Button>
         )}

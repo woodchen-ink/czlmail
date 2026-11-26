@@ -180,6 +180,10 @@ export const en: Messages = {
     40110:
       "Authentication failed; check the username and password (app password)",
     40311: "Private network addresses are not allowed",
+    40312:
+      "SMTP AUTH is turned off for this mailbox or its organization; an admin can enable Authenticated SMTP in the Microsoft 365 admin center",
+    40313:
+      "Exchange has IMAP turned off for this mailbox, or the signed-in account is not its owner; an admin can enable IMAP in the Microsoft 365 admin center",
     50211: "Could not connect through the proxy",
     50212: "TLS handshake failed; check the encryption mode and port",
     50213: "The server rejected the request",
@@ -299,6 +303,10 @@ export const en: Messages = {
     oauthAdded: "Mailbox added; first sync started",
     oauthReauthorized: "Authorized again",
     oauthFailed: "Authorization did not finish",
+    adminConsentGranted:
+      "The organization admin consented; members can now add Microsoft mailboxes",
+    sentCopyServerPreset:
+      "Exchange files sent mail in Sent itself, so new mailboxes start with “Server saves”",
     sentCopyByProvider: "Gmail files sent mail in Sent itself; nothing to set",
     stepAccount: "Account",
     stepServers: "Servers",
@@ -520,6 +528,10 @@ export const en: Messages = {
         "Microsoft client secrets last at most 24 months. When one expires, every Microsoft mailbox must be re-authorized. Enter the expiry date and the gateway reminds you 30 days ahead.",
       s3: "Enter the application (client) ID, the client secret value and its expiry date.",
       consoleRegister: "App registrations",
+      adminConsent: "Admin consent",
+      adminConsentOpen: "Open consent page",
+      adminConsentHint:
+        "If a work or school organization requires admin approval, send this link to its global admin; after one consent, members can authorize directly",
     },
   },
   settings: {

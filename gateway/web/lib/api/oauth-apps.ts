@@ -15,6 +15,13 @@ export interface OAuthApp {
   /** Microsoft client secrets expire; Google's do not. */
   secretExpiresAt?: string | null
   tenant?: string
+  /** From secretExpiresAt: expiring = within 30 days. */
+  secretState: "unknown" | "ok" | "expiring" | "expired"
+  /**
+   * Microsoft: the tenant-wide consent link, once a client ID is stored. A tenant
+   * admin who opens it comes back to /admin/mailboxes/?adminConsent=granted.
+   */
+  adminConsentUrl?: string
   updatedAt: string | null
 }
 
@@ -42,10 +49,10 @@ export const OAUTH_DEFAULTS: Record<
     callbackPath: "/oauth/microsoft/callback",
     scopes: [
       "offline_access",
-      "https://outlook.office.com/IMAP.AccessAsUser.All",
-      "https://outlook.office.com/SMTP.Send",
       "openid",
       "email",
+      "https://outlook.office.com/IMAP.AccessAsUser.All",
+      "https://outlook.office.com/SMTP.Send",
     ],
   },
 }

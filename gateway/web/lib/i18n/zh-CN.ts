@@ -171,6 +171,10 @@ export const zhCN = {
   upstreamCodes: {
     40110: "认证失败, 请检查用户名和密码 (授权码)",
     40311: "网关未允许连接内网地址",
+    40312:
+      "这个邮箱 (或所在组织) 关闭了 SMTP 认证, 请管理员在 Microsoft 365 管理中心为它开启「已验证的 SMTP」",
+    40313:
+      "Exchange 没有为这个邮箱开放 IMAP, 或登录的不是邮箱本人; 请管理员在 Microsoft 365 管理中心开启 IMAP",
     50211: "代理连接失败",
     50212: "TLS 握手失败, 请检查加密方式与端口",
     50213: "服务器拒绝了请求",
@@ -281,6 +285,9 @@ export const zhCN = {
     oauthAdded: "已添加邮箱, 正在首次同步",
     oauthReauthorized: "已重新授权",
     oauthFailed: "授权未完成",
+    adminConsentGranted: "组织管理员已同意, 成员现在可以添加 Microsoft 邮箱",
+    sentCopyServerPreset:
+      "Exchange 会把发出的邮件放进「已发送」, 新邮箱默认「服务器保存」",
     sentCopyByProvider:
       "Gmail 发出的邮件由 Gmail 自己放进「已发送」, 不需要设置",
     stepAccount: "账号",
@@ -494,6 +501,10 @@ export const zhCN = {
         "Microsoft 的客户端密钥最长 24 个月。到期后所有 Microsoft 邮箱都要重新授权, 请填写到期日, 网关会提前 30 天提醒。",
       s3: "把应用程序 (客户端) ID、客户端密码的值与到期日填到这里。",
       consoleRegister: "应用注册",
+      adminConsent: "管理员同意",
+      adminConsentOpen: "打开同意页",
+      adminConsentHint:
+        "工作或学校账号的组织要求管理员审批时, 把这个链接发给组织的全局管理员, 同意一次后成员即可直接授权",
     },
   },
   settings: {

@@ -2,10 +2,12 @@
 
 import * as React from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 
 import { OAuthWizard } from "./components/oauth-wizard"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { CopyButton } from "@/components/copy-button"
 import { PageHeader } from "@/components/page-header"
 import { Panel } from "@/components/panel"
 import { Chip } from "@/components/status-badge"
@@ -19,7 +21,6 @@ import {
   type OAuthProvider,
 } from "@/lib/api/oauth-apps"
 import { formatDate } from "@/lib/format"
-import { useNow } from "@/lib/hooks/use-now"
 import { useQueryParam } from "@/lib/hooks/use-query-param"
 import { useT } from "@/lib/i18n"
 import { qk } from "@/lib/queries"
@@ -27,34 +28,26 @@ import { qk } from "@/lib/queries"
 const PROVIDERS = ["google", "microsoft"] as const
 const WIZARD = ["", ...PROVIDERS] as const
 
-const DAY = 86_400_000
-
 function ProviderPanel({
   provider,
   app,
-  now,
   onConfigure,
   onRemove,
 }: {
   provider: OAuthProvider
   app?: OAuthApp
-  now: number
   onConfigure: () => void
   onRemove?: () => void
 }) {
   const t = useT()
   const copy = provider === "google" ? t.oauth.google : t.oauth.microsoft
-  const expires = app?.secretExpiresAt
-    ? new Date(app.secretExpiresAt).getTime()
-    : null
+  // The gateway decides the state (expiring = within 30 days).
   const tone =
-    expires && now
-      ? expires <= now
-        ? "danger"
-        : expires - now < 30 * DAY
-          ? "warning"
-          : null
-      : null
+    app?.secretState === "expired"
+      ? "danger"
+      : app?.secretState === "expiring"
+        ? "warning"
+        : null
   return (
     <Panel className="flex flex-col">
       <div className="flex items-center gap-3 border-b px-4 py-3">
@@ -94,6 +87,35 @@ function ProviderPanel({
             </dd>
           </>
         )}
+        {app?.adminConsentUrl && (
+          <>
+            <dt className="text-foreground-muted">
+              {t.oauth.microsoft.adminConsent}
+            </dt>
+            <dd className="grid gap-1.5">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" asChild>
+                  <a
+                    href={app.adminConsentUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t.oauth.microsoft.adminConsentOpen} <ExternalLink />
+                  </a>
+                </Button>
+                <CopyButton
+                  value={app.adminConsentUrl}
+                  label={t.common.copy}
+                  size="sm"
+                  variant="outline"
+                />
+              </div>
+              <p className="text-xs text-foreground-subtle">
+                {t.oauth.microsoft.adminConsentHint}
+              </p>
+            </dd>
+          </>
+        )}
       </dl>
       <div className="flex justify-end gap-2 border-t px-4 py-2.5">
         {app?.configured && onRemove && (
@@ -121,7 +143,6 @@ function ProviderPanel({
 function OAuthAppsPage() {
   const t = useT()
   const qc = useQueryClient()
-  const now = useNow()
   const list = useQuery({ queryKey: qk.oauthApps, queryFn: oauthAppsApi.list })
   // ?provider=google|microsoft opens the wizard (the overview's to-do links here).
   const [wizard, setWizard] = useQueryParam<(typeof WIZARD)[number]>(
@@ -171,7 +192,6 @@ function OAuthAppsPage() {
               key={p}
               provider={p}
               app={find(p)}
-              now={now}
               onConfigure={() => setWizard(p)}
               onRemove={notReady ? undefined : () => setRemoving(p)}
             />
@@ -179,7 +199,12 @@ function OAuthAppsPage() {
         </div>
       )}
       <OAuthWizard
-        provider={wizard && shown.includes(wizard) ? wizard : null}
+        // Waits for the list: the form starts from the stored settings.
+        provider={
+          wizard && (list.data ? shown.includes(wizard) : notReady)
+            ? wizard
+            : null
+        }
         app={wizard ? find(wizard) : undefined}
         ready={!notReady}
         onOpenChange={(o) => !o && setWizard("")}

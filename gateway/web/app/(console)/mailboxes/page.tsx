@@ -83,9 +83,11 @@ function MailboxesPage() {
   const reauthorized = params.get("reauthorized")
   const oauthError = params.get("oauthError")
   const oauthCode = params.get("code")
+  // A tenant admin's consent (the link on the OAuth apps page) also lands here.
+  const consent = params.get("adminConsent")
   React.useEffect(() => {
-    if (!added && !reauthorized && !oauthError) return
-    const key = `${added}|${reauthorized}|${oauthError}|${oauthCode}`
+    if (!added && !reauthorized && !oauthError && !consent) return
+    const key = `${added}|${reauthorized}|${oauthError}|${oauthCode}|${consent}`
     if (handled.current === key) return
     handled.current = key
     if (oauthError) {
@@ -98,11 +100,21 @@ function MailboxesPage() {
       })
     } else {
       toast.success(
-        added ? t.mailboxes.oauthAdded : t.mailboxes.oauthReauthorized
+        added
+          ? t.mailboxes.oauthAdded
+          : reauthorized
+            ? t.mailboxes.oauthReauthorized
+            : t.mailboxes.adminConsentGranted
       )
     }
     const next = new URLSearchParams(params.toString())
-    for (const k of ["added", "reauthorized", "oauthError", "code"])
+    for (const k of [
+      "added",
+      "reauthorized",
+      "oauthError",
+      "code",
+      "adminConsent",
+    ])
       next.delete(k)
     const id = added || reauthorized
     if (id) next.set("focus", id)
@@ -114,6 +126,7 @@ function MailboxesPage() {
     reauthorized,
     oauthError,
     oauthCode,
+    consent,
     params,
     pathname,
     router,
