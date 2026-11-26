@@ -106,7 +106,7 @@ func (s *Syncer) cacheMissing(ctx context.Context, accountID string, ids []jmap.
 	if err != nil {
 		return 0, err
 	}
-	if err := s.store.WithTx(ctx, func(tx *sql.Tx) error {
+	if err := s.write(ctx, func(tx *sql.Tx) error {
 		return store.UpsertEmails(ctx, tx, accountID, emails)
 	}); err != nil {
 		return 0, err

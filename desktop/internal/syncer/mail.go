@@ -68,7 +68,7 @@ func (s *Syncer) syncMailboxes(ctx context.Context, accountID string) error {
 	}
 
 	destroyed := idsToStrings(changes.Destroyed)
-	return s.store.WithTx(ctx, func(tx *sql.Tx) error {
+	return s.write(ctx, func(tx *sql.Tx) error {
 		if err := store.UpsertMailboxes(ctx, tx, accountID, boxes); err != nil {
 			return err
 		}
@@ -98,7 +98,7 @@ func (s *Syncer) bootstrapMailboxes(ctx context.Context, accountID string) error
 		boxes = append(boxes, toStoreMailbox(m))
 	}
 
-	return s.store.WithTx(ctx, func(tx *sql.Tx) error {
+	return s.write(ctx, func(tx *sql.Tx) error {
 		if err := store.UpsertMailboxes(ctx, tx, accountID, boxes); err != nil {
 			return err
 		}
@@ -179,7 +179,7 @@ func (s *Syncer) syncEmails(ctx context.Context, accountID string) error {
 		}
 
 		destroyed := idsToStrings(changes.Destroyed)
-		if err := s.store.WithTx(ctx, func(tx *sql.Tx) error {
+		if err := s.write(ctx, func(tx *sql.Tx) error {
 			if err := store.UpsertEmails(ctx, tx, accountID, created); err != nil {
 				return err
 			}
@@ -248,7 +248,7 @@ func (s *Syncer) bootstrapEmails(ctx context.Context, accountID string) error {
 
 	s.log.Info("bootstrapped emails", "account", accountID, "count", len(emails))
 
-	return s.store.WithTx(ctx, func(tx *sql.Tx) error {
+	return s.write(ctx, func(tx *sql.Tx) error {
 		if err := store.UpsertEmails(ctx, tx, accountID, emails); err != nil {
 			return err
 		}
@@ -293,7 +293,7 @@ func (s *Syncer) rebootstrap(
 	dt store.DataType,
 	boot func(context.Context, string) error,
 ) error {
-	if err := s.store.WithTx(ctx, func(tx *sql.Tx) error {
+	if err := s.write(ctx, func(tx *sql.Tx) error {
 		return store.ResetState(ctx, tx, accountID, dt)
 	}); err != nil {
 		return err

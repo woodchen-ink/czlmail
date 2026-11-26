@@ -247,9 +247,12 @@ func (a *App) addSignIn(run func(si *signIn) error) (string, error) {
 	a.mu.Unlock()
 	if err := run(si); err != nil {
 		a.mu.Lock()
-		si.stopLocked()
+		old := si.stopLocked()
 		a.extra = slices.DeleteFunc(a.extra, func(x *signIn) bool { return x == si })
 		a.mu.Unlock()
+		if old != nil {
+			old.Close()
+		}
 		if st, e := a.currentStore(); e == nil {
 			if e := a.forgetSignInData(st, id); e != nil {
 				a.log.Warn("clean up failed sign-in", "signin", id, "err", e)

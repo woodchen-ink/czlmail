@@ -321,9 +321,8 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 		return errNotSignedIn
 	}
 	st := a.store
-	if si.cancelSync != nil {
-		si.cancelSync()
-	}
+	// 换上新会话 (重新登录、重试连接): 旧会话的同步循环与同步器一并停掉。
+	si.stopLocked()
 	si.client = client
 	cfg.SignedOut = false
 	si.cfg = cfg

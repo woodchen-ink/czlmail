@@ -44,7 +44,7 @@ func (s *Syncer) BackfillAttachmentNames(ctx context.Context, accountID string) 
 			names[string(e.ID)] = attachmentNames(e.BodyStructure, nil)
 		}
 		// 服务器没返回的 (已删除) 写空数组, 否则每批都会重新查到它们, 循环停不下来。
-		if err := s.store.SetAttachmentNames(ctx, accountID, ids, names); err != nil {
+		if err := s.writing(func() error { return s.store.SetAttachmentNames(ctx, accountID, ids, names) }); err != nil {
 			return total, err
 		}
 		total += len(ids)

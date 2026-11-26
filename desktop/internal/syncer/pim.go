@@ -109,7 +109,7 @@ func (s *Syncer) syncPIMKind(ctx context.Context, accountID string, k pimKind) e
 		if err != nil {
 			return err
 		}
-		if err := s.store.WithTx(ctx, func(tx *sql.Tx) error {
+		if err := s.write(ctx, func(tx *sql.Tx) error {
 			if err := k.apply(ctx, tx, accountID, objs); err != nil {
 				return err
 			}
@@ -177,7 +177,7 @@ func (s *Syncer) bootstrapPIM(ctx context.Context, accountID string, k pimKind) 
 	}
 
 	s.log.Info("bootstrapped pim", "account", accountID, "type", k.typeName, "count", len(objs))
-	return s.store.WithTx(ctx, func(tx *sql.Tx) error {
+	return s.write(ctx, func(tx *sql.Tx) error {
 		if !k.container {
 			if err := store.ClearObjects(ctx, tx, k.table, accountID); err != nil {
 				return err
