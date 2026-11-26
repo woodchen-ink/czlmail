@@ -770,3 +770,46 @@ func TestGmailJMAPSend(t *testing.T) {
 		t.Fatalf("%d emails for the sent message", n)
 	}
 }
+
+// Identities of a provider are per account: two gateway users connecting the
+// same Gmail address both get them (ids are unique in the database), and an
+// address listed twice by sendAs (differing in case) is one identity.
+func TestGmailIdentitiesPerAccount(t *testing.T) {
+	e := newGmailEnv(t)
+	e.api.SetSendAs(
+		gmailtest.SendAs{SendAsEmail: gmailAccount, DisplayName: "Me", IsPrimary: true, IsDefault: true},
+		gmailtest.SendAs{SendAsEmail: "Alias@Example.test", VerificationStatus: "accepted"},
+		gmailtest.SendAs{SendAsEmail: "alias@example.test", VerificationStatus: "accepted"},
+	)
+	acct1 := string(e.gw.AddGmailUpstream(t, e.cred, e.mail, e.api, e.provider))
+	other := &gmailEnv{gw: e.gw, cred: e.gw.NewUser(t), provider: e.provider, mail: e.mail, api: e.api}
+	acct2 := string(e.gw.AddGmailUpstream(t, other.cred, e.mail, e.api, e.provider))
+
+	ids := func(env *gmailEnv, acct string) []string {
+		t.Helper()
+		r := env.jmapCalls(t, []any{"Identity/get", map[string]any{"accountId": acct}, "0"})
+		if r[0][0] != "Identity/get" {
+			t.Fatalf("Identity/get for %s: %v", acct, r[0])
+		}
+		var out []string
+		for _, x := range r[0][1].(map[string]any)["list"].([]any) {
+			m := x.(map[string]any)
+			out = append(out, m["email"].(string)+" "+m["id"].(string))
+		}
+		slices.Sort(out)
+		return out
+	}
+	a, b := ids(e, acct1), ids(other, acct2)
+	if len(a) != 2 || len(b) != 2 {
+		t.Fatalf("identities %v / %v, want the primary and one alias each", a, b)
+	}
+	for i := range a {
+		if a[i] == b[i] {
+			t.Fatalf("two accounts share identity %s", a[i])
+		}
+	}
+	// Stable across reads.
+	if again := ids(e, acct1); !slices.Equal(again, a) {
+		t.Fatalf("identity ids changed: %v → %v", a, again)
+	}
+}

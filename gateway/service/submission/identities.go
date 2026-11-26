@@ -3,6 +3,7 @@ package submission
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base32"
 	"encoding/json"
 	"errors"
@@ -259,9 +260,16 @@ func (s *Identities) syncSource(accountID string, list []upstream.Identity) erro
 	if err := s.db.Where("account_id = ? AND source = ?", accountID, model.IdentityProvider).Find(&have).Error; err != nil {
 		return err
 	}
+	// Rows match by the upstream's key within this account (upsert): the same
+	// address can be connected by several accounts, and a provider may list an
+	// address twice (differing in case).
 	byID := map[string]*model.Identity{}
 	for i := range have {
-		byID[have[i].PublicID] = &have[i]
+		key := have[i].ProviderKey
+		if key == "" {
+			key = have[i].PublicID
+		}
+		byID[key] = &have[i]
 	}
 	type change struct {
 		row  *model.Identity
@@ -271,14 +279,14 @@ func (s *Identities) syncSource(accountID string, list []upstream.Identity) erro
 	seen := map[string]bool{}
 	for _, p := range list {
 		addr, err := normalizeAddress(p.Email)
-		if err != nil || p.ID == "" {
+		if err != nil || p.ID == "" || seen[p.ID] {
 			continue
 		}
 		seen[p.ID] = true
 		row := byID[p.ID]
 		switch {
 		case row == nil:
-			row = &model.Identity{PublicID: p.ID, AccountID: accountID, Source: model.IdentityProvider, ProviderKey: p.ID, Email: addr}
+			row = &model.Identity{PublicID: providerIdentityID(accountID, p.ID), AccountID: accountID, Source: model.IdentityProvider, ProviderKey: p.ID, Email: addr}
 			in := IdentityInput{Name: &p.Name, HTMLSignature: &p.HTMLSignature}
 			if p.ReplyTo != "" {
 				in.ReplyTo = &[]Address{{Email: p.ReplyTo}}
@@ -317,6 +325,15 @@ func (s *Identities) syncSource(accountID string, list []upstream.Identity) erro
 		}
 		return nil
 	})
+}
+
+// providerIdentityID is the JMAP id of a provider identity: stable for the
+// (account, provider key) pair and unique across accounts, since Identity ids
+// are unique in the gateway database while the provider's key (Gmail: derived
+// from the address) is not.
+func providerIdentityID(accountID, key string) string {
+	sum := sha256.Sum256([]byte(accountID + "/" + key))
+	return "i" + strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))[:20]
 }
 
 const maxSignature = 64 << 10
