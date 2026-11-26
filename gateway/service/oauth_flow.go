@@ -27,6 +27,7 @@ var (
 	ErrOAuthExchange        = errors.New("oauth code exchange failed")
 	ErrOAuthAccountMismatch = errors.New("oauth account is not the upstream's address")
 	ErrOAuthKindMismatch    = errors.New("upstream is not of this provider")
+	ErrOAuthScopeDenied     = errors.New("oauth scope not granted")
 )
 
 // Flow limits.
@@ -268,6 +269,10 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 		o.log.Warn("oauth code exchange", "provider", provider, "err", err)
 		return nil, fmt.Errorf("%w: %w", ErrOAuthExchange, err)
 	}
+	if !scopesGranted(tok.Scope, client.Provider.Scopes) {
+		// Google's granular consent lets the user untick the mail scope.
+		return nil, ErrOAuthScopeDenied
+	}
 	email, err := client.Provider.Email(ctx, hc, client.Provider, tok.AccessToken)
 	if err != nil {
 		o.log.Warn("oauth mailbox address", "provider", provider, "err", err)
@@ -317,6 +322,25 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 	}
 	o.mgr.Start(row)
 	return &OAuthResult{AccountID: row.PublicID, Created: true}, nil
+}
+
+// scopesGranted reports whether granted (space-separated, as the token answer
+// lists it; empty when the provider does not say) covers every wanted scope.
+func scopesGranted(granted string, wanted []string) bool {
+	if granted == "" {
+		return true
+	}
+	have := strings.Fields(granted)
+	for _, w := range wanted {
+		switch w {
+		case "openid", "email", "profile", "offline_access":
+			continue // not echoed back by every provider (Microsoft)
+		}
+		if !slices.Contains(have, w) {
+			return false
+		}
+	}
+	return true
 }
 
 // draftRow is the upstream a pending flow would create, enough to dial its proxy.

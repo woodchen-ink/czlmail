@@ -160,9 +160,10 @@ func loadLabelRows(tx *mailindex.Tx) (*labelRows, error) {
 	return lr, nil
 }
 
-// mailboxesFor maps an All Mail message's labels to mailbox ids; an unknown user
-// label (created since the last LIST) gets its mailbox now. No visible label
-// means Archive.
+// mailboxesFor maps an All Mail message's labels to mailbox ids. A label LIST
+// has not shown is skipped: it is hidden from IMAP in Gmail's settings, or new
+// since the last LIST (then the next LIST adds it and relabels every message).
+// No visible label means Archive.
 func (lr *labelRows) mailboxesFor(tx *mailindex.Tx, labels []string) ([]string, error) {
 	var out []string
 	for _, l := range labels {
@@ -172,13 +173,7 @@ func (lr *labelRows) mailboxesFor(tx *mailindex.Tx, labels []string) ([]string, 
 		}
 		row := lr.byLabel[l]
 		if row == nil {
-			if strings.HasPrefix(l, `\`) {
-				continue // a system label without a folder (e.g. \Chats)
-			}
-			var err error
-			if row, err = lr.create(tx, l, "/", ""); err != nil {
-				return nil, err
-			}
+			continue
 		}
 		if !slices.Contains(out, row.ID) {
 			out = append(out, row.ID)
@@ -224,6 +219,14 @@ func (u *Upstream) reconcileLabels(tx *mailindex.Tx, entries []*imapc.ListEntry,
 	if err != nil {
 		return err
 	}
+	changed := false
+	defer func() {
+		// A label appeared or went (also a rename in Gmail's web UI): Gmail does
+		// not bump the messages' MODSEQ for that, so re-read every label.
+		if changed && tx.Ready() {
+			u.gm.relabel.Store(true)
+		}
+	}()
 	seen := map[string]bool{}
 	type want struct {
 		e *imapc.ListEntry
@@ -246,6 +249,7 @@ func (u *Upstream) reconcileLabels(tx *mailindex.Tx, entries []*imapc.ListEntry,
 			if err != nil {
 				return err
 			}
+			changed = true
 		}
 		parent := ""
 		if w.k.role == "" {
@@ -280,6 +284,7 @@ func (u *Upstream) reconcileLabels(tx *mailindex.Tx, entries []*imapc.ListEntry,
 		if err := u.dropLabelRow(tx, lr, row); err != nil {
 			return err
 		}
+		changed = true
 	}
 	return nil
 }

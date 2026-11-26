@@ -16,67 +16,73 @@ import (
 // SendMessage sends through users.messages.send and indexes the sent message
 // at once; see upstream.MessageSender. The API's id is the message's X-GM-MSGID
 // (in hex): the message is found in All Mail by it. With a draft, the draft is
-// deleted and the sent message takes the draft's Email id.
+// deleted and the sent message takes the draft's Email id. Once the API
+// accepted the message the result is a success; EmailID is "" when it could
+// not be indexed yet (the next sync does, under a new id).
 //
 // The whole send holds the op lock, so a sync round cannot index the sent
 // message as a new email in between.
 func (g *Gmail) SendMessage(ctx context.Context, raw []byte, opts upstream.SendOptions) (*upstream.SendResult, error) {
-	mb, err := g.loadMailboxes()
+	g.op.Lock()
+	defer g.op.Unlock()
+	threadID := g.gmThread(opts, raw)
+	// The API call runs once, outside withConn: that closure is retried on a
+	// lost IMAP connection, which must never send the message twice.
+	sent, err := g.gm.api.send(ctx, raw, threadID)
 	if err != nil {
 		return nil, err
 	}
-	var draft *gmEmail
-	if opts.DraftEmailID != "" {
-		list, err := g.loadEmails(mb, []string{opts.DraftEmailID})
-		if err != nil {
-			return nil, err
+	res := &upstream.SendResult{States: map[string]string{}}
+	n, perr := strconv.ParseUint(sent.ID, 16, 64)
+	// From here on the message is sent: IMAP problems only mean the index
+	// catches up on the next sync (EmailID stays "").
+	err = g.withConn(ctx, func(c *imapc.Client) error {
+		if perr != nil {
+			return perr
 		}
-		draft = list[0]
-	}
-	threadID := g.gmThread(opts, raw)
-	res := &upstream.SendResult{}
-	states, err := g.writeOp(ctx, func(c *imapc.Client, states map[string]string) error {
-		sent, err := g.gm.api.send(ctx, raw, threadID)
+		mb, err := g.loadMailboxes()
 		if err != nil {
 			return err
 		}
-		n, err := strconv.ParseUint(sent.ID, 16, 64)
-		if err != nil {
-			return &upstream.Error{Kind: upstream.KindUnreachable, Op: "gmail send", Err: err}
+		var draft *gmEmail
+		if opts.DraftEmailID != "" {
+			if list, err := g.loadEmails(mb, []string{opts.DraftEmailID}); err == nil {
+				draft = list[0]
+			}
 		}
-		msg := &gmEmail{id: "sent", msgID: strconv.FormatUint(n, 10)}
-		uid, err := g.findInAllMail(ctx, c, mb, msg)
+		uid, err := g.findInAllMail(ctx, c, mb, &gmEmail{id: "sent", msgID: strconv.FormatUint(n, 10)})
 		if err != nil {
 			return err
 		}
 		if draft != nil {
-			if err := g.dropDraft(ctx, c, states, mb, draft); err != nil {
+			// The draft goes in any case (it was sent); on a retry it is
+			// already in Trash and only expunged again.
+			if err := g.dropDraft(ctx, c, res.States, mb, draft); err != nil {
 				return err
 			}
 		}
 		if uid == 0 {
-			return nil // not visible yet: the next sync imports it
+			return nil // not visible yet: the next sync imports it under a new id
 		}
 		if draft == nil {
-			ids, err := g.importUIDs(ctx, c, states, mb.lr.allMail, []uint32{uid})
+			ids, err := g.importUIDs(ctx, c, res.States, mb.lr.allMail, []uint32{uid})
 			if err != nil {
 				return err
 			}
-			res.EmailID = ids[uid]
-		} else {
-			if err := g.bindTo(ctx, c, states, mb, uid, draft.id); err != nil {
-				return err
+			if res.EmailID = ids[uid]; res.EmailID == "" {
+				res.EmailID = g.emailAt(mb.lr.allMail.ID, uid) // a retry indexed it already
 			}
-			res.EmailID = draft.id
+			return nil
 		}
+		if err := g.bindTo(ctx, c, res.States, mb, uid, draft.id); err != nil {
+			return err
+		}
+		res.EmailID = draft.id
 		return nil
 	})
 	if err != nil {
-		return nil, err
-	}
-	res.States = states
-	if res.EmailID == "" && draft != nil {
-		res.EmailID = draft.id
+		g.log.Warn("gmail: message sent, indexing it failed; the next sync picks it up", "id", sent.ID, "err", err)
+		res.EmailID = ""
 	}
 	if res.EmailID != "" {
 		var e model.IndexEmail
@@ -85,6 +91,15 @@ func (g *Gmail) SendMessage(ctx context.Context, raw []byte, opts upstream.SendO
 		}
 	}
 	return res, nil
+}
+
+// emailAt is the email of (mailbox, uid), "" when not indexed.
+func (g *Gmail) emailAt(mailboxID string, uid uint32) string {
+	var m model.IndexMembership
+	if g.idx.DB().Where("mailbox_id = ? AND uid = ?", mailboxID, uid).First(&m).Error != nil {
+		return ""
+	}
+	return m.EmailID
 }
 
 // gmThread picks the Gmail threadId (hex X-GM-THRID) for a message: the
@@ -152,6 +167,9 @@ func (g *Gmail) dropDraft(ctx context.Context, c *imapc.Client, states map[strin
 	}
 	if d.src == mb.lr.allMail {
 		return errors.New("gmail: draft not found in Trash after moving it")
+	}
+	if d.src != mb.trash {
+		return nil // in Spam: leave it
 	}
 	if err := selectRW(ctx, c, d.src); err != nil {
 		return err

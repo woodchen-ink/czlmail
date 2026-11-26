@@ -57,6 +57,7 @@ var adminErrors = []struct {
 	{service.ErrSelfModify, apiError{403, 40302, "cannot_modify_self"}},
 	{service.ErrRegistrationClosed, apiError{403, 40303, "registration_closed"}},
 	{service.ErrOAuthDenied, apiError{403, 40330, "oauth_denied"}},
+	{service.ErrOAuthScopeDenied, apiError{403, 40331, "oauth_scope_denied"}},
 	{service.ErrUserNotFound, apiError{404, 40401, "user_not_found"}},
 	{service.ErrAppPasswordNotFound, apiError{404, 40402, "app_password_not_found"}},
 	{cron.ErrUnknownTask, apiError{404, 40403, "task_not_found"}},

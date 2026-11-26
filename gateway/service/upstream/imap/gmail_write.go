@@ -193,27 +193,25 @@ func dedupe(s []string) []string {
 
 // SetMailboxes adds and removes mailboxes (labels) on emails; see upstream.MailboxSetter.
 func (g *Gmail) SetMailboxes(ctx context.Context, emailIDs []string, add, remove []string) (map[string]string, error) {
-	mb, err := g.loadMailboxes()
-	if err != nil {
-		return nil, err
-	}
-	addRows, err := mb.rows(add)
-	if err != nil {
-		return nil, err
-	}
-	remRows, err := mb.rows(remove)
-	if err != nil {
-		return nil, err
-	}
-	emails, err := g.loadEmails(mb, emailIDs)
-	if err != nil {
-		return nil, err
-	}
-	p := newPlan()
-	for _, e := range emails {
-		p.plan(mb, e, addRows, remRows)
-	}
-	return g.run(ctx, mb, p)
+	return g.planned(ctx, func(mb *gmMailboxes) (*gmPlan, error) {
+		addRows, err := mb.rows(add)
+		if err != nil {
+			return nil, err
+		}
+		remRows, err := mb.rows(remove)
+		if err != nil {
+			return nil, err
+		}
+		emails, err := g.loadEmails(mb, emailIDs)
+		if err != nil {
+			return nil, err
+		}
+		p := newPlan()
+		for _, e := range emails {
+			p.plan(mb, e, addRows, remRows)
+		}
+		return p, nil
+	})
 }
 
 func (mb *gmMailboxes) rows(ids []string) ([]*model.IndexMailbox, error) {
@@ -230,10 +228,12 @@ func (mb *gmMailboxes) rows(ids []string) ([]*model.IndexMailbox, error) {
 
 // Move puts emails in exactly one mailbox: the others are removed.
 func (g *Gmail) Move(ctx context.Context, emailIDs []string, toMailboxID string) (map[string]string, error) {
-	mb, err := g.loadMailboxes()
-	if err != nil {
-		return nil, err
-	}
+	return g.planned(ctx, func(mb *gmMailboxes) (*gmPlan, error) {
+		return g.movePlan(mb, emailIDs, toMailboxID)
+	})
+}
+
+func (g *Gmail) movePlan(mb *gmMailboxes, emailIDs []string, toMailboxID string) (*gmPlan, error) {
 	to, err := mb.visible(toMailboxID)
 	if err != nil {
 		return nil, err
@@ -255,7 +255,7 @@ func (g *Gmail) Move(ctx context.Context, emailIDs []string, toMailboxID string)
 		}
 		p.plan(mb, e, []*model.IndexMailbox{to}, remove)
 	}
-	return g.run(ctx, mb, p)
+	return p, nil
 }
 
 // Copy adds a mailbox (label) to emails. On Gmail a copy is the same message
@@ -278,9 +278,25 @@ func (g *Gmail) Copy(ctx context.Context, emailIDs []string, toMailboxID string)
 	return slices.Clone(emailIDs), states, err
 }
 
-// run executes a plan and refreshes the index from the server.
-func (g *Gmail) run(ctx context.Context, mb *gmMailboxes, p *gmPlan) (map[string]string, error) {
+// planned builds a plan from the index under the op lock (a sync round cannot
+// change the emails' labels in between), runs it and refreshes the index from
+// the server.
+func (g *Gmail) planned(ctx context.Context, build func(mb *gmMailboxes) (*gmPlan, error)) (map[string]string, error) {
 	return g.writeOp(ctx, func(c *imapc.Client, states map[string]string) error {
+		mb, err := g.loadMailboxes()
+		if err != nil {
+			return err
+		}
+		p, err := build(mb)
+		if err != nil {
+			return err
+		}
+		return g.execute(ctx, c, states, mb, p)
+	})
+}
+
+func (g *Gmail) execute(ctx context.Context, c *imapc.Client, states map[string]string, mb *gmMailboxes, p *gmPlan) error {
+	{
 		all := mb.lr.allMail
 		touched := map[string]*gmEmail{} // All Mail emails whose labels changed
 		if len(p.addLabel) > 0 || len(p.removeLabel) > 0 {
@@ -314,7 +330,7 @@ func (g *Gmail) run(ctx context.Context, mb *gmMailboxes, p *gmPlan) (map[string
 			return err
 		}
 		return g.refreshLabels(ctx, c, states, mb, touched)
-	})
+	}
 }
 
 func sortedKeys[V any](m map[string]V) []string {
@@ -587,15 +603,15 @@ func (g *Gmail) refreshLabels(ctx context.Context, c *imapc.Client, states map[s
 // Destroy deletes emails for good: into Trash first (EXPUNGE in All Mail or a
 // label folder would only remove a label), then \Deleted + EXPUNGE there.
 func (g *Gmail) Destroy(ctx context.Context, emailIDs []string) (map[string]string, error) {
-	mb, err := g.loadMailboxes()
-	if err != nil {
-		return nil, err
-	}
-	emails, err := g.loadEmails(mb, emailIDs)
-	if err != nil {
-		return nil, err
-	}
 	return g.writeOp(ctx, func(c *imapc.Client, states map[string]string) error {
+		mb, err := g.loadMailboxes()
+		if err != nil {
+			return err
+		}
+		emails, err := g.loadEmails(mb, emailIDs)
+		if err != nil {
+			return err
+		}
 		var toTrash []*gmEmail
 		for _, e := range emails {
 			if e.src == mb.lr.allMail {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 
 	"github.com/woodchen-ink/czlmail/gateway/model"
@@ -47,17 +48,23 @@ func (o *OAuth) openToken(accountID, sealed string) (*oauth.Token, error) {
 	return &t, nil
 }
 
-// saveToken stores a new token set for an existing upstream and drops the cache.
+// saveToken stores a new token set for an existing upstream. It holds the
+// cache entry's lock, so a refresh of the old grant running meanwhile cannot
+// write its token over the new one afterwards.
 func (o *OAuth) saveToken(row *model.Upstream, tok *oauth.Token) error {
 	sealed, err := o.sealToken(row.PublicID, tok)
 	if err != nil {
 		return err
 	}
+	e := o.entry(row.PublicID)
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if err := o.db.Model(&model.Upstream{}).Where("id = ?", row.ID).Update("oauth_token_sealed", sealed).Error; err != nil {
 		return err
 	}
 	row.OAuthTokenSealed = sealed
-	o.forgetToken(row.PublicID)
+	t := *tok
+	e.tok = &t
 	return nil
 }
 
@@ -184,6 +191,12 @@ func (o *OAuth) revoke(row model.Upstream) {
 	o.forgetToken(row.PublicID)
 	p, ok := o.providerForKind(row.Kind)
 	if !ok || row.OAuthTokenSealed == "" {
+		return
+	}
+	// Google revokes the whole grant of the Google account; another user's
+	// upstream of the same address still lives on it.
+	var others int64
+	if err := o.db.Model(&model.Upstream{}).Where("kind = ? AND lower(email) = ? AND id <> ?", row.Kind, strings.ToLower(row.Email), row.ID).Count(&others).Error; err != nil || others > 0 {
 		return
 	}
 	tok, err := o.openToken(row.PublicID, row.OAuthTokenSealed)

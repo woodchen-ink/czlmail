@@ -3,6 +3,7 @@ package imap
 import (
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/woodchen-ink/czlmail/gateway/model"
@@ -31,6 +32,9 @@ func init() {
 // gmailState is what a Gmail upstream keeps besides the IMAP engine.
 type gmailState struct {
 	api *gmailAPI
+	// relabel asks the next round to re-read the labels of every All Mail
+	// message (LIST showed a label created, deleted or renamed).
+	relabel atomic.Bool
 
 	idMu       sync.Mutex
 	identities []upstream.Identity
@@ -131,6 +135,11 @@ func (u *Upstream) applyFlagLabels(tx *mailindex.Tx, d *folderDelta) error {
 		}
 	}
 	return nil
+}
+
+// relabelling reports whether this round re-reads every label of All Mail.
+func (u *Upstream) relabelling(m *model.IndexMailbox) bool {
+	return u.gm != nil && m.Hidden && u.gm.relabel.Load()
 }
 
 // watchFolder is the folder IDLE watches: INBOX, or All Mail on Gmail (a label

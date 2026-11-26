@@ -25,6 +25,7 @@ type folderDelta struct {
 	removed  bool // applyRemovals committed
 	skip     bool // the folder could not be selected for import: keep its sync point
 	imported bool
+	relabel  bool // Gmail: every message's labels were fetched
 }
 
 type flagChange struct {
@@ -141,9 +142,13 @@ func (r *round) folderDelta(ctx context.Context, m *model.IndexMailbox, st *imap
 		return d, r.resetDelta(ctx, d)
 	}
 	if r.caps.condstore && !mb.NoModSeq && m.HighestModSeq != 0 {
-		if mb.HighestModSeq != m.HighestModSeq {
+		since := m.HighestModSeq
+		if r.u.relabelling(m) {
+			d.relabel, since = true, 0 // every message, not only the changed ones
+		}
+		if mb.HighestModSeq != m.HighestModSeq || d.relabel {
 			err := r.c.Fetch(ctx, "1:*", r.u.flagItems("UID", "FLAGS", "MODSEQ"),
-				imapc.FetchOptions{UID: true, ChangedSince: m.HighestModSeq},
+				imapc.FetchOptions{UID: true, ChangedSince: since},
 				func(msg *imapc.Message) { d.noteFetched(msg, isNew) }, nil)
 			if err != nil {
 				return nil, err

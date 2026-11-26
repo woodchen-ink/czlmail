@@ -190,7 +190,7 @@ func (r *round) examine(ctx context.Context, candidates []*model.IndexMailbox, h
 // needsSync compares STATUS with the stored sync point. Without CONDSTORE a flag
 // change is invisible to STATUS, so due folders are always compared (window).
 func (r *round) needsSync(m *model.IndexMailbox, st *imapc.Status, forced, sweep bool) bool {
-	if st == nil || m.UIDValidity == 0 || forced {
+	if st == nil || m.UIDValidity == 0 || forced || r.u.relabelling(m) {
 		return true
 	}
 	if st.UIDValidity != m.UIDValidity || st.UIDNext != m.UIDNext || st.Messages != m.Messages {
@@ -309,6 +309,9 @@ func (r *round) finish(wasReady bool) error {
 	}
 	for _, d := range r.deltas {
 		r.u.checked(d.mbox.ID, d.mbox.Role, d.changed(), r.req.Idle, r.now)
+		if d.relabel {
+			r.u.gm.relabel.Store(false)
+		}
 	}
 	return nil
 }
