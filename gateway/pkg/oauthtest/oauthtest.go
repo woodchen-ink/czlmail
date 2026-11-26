@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ type Server struct {
 	codes    map[string]codeGrant
 	refresh  map[string]string // refresh token -> user
 	access   map[string]accessGrant
-	fail     []string // error codes for the next token requests, in order
+	fail     []Failure // answers for the next token requests, in order
 	failAll  string
 	requests []url.Values
 	revoked  []string
@@ -125,8 +126,22 @@ func (s *Server) ExpireAccessTokens() {
 // FailNext makes the next token request fail with errCode (e.g. "invalid_grant",
 // "temporarily_unavailable"); call it repeatedly to queue several failures.
 func (s *Server) FailNext(errCode string) {
+	s.FailNextWith(Failure{Code: errCode})
+}
+
+// Failure is a token endpoint error answer. AADSTS adds Microsoft's error_codes
+// and the "AADSTSnnnn: ..." description prefix, as login.microsoftonline.com
+// sends them; Status defaults to 400.
+type Failure struct {
+	Status int
+	Code   string
+	AADSTS int
+}
+
+// FailNextWith queues one error answer for the next token request.
+func (s *Server) FailNextWith(f Failure) {
 	s.mu.Lock()
-	s.fail = append(s.fail, errCode)
+	s.fail = append(s.fail, f)
 	s.mu.Unlock()
 }
 
@@ -213,9 +228,9 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(s.fail) > 0 {
-		code := s.fail[0]
+		f := s.fail[0]
 		s.fail = s.fail[1:]
-		tokenError(w, http.StatusBadRequest, code)
+		writeFailure(w, f)
 		return
 	}
 
@@ -306,12 +321,23 @@ func pkceOK(challenge, verifier string) bool {
 }
 
 func tokenError(w http.ResponseWriter, status int, code string) {
+	writeFailure(w, Failure{Status: status, Code: code})
+}
+
+func writeFailure(w http.ResponseWriter, f Failure) {
+	if f.Status == 0 {
+		f.Status = http.StatusBadRequest
+	}
+	body := map[string]any{"error": f.Code, "error_description": "oauthtest: " + f.Code}
+	if f.AADSTS != 0 {
+		body["error_description"] = "AADSTS" + strconv.Itoa(f.AADSTS) + ": oauthtest: " + f.Code +
+			"\r\nTrace ID: 00000000-0000-0000-0000-000000000000\r\nTimestamp: 2026-01-01 00:00:00Z"
+		body["error_codes"] = []int{f.AADSTS}
+		body["trace_id"] = "00000000-0000-0000-0000-000000000000"
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"error":             code,
-		"error_description": "oauthtest: " + code,
-	})
+	w.WriteHeader(f.Status)
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func randHex(n int) string {

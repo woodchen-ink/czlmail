@@ -21,6 +21,7 @@ import (
 
 	// Upstream kinds register themselves.
 	_ "github.com/woodchen-ink/czlmail/gateway/service/upstream/imap"
+	_ "github.com/woodchen-ink/czlmail/gateway/service/upstream/microsoft"
 )
 
 // Changelog retention (the JMAP state window).

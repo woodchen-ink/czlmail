@@ -118,6 +118,12 @@ func imapKind(se *imapc.StatusError) ErrorKind {
 	if containsAny(se.Text, "throttl", "too many simultaneous", "rate limit", "bandwidth limit") {
 		return KindThrottled
 	}
+	// Exchange Online accepts the token, then answers every command with this when
+	// IMAP is off for the mailbox or the token belongs to another account: only the
+	// user or the tenant admin can fix it, so it is not retried.
+	if containsAny(se.Text, "authenticated but not connected") {
+		return KindAuth
+	}
 	if se.Status == "BYE" {
 		return KindUnreachable
 	}
