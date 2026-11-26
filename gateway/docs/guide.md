@@ -333,18 +333,19 @@ Microsoft 365 can turn IMAP and authenticated SMTP off per mailbox, and new tena
 | 40313 `mailbox_not_connected` | IMAP is off for this mailbox, or the signed-in account does not own it | Microsoft 365 admin center → **Users** → **Active users** → the user → **Mail** → **Manage email apps**, tick **IMAP**; or `Set-CASMailbox -Identity me@contoso.com -ImapEnabled $true` |
 | 40312 `smtp_auth_disabled` | SMTP AUTH is off; reading mail still works | Tick **Authenticated SMTP** in the same place; or `Set-CASMailbox -Identity me@contoso.com -SmtpClientAuthenticationDisabled $false` (one mailbox) / `Set-TransportConfig -SmtpClientAuthenticationDisabled $false` (whole tenant) |
 
-**Personal accounts (Outlook.com, Hotmail, Live) with 40313.** Exchange accepted the authorization but answers *User is authenticated but not connected*. The mailbox shows `unreachable` with code 40313 and retries; after 8 failed sign-ins in a row (about 10 minutes) it stops at `authRequired`. Usually one of:
+**Personal accounts (Outlook.com, Hotmail, Live) with 40313.** Exchange accepted the authorization but answers *User is authenticated but not connected*. The mailbox shows `unreachable` with code 40313 and retries; after 8 failed sign-ins in a row (about 10 minutes) it stops at `authRequired`.
+
+The most common cause is the gateway's address: Microsoft may refuse IMAP sign-ins to some personal accounts when they come from a data-centre or VPS address, while the same account keeps working in Thunderbird or Outlook at home. If the account works in another client:
+
+1. Give this mailbox its own SOCKS5 proxy with another exit, for example one on a home or office connection: the mailbox's menu → **Proxy settings** → **Custom** (see [SOCKS5 proxy](#socks5-proxy)). Sign-in, token refreshes, IMAP and SMTP all go through it. A proxy on a private address needs **Allow private network addresses** first.
+2. Save; the mailbox reconnects by itself (or **Re-authorize** if it already stopped at `authRequired`).
+
+Less often the cause is the account itself:
 
 - POP and IMAP are off for the account (Outlook.com may have them off by default): at outlook.live.com → **Settings** → **Mail** → **Forwarding and IMAP**, turn on **Let devices and apps use IMAP**, then **Re-authorize**.
-- Microsoft wants the account verified first: sign in at <https://outlook.live.com> in a private window and finish whatever it asks (phone, CAPTCHA, new terms), then **Re-authorize**.
-- Another Microsoft account was picked on the sign-in page: **Re-authorize** in a private window and sign in as the mailbox itself. The gateway refuses a re-authorization by a different account (40935).
+- Microsoft wants the account verified: sign in at <https://outlook.live.com> in a private window and finish whatever it asks (phone, CAPTCHA, new terms); at <https://account.microsoft.com> → **Security** → **Sign-in activity**, confirm blocked sign-ins as your own.
+- Another Microsoft account was picked on the sign-in page: **Re-authorize** in a private window and sign in as the mailbox itself. The gateway refuses a re-authorization by a different account (40935); the log lines `oauth account` (`token_account`) and `microsoft imap not connected` (`user`) must name the same address.
 - Right after a new account's first authorization Exchange can take a few minutes; the gateway keeps retrying by itself.
-
-If it persists after all of the above, find out whether the account or the gateway is the problem:
-
-1. Check that the authorization went to the right account: the gateway log line `oauth account` shows the grant's account (`token_account`), and `microsoft imap not connected` shows the IMAP user it signed in as. They must name the same address.
-2. Try the same account in another IMAP client that signs in with OAuth, for example Thunderbird (add the account, choose OAuth2; it uses its own Microsoft app). If that client gets the same refusal, Microsoft is blocking IMAP for the account itself, and nothing in the gateway can change it.
-3. For an account Microsoft blocks: at <https://account.microsoft.com> → **Security** → **Sign-in activity**, confirm any blocked or unusual sign-ins as your own, and complete any verification it asks for. Newly created accounts and accounts flagged for unusual activity can be kept off IMAP and SMTP for a while even though Outlook on the web works, and a changed IMAP switch can take a while to apply. Pause the mailbox, wait, and **Re-authorize** later.
 
 ### 6.6 How Microsoft mailboxes differ
 

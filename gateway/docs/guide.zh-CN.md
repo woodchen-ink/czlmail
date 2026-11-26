@@ -333,18 +333,19 @@ Microsoft 365 可以按邮箱关闭 IMAP 和 SMTP 认证, 新租户默认关闭 
 | 40313 `mailbox_not_connected` | 这个邮箱的 IMAP 被关了, 或登录的账号不是邮箱的所有者 | Microsoft 365 管理中心 →「用户」→「活跃用户」→ 该用户 →「邮件」→「管理电子邮件应用」, 勾选 **IMAP**; 或 `Set-CASMailbox -Identity me@contoso.com -ImapEnabled $true` |
 | 40312 `smtp_auth_disabled` | SMTP 认证被关了, 收信不受影响 | 同一处勾选**经过身份验证的 SMTP**; 或 `Set-CASMailbox -Identity me@contoso.com -SmtpClientAuthenticationDisabled $false` (单个邮箱) / `Set-TransportConfig -SmtpClientAuthenticationDisabled $false` (整个租户) |
 
-**个人账号 (Outlook.com、Hotmail、Live) 出现 40313。** Exchange 接受了授权, 却回答 *User is authenticated but not connected*。邮箱显示「连不上」(码 40313) 并自动重试; 连续 8 次登录失败 (约 10 分钟) 后停在「需要重新授权」。通常是下面之一:
+**个人账号 (Outlook.com、Hotmail、Live) 出现 40313。** Exchange 接受了授权, 却回答 *User is authenticated but not connected*。邮箱显示「连不上」(码 40313) 并自动重试; 连续 8 次登录失败 (约 10 分钟) 后停在「需要重新授权」。
+
+最常见的原因是网关的出口地址: Microsoft 可能拒绝来自机房 / VPS 地址的个人账号 IMAP 登录, 而同一账号在家里的 Thunderbird 或 Outlook 里照常能用。账号在其他客户端正常时:
+
+1. 给这个邮箱单独配一个换出口的 SOCKS5 代理, 例如家里或办公室网络上的代理: 邮箱菜单 →「代理设置」→「自定义」(见 [SOCKS5 代理](#socks5-代理))。授权、续期、IMAP 与 SMTP 都会走它。代理在内网地址时要先打开「允许连接内网地址」。
+2. 保存后邮箱会自动重连 (已经停在「需要重新授权」的, 再点**重新授权**)。
+
+账号本身的原因较少见:
 
 - 账号的 POP 和 IMAP 被关了 (Outlook.com 可能默认关闭): 在 outlook.live.com → **设置** → **邮件** → **转发和 IMAP** 打开「允许设备和应用使用 IMAP」, 再点**重新授权**。
-- Microsoft 要求先验证账号: 在无痕窗口登录 <https://outlook.live.com>, 按提示完成验证 (手机、人机验证、新条款), 再点**重新授权**。
-- 授权页上选了另一个 Microsoft 账号: 在无痕窗口点**重新授权**, 用这个邮箱本人登录。网关会拒绝换成别的账号的重新授权 (40935)。
+- Microsoft 要求验证账号: 在无痕窗口登录 <https://outlook.live.com>, 按提示完成验证 (手机、人机验证、新条款); 在 <https://account.microsoft.com> →「安全」→「登录活动」里把被拦截的登录确认为本人。
+- 授权页上选了另一个 Microsoft 账号: 在无痕窗口点**重新授权**, 用这个邮箱本人登录。网关会拒绝换成别的账号的重新授权 (40935); 日志 `oauth account` 的 `token_account` 与 `microsoft imap not connected` 的 `user` 应是同一个地址。
 - 新账号刚授权后 Exchange 可能要几分钟才开通, 网关会自己重试。
-
-以上都做了仍然失败, 先判断是账号的问题还是网关的问题:
-
-1. 确认授权的是这个账号: 网关日志 `oauth account` 里的 `token_account` 是授权所属账号, `microsoft imap not connected` 里的 `user` 是 IMAP 登录用的地址, 两者应是同一个地址。
-2. 用另一个支持 OAuth 登录的 IMAP 客户端试同一个账号, 例如 Thunderbird (添加账号时选 OAuth2, 它用自己的 Microsoft 应用)。如果它也被同样拒绝, 就是 Microsoft 在账号层面禁止了 IMAP, 网关这边改不了。
-3. 账号被 Microsoft 限制时: 在 <https://account.microsoft.com> →「安全」→「登录活动」里把被拦截或异常的登录确认为本人, 并完成它要求的验证。新注册的账号、被判定有异常活动的账号, 可能一段时间内不能用 IMAP 和 SMTP, 即使网页版 Outlook 正常; 刚改过的 IMAP 开关也可能要过一阵才生效。可以先暂停这个邮箱, 过段时间再点**重新授权**。
 
 ### 6.6 Microsoft 邮箱的差异
 
