@@ -46,7 +46,10 @@ func (g *Gmail) SendMessage(ctx context.Context, raw []byte, opts upstream.SendO
 		}
 		var draft *gmEmail
 		if opts.DraftEmailID != "" {
-			if list, err := g.loadEmails(mb, []string{opts.DraftEmailID}); err == nil {
+			// Only a draft is deleted: the caller may submit any email.
+			var row model.IndexEmail
+			isDraft := g.idx.DB().Select("draft").Where("id = ?", opts.DraftEmailID).First(&row).Error == nil && row.Draft
+			if list, err := g.loadEmails(mb, []string{opts.DraftEmailID}); err == nil && isDraft {
 				draft = list[0]
 			}
 		}

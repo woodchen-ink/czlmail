@@ -224,7 +224,7 @@ func (u *Upstream) learnCaps(ctx context.Context, c *imapc.Client) {
 		uidplus:    c.Has("UIDPLUS"),
 		specialUse: c.Has("SPECIAL-USE"),
 	}
-	if !sc.objectID {
+	if !sc.objectID && u.gm == nil { // Gmail's stable id is X-GM-MSGID
 		sc.xguid = probeXGUID(ctx, c)
 	}
 	u.mu.Lock()

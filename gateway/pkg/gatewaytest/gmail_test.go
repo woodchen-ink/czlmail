@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -248,10 +249,10 @@ func TestGmailOAuthErrors(t *testing.T) {
 	e := newGmailEnv(t)
 	admin := e.gw.UserAdmin(t, e.cred)
 	// No app yet.
-	if code, _ := admin.Call(t, "POST", "/api/admin/upstreams/oauth/google/start", map[string]any{}, nil); code != 40931 {
+	if code, _ := admin.Call(t, "POST", "/api/admin/upstreams/oauth/google/start", map[string]any{}, nil); code != 40934 {
 		t.Fatalf("start without an app: %d", code)
 	}
-	if code, _ := admin.Call(t, "POST", "/api/admin/upstreams/oauth/nope/start", map[string]any{}, nil); code != 40431 {
+	if code, _ := admin.Call(t, "POST", "/api/admin/upstreams/oauth/nope/start", map[string]any{}, nil); code != 40432 {
 		t.Fatalf("unknown provider: %d", code)
 	}
 	// Only site admins see the app settings.
@@ -651,5 +652,106 @@ func TestGmailJMAP(t *testing.T) {
 	gm := e.mail.ByGmMsgID(gmID(t, e.emailBySubject(t, acct, "quarterly report").UpstreamID))
 	if l := e.mail.LabelsOf(gm); slices.Contains(l, gmailtest.LabelInbox) || !slices.Contains(l, "Work Projects") {
 		t.Fatalf("Gmail labels %v", l)
+	}
+}
+
+// jmapCalls posts several method calls (mail + submission) and returns the
+// responses as [name, args].
+func (e *gmailEnv) jmapCalls(t *testing.T, calls ...[]any) [][]any {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{
+		"using":       []string{"urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", "urn:ietf:params:jmap:submission"},
+		"methodCalls": calls,
+	})
+	req, _ := http.NewRequest("POST", e.gw.URL+"/jmap/api", bytes.NewReader(body))
+	req.SetBasicAuth(e.cred.Email, e.cred.AppPassword)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		MethodResponses [][]any `json:"methodResponses"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out.MethodResponses
+}
+
+// czlmail's send flow on Gmail: a draft created over JMAP is submitted with
+// onSuccessUpdateEmail (Drafts → Sent); the Gmail API sends it, the draft's id
+// stays, and the identities come from sendAs.
+func TestGmailJMAPSend(t *testing.T) {
+	e := newGmailEnv(t)
+	acct := string(e.gw.AddGmailUpstream(t, e.cred, e.mail, e.api, e.provider))
+	e.api.SetSendAs(
+		gmailtest.SendAs{SendAsEmail: gmailAccount, DisplayName: "Me", IsPrimary: true, IsDefault: true},
+		gmailtest.SendAs{SendAsEmail: "alias@example.test", DisplayName: "Alias", VerificationStatus: "accepted"},
+	)
+	mbs := e.mailboxes(t, acct)
+	drafts, sent := mbs[`\Draft`].ID, mbs[`\Sent`].ID
+
+	r := e.jmapCalls(t, []any{"Identity/get", map[string]any{"accountId": acct}, "0"})
+	var identityID string
+	var emails []string
+	for _, x := range r[0][1].(map[string]any)["list"].([]any) {
+		m := x.(map[string]any)
+		emails = append(emails, m["email"].(string))
+		if m["email"] == gmailAccount {
+			identityID = m["id"].(string)
+			if m["mayDelete"] != false {
+				t.Fatalf("Gmail identity deletable: %v", m)
+			}
+		}
+	}
+	slices.Sort(emails)
+	if identityID == "" || !slices.Equal(emails, []string{"alias@example.test", gmailAccount}) {
+		t.Fatalf("identities %v", r[0])
+	}
+
+	r = e.jmapCalls(t, []any{"Email/set", map[string]any{"accountId": acct, "create": map[string]any{"d": map[string]any{
+		"mailboxIds": map[string]bool{drafts: true}, "keywords": map[string]bool{"$draft": true, "$seen": true},
+		"from": []map[string]string{{"email": gmailAccount}}, "to": []map[string]string{{"email": "ann@example.test"}},
+		"subject": "hello from jmap", "textBody": []map[string]string{{"partId": "1", "type": "text/plain"}},
+		"bodyValues": map[string]any{"1": map[string]string{"value": "Hi Ann"}},
+	}}}, "0"})
+	created, _ := r[0][1].(map[string]any)["created"].(map[string]any)
+	if created["d"] == nil {
+		t.Fatalf("draft not created: %v", r[0])
+	}
+	draftID := created["d"].(map[string]any)["id"].(string)
+
+	r = e.jmapCalls(t, []any{"EmailSubmission/set", map[string]any{
+		"accountId": acct,
+		"create":    map[string]any{"s": map[string]any{"identityId": identityID, "emailId": draftID}},
+		"onSuccessUpdateEmail": map[string]any{"#s": map[string]any{
+			"keywords/$draft": nil, "mailboxIds/" + drafts: nil, "mailboxIds/" + sent: true,
+		}},
+	}, "0"})
+	if c, _ := r[0][1].(map[string]any)["created"].(map[string]any); c["s"] == nil {
+		t.Fatalf("submission: %v", r)
+	}
+	if got := e.api.SentMessages(); len(got) != 1 || !bytes.Contains(got[0].Raw, []byte("hello from jmap")) {
+		t.Fatalf("Gmail API got %d messages", len(got))
+	}
+	r = e.jmapCalls(t, []any{"Email/get", map[string]any{"accountId": acct, "ids": []string{draftID}, "properties": []string{"mailboxIds", "keywords"}}, "0"})
+	list := r[0][1].(map[string]any)["list"].([]any)
+	if len(list) != 1 {
+		t.Fatalf("sent email under the draft's id: %v", r[0])
+	}
+	got := list[0].(map[string]any)
+	if mb := got["mailboxIds"].(map[string]any); len(mb) != 1 || mb[sent] != true {
+		t.Fatalf("mailboxIds %v, want Sent only", mb)
+	}
+	if kw := got["keywords"].(map[string]any); kw["$draft"] != nil {
+		t.Fatalf("keywords %v", kw)
+	}
+	e.sync(t, acct)
+	var n int64
+	e.up(t, acct).Index().DB().Model(&model.IndexEmail{}).Where("subject = ?", "hello from jmap").Count(&n)
+	if n != 1 {
+		t.Fatalf("%d emails for the sent message", n)
 	}
 }
