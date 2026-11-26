@@ -358,3 +358,42 @@ func TestMicrosoftExternalAddressPending(t *testing.T) {
 		t.Errorf("identities %v", ids)
 	}
 }
+
+// Two Microsoft mailboxes of one user, added one after the other in the same
+// browser session: each signs in to IMAP with its own grant. The fake IMAP
+// servers accept a token only for their own account, so a token used for the
+// wrong mailbox fails the sign-in.
+func TestMicrosoftTwoMailboxesOwnTokens(t *testing.T) {
+	f := newMicrosoftFixture(t)
+	f.idp.TenantID = "9188040d-6c67-4c5b-b112-36a304b66dad" // personal accounts
+	mailA := gmailtest.New(t, gmailtest.Options{Account: "first@outlook.test", Tokens: f.idp})
+	mailB := gmailtest.New(t, gmailtest.Options{Account: "second@outlook.test", Tokens: f.idp})
+	cred := f.gw.NewUser(t)
+	idA := f.add(t, cred, mailA)
+	idB := f.add(t, cred, mailB)
+	if idA == idB {
+		t.Fatal("second account renewed the first one")
+	}
+
+	// Every reconnect refreshes (ExpiresIn is below the refresh margin) and
+	// signs in again; both stay ok, many times over.
+	for range 3 {
+		mailA.DropConnections()
+		mailB.DropConnections()
+		time.Sleep(300 * time.Millisecond)
+		f.gw.WaitUpstream(t, cred, idA, "ok", 30*time.Second)
+		f.gw.WaitUpstream(t, cred, idB, "ok", 30*time.Second)
+	}
+	for _, id := range []string{idA, idB} {
+		var row struct {
+			Email string `json:"email"`
+			SMTP  struct {
+				Host string `json:"host"`
+			} `json:"smtp"`
+		}
+		f.gw.UserAdmin(t, cred).Do(t, "GET", "/api/admin/upstreams/"+id, nil, &row)
+		if row.SMTP.Host != "127.0.0.1" {
+			t.Errorf("%s: test SMTP server replaced by %q", row.Email, row.SMTP.Host)
+		}
+	}
+}

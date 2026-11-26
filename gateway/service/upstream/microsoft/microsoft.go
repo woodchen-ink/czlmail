@@ -27,6 +27,10 @@ const (
 	IMAPPort = 993
 	SMTPHost = "smtp.office365.com"
 	SMTPPort = 587
+	// SMTPHostPersonal is Outlook.com's submission server for personal
+	// Microsoft accounts (same port and STARTTLS); work and school accounts use
+	// SMTPHost.
+	SMTPHostPersonal = "smtp-mail.outlook.com"
 )
 
 func init() {

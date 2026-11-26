@@ -129,7 +129,7 @@ func (o *OAuth) accessTokenFunc(accountID string, dialer netx.Dialer) func(ctx c
 		if e.tok.AccessToken != "" && o.now().Add(oauthRefreshEarly).Before(e.tok.Expiry) {
 			return e.tok.AccessToken, nil
 		}
-		tok, err := o.refresh(ctx, accountID, e.tok.RefreshToken, dialer)
+		tok, err := o.refresh(ctx, accountID, e.tok, dialer)
 		if err != nil {
 			return "", err
 		}
@@ -151,7 +151,8 @@ func (o *OAuth) tokenRejected(accountID string) func(token string) {
 	}
 }
 
-func (o *OAuth) refresh(ctx context.Context, accountID, refreshToken string, dialer netx.Dialer) (*oauth.Token, error) {
+func (o *OAuth) refresh(ctx context.Context, accountID string, old *oauth.Token, dialer netx.Dialer) (*oauth.Token, error) {
+	refreshToken := old.RefreshToken
 	var row model.Upstream
 	if err := o.db.Where("public_id = ?", accountID).First(&row).Error; err != nil {
 		return nil, &upstream.Error{Kind: upstream.KindUnreachable, Op: "oauth refresh", Err: err}
@@ -177,6 +178,11 @@ func (o *OAuth) refresh(ctx context.Context, accountID, refreshToken string, dia
 		o.log.Warn("oauth refresh", "account", accountID, "err", err)
 		return nil, &upstream.Error{Kind: kind, Op: "oauth refresh", Err: err}
 	}
+	tok.Account = old.Account
+	if a := tok.AccountFromIDToken(); a != nil {
+		tok.Account = a
+	}
+	o.log.Info("oauth refreshed", "account", accountID, "imap_user", row.IMAPUsername, "token_account", tok.Account.String())
 	sealed, err := o.sealToken(accountID, tok)
 	if err != nil {
 		return nil, err
@@ -219,4 +225,16 @@ func (o *OAuth) revoke(row model.Upstream) {
 			o.log.Warn("oauth revoke", "account", row.PublicID, "err", err)
 		}
 	}()
+}
+
+// logStart records which account an OAuth upstream's stored grant belongs to
+// next to the name it signs in with, once per start.
+func (o *OAuth) logStart(row *model.Upstream) {
+	tok, err := o.openToken(row.PublicID, row.OAuthTokenSealed)
+	if err != nil {
+		o.log.Warn("oauth upstream start", "account", row.PublicID, "imap_user", row.IMAPUsername, "err", err)
+		return
+	}
+	o.log.Info("oauth upstream start", "account", row.PublicID, "kind", row.Kind, "email", row.Email,
+		"imap_user", row.IMAPUsername, "smtp_user", row.SMTPUsername, "token_account", tok.Account.String())
 }

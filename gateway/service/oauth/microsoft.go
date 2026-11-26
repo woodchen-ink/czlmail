@@ -32,6 +32,7 @@ func init() {
 		AuthParams: map[string]string{"prompt": "select_account"},
 		IMAP:       upstream.Endpoint{Host: microsoft.IMAPHost, Port: microsoft.IMAPPort, TLS: imapc.TLSImplicit},
 		SMTP:       upstream.Endpoint{Host: microsoft.SMTPHost, Port: microsoft.SMTPPort, TLS: imapc.TLSStartTLS},
+		Servers:    microsoftServers,
 		// Exchange files every message submitted over SMTP in Sent Items.
 		SentCopy:   upstream.SentCopyServer,
 		Email:      microsoftEmail,
@@ -82,4 +83,16 @@ func microsoftTenant(p *Provider, tenant string) *Provider {
 	}
 	p.AuthURL, p.TokenURL = microsoft.Endpoints(tenant)
 	return p
+}
+
+// microsoftServers sends personal accounts (Outlook.com, Hotmail, Live) through
+// smtp-mail.outlook.com, Microsoft's documented server for them; work and
+// school accounts keep smtp.office365.com. IMAP is outlook.office365.com for
+// both. Servers set by tests stay as they are.
+func microsoftServers(p *Provider, tok *Token) (upstream.Endpoint, upstream.Endpoint) {
+	imapEP, smtpEP := p.IMAP, p.SMTP
+	if a := tok.AccountFromIDToken(); a != nil && a.TID == microsoft.PersonalTenant && smtpEP.Host == microsoft.SMTPHost {
+		smtpEP.Host = microsoft.SMTPHostPersonal
+	}
+	return imapEP, smtpEP
 }

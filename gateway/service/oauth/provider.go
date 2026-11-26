@@ -40,6 +40,10 @@ type Provider struct {
 	// (upstream.SentCopyServer when the provider files sent mail itself); ""
 	// leaves the default, auto. Re-authorisation keeps what the upstream has.
 	SentCopy string
+	// Servers, when set, picks the servers of a new upstream by its grant
+	// (Microsoft: Outlook.com accounts send through smtp-mail.outlook.com);
+	// the IMAP and SMTP fields above are the default.
+	Servers func(p *Provider, tok *Token) (imap, smtp upstream.Endpoint)
 	// APIBase is the provider's REST API root (https://gmail.googleapis.com),
 	// handed to the upstream as Config.APIBase.
 	APIBase string
