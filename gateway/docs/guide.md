@@ -297,7 +297,7 @@ You need a Microsoft Entra directory: every Microsoft 365 or Azure account has o
 4. **Redirect URI**: platform **Web**, `https://mail-gw.example.com/oauth/microsoft/callback`. It must match `GATEWAY_BASE_URL` exactly, scheme and port included. Click **Register**.
 5. On the app's **Overview**, copy the **Application (client) ID**.
 6. **Certificates & secrets** → **Client secrets** → **New client secret**. Pick an expiry (at most 24 months), copy the secret's **Value** at once (it is shown only once; the *Secret ID* is not the secret) and note the expiry date.
-7. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**: `openid`, `email`, `offline_access` (under *OpenId permissions*), `IMAP.AccessAsUser.All` and `SMTP.Send`. `User.Read` can stay or go; nothing else is needed. If only your own organisation uses the gateway, **Grant admin consent for <organisation>** here spares its users the consent screen.
+7. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**: `openid`, `email`, `profile`, `offline_access` (under *OpenId permissions*), `IMAP.AccessAsUser.All` and `SMTP.Send`. `User.Read` can stay or go; nothing else is needed. If only your own organisation uses the gateway, **Grant admin consent for <organisation>** here spares its users the consent screen.
 
 Leave everything else in the registration alone: no implicit grant, no mobile or SPA platform, no certificates.
 
@@ -333,11 +333,18 @@ Microsoft 365 can turn IMAP and authenticated SMTP off per mailbox, and new tena
 | 40313 `mailbox_not_connected` | IMAP is off for this mailbox, or the signed-in account does not own it | Microsoft 365 admin center → **Users** → **Active users** → the user → **Mail** → **Manage email apps**, tick **IMAP**; or `Set-CASMailbox -Identity me@contoso.com -ImapEnabled $true` |
 | 40312 `smtp_auth_disabled` | SMTP AUTH is off; reading mail still works | Tick **Authenticated SMTP** in the same place; or `Set-CASMailbox -Identity me@contoso.com -SmtpClientAuthenticationDisabled $false` (one mailbox) / `Set-TransportConfig -SmtpClientAuthenticationDisabled $false` (whole tenant) |
 
-**Personal accounts (Outlook.com, Hotmail, Live) with 40313.** Exchange accepted the authorization but answers *User is authenticated but not connected*. The mailbox shows `unreachable` with code 40313 and retries; after 8 failed sign-ins in a row (about 10 minutes) it stops at `authRequired`. Usually one of:
+**Personal accounts (Outlook.com, Hotmail, Live) with 40313.** Exchange accepted the authorization but answers *User is authenticated but not connected*. The mailbox shows `unreachable` with code 40313 and retries; after 8 failed sign-ins in a row (about 10 minutes) it stops at `authRequired`.
+
+The most common cause is the gateway's address: Microsoft may refuse IMAP sign-ins to some personal accounts when they come from a data-centre or VPS address, while the same account keeps working in Thunderbird or Outlook at home. If the account works in another client:
+
+1. Give this mailbox its own SOCKS5 proxy with another exit, for example one on a home or office connection: the mailbox's menu → **Proxy settings** → **Custom** (see [SOCKS5 proxy](#socks5-proxy)). Sign-in, token refreshes, IMAP and SMTP all go through it. A proxy on a private address needs **Allow private network addresses** first.
+2. Save; the mailbox reconnects by itself (or **Re-authorize** if it already stopped at `authRequired`).
+
+Less often the cause is the account itself:
 
 - POP and IMAP are off for the account (Outlook.com may have them off by default): at outlook.live.com → **Settings** → **Mail** → **Forwarding and IMAP**, turn on **Let devices and apps use IMAP**, then **Re-authorize**.
-- Microsoft wants the account verified first: sign in at <https://outlook.live.com> in a private window and finish whatever it asks (phone, CAPTCHA, new terms), then **Re-authorize**.
-- Another Microsoft account was picked on the sign-in page: **Re-authorize** in a private window and sign in as the mailbox itself. The gateway refuses a re-authorization by a different account (40935).
+- Microsoft wants the account verified: sign in at <https://outlook.live.com> in a private window and finish whatever it asks (phone, CAPTCHA, new terms); at <https://account.microsoft.com> → **Security** → **Sign-in activity**, confirm blocked sign-ins as your own.
+- Another Microsoft account was picked on the sign-in page: **Re-authorize** in a private window and sign in as the mailbox itself. The gateway refuses a re-authorization by a different account (40935); the log lines `oauth account` (`token_account`) and `microsoft imap not connected` (`user`) must name the same address.
 - Right after a new account's first authorization Exchange can take a few minutes; the gateway keeps retrying by itself.
 
 ### 6.6 How Microsoft mailboxes differ

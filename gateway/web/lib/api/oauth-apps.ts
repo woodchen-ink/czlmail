@@ -51,6 +51,7 @@ export const OAUTH_DEFAULTS: Record<
       "offline_access",
       "openid",
       "email",
+      "profile",
       "https://outlook.office.com/IMAP.AccessAsUser.All",
       "https://outlook.office.com/SMTP.Send",
     ],

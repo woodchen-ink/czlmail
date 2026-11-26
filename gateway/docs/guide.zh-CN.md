@@ -297,7 +297,7 @@ Gmail 用 OAuth 授权: 收信走 IMAP, 发信走 Gmail API, 不保存 Gmail 密
 4. **重定向 URI**: 平台选 **Web**, 填 `https://mail-gw.example.com/oauth/microsoft/callback`, 必须与 `GATEWAY_BASE_URL` 完全一致 (包括协议和端口)。点「注册」。
 5. 在应用的「概述」页复制**应用程序 (客户端) ID**。
 6. 「证书和密码」→「客户端密码」→「新建客户端密码」, 选一个有效期 (最长 24 个月), 立刻复制密码的**值** (只显示这一次; 「机密 ID」不是密码), 并记下到期日。
-7. 「API 权限」→「添加权限」→「Microsoft Graph」→「委托的权限」, 勾选 `openid`、`email`、`offline_access` (在「OpenId 权限」下)、`IMAP.AccessAsUser.All` 和 `SMTP.Send`。`User.Read` 可留可删, 其它不需要。如果只有你自己的组织使用网关, 在这里点「代表 <组织> 授予管理员同意」, 组织里的用户就不会再看到授权确认页。
+7. 「API 权限」→「添加权限」→「Microsoft Graph」→「委托的权限」, 勾选 `openid`、`email`、`profile`、`offline_access` (在「OpenId 权限」下)、`IMAP.AccessAsUser.All` 和 `SMTP.Send`。`User.Read` 可留可删, 其它不需要。如果只有你自己的组织使用网关, 在这里点「代表 <组织> 授予管理员同意」, 组织里的用户就不会再看到授权确认页。
 
 注册里其它设置都不用动: 不开隐式授权, 不加移动端 / SPA 平台, 不传证书。
 
@@ -333,11 +333,18 @@ Microsoft 365 可以按邮箱关闭 IMAP 和 SMTP 认证, 新租户默认关闭 
 | 40313 `mailbox_not_connected` | 这个邮箱的 IMAP 被关了, 或登录的账号不是邮箱的所有者 | Microsoft 365 管理中心 →「用户」→「活跃用户」→ 该用户 →「邮件」→「管理电子邮件应用」, 勾选 **IMAP**; 或 `Set-CASMailbox -Identity me@contoso.com -ImapEnabled $true` |
 | 40312 `smtp_auth_disabled` | SMTP 认证被关了, 收信不受影响 | 同一处勾选**经过身份验证的 SMTP**; 或 `Set-CASMailbox -Identity me@contoso.com -SmtpClientAuthenticationDisabled $false` (单个邮箱) / `Set-TransportConfig -SmtpClientAuthenticationDisabled $false` (整个租户) |
 
-**个人账号 (Outlook.com、Hotmail、Live) 出现 40313。** Exchange 接受了授权, 却回答 *User is authenticated but not connected*。邮箱显示「连不上」(码 40313) 并自动重试; 连续 8 次登录失败 (约 10 分钟) 后停在「需要重新授权」。通常是下面之一:
+**个人账号 (Outlook.com、Hotmail、Live) 出现 40313。** Exchange 接受了授权, 却回答 *User is authenticated but not connected*。邮箱显示「连不上」(码 40313) 并自动重试; 连续 8 次登录失败 (约 10 分钟) 后停在「需要重新授权」。
+
+最常见的原因是网关的出口地址: Microsoft 可能拒绝来自机房 / VPS 地址的个人账号 IMAP 登录, 而同一账号在家里的 Thunderbird 或 Outlook 里照常能用。账号在其他客户端正常时:
+
+1. 给这个邮箱单独配一个换出口的 SOCKS5 代理, 例如家里或办公室网络上的代理: 邮箱菜单 →「代理设置」→「自定义」(见 [SOCKS5 代理](#socks5-代理))。授权、续期、IMAP 与 SMTP 都会走它。代理在内网地址时要先打开「允许连接内网地址」。
+2. 保存后邮箱会自动重连 (已经停在「需要重新授权」的, 再点**重新授权**)。
+
+账号本身的原因较少见:
 
 - 账号的 POP 和 IMAP 被关了 (Outlook.com 可能默认关闭): 在 outlook.live.com → **设置** → **邮件** → **转发和 IMAP** 打开「允许设备和应用使用 IMAP」, 再点**重新授权**。
-- Microsoft 要求先验证账号: 在无痕窗口登录 <https://outlook.live.com>, 按提示完成验证 (手机、人机验证、新条款), 再点**重新授权**。
-- 授权页上选了另一个 Microsoft 账号: 在无痕窗口点**重新授权**, 用这个邮箱本人登录。网关会拒绝换成别的账号的重新授权 (40935)。
+- Microsoft 要求验证账号: 在无痕窗口登录 <https://outlook.live.com>, 按提示完成验证 (手机、人机验证、新条款); 在 <https://account.microsoft.com> →「安全」→「登录活动」里把被拦截的登录确认为本人。
+- 授权页上选了另一个 Microsoft 账号: 在无痕窗口点**重新授权**, 用这个邮箱本人登录。网关会拒绝换成别的账号的重新授权 (40935); 日志 `oauth account` 的 `token_account` 与 `microsoft imap not connected` 的 `user` 应是同一个地址。
 - 新账号刚授权后 Exchange 可能要几分钟才开通, 网关会自己重试。
 
 ### 6.6 Microsoft 邮箱的差异

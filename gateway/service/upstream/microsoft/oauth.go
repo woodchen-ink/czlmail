@@ -32,12 +32,16 @@ var Scopes = []string{
 	"offline_access",
 	"openid",
 	"email",
+	// profile adds oid and preferred_username to the id_token (the account's
+	// stable id and sign-in name); without it a personal account's id_token
+	// has only email.
+	"profile",
 	"https://outlook.office.com/IMAP.AccessAsUser.All",
 	"https://outlook.office.com/SMTP.Send",
 }
 
-// resourceScopes need tenant consent; openid / email / offline_access do not.
-var resourceScopes = Scopes[3:]
+// resourceScopes need tenant consent; the OpenID ones do not.
+var resourceScopes = Scopes[4:]
 
 // AdminConsentLink is the URL a tenant admin opens to consent for the whole
 // organisation, for tenants where users may not consent to apps themselves
