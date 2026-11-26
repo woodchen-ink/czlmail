@@ -77,7 +77,7 @@ function dateTime(v: unknown) {
 }
 
 /**
- * 签名邮件在发件人头像下方的标记: 打开邮件时下载原文核对签名, 绿色有效, 黄色可疑, 红色被改动。
+ * 签名邮件在发件人邮箱地址后面的标记: 打开邮件时下载原文核对签名, 绿色有效, 黄色可疑, 红色被改动。
  * 点开显示签名者、颁发者与有效期。不是签名邮件或核对不了 (离线) 时不显示。
  */
 export function SignatureBadge({ accountId, email }: { accountId: string; email: EmailDetail }) {
@@ -105,8 +105,8 @@ export function SignatureBadge({ accountId, email }: { accountId: string; email:
 
   if (result === undefined) {
     return (
-      <span className={cn("inline-flex h-[22px] w-7 items-center justify-center rounded-full border", TONE_CLASS.neutral)} aria-label={t("正在核对数字签名")}>
-        <ShieldQuestion className="size-3.5 animate-pulse" />
+      <span className={cn("inline-flex h-[18px] w-6 shrink-0 items-center justify-center rounded-full border", TONE_CLASS.neutral)} aria-label={t("正在核对数字签名")}>
+        <ShieldQuestion className="size-3 animate-pulse" />
       </span>
     );
   }
@@ -123,10 +123,10 @@ export function SignatureBadge({ accountId, email }: { accountId: string; email:
           <PopoverTrigger asChild>
             <button
               type="button"
-              className={cn("inline-flex h-[22px] w-7 items-center justify-center rounded-full border", TONE_CLASS[tone])}
+              className={cn("inline-flex h-[18px] w-6 shrink-0 items-center justify-center rounded-full border", TONE_CLASS[tone])}
               aria-label={title}
             >
-              <Icon className="size-3.5" />
+              <Icon className="size-3" />
             </button>
           </PopoverTrigger>
         </TooltipTrigger>
