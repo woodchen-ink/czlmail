@@ -4,8 +4,9 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 )
 
-// Publish pushes new states of an account that a JMAP method changed (writes
-// outside the runner's sync rounds). Unknown or stopped accounts are ignored.
+// Publish pushes new states of types the gateway keeps outside the mail index
+// (EmailSubmission, Identity). Index commits push themselves through
+// mailindex.Store.OnCommit. Unknown or stopped accounts are ignored.
 func (m *UpstreamManager) Publish(accountID string, states map[string]string) {
 	if len(states) == 0 {
 		return
