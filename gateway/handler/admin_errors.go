@@ -7,6 +7,7 @@ import (
 
 	"github.com/woodchen-ink/go-web-utils/resputil"
 
+	"github.com/woodchen-ink/czlmail/gateway/cron"
 	"github.com/woodchen-ink/czlmail/gateway/middleware"
 	"github.com/woodchen-ink/czlmail/gateway/service"
 )
@@ -32,6 +33,8 @@ var adminErrors = []struct {
 	{service.ErrInvalidSetting, apiError{400, 40006, "invalid_setting"}},
 	{service.ErrWrongPassword, apiError{400, 40007, "wrong_password"}},
 	{service.ErrInvalidCursor, apiError{400, 40008, "invalid_cursor"}},
+	{service.ErrInvalidScope, apiError{400, 40009, "invalid_scope"}},
+	{service.ErrInvalidRange, apiError{400, 40010, "invalid_range"}},
 	{errInvalidHost, apiError{400, 40030, "invalid_host"}},
 	{errInvalidPort, apiError{400, 40031, "invalid_port"}},
 	{errInvalidTLSMode, apiError{400, 40032, "invalid_tls_mode"}},
@@ -48,9 +51,11 @@ var adminErrors = []struct {
 	{service.ErrRegistrationClosed, apiError{403, 40303, "registration_closed"}},
 	{service.ErrUserNotFound, apiError{404, 40401, "user_not_found"}},
 	{service.ErrAppPasswordNotFound, apiError{404, 40402, "app_password_not_found"}},
+	{cron.ErrUnknownTask, apiError{404, 40403, "task_not_found"}},
 	{service.ErrUpstreamNotFound, apiError{404, 40430, "upstream_not_found"}},
 	{service.ErrEmailTaken, apiError{409, 40900, "email_taken"}},
 	{service.ErrSetupCompleted, apiError{409, 40901, "setup_completed"}},
+	{cron.ErrTaskRunning, apiError{409, 40902, "task_running"}},
 	{service.ErrUpstreamKindReadOnly, apiError{409, 40930, "upstream_kind_managed"}},
 }
 

@@ -53,7 +53,7 @@ func printSetupLink(accounts *service.Accounts, baseURL string, log *slog.Logger
 	if err != nil || token == "" {
 		return err
 	}
-	link := baseURL + "/setup?token=" + url.QueryEscape(token)
+	link := baseURL + handler.AdminWebPrefix + "/setup/?token=" + url.QueryEscape(token)
 	log.Warn("no user yet: open the setup link to create the owner account (valid 30 minutes, once; restart for a new link)",
 		"setup_url", link, "expires_in", service.SetupTokenTTL.String())
 	return nil

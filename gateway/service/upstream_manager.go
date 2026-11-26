@@ -56,6 +56,23 @@ type UpstreamManager struct {
 	clients  map[string]int      // user public id → push connections
 	locks    map[string]*sync.Mutex
 	stopped  bool
+	metrics  UpstreamMetrics
+}
+
+// UpstreamMetrics records upstream activity for the admin overview; it is
+// service/metrics.Recorder.
+type UpstreamMetrics interface {
+	upstream.Metrics
+	UpstreamRequest(accountID string)
+	Forget(accountID string) error
+}
+
+// SetMetrics records requests, throttling and push latency of the upstreams it
+// starts from now on; call it before Run.
+func (m *UpstreamManager) SetMetrics(rec UpstreamMetrics) {
+	m.mu.Lock()
+	m.metrics = rec
+	m.mu.Unlock()
 }
 
 type managed struct {
@@ -169,6 +186,7 @@ func (m *UpstreamManager) start(row *model.Upstream) {
 	}
 	parent := m.ctx
 	clients := m.clients[userID]
+	rec := m.metrics
 	m.mu.Unlock()
 
 	cfg, err := m.Config(row)
@@ -176,6 +194,10 @@ func (m *UpstreamManager) start(row *model.Upstream) {
 		m.log.Error("upstream config", "account", row.PublicID, "err", err)
 		m.record(row.PublicID, userID, upstream.Status{State: jmapserver.UpstreamAuthRequired, Code: jmapserver.CodeUpstreamAuthRequired, Since: time.Now().UTC(), Error: err.Error()})
 		return
+	}
+	if rec != nil {
+		id := row.PublicID
+		cfg.OnRequest = func() { rec.UpstreamRequest(id) }
 	}
 	idx, err := mailindex.Open(m.dataDir, row.PublicID)
 	if err != nil {
@@ -192,6 +214,9 @@ func (m *UpstreamManager) start(row *model.Upstream) {
 	r := &managed{row: *row, userID: userID, up: up, idx: idx, cancel: cancel, done: make(chan struct{})}
 	r.runner = upstream.NewRunner(row.PublicID, up, &runnerEvents{m: m, userID: userID}, m.log, m.timing)
 	r.runner.SetClients(clients)
+	if rec != nil {
+		r.runner.SetMetrics(rec)
+	}
 	m.mu.Lock()
 	if m.stopped || m.running[row.PublicID] != nil {
 		m.mu.Unlock()
@@ -248,6 +273,7 @@ func (m *UpstreamManager) Remove(row *model.Upstream) {
 	if err := mailindex.Remove(m.dataDir, row.PublicID); err != nil {
 		m.log.Error("remove upstream index", "account", row.PublicID, "err", err)
 	}
+	m.forgetMetrics(row.PublicID)
 	if userID, err := m.userPublicID(row.UserID); err == nil {
 		m.endStreams(userID)
 	}
@@ -268,6 +294,7 @@ func (m *UpstreamManager) RemoveUser(userPublicID string) {
 		l.Lock()
 		m.stopOne(id)
 		_ = mailindex.Remove(m.dataDir, id)
+		m.forgetMetrics(id)
 		l.Unlock()
 	}
 	var rows []model.Upstream
@@ -277,6 +304,17 @@ func (m *UpstreamManager) RemoveUser(userPublicID string) {
 			known[r.PublicID] = true
 		}
 		m.removeStrayFiles(known)
+	}
+}
+
+func (m *UpstreamManager) forgetMetrics(id string) {
+	m.mu.Lock()
+	rec := m.metrics
+	m.mu.Unlock()
+	if rec != nil {
+		if err := rec.Forget(id); err != nil {
+			m.log.Error("forget upstream metrics", "account", id, "err", err)
+		}
 	}
 }
 

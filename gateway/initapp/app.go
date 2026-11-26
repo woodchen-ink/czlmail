@@ -15,6 +15,7 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 	"github.com/woodchen-ink/czlmail/gateway/router"
 	"github.com/woodchen-ink/czlmail/gateway/service"
+	"github.com/woodchen-ink/czlmail/gateway/service/metrics"
 	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 )
 
@@ -30,6 +31,13 @@ type App struct {
 	// Upstreams manages users' upstream mailboxes; Manager runs them.
 	Upstreams *service.Upstreams
 	Manager   *service.UpstreamManager
+	// Metrics counts upstream requests, rate-limit hits and push latency for the
+	// overview trend; the upstream packages record through it.
+	Metrics *metrics.Recorder
+	// Overview shows the upstream cards from Upstreams and, once #43 sets its
+	// Secrets source, the expiry of the Microsoft client secret.
+	Overview *service.Overview
+	Tasks    *cron.Scheduler
 
 	stop context.CancelFunc
 }
@@ -97,21 +105,38 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 	upstreams := service.NewUpstreams(db, ring, auth.Settings, mgr, log)
 	auth.Admin.Upstreams = upstreams
 
+	rec := metrics.New(db)
+	tasks := cron.NewScheduler(log)
+	tasks.Add(cron.PruneTask("admin_sessions", cleanupEvery, auth.Accounts.PruneSessions))
+	tasks.Add(cron.PruneTask("audit_logs", cleanupEvery, auth.Audit.Prune))
+	tasks.Add(cron.PruneTask("uploads", cleanupEvery, func() (int64, error) {
+		n, err := jmap.Uploads().Cleanup(time.Now())
+		return int64(n), err
+	}))
+	tasks.Add(cron.PruneTask("upstream_metrics", cleanupEvery, rec.Prune))
+	tasks.Add(cron.Task{Name: "metrics_flush", Interval: metrics.FlushEvery, Run: func(context.Context) (string, error) {
+		return "", rec.Flush()
+	}})
 	ctx, stop := context.WithCancel(context.Background())
+	tasks.Add(cron.PruneTask("push_subscriptions", cleanupEvery, func() (int64, error) { return pushStore.PruneExpired(time.Now()) }))
+	tasks.Add(cron.PruneTask("changelog", cleanupEvery, mgr.Trim))
+	mgr.SetMetrics(rec)
 	if err := mgr.Run(ctx, jmap); err != nil {
 		stop()
 		return nil, err
 	}
-	cron.StartCleanup(ctx, log, cleanupEvery, map[string]cron.Pruner{
-		"admin_sessions": auth.Accounts.PruneSessions,
-		"audit_logs":     auth.Audit.Prune,
-		"uploads": func() (int64, error) {
-			n, err := jmap.Uploads().Cleanup(time.Now())
-			return int64(n), err
-		},
-		"push_subscriptions": func() (int64, error) { return pushStore.PruneExpired(time.Now()) },
-		"changelog": mgr.Trim,
+	tasks.Start(ctx)
+
+	web, webInstalled := handler.NewAdminWeb(cfg.WebDir)
+	if !webInstalled {
+		log.Warn("admin web not found; /admin/ answers 503", "web_dir", cfg.WebDir)
+	}
+	system := service.NewSystem(db, service.SystemOptions{
+		DataDir: cfg.DataDir, BaseURL: cfg.BaseURL, Version: version, Env: cfg.PublicEnv(),
+		Streams: jmap.StreamCount, AdminWeb: webInstalled,
 	})
+	overview := &service.Overview{Upstreams: upstreams, Metrics: rec, System: system}
+	auth.Admin.OverviewSvc, auth.Admin.SystemSvc, auth.Admin.Tasks = overview, system, tasks
 
 	h := router.New(router.Deps{
 		Log:      log,
@@ -120,13 +145,16 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 		Admin:    auth.Admin,
 		JMAP:     jmap,
 		Czlmail:  &handler.CzlmailConfig{Gateway: gateway},
+		AdminWeb: web,
 	})
-	return &App{Handler: h, Auth: auth, JMAP: jmap, Upstreams: upstreams, Manager: mgr, stop: stop}, nil
+	return &App{Handler: h, Auth: auth, JMAP: jmap, Metrics: rec, Overview: overview, Tasks: tasks, Upstreams: upstreams, Manager: mgr, stop: stop}, nil
 }
 
-// Close stops the background jobs and upstreams and ends all EventSource streams.
+// Close stops the background jobs and upstreams, writes the pending metrics and
+// ends all EventSource streams. Call it before closing the database.
 func (a *App) Close() {
 	a.stop()
 	a.Manager.Stop()
+	_ = a.Metrics.Flush()
 	a.JMAP.Close()
 }

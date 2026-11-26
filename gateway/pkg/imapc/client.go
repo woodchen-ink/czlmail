@@ -39,6 +39,9 @@ type Options struct {
 	// waiting for them, and the EXISTS/EXPUNGE/FETCH/VANISHED of any command.
 	// It runs on the reading goroutine and must not call the Client.
 	Unsolicited func(*Response)
+	// OnCommand, if set, is called before each command is sent (not for IDLE's
+	// continuation); the gateway counts upstream requests with it.
+	OnCommand func(name string)
 }
 
 // Client is one IMAP connection.
@@ -250,6 +253,9 @@ func (c *Client) execute(ctx context.Context, name string, handle func(*Response
 
 	c.tagN++
 	tag := "A" + strconv.Itoa(c.tagN)
+	if c.opts.OnCommand != nil {
+		c.opts.OnCommand(name)
+	}
 	if err := c.writeCommand(tag, name, args); err != nil {
 		return nil, c.fail(ctx, err)
 	}
