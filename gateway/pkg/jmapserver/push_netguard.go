@@ -34,6 +34,8 @@ var nonPublic = []netip.Prefix{
 	netip.MustParsePrefix("240.0.0.0/4"),
 	netip.MustParsePrefix("64:ff9b::/96"), // NAT64 can embed any IPv4 address
 	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"), // 6to4 embeds an IPv4 address
+	netip.MustParsePrefix("2001::/32"), // Teredo embeds an IPv4 address
 }
 
 // publicAddr reports whether ip is a globally routable unicast address.
@@ -89,6 +91,8 @@ func newPushClient(base *http.Transport, allowPrivate func() bool) *http.Client 
 		t = http.DefaultTransport.(*http.Transport).Clone()
 	}
 	t.Proxy = nil // a proxy would connect on our behalf and bypass the address check
+	// Every connection must go through the checked DialContext below.
+	t.Dial, t.DialTLS, t.DialTLSContext = nil, nil, nil //nolint:staticcheck // clearing deprecated hooks on purpose
 	dialer := &net.Dialer{
 		Timeout: 10 * time.Second,
 		Control: func(_, address string, _ syscall.RawConn) error {

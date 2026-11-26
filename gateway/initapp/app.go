@@ -54,7 +54,7 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 		return nil, err
 	}
 	jmap.RegisterCapability(jmapserver.GatewayCapability, gateway)
-	pushStore := service.NewPushStore(db, ring)
+	pushStore := service.NewPushStore(db, ring, log)
 	if err := jmap.EnablePush(context.Background(), jmapserver.PushOptions{
 		Store:                pushStore,
 		AllowPrivateNetworks: func() bool { return auth.Settings.Bool(service.SettingAllowPrivateNetworks) },

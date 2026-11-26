@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"gorm.io/gorm"
@@ -25,11 +26,12 @@ func init() {
 type PushStore struct {
 	db   *gorm.DB
 	ring *crypto.Keyring
+	log  *slog.Logger
 }
 
 // NewPushStore returns the store; ring seals the url and auth columns.
-func NewPushStore(db *gorm.DB, ring *crypto.Keyring) *PushStore {
-	return &PushStore{db: db, ring: ring}
+func NewPushStore(db *gorm.DB, ring *crypto.Keyring, log *slog.Logger) *PushStore {
+	return &PushStore{db: db, ring: ring, log: log}
 }
 
 func pushAAD(publicID, column string) crypto.AAD {
@@ -46,7 +48,9 @@ func (s *PushStore) ListPush(ctx context.Context, userID string) ([]*jmapserver.
 	for i := range rows {
 		sub, err := s.decode(&rows[i])
 		if err != nil {
-			return nil, err
+			// One unreadable row must not lock the user out of push; it is pruned when it expires.
+			s.log.Error("push: skip unreadable subscription", "subscription", rows[i].PublicID, "err", err)
+			continue
 		}
 		out = append(out, sub)
 	}

@@ -265,7 +265,9 @@ func (p *pusher) post(sub *PushSubscription, m pushMsg) (int, time.Duration, err
 	if sub.P256DH != nil {
 		enc, err := encryptPush(sub.P256DH, sub.Auth, m.body)
 		if err != nil {
-			return 0, 0, err
+			// Retrying cannot fix the keys or the size; report it as a rejection.
+			p.srv.log.Error("push: encrypt", "subscription", sub.ID, "kind", m.kind, "err", err)
+			return http.StatusBadRequest, 0, nil
 		}
 		body, contentType = enc, "application/octet-stream"
 	}

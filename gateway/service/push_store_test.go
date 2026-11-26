@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -18,7 +20,7 @@ func TestPushStoreRoundTripAndRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := NewPushStore(db, ring)
+	store := NewPushStore(db, ring, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)
 	sub := &jmapserver.PushSubscription{
@@ -78,7 +80,7 @@ func TestPushStoreRoundTripAndRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	ring2, _ := LoadKeyring(db, testKey(2))
-	store = NewPushStore(db, ring2)
+	store = NewPushStore(db, ring2, store.log)
 	if list, err = store.ListPush(ctx, "usr1"); err != nil || list[0].URL != sub.URL || string(list[0].Auth) != string(sub.Auth) {
 		t.Fatalf("after rotation %v %v", list, err)
 	}

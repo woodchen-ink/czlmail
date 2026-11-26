@@ -29,7 +29,10 @@ func invalidProps(description string, props ...string) *SetError {
 	return &SetError{Type: "invalidProperties", Description: description, Properties: props}
 }
 
-var errSetNotFound = &SetError{Type: "notFound"}
+var (
+	errSetNotFound   = &SetError{Type: "notFound"}
+	errSetServerFail = &SetError{Type: "serverFail"}
+)
 
 // pushProperties are the properties PushSubscription/get can return; url and
 // keys are write-only, so another client of the same user cannot read them.
@@ -171,7 +174,9 @@ func (p *pusher) set(ctx context.Context, call *Call) (any, error) {
 			continue
 		}
 		if err := p.store.CreatePush(ctx, sub); err != nil {
-			return nil, err
+			p.srv.log.Error("push: create subscription", "user", call.UserID, "err", err)
+			setErr(&resp.NotCreated, cid, errSetServerFail)
+			continue
 		}
 		p.addUser(call.UserID)
 		subs = append(subs, sub)
@@ -195,7 +200,9 @@ func (p *pusher) set(ctx context.Context, call *Call) (any, error) {
 			continue
 		}
 		if err := p.store.UpdatePush(ctx, next); err != nil {
-			return nil, err
+			p.srv.log.Error("push: update subscription", "user", call.UserID, "err", err)
+			setErr(&resp.NotUpdated, id, errSetServerFail)
+			continue
 		}
 		*sub = *next
 		if resp.Updated == nil {
@@ -210,7 +217,9 @@ func (p *pusher) set(ctx context.Context, call *Call) (any, error) {
 			continue
 		}
 		if err := p.store.DeletePush(ctx, call.UserID, id); err != nil {
-			return nil, err
+			p.srv.log.Error("push: destroy subscription", "user", call.UserID, "err", err)
+			setErr(&resp.NotDestroyed, id, errSetServerFail)
+			continue
 		}
 		p.forget(id)
 		subs = slices.DeleteFunc(subs, func(s *PushSubscription) bool { return s.ID == id })

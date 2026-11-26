@@ -685,7 +685,7 @@ func TestPushQuota(t *testing.T) {
 func TestPushURLGuard(t *testing.T) {
 	for _, u := range []string{
 		"https://127.0.0.1/p", "https://[::1]/p", "https://10.1.2.3/p", "https://192.168.1.1/p", "https://169.254.169.254/latest",
-		"https://100.64.0.1/p", "https://[fd00::1]/p", "https://[::ffff:127.0.0.1]/p", "https://localhost/p", "https://a.localhost/p",
+		"https://100.64.0.1/p", "https://[fd00::1]/p", "https://[2002:7f00:1::1]/p", "https://[::ffff:127.0.0.1]/p", "https://localhost/p", "https://a.localhost/p",
 		"http://connect.czl.net/api/push/p/1", "https:///p", "ftp://connect.czl.net/x",
 	} {
 		if err := jmapserver.CheckPushURL(u, false); err == nil {
