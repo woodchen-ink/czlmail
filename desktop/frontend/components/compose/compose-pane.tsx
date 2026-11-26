@@ -3,7 +3,7 @@
 import { dateLocale, t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import {
   BookmarkPlus,
@@ -14,6 +14,7 @@ import {
   MailCheck,
   Paperclip,
   Send,
+  ShieldCheck,
   Sparkles,
   Users,
   X,
@@ -61,6 +62,7 @@ import {
 } from "@/lib/api";
 import { fileSize } from "@/lib/format";
 import { htmlToText, isHtmlEmpty, sanitizeInline, textToHtml } from "@/lib/html";
+import { allowDraftLeave, hasDraftContent } from "@/lib/draft-transition";
 import { onFileDrop } from "@/lib/file-drop";
 import { main, store } from "@/wailsjs/go/models";
 
@@ -113,13 +115,14 @@ interface Props {
   draft: ComposeDraft;
   onClose: () => void;
   onSent: () => void;
+  leaveRef: { current: (() => Promise<boolean>) | null };
 }
 
 const AUTOSAVE_MS = 4000;
 // 与界面语言无关: 按收件人可能用的语言都查。捷克语、俄语取词干覆盖变格:
 // příloha/v příloze/přikládám/přiložený, вложение/вложил/прилагаю/прикрепил; 不收 приложен (会命中「приложение」应用程序)。
 const ATTACHMENT_WORDS = ["附件", "附上", "见附", "attached", "attachment", "enclosed", "příloh", "příloze", "přiklád", "přilož", "влож", "прилага", "прикреп"];
-const LANGUAGES = ["简体中文", "English", "日本語", "한국어", "Deutsch", "Français", "Español", "Русский"];
+const LANGUAGES = ["简体中文", "English", "Čeština", "日本語", "한국어", "Deutsch", "Français", "Español", "Русский"];
 
 /**
  * 写信面板, 占据阅读窗格。
@@ -127,7 +130,7 @@ const LANGUAGES = ["简体中文", "English", "日本語", "한국어", "Deutsch
  * 签名与引用不放进编辑器: 切换发件身份时签名要整体替换, 放在编辑器里就得在用户改过的 HTML 里
  * 找旧签名; 分开放, 发送时再按「正文 + 分隔线 + 签名 + 引用」拼起来。
  */
-export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
+export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Props) {
   useI18n();
   const [identities, setIdentities] = useState<Identity[]>([]);
   const [identityId, setIdentityId] = useState("");
@@ -144,6 +147,8 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
   const [attachments, setAttachments] = useState<UploadedAttachment[]>(draft.attachments ?? []);
   const [receipt, setReceipt] = useState(false);
   const [separately, setSeparately] = useState(false);
+  // 用户对 S/MIME 签名开关的选择, 只对选择时的发件地址有效; 换了发件人就回到该地址的默认值。
+  const [signChoice, setSignChoice] = useState<{ email: string; on: boolean } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [maxDelay, setMaxDelay] = useState(0);
@@ -196,7 +201,8 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
   }, [accountId]);
   const draftId = useRef(draft.draftId ?? "");
   const dirty = useRef(false);
-  const saving = useRef<Promise<void> | null>(null);
+  const editRevision = useRef(0);
+  const saving = useRef<Promise<boolean> | null>(null);
   const aiAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -252,8 +258,13 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
     return "";
   }, [identity]);
   const separator = settings?.signatureSeparator ?? true;
+  const smime = identity ? settings?.smimeSigning?.[identity.email.toLowerCase()] : undefined;
+  // S/MIME 签名开关只在所选发件地址配置了证书时出现, 默认值取该地址的「写信时默认签名」。
+  const canSign = !!smime?.thumbprint;
+  const sign = canSign && (signChoice && signChoice.email === identity?.email ? signChoice.on : !!smime?.auto);
 
   const markDirty = useCallback(() => {
+    ++editRevision.current;
     dirty.current = true;
   }, []);
 
@@ -281,13 +292,16 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       requestReadReceipt: receipt,
       sendAt: "",
       sendSeparately: separately,
+      sign: canSign && sign,
     });
   }
 
+  const hasContent = hasDraftContent(to, cc, bcc, subject, !isHtmlEmpty(html), attachments.length);
   const saveDraft = useCallback(async () => {
-    if (!dirty.current || sending || !identityId) return;
+    if (!dirty.current) return (await saving.current) ?? true;
+    if (sending || !identityId) return false;
     // 什么都没写时不在服务器上留空草稿。
-    if (!to.trim() && !cc.trim() && !bcc.trim() && !subject.trim() && isHtmlEmpty(html) && attachments.length === 0 && !draftId.current) return;
+    if (!hasContent && !draftId.current) return true;
     dirty.current = false;
     // 保存排队执行: 每次保存都是"建新删旧", 上一次没返回就开始下一次时,
     // 两次拿到的是同一个旧 id, 先建的那份不会被任何一次删掉, 发送后留在草稿箱。
@@ -296,16 +310,18 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
       await prev;
       try {
         draftId.current = await api.saveDraft(buildRequest());
+        return true;
       } catch (err) {
         dirty.current = true;
         console.warn("save draft", err);
+        return false;
       }
     })();
     saving.current = run;
-    await run;
+    return await run;
     // buildRequest 读取的是当前 state, 由下面的定时器在每次变化后重新调度。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sending, identityId, to, cc, bcc, subject, html, attachments, receipt, separately, signatureHtml]);
+  }, [sending, identityId, hasContent, to, cc, bcc, subject, html, attachments, receipt, separately, signatureHtml]);
 
   useEffect(() => {
     if (!dirty.current) return;
@@ -313,18 +329,58 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
     return () => clearTimeout(t);
   }, [saveDraft]);
 
-  async function close() {
+  /**
+   * 离开写信面板时保留写好的内容: 有改动就存草稿, 从不发送。
+   * 用户关闭时 (dropEmpty) 内容被清空的草稿删掉; 面板被卸掉时只存不删。
+   */
+  async function keep(dropEmpty: boolean) {
+    if (sending || uploading) return false;
+    // 写不到服务器 (多半是断网) 时问一次是否仍要离开, 否则面板关不掉也切不走。
+    // 选了离开就放弃这次没存下的改动, 同一次离开里再调 keep 不会重复问。
+    const leaveUnsaved = (message: string) => {
+      if (!window.confirm(message)) return false;
+      dirty.current = false;
+      return true;
+    };
     aiAbort.current?.abort();
-    const hasContent = parseAddresses(to).length > 0 || subject.trim() || !isHtmlEmpty(html) || attachments.length > 0;
-    if (dirty.current && hasContent) {
-      await saveDraft();
-      toast.success(t("已存为草稿"));
-    } else if (!hasContent && draftId.current) {
-      // 内容被清空的草稿不再保留。
-      await saving.current;
-      api.discardDraft(accountId, draftId.current).catch(() => {});
-    }
-    onClose();
+    const beforeDelete = editRevision.current;
+    return allowDraftLeave(async () => {
+      if (dirty.current && !identityId && hasContent) {
+        toast.error(t("没有可用的发件身份"));
+        return leaveUnsaved(t("草稿没能保存，离开会丢掉这次的改动。仍要离开？"));
+      }
+      if (dropEmpty && !hasContent) {
+        await saving.current;
+        if (editRevision.current !== beforeDelete) return false;
+        if (draftId.current) {
+          try {
+            await api.discardDraft(accountId, draftId.current);
+            draftId.current = "";
+          } catch (err) {
+            toast.error(errorMessage(err));
+            return leaveUnsaved(t("服务器上的草稿没能删除，仍要关闭？"));
+          }
+        }
+        return true;
+      }
+      const changed = dirty.current;
+      if (!(await saveDraft())) {
+        toast.error(t("保存失败"));
+        return leaveUnsaved(t("草稿没能保存，离开会丢掉这次的改动。仍要离开？"));
+      }
+      if (changed && hasContent) toast.success(t("已存为草稿"));
+      return true;
+    }, () => editRevision.current);
+  }
+
+  // 在换掉写信面板之前问 keep, 而不是在卸载时才存: 存不上时面板还在, 改动还能接着编辑。
+  useLayoutEffect(() => {
+    leaveRef.current = () => keep(false);
+    return () => { leaveRef.current = null; };
+  });
+
+  async function close() {
+    if (await keep(true)) onClose();
   }
 
   async function discard() {
@@ -335,8 +391,11 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
         await api.discardDraft(accountId, draftId.current);
       } catch (err) {
         toast.error(errorMessage(err));
+        // 断网时删不掉: 草稿留在服务器上, 用户仍可以关掉面板。
+        if (!window.confirm(t("服务器上的草稿没能删除，仍要关闭？"))) return;
       }
     }
+    dirty.current = false;
     onClose();
   }
 
@@ -703,6 +762,11 @@ export function ComposePane({ accountId, draft, onClose, onSent }: Props) {
         <IconBtn label={receipt ? t("已请求已读回执") : t("请求已读回执")} active={receipt} onClick={() => (setReceipt(!receipt), markDirty())}>
           <MailCheck />
         </IconBtn>
+        {canSign && (
+          <IconBtn label={sign ? t("加数字签名：这封邮件将带数字签名") : t("加数字签名")} active={sign} onClick={() => identity && setSignChoice({ email: identity.email, on: !sign })}>
+            <ShieldCheck />
+          </IconBtn>
+        )}
         <IconBtn
           label={separately ? t("分开发送：每位收件人单独收到一封") : t("分开发送")}
           active={separately}

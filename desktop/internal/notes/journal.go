@@ -10,16 +10,28 @@ import (
 )
 
 var (
-	weekdaysZH      = [7]string{"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}
-	weekdaysShortZH = [7]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
-	templateTag     = regexp.MustCompile(`\{\{\s*(date|time|title)\s*(?::([^}]*))?\}\}`)
+	// weekdays and weekdaysShort follow Moment.js locales (Sunday first); other languages use English.
+	weekdays = map[string][7]string{
+		"zh": {"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"},
+		"cs": {"neděle", "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota"},
+		"ru": {"воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"},
+	}
+	weekdaysShort = map[string][7]string{
+		"zh": {"周日", "周一", "周二", "周三", "周四", "周五", "周六"},
+		"cs": {"ne", "po", "út", "st", "čt", "pá", "so"},
+		"ru": {"вс", "пн", "вт", "ср", "чт", "пт", "сб"},
+	}
+	templateTag = regexp.MustCompile(`\{\{\s*(date|time|title)\s*(?::([^}]*))?\}\}`)
 )
 
 // FormatDate expands Obsidian (Moment.js) date tokens: YYYY YY MM M DD D dddd ddd HH H mm ss.
-// Text inside [brackets] is literal. lang "zh" names weekdays in Chinese, anything else in English.
+// Text inside [brackets] is literal. Weekdays are named in Chinese, Czech or Russian for
+// lang "zh…", "cs…" or "ru…", anything else in English.
 func FormatDate(layout string, t time.Time, lang string) string {
 	var b strings.Builder
-	zh := strings.HasPrefix(lang, "zh")
+	base, _, _ := strings.Cut(strings.ToLower(lang), "-")
+	long, hasLong := weekdays[base]
+	short, hasShort := weekdaysShort[base]
 	for i := 0; i < len(layout); {
 		if layout[i] == '[' {
 			if end := strings.IndexByte(layout[i:], ']'); end > 0 {
@@ -50,13 +62,13 @@ func FormatDate(layout string, t time.Time, lang string) string {
 			value = fmt.Sprint(t.Day())
 		case "dddd":
 			value = t.Weekday().String()
-			if zh {
-				value = weekdaysZH[t.Weekday()]
+			if hasLong {
+				value = long[t.Weekday()]
 			}
 		case "ddd":
 			value = t.Weekday().String()[:3]
-			if zh {
-				value = weekdaysShortZH[t.Weekday()]
+			if hasShort {
+				value = short[t.Weekday()]
 			}
 		case "HH":
 			value = fmt.Sprintf("%02d", t.Hour())
@@ -174,6 +186,24 @@ func (s *Service) ReadPath(vault, path string) (Entry, error) {
 		return Entry{}, ErrNotFound
 	}
 	return clone(found), nil
+}
+
+// HasFolder reports whether a live folder exists at a root-relative path such as "日记".
+func (s *Service) HasFolder(vault, path string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.config.Enabled {
+		return false
+	}
+	parent := ""
+	for _, part := range strings.Split(strings.Trim(path, "/"), "/") {
+		e, ok := s.liveChild(vault, parent, part)
+		if !ok || !e.Directory {
+			return false
+		}
+		parent = e.ID
+	}
+	return parent != ""
 }
 
 // liveChild finds a non-trashed child by case-insensitive name; callers hold s.mu.

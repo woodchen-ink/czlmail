@@ -18,7 +18,6 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
-	"github.com/woodchen-ink/czlmail/desktop/internal/platform"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 	"github.com/woodchen-ink/czlmail/desktop/notify"
@@ -112,7 +111,7 @@ func (a *App) startup(ctx context.Context) {
 
 	go a.runUpdateChecks(ctx)
 	go func() {
-		if err := platform.RegisterHandlers(); err != nil {
+		if err := a.registerHandlers(); err != nil {
 			a.log.Warn("register handlers", "err", err)
 		}
 	}()

@@ -23,14 +23,19 @@ type EmailSummary struct {
 	ReceivedAt    time.Time `json:"receivedAt"`
 	Preview       string    `json:"preview"`
 	HasAttachment bool      `json:"hasAttachment"`
-	Size          int64     `json:"size"`
-	IsUnread      bool      `json:"isUnread"`
-	IsFlagged     bool      `json:"isFlagged"`
-	IsDraft       bool      `json:"isDraft"`
+	// Signed 表示邮件带 S/MIME 签名, 列表里显示盾牌。
+	Signed    bool  `json:"signed"`
+	Size      int64 `json:"size"`
+	IsUnread  bool  `json:"isUnread"`
+	IsFlagged bool  `json:"isFlagged"`
+	IsDraft   bool  `json:"isDraft"`
 	// IsPinned 是 $pinned 关键字(与 Bulwark 相同), 置顶的邮件在列表里排在最前。
 	IsPinned bool `json:"isPinned"`
 	// ThreadCount 是同一会话的邮件总数(跨文件夹); 只有列表查询会填, 其它查询为 0。
 	ThreadCount int `json:"threadCount"`
+	// DraftCount 是同一会话里的草稿数(跨文件夹, 筛选同 ThreadCount, 含本行自己); 只有列表查询会填。
+	// 界面据此在收件箱、已发送等文件夹的会话行上标出还有没写完的回复。
+	DraftCount int `json:"draftCount"`
 	// MailboxIDs 是邮件所在的文件夹; 只有搜索结果与会话成员会填, 界面据此标出邮件在哪、「移动到」排除所在文件夹。
 	MailboxIDs []string `json:"mailboxIds,omitempty"`
 }
@@ -83,7 +88,7 @@ const keywordFlags = `
 
 // summaryColumns 是邮件摘要的列, 顺序与 scanSummaries 一致。
 const summaryColumns = `e.account_id, e.id, e.thread_id, e.subject, e.from_json, e.to_json, e.received_at,
-	       e.preview, e.has_attachment, e.size,` + keywordFlags
+	       e.preview, e.has_attachment, e.signed, e.size,` + keywordFlags
 
 // EmailsByMailbox 分页取某邮箱的邮件: 置顶的在最前, 其余按收件时间倒序。
 //
@@ -163,27 +168,32 @@ func discardedSQL(alias string) string {
 // threadCountColumn 附加在列表查询末尾, scanSummaries 按列数识别。
 // 删掉的往来不计: 收件箱里的会话行不该因为回收站里的几封而显示成多封; 行本身在回收站/垃圾邮件里时全部计入。
 // 与 ThreadEmails 的筛选一致, 封数才对得上展开后的行数。
+// 第二列是会话里的草稿数, 筛选相同 (删到回收站的草稿不算), 展开后标着「[草稿]」的行数与它一致。
 var threadCountColumn = `,
 	(SELECT COUNT(*) FROM emails t WHERE t.account_id = e.account_id AND t.thread_id = e.thread_id AND e.thread_id != ''
+	   AND (` + discardedSQL("e") + ` OR NOT ` + discardedSQL("t") + `)),
+	(SELECT COUNT(*) FROM emails t
+	   JOIN email_keywords dk ON dk.account_id = t.account_id AND dk.email_id = t.id AND dk.keyword = '$draft'
+	   WHERE t.account_id = e.account_id AND t.thread_id = e.thread_id AND e.thread_id != ''
 	   AND (` + discardedSQL("e") + ` OR NOT ` + discardedSQL("t") + `))`
 
 func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 	var out []EmailSummary
 	cols, _ := rows.Columns()
-	withThread := len(cols) > 14
+	withThread := len(cols) > 15
 	for rows.Next() {
 		var e EmailSummary
 		var fromJSON, toJSON string
 		var receivedAt int64
-		var hasAttachment, unread, flagged, draft, pinned int
+		var hasAttachment, signed, unread, flagged, draft, pinned int
 
 		dest := []any{
 			&e.AccountID, &e.ID, &e.ThreadID, &e.Subject, &fromJSON, &toJSON, &receivedAt,
-			&e.Preview, &hasAttachment, &e.Size,
+			&e.Preview, &hasAttachment, &signed, &e.Size,
 			&unread, &flagged, &draft, &pinned,
 		}
 		if withThread {
-			dest = append(dest, &e.ThreadCount)
+			dest = append(dest, &e.ThreadCount, &e.DraftCount)
 		}
 		if err := rows.Scan(dest...); err != nil {
 			return nil, wrap(CodeQuery, "scan email summary", err)
@@ -197,6 +207,7 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 		}
 		e.ReceivedAt = time.Unix(receivedAt, 0)
 		e.HasAttachment = hasAttachment != 0
+		e.Signed = signed != 0
 		e.IsUnread = unread != 0
 		e.IsFlagged = flagged != 0
 		e.IsDraft = draft != 0
@@ -248,7 +259,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	var d EmailDetail
 	var fromJSON, toJSON, ccJSON, bccJSON, replyToJSON string
 	var receivedAt int64
-	var hasAttachment, unread, flagged, draft, pinned int
+	var hasAttachment, signed, unread, flagged, draft, pinned int
 	var bodyText, bodyHTML sql.NullString
 	var bodyFetchedAt sql.NullInt64
 	var attachmentsJSON string
@@ -256,7 +267,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
-		       e.preview, e.has_attachment, e.size,`+keywordFlags+`,
+		       e.preview, e.has_attachment, e.signed, e.size,`+keywordFlags+`,
 		       e.to_json, e.cc_json, e.bcc_json, e.reply_to_json,
 		       e.blob_id, e.message_id, e.in_reply_to, e.attachments_json,
 		       e.body_text, e.body_html, e.body_fetched_at, e.list_unsubscribe,
@@ -267,7 +278,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 		accountID, emailID,
 	).Scan(
 		&d.ID, &d.ThreadID, &d.Subject, &fromJSON, &receivedAt,
-		&d.Preview, &hasAttachment, &d.Size,
+		&d.Preview, &hasAttachment, &signed, &d.Size,
 		&unread, &flagged, &draft, &pinned,
 		&toJSON, &ccJSON, &bccJSON, &replyToJSON,
 		&d.BlobID, &d.MessageID, &d.InReplyTo, &attachmentsJSON,
@@ -295,6 +306,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	d.AccountID = accountID
 	d.ReceivedAt = time.Unix(receivedAt, 0)
 	d.HasAttachment = hasAttachment != 0
+	d.Signed = signed != 0
 	d.IsUnread = unread != 0
 	d.IsFlagged = flagged != 0
 	d.IsDraft = draft != 0

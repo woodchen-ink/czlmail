@@ -16,7 +16,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api, errorMessage, Events, onEvent, type AIConfig } from "@/lib/api";
 import { main } from "@/wailsjs/go/models";
 
-const LANGS = ["简体中文", "繁體中文", "English", "日本語", "한국어", "Deutsch", "Français", "Español", "Русский"];
+const LANGS = ["简体中文", "繁體中文", "English", "Čeština", "日本語", "한국어", "Deutsch", "Français", "Español", "Русский"];
 
 // 思考档位(reasoning.effort)。档位名一律用接口里的原词 —— 模型的报错也是这么写的
 // (「该模型始终思考，不支持关闭思考；请使用 low、high 或 max」), 译成中文反而对不上。

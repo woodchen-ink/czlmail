@@ -3,7 +3,7 @@
 import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ArrowUpToLine,
@@ -67,6 +67,8 @@ import { useAppearance } from "@/lib/theme";
 import { listen, send, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
+import { beginDraftIntent } from "@/lib/draft-transition";
+import { threadKey, threadRows } from "@/lib/thread-rows";
 import { formatKey, formatKeys, shortcutActionOf, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
 
 const PAGE_SIZE = 50;
@@ -180,10 +182,22 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   const [draft, setDraftState] = useState<ComposeDraft | null>(null);
   // 每次打开写信面板都换一个 key, 让面板重新挂载而不是沿用上一封的状态。
   const [draftKey, setDraftKey] = useState(0);
-  const setDraft = useCallback((d: ComposeDraft | null) => {
+  // 写信面板里正开着的那封, 供回复判断是不是已经在写这封的回复。
+  const openDraft = useRef<ComposeDraft | null>(null);
+  const intent = useRef(0);
+  const leaveDraft = useRef<(() => Promise<boolean>) | null>(null);
+  const commitDraft = useCallback((d: ComposeDraft | null) => {
+    openDraft.current = d;
     setDraftState(d);
     if (d) setDraftKey((k) => k + 1);
   }, []);
+  const setDraft = useCallback(async (d: ComposeDraft | null) => {
+    const current = beginDraftIntent(intent);
+    if (leaveDraft.current && !(await leaveDraft.current())) return false;
+    if (!current()) return false;
+    commitDraft(d);
+    return true;
+  }, [commitDraft]);
   const [focusMode, setFocusMode] = useState(false);
   // 窄屏下显示哪一栏。选中的邮件一变 (点了列表、通知或链接打开、删除后跳到下一封) 就进正文;
   // 返回列表时保留选中, 回来还能看到刚才那一行。用渲染期比较而不是 effect, 避免先闪一帧列表。
@@ -218,6 +232,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     : (mailboxes.find((m) => m.id === mailboxId)?.kind ?? "");
   const selected = parseEmailKey(selectedKey);
   // 新写的信从哪个账号发: 在看某个账号的文件夹时用它, 统一视图里用个人账号。
+  const flatList = !searching && ["drafts", "scheduled"].includes(currentKind);
   const composeAccount = unified ? (accounts.find((a) => a.isPersonal)?.id ?? accountId) : accountId;
 
   /**
@@ -369,6 +384,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
   // 当前看的是哪个列表。撤销删除时只在同一个列表里把选中放回恢复的那封。
   const viewKey = `${unified}|${accountId}|${mailboxId}`;
+  useLayoutEffect(() => () => { ++intent.current; }, [viewKey, active, selectedKey, query]);
   const viewRef = useRef(viewKey);
   useEffect(() => {
     viewRef.current = viewKey;
@@ -754,7 +770,10 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       }
       // 移动类操作撤销时要把邮件放回原处: 提交前先从本地缓存记下各封所在的文件夹。
       const placements = new Map<string, Promise<EmailPlacement[] | null>>();
-      const job = Promise.all(
+      const accounts = [...groups.keys()];
+      // 各账号分别提交、分别记成败: 统一视图里可能一个账号成功、另一个失败,
+      // 撤销只能也只应改回成功的那几个账号。
+      const results = Promise.allSettled(
         [...groups].map(async ([acc, ids]) => {
           if (undoable && m.remove) {
             const snap = api.emailPlacements(acc, ids).catch(() => null);
@@ -764,19 +783,23 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
           await m.op(acc, ids);
         }),
       );
+      const job = results.then((rs) => {
+        const failed = rs.find((r): r is PromiseRejectedResult => r.status === "rejected");
+        if (failed) throw failed.reason;
+      });
       // 撤销要等原操作提交完, 否则两个请求可能颠倒顺序到达服务器。
-      const succeeded = job.then(
-        () => true,
-        () => false,
-      );
+      const succeededFor = (acc: string) => results.then((rs) => rs[accounts.indexOf(acc)]?.status === "fulfilled");
 
       /** 把移走的邮件放回原来的文件夹。 */
       const restore = async () => {
-        if (!(await succeeded)) return; // 原操作失败, 界面已经回到服务器的真实状态
+        // 原操作整体失败时界面已经回到服务器的真实状态, 没有可撤销的。
+        const done = (await Promise.all(accounts.map(succeededFor))).some(Boolean);
+        if (!done) return;
         try {
           let count = 0;
           await Promise.all(
             [...placements].map(async ([acc, snap]) => {
+              if (!(await succeededFor(acc))) return;
               const places = await snap;
               if (!places?.length) return;
               await api.restoreEmails(acc, places);
@@ -807,7 +830,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
             patch: old,
             undoable: false,
             op: async (acc, ids) => {
-              if (await succeeded) await patchOp(acc, ids, old);
+              if (await succeededFor(acc)) await patchOp(acc, ids, old);
             },
           });
         }
@@ -976,21 +999,23 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     [refreshCurrent],
   );
 
-  /** 列表里点选邮件。草稿直接进入编辑。 */
+  /** 列表里点选邮件。草稿直接进入编辑; 展开的会话里的成员不在 emails 里, 由列表把摘要一并传来。 */
   const selectEmail = useCallback(
-    async (key: string) => {
-      const summary = emails.find((e) => emailKey(e) === key);
+    async (key: string, member?: EmailSummary) => {
+      const current = beginDraftIntent(intent);
+      const summary = emails.find((e) => emailKey(e) === key) ?? member;
       if (currentKind !== "drafts" && !summary?.isDraft) {
-        setDraft(null);
+        if (!(await setDraft(null))) return;
         setSelectedKey(key);
         setMobileView("detail");
         return;
       }
       const { accountId: acc, id } = parseEmailKey(key);
       try {
-        const email = await api.getEmail(acc, id);
+        let email = await api.getEmail(acc, id);
+        if (!email.bodyFetched && current()) email = await api.fetchBody(acc, id);
+        if (!current() || !email.bodyFetched || !(await setDraft(draftFromEmail(email, acc)))) return;
         setSelectedKey(key);
-        setDraft(draftFromEmail(email, acc));
       } catch (err) {
         toast.error(errorMessage(err));
       }
@@ -1163,12 +1188,45 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     [unified, showsMailbox, importInto, loadMailboxes, reload, adjustUnread],
   );
 
+  /**
+   * 回复、回复全部。已经有一封回复这封邮件的草稿时接着写那封 (同 Outlook), 不另起一封;
+   * 找不到或读不到就照旧新建。转发不走这里, 总是新建。
+   */
+  const startReply = useCallback(
+    async (email: EmailDetail, all: boolean) => {
+      const acc = email.accountId;
+      // 这封的回复已经开在写信面板里 (面板里可能有还没存下的改动): 留在那里, 不重开。
+      const current = beginDraftIntent(intent);
+      const open = openDraft.current?.replyTo;
+      if (open?.accountId === acc && open.emailId === email.id) return;
+      // 先让写信面板把改动存好再找草稿: 面板里正开着的可能就是这封的回复, 没存之前本地缓存里是旧版本,
+      // 按旧版本续写会留下两封草稿, 面板里也是旧内容。
+      if (leaveDraft.current && !(await leaveDraft.current())) return;
+      if (!current()) return;
+      const existing = await findReplyDraft(email, mailboxesByAccount[acc] ?? []).catch(() => null);
+      if (!current()) return;
+      if (existing) {
+        if (!(await setDraft({
+          ...draftFromEmail(existing, acc),
+          references: [email.inReplyTo, email.messageId].filter(Boolean) as string[],
+          replyTo: { accountId: acc, emailId: email.id },
+        }))) return;
+        toast(t("继续编辑未发送的回复"));
+      } else {
+        if (!(await setDraft(replyDraft(acc, email, all)))) return;
+      }
+      markReadOnReply(email);
+    },
+    [mailboxesByAccount, setDraft, markReadOnReply],
+  );
+
   /** 列表右键的回复、转发要用完整邮件(正文、附件): 先读缓存, 没有正文时再拉。 */
   const withDetail = useCallback(async (e: EmailSummary, fn: (email: EmailDetail) => void) => {
+    const current = beginDraftIntent(intent);
     try {
       let email = await api.getEmail(e.accountId, e.id);
       if (!email.bodyFetched) email = await api.fetchBody(e.accountId, e.id);
-      fn(email);
+      if (current()) fn(email);
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -1176,11 +1234,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
   const menuActions = useMemo<EmailMenuActions>(
     () => ({
-      reply: (email, all) =>
-        withDetail(email, (d) => {
-          setDraft(replyDraft(email.accountId, d, all));
-          markReadOnReply(email);
-        }),
+      reply: (email, all) => withDetail(email, (d) => startReply(d, all)),
       forward: (email, asAttachment) =>
         withDetail(email, (d) => {
           setDraft(asAttachment ? forwardAsAttachmentDraft(d, email.accountId) : forwardDraft(d, email.accountId));
@@ -1195,7 +1249,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       togglePin,
       setLabel: setLabelIds,
     }),
-    [withDetail, setDraft, markReadOnReply, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, togglePin, setLabelIds],
+    [withDetail, startReply, setDraft, markReadOnReply, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, togglePin, setLabelIds],
   );
 
   /**
@@ -1225,8 +1279,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         markReadOnReply(email);
       };
       return {
-        reply: () => startFrom(replyDraft(acc, email, false)),
-        replyAll: () => startFrom(replyDraft(acc, email, true)),
+        reply: () => startReply(email, false),
+        replyAll: () => startReply(email, true),
         forward: () => startFrom(forwardDraft(email, acc)),
         forwardAsAttachment: () => startFrom(forwardAsAttachmentDraft(email, acc)),
         archive: () => {
@@ -1267,7 +1321,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         toggleBodyLight: () => setBodyAppearance(bodyAppearance === "light" ? "follow" : "light"),
       };
     },
-    [archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, markReadOnReply, leaveAfterUnread, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft],
+    [archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, markReadOnReply, leaveAfterUnread, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft, startReply],
   );
 
   /* ---------- 键盘快捷键 ---------- */
@@ -1290,16 +1344,18 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       const action = shortcutActionOf(e);
       if (!action) return;
 
+      // 按屏幕上的行移动: 同一会话的几封只占一行, 不能按 emails 逐封走, 否则会选中折叠起来的那封。
       const step = (delta: number) => {
-        let idx = emails.findIndex((m) => emailKey(m) === selectedKey);
-        // 选中的是展开会话里不在本列表的一封 (较早的、别的文件夹的): 从代表该会话的行起步,
+        const heads = threadRows(emails, flatList).map((r) => r.head);
+        let idx = heads.findIndex((m) => emailKey(m) === selectedKey);
+        // 选中的是展开区里的一封 (折叠在会话里的、别的文件夹的): 从代表该会话的行起步,
         // 否则会跳回列表第一封。
-        const cur = currentEmail.current;
-        if (idx < 0 && cur && emailKey(cur) === selectedKey) {
-          const tk = `${cur.accountId}/${cur.threadId || cur.id}`;
-          idx = emails.findIndex((m) => `${m.accountId}/${m.threadId || m.id}` === tk);
+        if (idx < 0) {
+          const cur = currentEmail.current;
+          const sel = emails.find((m) => emailKey(m) === selectedKey) ?? (cur && emailKey(cur) === selectedKey ? cur : null);
+          if (sel) idx = heads.findIndex((m) => threadKey(m) === threadKey(sel));
         }
-        const next = emails[idx < 0 ? 0 : idx + delta];
+        const next = heads[idx < 0 ? 0 : idx + delta];
         if (next) setSelectedKey(emailKey(next));
       };
 
@@ -1359,7 +1415,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, emails, selectedKey, checked, focusMode, currentKind, actionsFor, markReadIds, leaveAfterUnread, setDraft, undoLast]);
+  }, [active, emails, selectedKey, checked, focusMode, currentKind, flatList, actionsFor, markReadIds, leaveAfterUnread, setDraft, undoLast]);
 
 
   /**
@@ -1402,9 +1458,9 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         collapsed={focusMode}
         mobilePane={mobilePane}
         ownMobileNav
-        onMobilePaneChange={(p) => {
+        onMobilePaneChange={async (p) => {
           // 写信面板占着正文栏: 返回即关闭 (草稿已自动保存)。
-          if (draft && p !== "detail") setDraft(null);
+          if (draft && p !== "detail" && !(await setDraft(null))) return;
           setMobileView(p);
         }}
         sidebar={
@@ -1620,6 +1676,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 onScrolledAway={setScrolledAway}
                 whereOf={searching || unified ? whereOf : undefined}
                 showRecipients={!searching && ["sent", "drafts", "scheduled"].includes(currentKind)}
+                flat={flatList}
                 checked={checked}
                 onCheck={checkEmail}
                 // 拖到侧栏文件夹上移动; 窄屏侧栏收起没有可放的地方, 已计划的邮件不移动。
@@ -1663,7 +1720,12 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 key={draftKey}
                 accountId={draft.accountId ?? composeAccount}
                 draft={draft}
-                onClose={() => setDraft(null)}
+                leaveRef={leaveDraft}
+                onClose={() => {
+                  if (openDraft.current !== draft) return;
+                  ++intent.current;
+                  commitDraft(null);
+                }}
                 onSent={reload}
               />
             ) : selectedKey ? (
@@ -1826,6 +1888,33 @@ function forwardAsAttachmentDraft(email: EmailDetail, accountId: string): Compos
     attachments: [{ blobId: email.blobId, type: "message/rfc822", name: `${email.subject || "email"}.eml`, size: email.size }],
     fromCandidates: fromCandidatesOf(email),
   };
+}
+
+/** Message-ID 去掉尖括号与空白后比较; 解析后的邮件头一般已不带尖括号。 */
+function normalizeMessageId(id: string | undefined): string {
+  return (id ?? "").trim().replace(/^<|>$/g, "");
+}
+
+/**
+ * 回复这封邮件、还没发出的草稿: 同一会话里 In-Reply-To 等于这封 Message-ID 的草稿,
+ * 不在回收站/垃圾邮件里, 有多封时取最新的。没有返回 null。
+ * 草稿正文读不到时抛错: 空正文接着写, 自动保存会把草稿里写好的内容冲掉, 调用方应改为新建回复。
+ */
+async function findReplyDraft(email: EmailDetail, boxes: Mailbox[]): Promise<EmailDetail | null> {
+  const target = normalizeMessageId(email.messageId);
+  if (!target || !email.threadId || email.isDraft) return null;
+  const discarded = new Set(boxes.filter((m) => m.kind === "trash" || m.kind === "junk").map((m) => m.id));
+  const candidates = ((await api.threadEmails(email.accountId, email.id)) ?? [])
+    .filter((m) => m.isDraft && m.id !== email.id && !(m.mailboxIds ?? []).some((id) => discarded.has(id)))
+    .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+  for (const c of candidates) {
+    let d = await api.getEmail(c.accountId, c.id);
+    if (normalizeMessageId(d.inReplyTo) !== target) continue;
+    if (!d.bodyFetched) d = await api.fetchBody(c.accountId, c.id);
+    if (!d.bodyFetched) throw new Error("draft body not available");
+    return d;
+  }
+  return null;
 }
 
 /** 打开已有草稿继续编辑。 */

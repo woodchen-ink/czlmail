@@ -30,10 +30,12 @@ type Email struct {
 	Size          int64
 	Preview       string
 	HasAttachment bool
-	MessageID     string
-	InReplyTo     string
-	MailboxIDs    []string
-	Keywords      []string
+	// Signed 表示邮件带 S/MIME 签名 (multipart/signed)。
+	Signed     bool
+	MessageID  string
+	InReplyTo  string
+	MailboxIDs []string
+	Keywords   []string
 }
 
 // UpsertEmails 批量写入邮件元数据, 以及它们与邮箱、关键字的关联。
@@ -51,8 +53,8 @@ func UpsertEmails(ctx context.Context, tx *sql.Tx, accountID string, emails []Em
 			account_id, id, blob_id, thread_id, subject,
 			from_json, to_json, cc_json, bcc_json, reply_to_json,
 			sent_at, received_at, size, preview, has_attachment,
-			message_id, in_reply_to
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			message_id, in_reply_to, signed
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (account_id, id) DO UPDATE SET
 			blob_id        = excluded.blob_id,
 			thread_id      = excluded.thread_id,
@@ -68,7 +70,8 @@ func UpsertEmails(ctx context.Context, tx *sql.Tx, accountID string, emails []Em
 			preview        = excluded.preview,
 			has_attachment = excluded.has_attachment,
 			message_id     = excluded.message_id,
-			in_reply_to    = excluded.in_reply_to`)
+			in_reply_to    = excluded.in_reply_to,
+			signed         = excluded.signed`)
 	if err != nil {
 		return wrap(CodeQuery, "prepare email upsert", err)
 	}
@@ -91,7 +94,7 @@ func UpsertEmails(ctx context.Context, tx *sql.Tx, accountID string, emails []Em
 			accountID, e.ID, e.BlobID, e.ThreadID, e.Subject,
 			addrs[0], addrs[1], addrs[2], addrs[3], addrs[4],
 			sentAt, e.ReceivedAt.Unix(), e.Size, e.Preview, boolToInt(e.HasAttachment),
-			e.MessageID, e.InReplyTo,
+			e.MessageID, e.InReplyTo, boolToInt(e.Signed),
 		); err != nil {
 			return wrap(CodeQuery, "upsert email", err)
 		}

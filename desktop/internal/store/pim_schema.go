@@ -40,6 +40,17 @@ const migration011 = `
 UPDATE emails SET list_unsubscribe = NULL;
 `
 
+// migration013 标记带 S/MIME 签名的邮件, 列表里用盾牌代替回形针 (签名部件 smime.p7s 不算附件)。
+// 已打开过的邮件从缓存的 bodyStructure 补上; 清掉邮件同步状态, 让最近的邮件重新引导时带上签名标记。
+const migration013 = `
+ALTER TABLE emails ADD COLUMN signed INTEGER NOT NULL DEFAULT 0;
+UPDATE emails SET signed = 1
+ WHERE body_structure IS NOT NULL AND body_structure != ''
+   AND json_valid(body_structure)
+   AND lower(json_extract(body_structure, '$.type')) = 'multipart/signed';
+DELETE FROM sync_state WHERE data_type = 'Email';
+`
+
 // migration012 缓存 AI 译文: 同一封邮件译成同一种语言只需请求一次模型。
 const migration012 = `
 CREATE TABLE translations (
