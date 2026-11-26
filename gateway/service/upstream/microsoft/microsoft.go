@@ -27,6 +27,10 @@ const (
 	IMAPPort = 993
 	SMTPHost = "smtp.office365.com"
 	SMTPPort = 587
+	// SMTPHostPersonal is Outlook.com's submission server for personal
+	// Microsoft accounts (same port and STARTTLS); work and school accounts use
+	// SMTPHost.
+	SMTPHostPersonal = "smtp-mail.outlook.com"
 )
 
 func init() {
@@ -104,7 +108,7 @@ func (nc *notConnected) classify(err error, cfg upstream.Config) error {
 	if cfg.Log != nil {
 		// The XOAUTH2 user= is the first thing to compare with the account the
 		// token belongs to (logged at authorisation); never the token.
-		cfg.Log.Warn("microsoft imap not connected", "account", cfg.AccountID, "user", cfg.IMAP.Username, "attempt", nc.n, "err", err)
+		cfg.Log.Warn("microsoft imap not connected", "account", cfg.AccountID, "user", cfg.IMAP.Username, "token_account", tokenOwner(cfg), "attempt", nc.n, "err", err)
 	}
 	return &upstream.Error{Kind: kind, Op: "sign in", Err: err, Code: CodeProbeIMAPDisabled}
 }
@@ -116,7 +120,9 @@ func signIn(ctx context.Context, c *imapc.Client, cfg upstream.Config) error {
 	}
 	err = c.LoginXOAuth2(ctx, cfg.IMAP.Username, tok)
 	if err != nil && cfg.Log != nil && !IsNotConnected(err) {
-		cfg.Log.Warn("microsoft imap sign in", "account", cfg.AccountID, "user", cfg.IMAP.Username, "err", err)
+		// The XOAUTH2 user= next to the account of the grant it used; never
+		// the token. "Not connected" is logged by notConnected.classify.
+		cfg.Log.Warn("microsoft imap sign in", "account", cfg.AccountID, "user", cfg.IMAP.Username, "token_account", tokenOwner(cfg), "err", err)
 	}
 	return err
 }
@@ -171,4 +177,12 @@ func annotate(p *upstream.ProbePart) {
 	case strings.Contains(d, "authenticated but not connected"):
 		p.Code, p.Msg = CodeProbeIMAPDisabled, "mailbox_not_connected"
 	}
+}
+
+// tokenOwner is the account of the grant the sign-in used, for logs.
+func tokenOwner(cfg upstream.Config) string {
+	if cfg.TokenOwner == nil {
+		return "-"
+	}
+	return cfg.TokenOwner()
 }

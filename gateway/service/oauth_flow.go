@@ -287,11 +287,10 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 		address, confirmed = client.Provider.Mailbox(tok, login)
 		address = strings.ToLower(address)
 	}
-	// Who the token belongs to, for comparing with the IMAP sign-in (no tokens).
-	claims := tok.IDClaims()
-	o.log.Info("oauth account", "provider", provider, "reauth", pend.reauth, "login", login, "address", address,
-		"address_confirmed", confirmed, "scope", tok.Scope, "id_email", claims["email"],
-		"id_preferred_username", claims["preferred_username"], "id_oid", claims["oid"], "id_tid", claims["tid"])
+	tok.Account = tok.AccountFromIDToken()
+	// Which account the grant belongs to, for comparing with the IMAP sign-in.
+	o.log.Info("oauth account", "provider", provider, "upstream", pend.reauth, "login", login, "address", address,
+		"address_confirmed", confirmed, "scope", tok.Scope, "token_account", tok.Account.String())
 
 	if pend.reauth == "" {
 		// The same account again only renews the token: accountId stays.
@@ -307,7 +306,7 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 	}
 	if pend.reauth != "" {
 		if !strings.EqualFold(signInName(row), login) {
-			o.log.Warn("oauth account mismatch", "provider", provider, "account", row.PublicID, "want", signInName(row), "got", login)
+			o.log.Warn("oauth account mismatch", "provider", provider, "upstream", row.PublicID, "want", signInName(row), "got", login)
 			return nil, ErrOAuthAccountMismatch
 		}
 		if err := o.saveToken(row, tok); err != nil {
@@ -324,8 +323,12 @@ func (o *OAuth) Callback(ctx context.Context, p *AdminPrincipal, provider string
 			return nil, err
 		}
 	}
-	row.IMAPHost, row.IMAPPort, row.IMAPTLS, row.IMAPUsername = pv.IMAP.Host, pv.IMAP.Port, pv.IMAP.TLS, login
-	row.SMTPHost, row.SMTPPort, row.SMTPTLS = pv.SMTP.Host, pv.SMTP.Port, pv.SMTP.TLS
+	imapEP, smtpEP := pv.IMAP, pv.SMTP
+	if pv.Servers != nil {
+		imapEP, smtpEP = pv.Servers(pv, tok)
+	}
+	row.IMAPHost, row.IMAPPort, row.IMAPTLS, row.IMAPUsername = imapEP.Host, imapEP.Port, imapEP.TLS, login
+	row.SMTPHost, row.SMTPPort, row.SMTPTLS = smtpEP.Host, smtpEP.Port, smtpEP.TLS
 	if pv.SentCopy != "" {
 		row.SentCopy = pv.SentCopy
 	}
