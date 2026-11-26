@@ -74,6 +74,9 @@ type Upstream struct {
 	mu    sync.Mutex
 	caps  serverCaps
 	sched schedule
+
+	// sent are drafts being sent whose server copy may appear in Sent (sent_copy.go).
+	sent sentCopies
 }
 
 // serverCaps is what the engine uses, learned on the first connection.

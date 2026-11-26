@@ -10,6 +10,7 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/cron"
 	"github.com/woodchen-ink/czlmail/gateway/middleware"
 	"github.com/woodchen-ink/czlmail/gateway/service"
+	"github.com/woodchen-ink/czlmail/gateway/service/submission"
 )
 
 // apiError is a public error: HTTP status, five-digit code (status + sequence) and a
@@ -42,6 +43,8 @@ var adminErrors = []struct {
 	{errMissingPassword, apiError{400, 40034, "missing_password"}},
 	{service.ErrPasswordRequired, apiError{400, 40034, "missing_password"}},
 	{service.ErrPrivateNetwork, apiError{400, 40035, "private_network_not_allowed"}},
+	{errInvalidSentCopy, apiError{400, 40036, "invalid_sent_copy"}},
+	{submission.ErrInvalidIdentity, apiError{400, 40037, "invalid_identity"}},
 	{service.ErrUnauthenticated, apiError{401, 40100, "unauthenticated"}},
 	{service.ErrInvalidCredentials, apiError{401, 40101, "invalid_credentials"}},
 	{service.ErrAccountDisabled, apiError{401, 40102, "account_disabled"}},
@@ -53,10 +56,15 @@ var adminErrors = []struct {
 	{service.ErrAppPasswordNotFound, apiError{404, 40402, "app_password_not_found"}},
 	{cron.ErrUnknownTask, apiError{404, 40403, "task_not_found"}},
 	{service.ErrUpstreamNotFound, apiError{404, 40430, "upstream_not_found"}},
+	{submission.ErrIdentityNotFound, apiError{404, 40431, "identity_not_found"}},
+	{submission.ErrAccountNotFound, apiError{404, 40430, "upstream_not_found"}},
 	{service.ErrEmailTaken, apiError{409, 40900, "email_taken"}},
 	{service.ErrSetupCompleted, apiError{409, 40901, "setup_completed"}},
 	{cron.ErrTaskRunning, apiError{409, 40902, "task_running"}},
 	{service.ErrUpstreamKindReadOnly, apiError{409, 40930, "upstream_kind_managed"}},
+	{submission.ErrIdentityManaged, apiError{409, 40931, "identity_managed"}},
+	{submission.ErrUpstreamNotRunning, apiError{409, 40932, "upstream_not_running"}},
+	{submission.ErrCannotTestSend, apiError{409, 40933, "send_test_unsupported"}},
 }
 
 // fail writes the public form of err; unknown errors are logged and become 50000.
