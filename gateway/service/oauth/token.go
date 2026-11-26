@@ -19,6 +19,9 @@ type Token struct {
 	RefreshToken string    `json:"refreshToken"`
 	Expiry       time.Time `json:"expiry"`
 	Scope        string    `json:"scope,omitempty"`
+	// IDToken is the OpenID Connect id_token of a code exchange, read once for
+	// the address and never stored.
+	IDToken string `json:"-"`
 }
 
 // Client is a provider with the app credentials the admin entered.
@@ -66,7 +69,7 @@ func (c *Client) Exchange(ctx context.Context, hc *http.Client, code, verifier s
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, hc)
 	t, err := c.config().Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
-		return nil, classify(err)
+		return nil, c.classify(err)
 	}
 	if t.RefreshToken == "" {
 		return nil, ErrNoRefreshToken
@@ -80,7 +83,7 @@ func (c *Client) Refresh(ctx context.Context, hc *http.Client, refreshToken stri
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, hc)
 	t, err := c.config().TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
 	if err != nil {
-		return nil, classify(err)
+		return nil, c.classify(err)
 	}
 	return fromOAuth2(t, refreshToken), nil
 }
@@ -123,6 +126,9 @@ func fromOAuth2(t *oauth2.Token, refresh string) *Token {
 	if s, ok := t.Extra("scope").(string); ok {
 		out.Scope = s
 	}
+	if s, ok := t.Extra("id_token").(string); ok {
+		out.IDToken = s
+	}
 	if out.Expiry.IsZero() {
 		out.Expiry = time.Now().Add(time.Hour).UTC()
 	}
@@ -132,11 +138,16 @@ func fromOAuth2(t *oauth2.Token, refresh string) *Token {
 // classify maps the provider's error codes to ErrInvalidGrant / ErrInvalidClient;
 // anything else (network, 5xx, temporarily_unavailable) is returned as is and
 // is retried by the caller.
-func classify(err error) error {
+func (c *Client) classify(err error) error {
 	var re *oauth2.RetrieveError
 	if errors.As(err, &re) {
+		if c.Provider.ClassifyError != nil && re.Response != nil {
+			return c.Provider.ClassifyError(re.Response.StatusCode, re.Body)
+		}
 		switch re.ErrorCode {
-		case "invalid_grant":
+		// interaction_required / consent_required / login_required: OpenID
+		// Connect's "the user must come back" (MFA, Conditional Access, consent).
+		case "invalid_grant", "interaction_required", "consent_required", "login_required":
 			return fmt.Errorf("%w: %s", ErrInvalidGrant, re.ErrorDescription)
 		case "invalid_client", "unauthorized_client":
 			return fmt.Errorf("%w: %s", ErrInvalidClient, re.ErrorDescription)

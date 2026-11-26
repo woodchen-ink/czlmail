@@ -13,7 +13,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -31,6 +33,10 @@ type Server struct {
 	ExpiresIn time.Duration
 	// AuthorizeUser is who the authorization endpoint signs in. Default "user@example.test".
 	AuthorizeUser string
+	// TenantID is the "tid" claim of issued id_tokens (Microsoft). Code grants
+	// whose authorization request asked for "openid" get an unsigned id_token
+	// with email and preferred_username set to the user.
+	TenantID string
 
 	mu       sync.Mutex
 	codes    map[string]codeGrant
@@ -46,6 +52,7 @@ type codeGrant struct {
 	user      string
 	redirect  string
 	challenge string // S256 PKCE challenge, empty if none
+	scope     string
 }
 
 type accessGrant struct {
@@ -152,6 +159,18 @@ func (s *Server) FailAll(errCode string) {
 	s.mu.Unlock()
 }
 
+// RevokeUser makes every refresh token of user fail with invalid_grant, as when
+// the user removes the app's access or changes the password.
+func (s *Server) RevokeUser(user string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for tok, u := range s.refresh {
+		if u == user {
+			delete(s.refresh, tok)
+		}
+	}
+}
+
 // Validate reports the user an access token belongs to. It implements the token
 // check the fake IMAP server and Gmail API use.
 func (s *Server) Validate(accessToken string) (user string, ok bool) {
@@ -183,7 +202,7 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 		user = "user@example.test"
 	}
 	code := "code-" + randHex(12)
-	g := codeGrant{user: user, redirect: q.Get("redirect_uri")}
+	g := codeGrant{user: user, redirect: q.Get("redirect_uri"), scope: q.Get("scope")}
 	if q.Get("code_challenge") != "" {
 		if q.Get("code_challenge_method") != "S256" {
 			http.Error(w, "only S256 PKCE", http.StatusBadRequest)
@@ -234,7 +253,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var user, newRefresh string
+	var user, newRefresh, scope string
 	switch r.PostForm.Get("grant_type") {
 	case "authorization_code":
 		g, ok := s.codes[r.PostForm.Get("code")]
@@ -243,7 +262,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 			tokenError(w, http.StatusBadRequest, "invalid_grant")
 			return
 		}
-		user = g.user
+		user, scope = g.user, g.scope
 		newRefresh = "rt-" + randHex(12)
 		s.refresh[newRefresh] = user
 	case "refresh_token":
@@ -266,6 +285,9 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	}
 	if newRefresh != "" {
 		resp["refresh_token"] = newRefresh
+	}
+	if slices.Contains(strings.Fields(scope), "openid") {
+		resp["id_token"] = s.idToken(user)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -297,6 +319,17 @@ func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tokenError(w, http.StatusBadRequest, "invalid_token")
+}
+
+// idToken is an unsigned JWT; clients read it from the token response over TLS
+// and need not check the signature.
+func (s *Server) idToken(user string) string {
+	claims, _ := json.Marshal(map[string]any{
+		"iss": s.URL, "sub": "sub-" + user, "aud": s.ClientID, "iat": time.Now().Unix(),
+		"exp": time.Now().Add(time.Hour).Unix(), "email": user, "preferred_username": user, "tid": s.TenantID,
+	})
+	enc := base64.RawURLEncoding.EncodeToString
+	return enc([]byte(`{"alg":"none","typ":"JWT"}`)) + "." + enc(claims) + "."
 }
 
 func (s *Server) issueLocked(user string) string {

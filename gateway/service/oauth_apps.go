@@ -40,6 +40,11 @@ type OAuthAppView struct {
 	Scopes          []string   `json:"scopes"`
 	Tenant          string     `json:"tenant,omitempty"`
 	SecretExpiresAt *time.Time `json:"secretExpiresAt"`
+	// SecretState is unknown / ok / expiring (within 30 days) / expired.
+	SecretState oauth.SecretState `json:"secretState"`
+	// AdminConsentURL is the tenant-wide consent link (Microsoft), once a client
+	// id is stored.
+	AdminConsentURL string     `json:"adminConsentUrl,omitempty"`
 	UpdatedAt       *time.Time `json:"updatedAt"`
 }
 
@@ -87,7 +92,11 @@ func (o *OAuth) appView(name string, row *model.OAuthApp) OAuthAppView {
 		v.Configured = row.ClientID != "" && row.ClientSecretSealed != ""
 		t := row.UpdatedAt
 		v.UpdatedAt = &t
+		if p.AdminConsentURL != nil && row.ClientID != "" {
+			v.AdminConsentURL = p.AdminConsentURL(row.ClientID, v.RedirectURI, row.Tenant)
+		}
 	}
+	v.SecretState = oauth.SecretStateAt(v.SecretExpiresAt, o.now())
 	return v
 }
 

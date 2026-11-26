@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // Microsoft identity platform v2.0 endpoints. The "common" authority accepts work
@@ -39,57 +38,18 @@ var Scopes = []string{
 // resourceScopes need tenant consent; openid / email / offline_access do not.
 var resourceScopes = Scopes[3:]
 
-// SecretWarnBefore is how long before the client secret's expiry the admin
-// overview starts reminding the operator to rotate it.
-const SecretWarnBefore = 30 * 24 * time.Hour
-
-// SecretMaxLifetime is the longest client secret Entra issues (24 months).
-const SecretMaxLifetime = 2 * 365 * 24 * time.Hour
-
-// SecretExpiry is the reminder state of the client secret.
-type SecretExpiry string
-
-// Secret expiry states.
-const (
-	SecretUnknown  SecretExpiry = "unknown" // no expiry date recorded
-	SecretOK       SecretExpiry = "ok"
-	SecretExpiring SecretExpiry = "expiring" // within SecretWarnBefore
-	SecretExpired  SecretExpiry = "expired"
-)
-
-// SecretState tells where a client secret expiring at exp stands at now.
-func SecretState(exp, now time.Time) SecretExpiry {
-	switch {
-	case exp.IsZero():
-		return SecretUnknown
-	case !now.Before(exp):
-		return SecretExpired
-	case exp.Sub(now) <= SecretWarnBefore:
-		return SecretExpiring
-	}
-	return SecretOK
-}
-
-// AuthCodeParams are the Microsoft-specific authorization request parameters on
-// top of the standard ones (client_id, redirect_uri, response_type=code, scope,
-// state, PKCE). loginHint pre-fills the account on re-authorisation.
-func AuthCodeParams(loginHint string) url.Values {
-	v := url.Values{}
-	v.Set("response_mode", "query")
-	if loginHint != "" {
-		v.Set("login_hint", loginHint)
-	} else {
-		// Let a browser signed in to several accounts pick the right one.
-		v.Set("prompt", "select_account")
-	}
-	return v
-}
-
 // AdminConsentLink is the URL a tenant admin opens to consent for the whole
 // organisation, for tenants where users may not consent to apps themselves
-// (AADSTS65001 / 90094 "Need admin approval"). The answer comes back to the same
-// callback with admin_consent=True (or error=...) and no code.
-func AdminConsentLink(clientID, redirectURI, state string) string {
+// (AADSTS65001 / 90094 "Need admin approval"). tenant is the app's tenant
+// setting; for the multi-tenant authorities the admin signs in to their own
+// organisation.
+func AdminConsentLink(clientID, redirectURI, tenant, state string) string {
+	endpoint := AdminConsentURL
+	switch strings.ToLower(tenant) {
+	case "", "common", "organizations", "consumers":
+	default:
+		endpoint = AuthorityHost + "/" + url.PathEscape(tenant) + "/v2.0/adminconsent"
+	}
 	v := url.Values{}
 	v.Set("client_id", clientID)
 	v.Set("redirect_uri", redirectURI)
@@ -97,7 +57,7 @@ func AdminConsentLink(clientID, redirectURI, state string) string {
 	if state != "" {
 		v.Set("state", state)
 	}
-	return AdminConsentURL + "?" + v.Encode()
+	return endpoint + "?" + v.Encode()
 }
 
 // IDClaims are the id_token claims the gateway reads.
@@ -145,4 +105,16 @@ func ParseIDToken(idToken string) (IDClaims, error) {
 		return IDClaims{}, errors.New("microsoft: malformed id_token claims")
 	}
 	return c, nil
+}
+
+// Endpoints are the authorize and token URLs for the app's tenant setting: ""
+// or "common" for every account type, "organizations" for work accounts only,
+// "consumers" for personal ones, or one tenant (id or domain) for a single
+// organisation's app.
+func Endpoints(tenant string) (authorize, token string) {
+	if tenant == "" {
+		tenant = "common"
+	}
+	base := AuthorityHost + "/" + url.PathEscape(tenant) + "/oauth2/v2.0"
+	return base + "/authorize", base + "/token"
 }

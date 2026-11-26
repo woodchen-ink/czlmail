@@ -7,10 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/woodchen-ink/czlmail/gateway/pkg/oauthtest"
-	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 	"github.com/woodchen-ink/czlmail/gateway/service/upstream/microsoft"
 )
 
@@ -19,23 +17,23 @@ func TestClassifyTokenError(t *testing.T) {
 		name   string
 		status int
 		body   string
-		want   upstream.ErrorKind
+		want   microsoft.TokenClass
 	}{
-		{"refresh token expired", 400, `{"error":"invalid_grant","error_description":"AADSTS700082: The refresh token has expired due to inactivity.\r\nTrace ID: x","error_codes":[700082]}`, upstream.KindAuth},
-		{"password changed", 400, `{"error":"invalid_grant","error_codes":[50173]}`, upstream.KindAuth},
-		{"MFA now required", 400, `{"error":"interaction_required","error_codes":[50076],"suberror":"basic_action"}`, upstream.KindAuth},
-		{"consent withdrawn", 400, `{"error":"invalid_grant","error_description":"AADSTS65001: The user or administrator has not consented"}`, upstream.KindAuth},
-		{"grant code by number only", 400, `{"error":"invalid_request","error_codes":[70008]}`, upstream.KindAuth},
-		{"client secret expired", 401, `{"error":"invalid_client","error_codes":[7000222]}`, upstream.KindUnreachable},
-		{"wrong client secret", 401, `{"error":"invalid_client","error_codes":[7000215]}`, upstream.KindUnreachable},
-		{"throttled", 429, `{"error":"temporarily_unavailable"}`, upstream.KindThrottled},
-		{"server down", 503, `<html>Service Unavailable</html>`, upstream.KindUnreachable},
-		{"unknown request error", 400, `{"error":"invalid_request","error_codes":[90014]}`, upstream.KindUnreachable},
+		{"refresh token expired", 400, `{"error":"invalid_grant","error_description":"AADSTS700082: The refresh token has expired due to inactivity.\r\nTrace ID: x","error_codes":[700082]}`, microsoft.TokenGrantGone},
+		{"password changed", 400, `{"error":"invalid_grant","error_codes":[50173]}`, microsoft.TokenGrantGone},
+		{"MFA now required", 400, `{"error":"interaction_required","error_codes":[50076],"suberror":"basic_action"}`, microsoft.TokenGrantGone},
+		{"consent withdrawn", 400, `{"error":"invalid_grant","error_description":"AADSTS65001: The user or administrator has not consented"}`, microsoft.TokenGrantGone},
+		{"grant code by number only", 400, `{"error":"invalid_request","error_codes":[70008]}`, microsoft.TokenGrantGone},
+		{"client secret expired", 401, `{"error":"invalid_client","error_codes":[7000222]}`, microsoft.TokenBadClient},
+		{"wrong client secret", 401, `{"error":"invalid_client","error_codes":[7000215]}`, microsoft.TokenBadClient},
+		{"throttled", 429, `{"error":"temporarily_unavailable"}`, microsoft.TokenThrottled},
+		{"server down", 503, `<html>Service Unavailable</html>`, microsoft.TokenRetry},
+		{"unknown request error", 400, `{"error":"invalid_request","error_codes":[90014]}`, microsoft.TokenRetry},
 	}
 	for _, c := range cases {
-		err := microsoft.ClassifyTokenError(c.status, []byte(c.body))
-		if err.Kind != c.want {
-			t.Errorf("%s: kind %v, want %v (%v)", c.name, err.Kind, c.want, err)
+		err := microsoft.ParseTokenError(c.status, []byte(c.body))
+		if got := err.Class(); got != c.want {
+			t.Errorf("%s: class %v, want %v (%v)", c.name, got, c.want, err)
 		}
 		if strings.Contains(err.Error(), "Trace ID") {
 			t.Errorf("%s: error keeps the trace lines: %q", c.name, err.Error())
@@ -58,26 +56,24 @@ func TestClassifyTokenErrorFromEndpoint(t *testing.T) {
 	}
 
 	p.FailNextWith(oauthtest.Failure{Code: "invalid_grant", AADSTS: 50173})
-	status, body := refresh()
-	err := microsoft.ClassifyTokenError(status, body)
-	te := microsoft.ParseTokenError(status, body)
-	if err.Kind != upstream.KindAuth || te.AADSTS() != 50173 {
-		t.Errorf("revoked grant: %v (AADSTS %d)", err, te.AADSTS())
+	te := microsoft.ParseTokenError(refresh())
+	if te.Class() != microsoft.TokenGrantGone || te.AADSTS() != 50173 {
+		t.Errorf("revoked grant: %v (AADSTS %d)", te, te.AADSTS())
 	}
 
 	p.FailNextWith(oauthtest.Failure{Status: 503, Code: "temporarily_unavailable", AADSTS: 90033})
-	if err := microsoft.ClassifyTokenError(refresh()); err.Kind != upstream.KindUnreachable {
+	if err := microsoft.ParseTokenError(refresh()); err.Class() != microsoft.TokenRetry {
 		t.Errorf("outage: %v", err)
 	}
 
 	p.RevokeRefreshToken(rt)
-	if err := microsoft.ClassifyTokenError(refresh()); err.Kind != upstream.KindAuth {
+	if err := microsoft.ParseTokenError(refresh()); err.Class() != microsoft.TokenGrantGone {
 		t.Errorf("revoked refresh token: %v", err)
 	}
 }
 
 func TestAdminConsentLink(t *testing.T) {
-	link := microsoft.AdminConsentLink("11111111-2222-3333-4444-555555555555", "https://mail.example.test/oauth/microsoft/callback", "st")
+	link := microsoft.AdminConsentLink("11111111-2222-3333-4444-555555555555", "https://mail.example.test/oauth/microsoft/callback", "common", "st")
 	u, err := url.Parse(link)
 	if err != nil {
 		t.Fatal(err)
@@ -93,14 +89,20 @@ func TestAdminConsentLink(t *testing.T) {
 	if q.Get("scope") != "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send" {
 		t.Errorf("scope %q", q.Get("scope"))
 	}
+	// A single-tenant app: the admin consents in that tenant.
+	link = microsoft.AdminConsentLink("c", "https://mail.example.test/cb", "contoso.onmicrosoft.com", "")
+	if !strings.HasPrefix(link, "https://login.microsoftonline.com/contoso.onmicrosoft.com/v2.0/adminconsent?") {
+		t.Errorf("tenant link %s", link)
+	}
 }
 
-func TestAuthCodeParams(t *testing.T) {
-	if v := microsoft.AuthCodeParams(mailbox); v.Get("login_hint") != mailbox || v.Has("prompt") {
-		t.Errorf("re-auth %v", v)
+func TestEndpoints(t *testing.T) {
+	a, tok := microsoft.Endpoints("")
+	if a != "https://login.microsoftonline.com/common/oauth2/v2.0/authorize" || tok != "https://login.microsoftonline.com/common/oauth2/v2.0/token" {
+		t.Errorf("common: %s %s", a, tok)
 	}
-	if v := microsoft.AuthCodeParams(""); v.Get("prompt") != "select_account" {
-		t.Errorf("first sign-in %v", v)
+	if a, _ := microsoft.Endpoints("organizations"); a != "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize" {
+		t.Errorf("organizations: %s", a)
 	}
 }
 
@@ -128,25 +130,5 @@ func TestParseIDToken(t *testing.T) {
 	}
 	if _, err := microsoft.ParseIDToken("not-a-jwt"); err == nil {
 		t.Error("malformed token accepted")
-	}
-}
-
-func TestSecretState(t *testing.T) {
-	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
-	cases := []struct {
-		exp  time.Time
-		want microsoft.SecretExpiry
-	}{
-		{time.Time{}, microsoft.SecretUnknown},
-		{now.AddDate(0, 6, 0), microsoft.SecretOK},
-		{now.Add(30 * 24 * time.Hour), microsoft.SecretExpiring},
-		{now.Add(time.Hour), microsoft.SecretExpiring},
-		{now, microsoft.SecretExpired},
-		{now.AddDate(0, 0, -1), microsoft.SecretExpired},
-	}
-	for _, c := range cases {
-		if got := microsoft.SecretState(c.exp, now); got != c.want {
-			t.Errorf("expiry %v: %s, want %s", c.exp, got, c.want)
-		}
 	}
 }

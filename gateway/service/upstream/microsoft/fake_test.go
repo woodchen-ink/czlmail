@@ -91,9 +91,17 @@ func (s *exchangeIMAP) serve(c net.Conn) {
 			w("%s OK CAPABILITY completed.", tag)
 		case "AUTHENTICATE":
 			mech, ir, _ := strings.Cut(args, " ")
-			if !strings.EqualFold(mech, "XOAUTH2") || ir == "" {
+			if !strings.EqualFold(mech, "XOAUTH2") {
 				w("%s BAD Command Argument Error. 12", tag)
 				continue
+			}
+			if ir == "" { // without SASL-IR: initial response after "+"
+				w("+ ")
+				ir, err = r.ReadString('\n')
+				if err != nil {
+					return
+				}
+				ir = strings.TrimRight(ir, "\r\n")
 			}
 			raw, _ := base64.StdEncoding.DecodeString(ir)
 			s.mu.Lock()

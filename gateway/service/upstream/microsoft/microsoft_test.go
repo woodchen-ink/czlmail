@@ -152,7 +152,7 @@ func TestProbeFailures(t *testing.T) {
 		sm := newExchangeSMTP(t, tok)
 		cfg := probeConfig(im.Addr(), sm.Addr(), tok)
 		cfg.AccessToken = func(context.Context) (string, error) {
-			return "", microsoft.ClassifyTokenError(400, []byte(`{"error":"invalid_grant","error_codes":[700082]}`))
+			return "", &upstream.Error{Kind: upstream.KindAuth, Op: "oauth refresh", Err: microsoft.ParseTokenError(400, []byte(`{"error":"invalid_grant","error_codes":[700082]}`))}
 		}
 		rep, err := upstream.Probe(context.Background(), cfg)
 		if err != nil {

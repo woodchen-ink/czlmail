@@ -40,15 +40,22 @@ type Provider struct {
 	// handed to the upstream as Config.APIBase.
 	APIBase string
 
-	// Email returns the address of the mailbox the access token belongs to. c
-	// goes through the upstream's proxy.
-	Email func(ctx context.Context, c *http.Client, p *Provider, accessToken string) (string, error)
+	// Email returns the address of the mailbox tok belongs to (from an API with
+	// the access token, or from tok.IDToken). c goes through the upstream's proxy.
+	Email func(ctx context.Context, c *http.Client, p *Provider, tok *Token) (string, error)
 	// WithTenant adapts the endpoints to the app's tenant (Microsoft:
 	// login.microsoftonline.com/{tenant}/...); it gets a clone. Nil: no tenants.
 	WithTenant func(p *Provider, tenant string) *Provider
 	// Revoke ends the grant. Nil posts token=<refresh token> to RevokeURL, or
 	// does nothing when RevokeURL is empty.
 	Revoke func(ctx context.Context, c *http.Client, p *Provider, tok *Token) error
+	// ClassifyError maps a token endpoint error answer to ErrInvalidGrant /
+	// ErrInvalidClient (wrapped) or returns it for a retry. Nil: by the standard
+	// error codes only.
+	ClassifyError func(status int, body []byte) error
+	// AdminConsentURL is the link a tenant admin opens to approve the app for the
+	// whole organisation (Microsoft), for the app's tenant setting. Nil: none.
+	AdminConsentURL func(clientID, redirectURI, tenant string) string
 }
 
 // Clone returns a copy that can be changed (tests point endpoints at stand-ins).

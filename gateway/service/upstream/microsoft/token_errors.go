@@ -8,8 +8,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 )
 
 // TokenError is an error answer of the Microsoft identity platform token endpoint.
@@ -78,32 +76,42 @@ func ParseTokenError(status int, body []byte) *TokenError {
 	return te
 }
 
-// ClassifyTokenError maps a failed token request to an upstream error: a grant
-// that only a new sign-in can replace is KindAuth (the upstream turns
-// authRequired), throttling is KindThrottled, everything else is retried as
-// KindUnreachable. A wrong or expired client secret (invalid_client, AADSTS7000215
-// / 7000222) is also retried: it is the operator's app setting, affects every
-// Microsoft mailbox alike and is fixed in the admin, not by the user signing in.
-func ClassifyTokenError(status int, body []byte) *upstream.Error {
-	te := ParseTokenError(status, body)
-	return &upstream.Error{Kind: tokenKind(te), Op: "microsoft token", Err: te}
-}
+// TokenClass is what a failed token request means for the upstream.
+type TokenClass int
 
-func tokenKind(te *TokenError) upstream.ErrorKind {
+// Token error classes.
+const (
+	// TokenRetry: an outage or an answer the gateway cannot act on; retried.
+	TokenRetry TokenClass = iota
+	// TokenGrantGone: only a new sign-in by the user replaces the grant.
+	TokenGrantGone
+	// TokenBadClient: the app's client id or secret is wrong or the secret
+	// expired (AADSTS7000215 / 7000222). Fixed in the gateway's OAuth app
+	// settings, which restarts the mailboxes it stopped.
+	TokenBadClient
+	// TokenThrottled: HTTP 429.
+	TokenThrottled
+)
+
+// Class sorts the answer: the OAuth error string first, then the AADSTS number
+// for answers whose string is generic.
+func (e *TokenError) Class() TokenClass {
 	switch {
-	case te.Status == http.StatusTooManyRequests:
-		return upstream.KindThrottled
-	case te.Status >= 500:
-		return upstream.KindUnreachable
+	case e.Status == http.StatusTooManyRequests:
+		return TokenThrottled
+	case e.Status >= 500:
+		return TokenRetry
 	}
-	switch te.Code {
+	switch e.Code {
 	case "invalid_grant", "interaction_required", "consent_required", "login_required":
-		return upstream.KindAuth
-	case "invalid_client", "unauthorized_client", "invalid_scope", "temporarily_unavailable", "server_error":
-		return upstream.KindUnreachable
+		return TokenGrantGone
+	case "invalid_client", "unauthorized_client":
+		return TokenBadClient
+	case "temporarily_unavailable", "server_error":
+		return TokenRetry
 	}
-	if slices.Contains(grantGone, te.AADSTS()) {
-		return upstream.KindAuth
+	if slices.Contains(grantGone, e.AADSTS()) {
+		return TokenGrantGone
 	}
-	return upstream.KindUnreachable
+	return TokenRetry
 }

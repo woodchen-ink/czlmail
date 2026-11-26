@@ -36,12 +36,12 @@ func init() {
 }
 
 // gmailProfileEmail reads users.getProfile.
-func gmailProfileEmail(ctx context.Context, c *http.Client, p *Provider, accessToken string) (string, error) {
+func gmailProfileEmail(ctx context.Context, c *http.Client, p *Provider, tok *Token) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(p.APIBase, "/")+"/gmail/v1/users/me/profile", nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
 	res, err := c.Do(req)
 	if err != nil {
 		return "", err
