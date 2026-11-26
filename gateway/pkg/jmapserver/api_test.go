@@ -95,7 +95,7 @@ func TestMethodErrors(t *testing.T) {
 	e := newEnv(t, 0)
 	registerList(e.srv)
 	e.srv.Register("Test/upstream", testCap, func(context.Context, *jmapserver.Call) (any, error) {
-		return nil, jmapserver.ServerUnavailable(&jmapserver.UpstreamError{Status: jmapserver.UpstreamUnavailable, Code: 50310})
+		return nil, jmapserver.ServerUnavailable(&jmapserver.UpstreamError{Status: jmapserver.UpstreamUnreachable, Code: jmapserver.CodeUpstreamUnreachable})
 	})
 	e.srv.Register("Test/crash", testCap, func(context.Context, *jmapserver.Call) (any, error) {
 		return nil, fmt.Errorf("upstream said: secret detail")
@@ -116,7 +116,7 @@ func TestMethodErrors(t *testing.T) {
 			t.Errorf("call %d: %s %v, want %s", i, r[i].Name, r[i].Args, typ)
 		}
 	}
-	if up, _ := r[2].Args["czlUpstream"].(map[string]any); up["status"] != "unavailable" || up["code"] != 50310.0 {
+	if up, _ := r[2].Args["czlUpstream"].(map[string]any); up["status"] != "unreachable" || up["code"] != 50210.0 {
 		t.Errorf("czlUpstream: %v", r[2].Args)
 	}
 	if strings.Contains(string(body), "secret") {
@@ -141,14 +141,14 @@ func TestRequestLevelErrors(t *testing.T) {
 		code                   float64
 	}{
 		{"unknown capability", `{"using":["urn:ietf:params:jmap:core","urn:nope"],"methodCalls":[]}`,
-			"urn:ietf:params:jmap:error:unknownCapability", "", 40003},
-		{"not json", `{"using":`, "urn:ietf:params:jmap:error:notJSON", "", 40001},
-		{"not request", `{"using":["urn:ietf:params:jmap:core"]}`, "urn:ietf:params:jmap:error:notRequest", "", 40002},
-		{"bad invocation", `{"using":[],"methodCalls":[["Core/echo",[],"0"]]}`, "urn:ietf:params:jmap:error:notRequest", "", 40002},
+			"urn:ietf:params:jmap:error:unknownCapability", "", 40022},
+		{"not json", `{"using":`, "urn:ietf:params:jmap:error:notJSON", "", 40020},
+		{"not request", `{"using":["urn:ietf:params:jmap:core"]}`, "urn:ietf:params:jmap:error:notRequest", "", 40021},
+		{"bad invocation", `{"using":[],"methodCalls":[["Core/echo",[],"0"]]}`, "urn:ietf:params:jmap:error:notRequest", "", 40021},
 		{"too many calls", `{"using":["urn:ietf:params:jmap:core"],"methodCalls":[` + strings.Join(calls, ",") + `]}`,
-			"urn:ietf:params:jmap:error:limit", "maxCallsInRequest", 40004},
+			"urn:ietf:params:jmap:error:limit", "maxCallsInRequest", 40023},
 		{"too large", `{"using":["urn:ietf:params:jmap:core"],"methodCalls":[],"pad":"` + strings.Repeat("x", jmapserver.MaxSizeRequest) + `"}`,
-			"urn:ietf:params:jmap:error:limit", "maxSizeRequest", 40004},
+			"urn:ietf:params:jmap:error:limit", "maxSizeRequest", 40023},
 	}
 	for _, tc := range cases {
 		status, ctype, body := e.post(tc.body)

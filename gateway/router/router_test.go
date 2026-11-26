@@ -55,9 +55,16 @@ func TestHealthAndNotFound(t *testing.T) {
 
 func TestJMAPMounted(t *testing.T) {
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	db, err := database.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close(db)
+	clientIP := func(r *http.Request) string { return r.RemoteAddr }
+	basic := service.NewBasicAuthenticator(db, service.NewRateLimiter(), service.NewInvalidations(), clientIP, log)
 	j, err := jmapserver.New(jmapserver.Options{
 		BaseURL: "https://gw.example.com", DataDir: t.TempDir(),
-		Auth: service.NoUsers{}, Accounts: service.UpstreamAccounts{}, Log: log,
+		Auth: basic, Accounts: service.NewUpstreamAccounts(db), Log: log,
 	})
 	if err != nil {
 		t.Fatal(err)

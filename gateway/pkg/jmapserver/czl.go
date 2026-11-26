@@ -20,14 +20,22 @@ type GatewayInfo struct {
 	AdminURL        string `json:"adminUrl"`
 }
 
-// Upstream statuses and the codes reported with them.
+// Upstream statuses.
 const (
 	UpstreamOK           = "ok"
-	UpstreamAuthRequired = "authRequired" // 40110: the user must sign in to the mailbox again
-	UpstreamServerError  = "error"        // 50210: the mailbox server answered with an error
-	UpstreamUnavailable  = "unavailable"  // 50310: the mailbox server cannot be reached
-	UpstreamRateLimited  = "rateLimited"  // 42910: the provider throttles the gateway
-	UpstreamLocked       = "locked"       // 42310: the provider locked or disabled the mailbox
+	UpstreamSyncing      = "syncing"      // first import running; code 50310
+	UpstreamAuthRequired = "authRequired" // the user must sign in to the mailbox again; code 40110
+	UpstreamUnreachable  = "unreachable"  // the mailbox server fails or cannot be reached; code 50210, or 42910 when the provider throttles
+	UpstreamPaused       = "paused"       // paused by the user or an admin; code 42310
+)
+
+// Codes reported with a non-ok upstream status.
+const (
+	CodeUpstreamAuthRequired = 40110
+	CodeUpstreamUnreachable  = 50210
+	CodeUpstreamSyncing      = 50310
+	CodeUpstreamRateLimited  = 42910
+	CodeUpstreamPaused       = 42310
 )
 
 // UpstreamInfo is the value of UpstreamCapability on an account. An account
@@ -48,10 +56,10 @@ type UpstreamInfo struct {
 	InitialSync *InitialSync `json:"initialSync"`
 }
 
-// InitialSync is the progress of an upstream's first import.
+// InitialSync is the progress of an upstream's first import, in messages.
 type InitialSync struct {
-	MessagesDone  int `json:"messagesDone"`
-	MessagesTotal int `json:"messagesTotal"`
+	Done  int `json:"done"`
+	Total int `json:"total"`
 }
 
 // UpstreamError says why an upstream cannot serve a call; methods return it

@@ -34,10 +34,17 @@ const CoreCapability = "urn:ietf:params:jmap:core"
 const DefaultPushDebounce = 500 * time.Millisecond
 
 // Authenticator identifies the user of a request. Only an error here makes the
-// server answer 401; per-account problems must never surface as 401, because the
+// server answer 401 (or 429 for a RetryAfterError); per-account problems must never surface as 401, because the
 // client then treats the whole sign-in as revoked.
 type Authenticator interface {
 	Authenticate(r *http.Request) (userID string, err error)
+}
+
+// RetryAfterError is an Authenticator error meaning "too many failed attempts":
+// the server answers 429 with Retry-After instead of 401.
+type RetryAfterError interface {
+	error
+	RetryAfterSeconds() int
 }
 
 // AccountSource lists the accounts a user can see.

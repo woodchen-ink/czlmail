@@ -2,7 +2,10 @@ package jmapserver_test
 
 import (
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"git.sr.ht/~rockorager/go-jmap"
@@ -120,5 +123,29 @@ func TestWellKnownRedirect(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != e.ts.URL+"/jmap/session" {
 		t.Fatalf("%d %s", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
+type rateLimited struct{}
+
+func (rateLimited) Error() string          { return "rate limited" }
+func (rateLimited) RetryAfterSeconds() int { return 42 }
+
+type limitedAuth struct{}
+
+func (limitedAuth) Authenticate(*http.Request) (string, error) { return "", rateLimited{} }
+
+func TestRateLimitedAuthIs429(t *testing.T) {
+	e := newEnv(t, 0)
+	srv, err := jmapserver.New(jmapserver.Options{BaseURL: e.ts.URL, DataDir: t.TempDir(), Auth: limitedAuth{},
+		Accounts: e.accounts, Log: slog.New(slog.NewJSONHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	srv.Session(rec, httptest.NewRequest("GET", "/jmap/session", nil))
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "42" ||
+		problemOf(t, rec.Body.Bytes())["code"] != 42900.0 {
+		t.Fatalf("%d %v %s", rec.Code, rec.Header(), rec.Body)
 	}
 }

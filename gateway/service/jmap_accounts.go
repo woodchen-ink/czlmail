@@ -3,26 +3,33 @@ package service
 import (
 	"context"
 	"errors"
-	"net/http"
 
+	"gorm.io/gorm"
+
+	"github.com/woodchen-ink/czlmail/gateway/model"
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 )
 
 // UpstreamAccounts lists a gateway user's upstream mailboxes as JMAP accounts.
 // No upstream exists yet, so every user gets an empty list and the Session
 // answers 403 no-upstream; the upstream work packages fill this in.
-type UpstreamAccounts struct{}
-
-// UserSession implements jmapserver.AccountSource.
-func (UpstreamAccounts) UserSession(_ context.Context, userID string) (*jmapserver.UserSession, error) {
-	return &jmapserver.UserSession{Username: userID}, nil
+type UpstreamAccounts struct {
+	db *gorm.DB
 }
 
-// errNoUsers is returned while gateway users do not exist yet.
-var errNoUsers = errors.New("gateway users are not implemented")
+// NewUpstreamAccounts returns the account source backed by db.
+func NewUpstreamAccounts(db *gorm.DB) *UpstreamAccounts { return &UpstreamAccounts{db: db} }
 
-// NoUsers rejects every request until gateway users and app passwords exist.
-type NoUsers struct{}
-
-// Authenticate implements jmapserver.Authenticator.
-func (NoUsers) Authenticate(*http.Request) (string, error) { return "", errNoUsers }
+// UserSession implements jmapserver.AccountSource. The username is the user's email.
+func (a *UpstreamAccounts) UserSession(ctx context.Context, userPublicID string) (*jmapserver.UserSession, error) {
+	var u model.User
+	err := a.db.WithContext(ctx).Select("email").Where("public_id = ?", userPublicID).First(&u).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Deleted between authentication and now: nothing to show.
+		return &jmapserver.UserSession{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &jmapserver.UserSession{Username: u.Email}, nil
+}

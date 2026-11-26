@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 )
 
 // UserSession is what an AccountSource reports for one user.
@@ -135,6 +137,11 @@ func (s *Server) Session(w http.ResponseWriter, r *http.Request) {
 // authenticate writes 401 and returns false when the request has no valid credentials.
 func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (string, bool) {
 	userID, err := s.opts.Auth.Authenticate(r)
+	if rl, ok := errors.AsType[RetryAfterError](err); ok {
+		w.Header().Set("Retry-After", strconv.Itoa(rl.RetryAfterSeconds()))
+		writeProblem(w, problemTooManyRequests())
+		return "", false
+	}
 	if err != nil || userID == "" {
 		w.Header().Set("WWW-Authenticate", `Basic realm="czlmail gateway", charset="UTF-8"`)
 		writeProblem(w, problemUnauthorized())

@@ -52,7 +52,7 @@ func TestUploadDownloadThroughGoJMAP(t *testing.T) {
 	}
 	// Unknown account.
 	if status, _, body := e.get("/jmap/download/zz/"+string(up.ID)+"/x", "alice"); status != http.StatusNotFound ||
-		problemOf(t, body)["code"] != 40401.0 {
+		problemOf(t, body)["code"] != 40420.0 {
 		t.Fatalf("unknown account: %d %s", status, body)
 	}
 }
@@ -97,7 +97,7 @@ func TestDownloadDispatchByPrefix(t *testing.T) {
 	}
 	p := problemOf(t, body)
 	up, _ := p["czlUpstream"].(map[string]any)
-	if p["code"] != 50301.0 || up["status"] != "authRequired" || up["code"] != 40110.0 {
+	if p["code"] != 50320.0 || up["status"] != "authRequired" || up["code"] != 40110.0 {
 		t.Fatalf("problem: %v", p)
 	}
 	if status, _, _ := e.get("/jmap/download/a1/m404/x", "alice"); status != http.StatusNotFound {

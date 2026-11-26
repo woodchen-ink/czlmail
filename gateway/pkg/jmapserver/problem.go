@@ -40,8 +40,13 @@ func writeProblem(w http.ResponseWriter, p Problem) {
 }
 
 func problemUnauthorized() Problem {
-	return Problem{Type: problemBlank, Status: http.StatusUnauthorized, Code: 40100, Msg: "unauthorized",
+	return Problem{Type: problemBlank, Status: http.StatusUnauthorized, Code: 40100, Msg: "unauthenticated",
 		Detail: "Valid credentials are required."}
+}
+
+func problemTooManyRequests() Problem {
+	return Problem{Type: problemBlank, Status: http.StatusTooManyRequests, Code: 42900, Msg: "too_many_requests",
+		Detail: "Too many failed sign-in attempts; retry later."}
 }
 
 func problemNoUpstream(baseURL string) Problem {
@@ -50,45 +55,45 @@ func problemNoUpstream(baseURL string) Problem {
 }
 
 func problemNotJSON() Problem {
-	return Problem{Type: ProblemNotJSON, Status: http.StatusBadRequest, Code: 40001, Msg: "not_json",
+	return Problem{Type: ProblemNotJSON, Status: http.StatusBadRequest, Code: 40020, Msg: "not_json",
 		Detail: "The request body is not valid JSON."}
 }
 
 func problemNotRequest(detail string) Problem {
-	return Problem{Type: ProblemNotRequest, Status: http.StatusBadRequest, Code: 40002, Msg: "not_request", Detail: detail}
+	return Problem{Type: ProblemNotRequest, Status: http.StatusBadRequest, Code: 40021, Msg: "not_request", Detail: detail}
 }
 
 func problemUnknownCapability(uri string) Problem {
-	return Problem{Type: ProblemUnknownCapability, Status: http.StatusBadRequest, Code: 40003, Msg: "unknown_capability",
+	return Problem{Type: ProblemUnknownCapability, Status: http.StatusBadRequest, Code: 40022, Msg: "unknown_capability",
 		Detail: "Unsupported capability: " + uri}
 }
 
 func problemLimit(limit string) Problem {
-	return Problem{Type: ProblemLimit, Status: http.StatusBadRequest, Code: 40004, Msg: "limit_exceeded",
+	return Problem{Type: ProblemLimit, Status: http.StatusBadRequest, Code: 40023, Msg: "limit_exceeded",
 		Detail: "The request exceeds a server limit.", Limit: limit}
 }
 
 func problemBadQuery(detail string) Problem {
-	return Problem{Type: problemBlank, Status: http.StatusBadRequest, Code: 40005, Msg: "invalid_query", Detail: detail}
+	return Problem{Type: problemBlank, Status: http.StatusBadRequest, Code: 40024, Msg: "invalid_query", Detail: detail}
 }
 
 func problemUploadTooLarge() Problem {
-	return Problem{Type: ProblemLimit, Status: http.StatusRequestEntityTooLarge, Code: 41301, Msg: "upload_too_large",
+	return Problem{Type: ProblemLimit, Status: http.StatusRequestEntityTooLarge, Code: 41320, Msg: "upload_too_large",
 		Detail: "The upload exceeds maxSizeUpload.", Limit: "maxSizeUpload"}
 }
 
 func problemAccountNotFound() Problem {
-	return Problem{Type: problemBlank, Status: http.StatusNotFound, Code: 40401, Msg: "account_not_found",
+	return Problem{Type: problemBlank, Status: http.StatusNotFound, Code: 40420, Msg: "account_not_found",
 		Detail: "The account does not exist."}
 }
 
 func problemBlobNotFound() Problem {
-	return Problem{Type: problemBlank, Status: http.StatusNotFound, Code: 40402, Msg: "blob_not_found",
+	return Problem{Type: problemBlank, Status: http.StatusNotFound, Code: 40421, Msg: "blob_not_found",
 		Detail: "The blob does not exist."}
 }
 
 func problemUpstreamUnavailable(u *UpstreamError) Problem {
-	return Problem{Type: ProblemUpstream, Status: http.StatusServiceUnavailable, Code: 50301, Msg: "upstream_unavailable",
+	return Problem{Type: ProblemUpstream, Status: http.StatusServiceUnavailable, Code: 50320, Msg: "upstream_unavailable",
 		Detail: "The mailbox is temporarily unavailable.", Upstream: u}
 }
 
