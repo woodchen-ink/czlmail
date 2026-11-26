@@ -193,7 +193,17 @@ export function MailSidebar({
   const otherSignIns = [...new Set(accounts.filter((a) => a.signIn).map((a) => a.signIn))].map((id) => {
     const list = accounts.filter((a) => a.signIn === id);
     const own = list.filter((a) => a.isPersonal);
-    return { id, list, own, shared: list.filter((a) => !a.isPersonal), title: (own[0] ?? list[0]).name };
+    // 一个登录下有多个邮箱或是网关邮箱 (czlmail 网关) 时, 每个邮箱各有一行标题, 这一节的标题用登录的服务器,
+    // 不用第一个邮箱的名字, 否则看起来整节只属于那一个邮箱。
+    const grouped = own.length > 1 || own.some((a) => a.upstream);
+    const host = list[0].signInHost;
+    return {
+      id,
+      list,
+      own,
+      shared: list.filter((a) => !a.isPersonal),
+      title: grouped && host ? host : (own[0] ?? list[0]).name,
+    };
   });
   const sumInbox = (list: Account[]) =>
     list.reduce((n, a) => n + (muted.has(a.id) ? 0 : inboxUnread(mailboxesByAccount[a.id])), 0);
