@@ -1,0 +1,49 @@
+# Upstream servers for the gateway's integration tests. Test-only: plaintext auth, fixed
+# passwords, no persistence. See README.md "Testing".
+#
+#   docker compose -f docker-compose.test.yml up -d
+#   GATEWAY_TEST_IMAP_ADDR=127.0.0.1:1143 GATEWAY_TEST_IMAP_BASIC_ADDR=127.0.0.1:1144 \
+#   GATEWAY_TEST_SMTP_ADDR=127.0.0.1:1025 GATEWAY_TEST_MAILPIT_URL=http://127.0.0.1:8025 \
+#   go test ./...
+#   docker compose -f docker-compose.test.yml down -v
+name: czlmail-gateway-test
+
+x-dovecot: &dovecot
+  image: dovecot/dovecot:2.4.2
+  tmpfs:
+    - /srv/vmail:mode=1777
+  restart: "no"
+
+services:
+  # Full tier: CONDSTORE, QRESYNC, NOTIFY, IDLE, MOVE, UIDPLUS, SPECIAL-USE, LIST-STATUS.
+  # Dovecot has no OBJECTID (RFC 8474); it offers X-GUID instead. OBJECTID is covered by
+  # pkg/gmailtest with Options.ObjectID.
+  dovecot:
+    <<: *dovecot
+    ports:
+      - "127.0.0.1:1143:143"
+    volumes:
+      - ./testdata/dovecot/dovecot.conf:/etc/dovecot/dovecot.conf:ro
+      - ./testdata/dovecot/users:/etc/dovecot/users:ro
+
+  # Fallback tier: same server, CONDSTORE / QRESYNC / NOTIFY not advertised.
+  dovecot-basic:
+    <<: *dovecot
+    ports:
+      - "127.0.0.1:1144:143"
+    volumes:
+      - ./testdata/dovecot/dovecot.conf:/etc/dovecot/dovecot.conf:ro
+      - ./testdata/dovecot/basic.conf:/etc/dovecot/local.conf:ro
+      - ./testdata/dovecot/users:/etc/dovecot/users:ro
+
+  # SMTP sink with an HTTP API for checking what the gateway sent.
+  mailpit:
+    image: axllent/mailpit:v1.27.11
+    restart: "no"
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      MP_MAX_MESSAGES: "5000"

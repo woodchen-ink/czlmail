@@ -37,7 +37,24 @@ jobs:
           go-version-file: gateway/go.mod
           cache-dependency-path: gateway/go.sum
       - run: go vet ./...
+      # Dovecot (full and fallback tiers) and Mailpit from docker-compose.test.yml.
+      # Compose rather than service containers: services start before checkout and
+      # cannot mount the repo's test configs.
+      - name: Start test servers
+        run: |
+          docker compose -f docker-compose.test.yml up -d
+          for port in 1143 1144 1025 8025; do
+            timeout 60 bash -c "until (echo > /dev/tcp/127.0.0.1/$port) 2>/dev/null; do sleep 1; done"
+          done
       - run: go test -race ./...
+        env:
+          GATEWAY_TEST_IMAP_ADDR: 127.0.0.1:1143
+          GATEWAY_TEST_IMAP_BASIC_ADDR: 127.0.0.1:1144
+          GATEWAY_TEST_SMTP_ADDR: 127.0.0.1:1025
+          GATEWAY_TEST_MAILPIT_URL: http://127.0.0.1:8025
+      - name: Test server logs
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs
 
   image:
     needs: test
