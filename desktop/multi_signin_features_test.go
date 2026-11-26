@@ -353,10 +353,12 @@ func TestOwnAddressesParallelAndStale(t *testing.T) {
 // 收件人目录合并各登录的邮局目录; 查询失败有负缓存, 连不上的服务器不会每敲一个字重试; 正在查的不重复查也不等。
 func TestDirectoryAcrossSignIns(t *testing.T) {
 	a, _ := multiSignInApp(t)
+	// 会话里没有这两个账号, 能力按未知处理 (不算缺成员目录)。
 	a.primary.client = &jmap.Client{SessionEndpoint: "https://one.example/jmap", Session: &jmap.Session{}}
-	a.primary.sync = &syncer.Syncer{}
+	a.primary.sync = syncer.New(a.primary.client, a.store, a.log)
 	a.extra[0].client = &jmap.Client{SessionEndpoint: "https://two.example/jmap", Session: &jmap.Session{}}
-	a.extra[0].sync = &syncer.Syncer{}
+	a.extra[0].sync = syncer.New(a.extra[0].client, a.store, a.log)
+	a.extra[0].sync.SetSignIn("s2")
 	directoryCache.Lock()
 	directoryCache.entries = nil
 	directoryCache.Unlock()
