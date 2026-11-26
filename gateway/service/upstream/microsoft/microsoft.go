@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/woodchen-ink/czlmail/gateway/pkg/imapc"
 	"github.com/woodchen-ink/czlmail/gateway/service/mailindex"
@@ -62,7 +63,50 @@ func New(cfg upstream.Config, idx *mailindex.Store) (upstream.Upstream, error) {
 	if cfg.AccessToken == nil {
 		return nil, errNoToken
 	}
-	return imap.NewWithOptions(WithDefaults(cfg), idx, imap.Options{SignIn: signIn}), nil
+	nc := &notConnected{}
+	return imap.NewWithOptions(WithDefaults(cfg), idx, imap.Options{SignIn: nc.signIn}), nil
+}
+
+// NotConnectedRetries is how many sign-ins in a row may end in "User is
+// authenticated but not connected" before the mailbox stops at authRequired.
+// Right after an account's first authorisation Exchange answers so for a few
+// minutes; with the runner's backoff (5 s doubling to 5 min) eight tries cover
+// about ten minutes.
+const NotConnectedRetries = 8
+
+// notConnected counts consecutive "authenticated but not connected" sign-ins of
+// one upstream.
+type notConnected struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (nc *notConnected) signIn(ctx context.Context, c *imapc.Client, cfg upstream.Config) error {
+	return nc.classify(signIn(ctx, c, cfg), cfg)
+}
+
+// classify counts a sign-in result: "not connected" is retried (unreachable)
+// until NotConnectedRetries in a row, then authRequired, both with code 40313.
+func (nc *notConnected) classify(err error, cfg upstream.Config) error {
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	if err == nil || !IsNotConnected(err) {
+		if err == nil {
+			nc.n = 0
+		}
+		return err
+	}
+	nc.n++
+	kind := upstream.KindUnreachable
+	if nc.n >= NotConnectedRetries {
+		kind = upstream.KindAuth
+	}
+	if cfg.Log != nil {
+		// The XOAUTH2 user= is the first thing to compare with the account the
+		// token belongs to (logged at authorisation); never the token.
+		cfg.Log.Warn("microsoft imap not connected", "account", cfg.AccountID, "user", cfg.IMAP.Username, "attempt", nc.n, "err", err)
+	}
+	return &upstream.Error{Kind: kind, Op: "sign in", Err: err, Code: CodeProbeIMAPDisabled}
 }
 
 func signIn(ctx context.Context, c *imapc.Client, cfg upstream.Config) error {
@@ -70,7 +114,21 @@ func signIn(ctx context.Context, c *imapc.Client, cfg upstream.Config) error {
 	if err != nil {
 		return err
 	}
-	return c.LoginXOAuth2(ctx, cfg.IMAP.Username, tok)
+	err = c.LoginXOAuth2(ctx, cfg.IMAP.Username, tok)
+	if err != nil && cfg.Log != nil && !IsNotConnected(err) {
+		cfg.Log.Warn("microsoft imap sign in", "account", cfg.AccountID, "user", cfg.IMAP.Username, "err", err)
+	}
+	return err
+}
+
+// IsNotConnected reports Exchange's "User is authenticated but not connected":
+// the token was accepted but the mailbox cannot be opened for it. Seen when
+// the XOAUTH2 user is not the mailbox the token belongs to (another account
+// picked at authorisation, an alias that is not the primary address), when
+// IMAP is off or the account must first be verified at outlook.live.com, and
+// for a few minutes after a new account's first authorisation.
+func IsNotConnected(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "authenticated but not connected")
 }
 
 // Probe is the upstream.Prober for microsoft: the IMAP test with the Exchange
@@ -97,8 +155,8 @@ const (
 	// off ("5.7.139 ... SmtpClientAuthentication is disabled").
 	CodeProbeSMTPAuthDisabled = 40312
 	// CodeProbeIMAPDisabled: the token was accepted but Exchange will not open the
-	// mailbox ("User is authenticated but not connected"): IMAP is disabled for the
-	// mailbox, or the signed-in account is not the mailbox owner.
+	// mailbox ("User is authenticated but not connected", see IsNotConnected).
+	// Also the status code of a mailbox stopped by it.
 	CodeProbeIMAPDisabled = 40313
 )
 
@@ -111,6 +169,6 @@ func annotate(p *upstream.ProbePart) {
 	case strings.Contains(d, "5.7.139") || strings.Contains(d, "smtpclientauthentication is disabled"):
 		p.Code, p.Msg = CodeProbeSMTPAuthDisabled, "smtp_auth_disabled"
 	case strings.Contains(d, "authenticated but not connected"):
-		p.Code, p.Msg = CodeProbeIMAPDisabled, "imap_access_disabled"
+		p.Code, p.Msg = CodeProbeIMAPDisabled, "mailbox_not_connected"
 	}
 }

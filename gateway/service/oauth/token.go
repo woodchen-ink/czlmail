@@ -2,6 +2,8 @@ package oauth
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -154,4 +156,29 @@ func (c *Client) classify(err error) error {
 		}
 	}
 	return err
+}
+
+// IDClaims returns the identifying claims of tok's id_token (email,
+// preferred_username, oid, tid, sub) for diagnostics; empty without one. The
+// token came straight from the token endpoint, so its signature is not checked.
+func (t *Token) IDClaims() map[string]string {
+	out := map[string]string{}
+	parts := strings.Split(t.IDToken, ".")
+	if len(parts) != 3 {
+		return out
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return out
+	}
+	var c map[string]any
+	if json.Unmarshal(raw, &c) != nil {
+		return out
+	}
+	for _, k := range []string{"email", "preferred_username", "oid", "tid", "sub"} {
+		if v, ok := c[k].(string); ok {
+			out[k] = v
+		}
+	}
+	return out
 }

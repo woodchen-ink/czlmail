@@ -678,6 +678,7 @@ func (e *runnerEvents) StatusChanged(accountID string, st upstream.Status) {
 				if caps, err := r.up.Probe(ctx); err == nil {
 					e.m.saveCaps(accountID, caps)
 				}
+				e.m.resolveAddress(accountID, r.idx)
 			})
 		})
 	}

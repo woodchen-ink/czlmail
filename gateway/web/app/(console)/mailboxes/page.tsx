@@ -10,6 +10,7 @@ import {
   Mails,
   Network,
   Pause,
+  Pencil,
   Play,
   Plug,
   Plus,
@@ -22,6 +23,7 @@ import { toast } from "sonner"
 import { AddMailboxDialog } from "./components/add-mailbox-dialog"
 import { ConnectionReport } from "./components/connection-report"
 import { PasswordDialog } from "./components/password-dialog"
+import { RenameDialog } from "./components/rename-dialog"
 import { ProxyDialog } from "./components/proxy-dialog"
 import { SendingDialog } from "./components/sending-dialog"
 import { ConfirmDialog } from "@/components/confirm-dialog"
@@ -161,6 +163,7 @@ function MailboxesPage() {
   }
   const [proxyFor, setProxyFor] = React.useState<Upstream | null>(null)
   const [passwordFor, setPasswordFor] = React.useState<Upstream | null>(null)
+  const [renameFor, setRenameFor] = React.useState<Upstream | null>(null)
   const [removing, setRemoving] = React.useState<Upstream | null>(null)
   const [report, setReport] = React.useState<{
     name: string
@@ -264,6 +267,9 @@ function MailboxesPage() {
             <KeyRound /> {t.mailboxes.reauth}
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem onClick={() => setRenameFor(u)}>
+          <Pencil /> {t.mailboxes.rename}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setSending(u.id)}>
           <Send /> {t.mailboxes.sending}
         </DropdownMenuItem>
@@ -343,6 +349,10 @@ function MailboxesPage() {
       <ProxyDialog
         upstream={proxyFor}
         onOpenChange={(o) => !o && setProxyFor(null)}
+      />
+      <RenameDialog
+        upstream={renameFor}
+        onOpenChange={(o) => !o && setRenameFor(null)}
       />
       <PasswordDialog
         upstream={passwordFor}

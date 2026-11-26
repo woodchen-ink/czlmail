@@ -330,8 +330,15 @@ Microsoft 365 可以按邮箱关闭 IMAP 和 SMTP 认证, 新租户默认关闭 
 
 | 测试连接报错 | 原因 | 处理 |
 | --- | --- | --- |
-| 40313 `imap_access_disabled` | 这个邮箱的 IMAP 被关了, 或登录的账号不是邮箱的所有者 | Microsoft 365 管理中心 →「用户」→「活跃用户」→ 该用户 →「邮件」→「管理电子邮件应用」, 勾选 **IMAP**; 或 `Set-CASMailbox -Identity me@contoso.com -ImapEnabled $true` |
+| 40313 `mailbox_not_connected` | 这个邮箱的 IMAP 被关了, 或登录的账号不是邮箱的所有者 | Microsoft 365 管理中心 →「用户」→「活跃用户」→ 该用户 →「邮件」→「管理电子邮件应用」, 勾选 **IMAP**; 或 `Set-CASMailbox -Identity me@contoso.com -ImapEnabled $true` |
 | 40312 `smtp_auth_disabled` | SMTP 认证被关了, 收信不受影响 | 同一处勾选**经过身份验证的 SMTP**; 或 `Set-CASMailbox -Identity me@contoso.com -SmtpClientAuthenticationDisabled $false` (单个邮箱) / `Set-TransportConfig -SmtpClientAuthenticationDisabled $false` (整个租户) |
+
+**个人账号 (Outlook.com、Hotmail、Live) 出现 40313。** Exchange 接受了授权, 却回答 *User is authenticated but not connected*。邮箱显示「连不上」(码 40313) 并自动重试; 连续 8 次登录失败 (约 10 分钟) 后停在「需要重新授权」。通常是下面之一:
+
+- 账号的 POP 和 IMAP 被关了 (Outlook.com 可能默认关闭): 在 outlook.live.com → **设置** → **邮件** → **转发和 IMAP** 打开「允许设备和应用使用 IMAP」, 再点**重新授权**。
+- Microsoft 要求先验证账号: 在无痕窗口登录 <https://outlook.live.com>, 按提示完成验证 (手机、人机验证、新条款), 再点**重新授权**。
+- 授权页上选了另一个 Microsoft 账号: 在无痕窗口点**重新授权**, 用这个邮箱本人登录。网关会拒绝换成别的账号的重新授权 (40935)。
+- 新账号刚授权后 Exchange 可能要几分钟才开通, 网关会自己重试。
 
 ### 6.6 Microsoft 邮箱的差异
 
