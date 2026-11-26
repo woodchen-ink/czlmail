@@ -79,6 +79,18 @@ content is end-to-end encrypted with a key that stays on the phone. Installs and
 |---|---|
 | <img src="screenshots/mcp.png" alt="MCP"> | <img src="screenshots/settings.png" alt="Settings"> |
 
+## czlmail Gateway
+
+CZL Mail speaks only JMAP. To use it with **Gmail, Outlook / Microsoft 365 or any IMAP mailbox**, run the
+[czlmail gateway](gateway/README.md) on your own server: it connects those mailboxes and serves them to CZL Mail
+as one JMAP server, so the client stays pure JMAP. Each mailbox you add in the gateway's admin shows up as its own
+account, new mail is pushed (iPhone background notifications included), and every mailbox can use its own SOCKS5 proxy.
+It ships as a Docker image; credentials stay on your server, encrypted.
+
+<p align="center"><img src="gateway/docs/images/en/02-overview-light.jpg" alt="czlmail gateway admin" width="800"></p>
+
+Deployment and usage guide: [English](gateway/docs/guide.md) · [简体中文](gateway/docs/guide.zh-CN.md)
+
 ## MCP: let agents use your mailbox
 
 Enable it in the app under **AI Assistant → MCP**. The page shows ready-to-paste configuration.

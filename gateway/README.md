@@ -1,13 +1,18 @@
-# czlmail JMAP gateway
+# czlmail gateway
 
-> **Work in progress.** IMAP mailboxes sync and push; the JMAP Mail methods and sending land in the phase 1 issues tracked in [#48](https://github.com/woodchen-ink/czlmail/issues/48).
+**English** · [简体中文](docs/guide.zh-CN.md)
 
-czlmail is a pure JMAP client. The gateway is a self-hosted companion that connects your other mailboxes — plain IMAP + SMTP, Gmail, Microsoft 365 / Outlook.com — and serves them to czlmail as one JMAP server:
+czlmail is a pure JMAP client. The gateway is a self-hosted companion that connects your other mailboxes (Gmail, Microsoft 365 / Outlook.com and any IMAP + SMTP mailbox) and serves them to czlmail as one JMAP server. czlmail stays pure JMAP; the gateway does the translating.
 
 - Sign in to the gateway once; every mailbox you add in its admin appears as its own account in czlmail.
-- The gateway watches the upstreams (IMAP NOTIFY / IDLE, polling where needed) and pushes changes over EventSource. czlmail never polls.
+- The gateway watches the upstreams (IMAP NOTIFY / IDLE, polling where needed) and pushes changes over EventSource, including iOS background notifications. czlmail never polls.
 - Each mailbox can use its own SOCKS5 proxy.
 - You run it yourself. Mail and credentials stay on your server; passwords and OAuth tokens are encrypted in its SQLite database.
+- The admin at `/admin` (English and Chinese) shows an overview with mailbox status and trends, and manages mailboxes, app passwords, users and OAuth apps.
+
+<p align="center"><img src="docs/images/en/02-overview-light.jpg" alt="Gateway admin overview" width="800"></p>
+
+**Deployment and usage guide: [English](docs/guide.md) · [简体中文](docs/guide.zh-CN.md)**: Docker and dokploy, reverse proxies and Cloudflare, adding IMAP, Gmail and Microsoft mailboxes, signing in from czlmail, statuses and error codes, upgrades and backups.
 
 ## Run
 
@@ -15,9 +20,12 @@ czlmail is a pure JMAP client. The gateway is a self-hosted companion that conne
 export GATEWAY_MASTER_KEY=$(openssl rand -base64 32)   # back this up
 export GATEWAY_BASE_URL=https://mail-gw.example.com
 docker compose up -d
+docker compose logs gateway | grep setup_url            # open this link to create the owner
 ```
 
-Put a TLS reverse proxy in front of port 8080. Images: `ghcr.io/woodchen-ink/czlmail-gateway` with tags `latest`, `YYYY.M`, `YYYY.M.N`, and `edge` (latest `main`).
+Put a TLS reverse proxy in front of port 8080 ([examples](docs/guide.md#26-reverse-proxy)). Images: `ghcr.io/woodchen-ink/czlmail-gateway` with tags `latest`, `YYYY.M`, `YYYY.M.N`, and `edge` (latest `main`).
+
+The rest of this file is the technical reference: environment, admin API, JMAP endpoints and extensions, sync and sending behaviour, error codes, development and tests.
 
 ### Environment
 

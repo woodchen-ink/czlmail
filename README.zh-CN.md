@@ -69,6 +69,17 @@
 |---|---|
 | <img src="screenshots/mcp.png" alt="MCP"> | <img src="screenshots/settings.png" alt="设置"> |
 
+## czlmail 网关
+
+CZL Mail 只说 JMAP。想用它收发 **Gmail、Outlook / Microsoft 365 或任何 IMAP 邮箱**，可以在自己的服务器上部署
+[czlmail 网关](gateway/README.md)：网关连接这些邮箱，再作为一个 JMAP 服务器提供给 CZL Mail，客户端保持纯 JMAP。
+在网关后台添加的每个邮箱在 CZL Mail 里都是一个独立账号，新邮件即时推送（包括 iPhone 后台通知），每个邮箱还可以单独走 SOCKS5 代理。
+网关以 Docker 镜像发布，邮箱凭据加密保存在你自己的服务器上。
+
+<p align="center"><img src="gateway/docs/images/zh/02-overview-light.jpg" alt="czlmail 网关后台" width="800"></p>
+
+部署与使用教程：[简体中文](gateway/docs/guide.zh-CN.md) · [English](gateway/docs/guide.md)
+
 ## MCP：让 Agent 使用你的邮箱
 
 在软件的 **AI 助手 → MCP** 页面开启，页面上有可以直接复制的配置。
