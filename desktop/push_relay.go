@@ -62,11 +62,12 @@ type pushHooks struct {
 	// signIns 告诉原生壳哪些附加登录有推送, 通知扩展据此逐个试派生的 auth。旧版原生壳不认这个请求, 错误忽略。
 	signIns func(ctx context.Context, prefixes []string) error
 	relay   func(ctx context.Context, method, path, secret string, in, out any) error
-	// verifyPoll 是等 PushVerification 时两次查询的间隔。
+	// verifyPoll 是等 PushVerification 时两次查询的间隔, verifyWait 是最多等多久。
 	verifyPoll time.Duration
+	verifyWait time.Duration
 }
 
-var pushDeps = pushHooks{relay: relayCall, verifyPoll: time.Second}
+var pushDeps = pushHooks{relay: relayCall, verifyPoll: time.Second, verifyWait: pushVerifyWait}
 
 // pushSession 是推送用到的同步器方法 (syncer.Syncer 实现)。
 type pushSession interface {
@@ -226,7 +227,9 @@ func (a *App) syncPush(ctx context.Context, signIn string, s pushSession, st *st
 		return err
 	}
 	current := slices.IndexFunc(subs, func(p syncer.PushSubscription) bool { return p.ID == reg.SubID })
-	if current >= 0 && reg.KeyID == info.P256DH {
+	// 只有验证并启用过的订阅 (Accounts 只在启用后写入) 才续期; 建了但没验证成功的 (验证消息没到、
+	// 旧版原生壳解不开附加登录的验证消息) 服务器不会往上推, 当成已生效会压掉同步时的通知, 删掉重建。
+	if current >= 0 && reg.KeyID == info.P256DH && len(reg.Accounts) > 0 {
 		// 续期: 订阅还在, 设备密钥没换, 更新覆盖的账号与过期时间。
 		if _, err := s.SetPushSubscription(ctx, nil, map[string]map[string]any{
 			reg.SubID: {"emailPush": emailPush, "expires": expires},
@@ -358,7 +361,7 @@ func (a *App) ensureRelay(ctx context.Context, signIn string, st *store.Store, r
 
 // awaitVerification 从中转取服务端推来的 PushVerification (同样加密, 交原生壳解密), 返回验证码。
 func (a *App) awaitVerification(ctx context.Context, signIn string, reg pushRelayReg, subID string) (string, error) {
-	deadline := time.Now().Add(pushVerifyWait)
+	deadline := time.Now().Add(pushDeps.verifyWait)
 	for time.Now().Before(deadline) {
 		var pending struct {
 			Messages []string `json:"messages"`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -171,6 +172,7 @@ func pushTestApp(t *testing.T) (*App, *store.Store, *fakeRelay) {
 		},
 		relay:      relay.call,
 		verifyPoll: time.Millisecond,
+		verifyWait: pushVerifyWait,
 	}
 	t.Cleanup(func() {
 		pushDeps, pushEnabled = old, oldEnabled
@@ -406,3 +408,41 @@ func TestPushAuthFor(t *testing.T) {
 
 // pushAuthVectorS2 = base64url(HMAC-SHA256(00..0f, "czlmail push auth s2")[:16]), 用 Python 独立算出。
 const pushAuthVectorS2 = "F_TuYA2bDaAJIPakrEq5uw"
+
+// 验证没成功的订阅 (例如旧版原生壳解不开附加登录的验证消息) 不算推送已生效: 下一轮不续期, 删掉重建, 同步照常弹通知。
+func TestPushUnverifiedSubscriptionNotRenewed(t *testing.T) {
+	a, st, relay := pushTestApp(t)
+	ctx := context.Background()
+	second := newFakePushSession("s2")
+	// 旧版原生壳: 只会用设备 auth 解密, 附加登录的验证消息解不开。
+	pushDeps.decrypt = func(_ context.Context, body, signIn string) (string, error) {
+		if signIn != "" {
+			return "", errors.New("decrypt failed")
+		}
+		return body, nil
+	}
+	pushDeps.verifyWait = 20 * time.Millisecond
+
+	if err := a.syncPush(ctx, "s2", second, st); err == nil {
+		t.Fatal("验证消息解不开时应报错")
+	}
+	if a.pushCovers("s2~c") {
+		t.Fatal("没验证的订阅不应算推送已覆盖")
+	}
+	// 下一轮: 不能当成续期 (那样会把 s2 标成已覆盖, 压掉同步通知), 应删掉旧订阅重来。
+	if err := a.syncPush(ctx, "s2", second, st); err == nil {
+		t.Fatal("仍然解不开, 应再次报错")
+	}
+	if a.pushCovers("s2~c") {
+		t.Error("第二轮也不应算已覆盖")
+	}
+	if len(second.created) != 2 || len(second.subs) != 1 {
+		t.Errorf("应删掉没验证的订阅再建一个, 实际新建 %d 剩 %d", len(second.created), len(second.subs))
+	}
+	for _, u := range second.updated {
+		if _, ok := u["s2-sub1"]["expires"]; ok {
+			t.Error("没验证的订阅不应被续期")
+		}
+	}
+	_ = relay
+}
