@@ -11,10 +11,7 @@ import (
 	"time"
 
 	"github.com/woodchen-ink/czlmail/gateway/config"
-	"github.com/woodchen-ink/czlmail/gateway/cron"
 	"github.com/woodchen-ink/czlmail/gateway/database"
-	"github.com/woodchen-ink/czlmail/gateway/handler"
-	"github.com/woodchen-ink/czlmail/gateway/router"
 	"github.com/woodchen-ink/czlmail/gateway/service"
 )
 
@@ -38,33 +35,24 @@ func Serve(ctx context.Context, log *slog.Logger, version string) error {
 	}
 	defer database.Close(db)
 
-	if _, err := service.LoadKeyring(db, cfg.MasterKey); err != nil {
-		return err
-	}
-	auth, err := newAuth(db, cfg, log)
+	app, err := NewApp(cfg, db, log, version)
 	if err != nil {
 		return err
 	}
-	cron.StartCleanup(ctx, log, 6*time.Hour, map[string]cron.Pruner{
-		"admin_sessions": auth.Accounts.PruneSessions,
-		"audit_logs":     auth.Audit.Prune,
-	})
-	if err := printSetupLink(auth.Accounts, cfg.BaseURL, log); err != nil {
+	defer app.Close()
+	if err := printSetupLink(app.Auth.Accounts, cfg.BaseURL, log); err != nil {
 		return err
 	}
 
 	srv := &http.Server{
-		Addr: cfg.Listen,
-		Handler: router.New(router.Deps{
-			Log:      log,
-			ClientIP: cfg.ClientIP,
-			Health:   &handler.Health{DB: db, Version: version, Log: log},
-			Admin:    auth.Admin,
-		}),
+		Addr:              cfg.Listen,
+		Handler:           app.Handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		// No WriteTimeout: EventSource responses stay open for hours.
 	}
+	// Shutdown waits for idle connections, and an EventSource stream never idles.
+	srv.RegisterOnShutdown(app.JMAP.Close)
 
 	errCh := make(chan error, 1)
 	go func() {

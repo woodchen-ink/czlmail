@@ -110,6 +110,34 @@ Error codes (HTTP status + sequence):
 
 Only the gateway's own credentials produce 401; problems with an upstream mailbox never do.
 
+## JMAP endpoints
+
+All endpoints except the two `.well-known` files use HTTP Basic with the user's app password. Only invalid credentials answer 401 (429 with `Retry-After` after too many failures); a failing mailbox never does. Disabling a user or revoking an app password ends that user's EventSource streams.
+
+| Endpoint | |
+| --- | --- |
+| `GET /.well-known/jmap` | 302 to `/jmap/session` |
+| `GET /jmap/session` | Session resource; 403 `application/problem+json` with type `https://czl.net/jmap/gateway/no-upstream` (code 40301) while the user has no mailbox |
+| `POST /jmap/api` | method calls, with result references |
+| `POST /jmap/upload/{accountId}/` | upload a blob (kept 24 h unless used), answers 200 like Stalwart |
+| `GET /jmap/download/{accountId}/{blobId}/{name}?type=` | download; 503 problem JSON with `czlUpstream` when the mailbox is unavailable |
+| `GET /jmap/eventsource?types=&closeafter=&ping=` | push: changes within 500 ms are merged into one `StateChange`, possibly for several accounts |
+| `GET /.well-known/czlmail.json` | `{"version":1,"gateway":{"name","adminUrl","protocolVersion","version"}}`, so czlmail knows it talks to a gateway |
+
+Limits (`urn:ietf:params:jmap:core`): `maxCallsInRequest` 16, `maxObjectsInGet`/`Set` 500, `maxSizeUpload` 50 MB, `maxConcurrentRequests` 4 per user, `maxSizeRequest` 10 MB.
+
+Each upstream mailbox is one account (`isPersonal: true`). czlmail extensions:
+
+- Session capability `https://czl.net/jmap/gateway`: `version`, `protocolVersion` (1), `adminUrl`.
+- Account capability `https://czl.net/jmap/upstream`: `kind` (`imap`, `gmail`, `microsoft`), `status` (`ok`, `syncing`, `authRequired`, `unreachable`, `paused`), `statusSince`, `code`, `reauthUrl`, `initialSync` (`{"done":1200,"total":48000}` while the first import runs, else null). An account never leaves the Session because its upstream fails; its status changes, so does the Session `state`, and the user's EventSource streams are closed so the client re-reads the Session.
+- A call that needs an unavailable upstream fails with `serverUnavailable` plus `czlUpstream: {status, code}`.
+
+Upstream codes: 40110 `authRequired`, 50210 `unreachable`, 42910 `unreachable` because the provider throttles the gateway, 50310 `syncing`, 42310 `paused`.
+
+Request-level codes (problem JSON): 40020 `not_json`, 40021 `not_request`, 40022 `unknown_capability`, 40023 `limit_exceeded` (with `limit`), 40024 `invalid_query`, 40100 `unauthenticated`, 40301 `no_upstream`, 40420 `account_not_found`, 40421 `blob_not_found`, 41320 `upload_too_large`, 42900 `too_many_requests`, 50000 `internal_error`, 50320 `upstream_unavailable`. JMAP codes use the x20 sequence and upstream codes x10 so they stay apart from the admin API's; 40301 means `no_upstream` on `/jmap/session` and `forbidden` in the admin API.
+
+The engine is `pkg/jmapserver` (RFC 8620 Core, no mail semantics): authentication and the user's accounts are injected (`Authenticator`, `AccountSource`), methods are registered with `Register(name, capability, fn)`, downloads of blob ids other than uploads (`u…`) go to a `BlobSource` registered for the id's first letter, and changes are published with `Changes().Publish(userID, {accountId: {type: state}})`.
+
 ## Development
 
 ```sh
@@ -122,6 +150,10 @@ GATEWAY_MASTER_KEY=$(openssl rand -base64 32) GATEWAY_BASE_URL=http://localhost:
 - Top-level packages: `config` (startup env), `database` (SQLite, pure Go), `model`, `service` (business logic and data access), `handler`, `router`, `middleware`, `initapp`, `cron`, `pkg` (`pkg/crypto` for sealed secrets and argon2id password hashes).
 - Settings are registered once in `service/settings.go` (key, type, default) and read through `service.Settings`; never query the `settings` table directly.
 - JMAP endpoints authenticate with `service.BasicAuthenticator.Authenticate` (`ErrUnauthenticated` → 401, `*service.RateLimitError` → 429) and subscribe to `service.Invalidations` to close the EventSource connections of users whose credentials were revoked.
+
+- Top-level packages: `config` (startup env), `database` (SQLite, pure Go), `model`, `service` (business logic and data access), `handler`, `router`, `middleware`, `initapp`, `cron`, `pkg` (`pkg/crypto` for sealed secrets, `pkg/jmapserver` for the JMAP Core engine).
+- JMAP tests drive the server with go-jmap, the client library czlmail uses.
+- `initapp.NewApp(cfg, db, log, version)` assembles the whole gateway (services, router, background jobs); `Serve` and the end-to-end tests both use it, so tests run the real routes.
 - A table column holding a sealed secret must call `service.RegisterSealedColumn` so `rotate-key` re-encrypts it. Seal with the row's public id in the AAD, never the auto-increment key.
 - Errors to clients are a numeric code plus an English identifier (`{"code":40400,"msg":"not_found"}`); upstream server replies go to logs and the admin only.
 - Logs are JSON lines with `trace_id`; every response carries `X-Request-Id`.
