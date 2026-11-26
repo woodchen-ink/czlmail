@@ -65,7 +65,8 @@ func (a *App) SearchDirectory(query string) ([]store.Recipient, error) {
 	return out, nil
 }
 
-// directory 合并各登录的同邮局目录 (每个登录的个人账号各取一次, 并行), 主登录在前, 同一地址只列一次。
+// directory 合并各登录的同邮局目录 (每个登录取一个有目录能力的个人账号, 并行), 主登录在前, 同一地址只列一次。
+// 目录是整台服务器的, 同一登录下有多个个人账号 (czlmail 网关) 时取一个就够。
 func (a *App) directory() []store.Recipient {
 	accounts, err := a.ListAccounts()
 	if err != nil {
@@ -74,7 +75,7 @@ func (a *App) directory() []store.Recipient {
 	var targets []string
 	signIns := map[string]bool{}
 	for _, acc := range accounts {
-		if acc.IsPersonal && !signIns[acc.SignIn] {
+		if acc.IsPersonal && acc.Features.Directory && !signIns[acc.SignIn] {
 			signIns[acc.SignIn] = true
 			targets = append(targets, acc.ID)
 		}

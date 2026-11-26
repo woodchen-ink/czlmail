@@ -66,17 +66,16 @@ func (a *App) mcpAccount(id string) (string, error) {
 	return "", errors.New("no account available")
 }
 
-// mcpPersonalAccounts 返回每个登录各自的个人账号, 主登录在前: list_emails / list_identities 不指定账号时覆盖所有登录用。
+// mcpPersonalAccounts 返回所有登录的个人账号, 主登录在前: list_emails / list_identities 不指定账号时覆盖所有登录用。
+// 一个登录可以有多个个人账号 (czlmail 网关每个上游邮箱一个), 都列上。
 func (a *App) mcpPersonalAccounts() ([]string, error) {
 	accs, err := a.ListAccounts()
 	if err != nil {
 		return nil, err
 	}
 	var out []string
-	seen := map[string]bool{}
 	for _, acc := range accs {
-		if acc.IsPersonal && !seen[acc.SignIn] {
-			seen[acc.SignIn] = true
+		if acc.IsPersonal {
 			out = append(out, acc.ID)
 		}
 	}

@@ -9,7 +9,8 @@ import (
 type MailSyncStatus struct {
 	syncer.RoundStatus
 	// Pending 是还没完成首次邮件同步的账号 (本机没有它的邮件 state)。
-	// 这些账号的列表为空不代表没有邮件。
+	// 这些账号的列表为空不代表没有邮件。网关上游邮箱不可用的账号不算: 它要等上游恢复才会同步,
+	// 界面按账号的上游状态显示原因 (ListAccounts 的 upstream), 不停在「正在同步」上。
 	Pending []string `json:"pending"`
 }
 
@@ -45,6 +46,9 @@ func (a *App) mailSyncStatusWith(cur *syncer.Syncer, round syncer.RoundStatus) M
 			out.Error = r.Error
 		}
 		for _, id := range s.Accounts() {
+			if !s.Upstream(id).OK() {
+				continue
+			}
 			// 读不出来时不算进去: 宁可显示空列表, 也不把界面卡在「正在同步」上。
 			if state, err := st.State(a.ctx, id, store.TypeEmail); err == nil && state == "" {
 				out.Pending = append(out.Pending, id)

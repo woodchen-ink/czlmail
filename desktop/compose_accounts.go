@@ -27,8 +27,8 @@ type ComposeIdentityGroup struct {
 }
 
 // ListComposeIdentities 列出写信时可选的发件身份: 先是写信账号自己的身份 (回复 / 续编草稿沿用的账号),
-// 再是其它登录的个人账号的身份, 按登录顺序。只有一个登录时与原来相同, 只有写信账号这一组。
-// 同一登录下的其它账号 (共享邮箱) 不列, 与原来一致: 共享邮箱的身份在该邮箱里写信时才出现。
+// 再是各登录里能发信的个人账号的身份, 按登录顺序 (同一登录里默认邮箱在前)。
+// 一个登录可以有多个个人账号 (czlmail 网关每个上游邮箱一个), 它们都列; 共享邮箱不列, 其身份在该邮箱里写信时才出现。
 func (a *App) ListComposeIdentities(accountID string) ([]ComposeIdentityGroup, error) {
 	accounts, err := a.ListAccounts()
 	if err != nil {
@@ -56,7 +56,7 @@ func (a *App) ListComposeIdentities(accountID string) ([]ComposeIdentityGroup, e
 	return out, nil
 }
 
-// composeIdentityAccounts 选出发件人下拉里列哪些账号: 写信账号, 加上其它登录各自的个人账号。
+// composeIdentityAccounts 选出发件人下拉里列哪些账号: 写信账号, 加上所有登录里能发信的个人账号。
 // accounts 已按登录排好 (ListAccounts)。写信账号不在缓存里时照样排第一, 由调用方去取它的身份。
 func composeIdentityAccounts(accounts []store.Account, composeAccount string) []store.Account {
 	prefix, _ := accountid.Split(composeAccount)
@@ -68,13 +68,10 @@ func composeIdentityAccounts(accounts []store.Account, composeAccount string) []
 		}
 	}
 	out := []store.Account{first}
-	seen := map[string]bool{prefix: true}
 	for _, acc := range accounts {
-		if !acc.IsPersonal || seen[acc.SignIn] {
-			continue
+		if acc.IsPersonal && acc.Features.Submission && acc.ID != composeAccount {
+			out = append(out, acc)
 		}
-		seen[acc.SignIn] = true
-		out = append(out, acc)
 	}
 	return out
 }

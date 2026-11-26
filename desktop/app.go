@@ -18,6 +18,7 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
+	"github.com/woodchen-ink/czlmail/desktop/internal/capability"
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
@@ -416,12 +417,15 @@ func (a *App) persistAccounts(ctx context.Context, si *signIn, client *jmap.Clie
 	// 能力原样存下 (含定时发送上限这类参数): 离线或会话还没恢复时界面按上次已知的能力显示功能。
 	caps := make(map[string]map[jmap.URI]json.RawMessage, len(sess.Accounts))
 
+	// 一个登录下可以有多个个人账号 (czlmail 网关每个上游邮箱一个), 默认邮箱以 primaryAccounts 为准。
+	primary := sess.PrimaryAccounts[capability.MailURI]
 	for id, acc := range sess.Accounts {
 		local := accountid.Join(si.id, string(id))
 		accounts = append(accounts, store.Account{
 			ID:         local,
 			Name:       acc.Name,
 			IsPersonal: acc.IsPersonal,
+			Primary:    id == primary,
 		})
 		caps[local] = acc.RawCapabilities
 	}

@@ -5,7 +5,7 @@ import { useI18n } from "@/components/locale-provider";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, MailWarning, Plus, UserRound } from "lucide-react";
+import { ChevronDown, ExternalLink, MailWarning, Plus, UserRound } from "lucide-react";
 
 import { FolderDialog, type FolderAction } from "@/components/folder-dialog";
 
@@ -21,6 +21,9 @@ import {
 } from "@/components/mailbox-tree";
 import { SidebarSkeleton } from "@/components/mail-sync-state";
 import { UnreadBadge } from "@/components/unread-badge";
+import { UpstreamBadge } from "@/components/upstream-status";
+import { openExternal } from "@/lib/external";
+import { upstreamKind } from "@/lib/upstream";
 import { cn } from "@/lib/utils";
 import { draggedEmails, onEmailDrag } from "@/lib/email-drag";
 import { Events, api, errorMessage, onEvent, type Account, type Mailbox, type PullStatus } from "@/lib/api";
@@ -227,27 +230,45 @@ export function MailSidebar({
     });
   }
 
-  const renderShared = (list: Account[]) =>
+  // 共享邮箱, 以及同一登录下的多个个人账号 (czlmail 网关每个上游邮箱一个): 每个账号一行可折叠的标题。
+  // 网关账号的标题带上游类型图标与状态 (需要重新授权 / 连不上 / 同步中), 能重新授权时旁边给网关后台入口。
+  const renderAccounts = (list: Account[]) =>
     list.map((acc) => {
       const key = `acc:${acc.id}`;
       const open = !isCollapsed(key);
+      const KindIcon = upstreamKind(acc.upstream)?.icon ?? UserRound;
+      const reauth = acc.upstream?.reauthUrl;
       return (
         <div key={acc.id} className="flex flex-col">
-          <button
-            type="button"
-            onClick={() => toggle(key)}
-            {...dragExpand(key)}
-            aria-expanded={open}
-            className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 rounded-sm px-2 py-1 text-left text-xs"
-          >
-            <ChevronDown
-              className={cn("size-3 shrink-0 transition-transform", !open && "-rotate-90")}
-            />
-            <UserRound className="size-3.5 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{acc.name}</span>
-            {/* 展开时收件箱行自己有角标, 折叠时才在账号名上显示, 否则看不出是哪个共享邮箱来了信。 */}
-            {!open && <UnreadBadge count={inboxUnread(mailboxesByAccount[acc.id])} quiet={muted.has(acc.id)} />}
-          </button>
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={() => toggle(key)}
+              {...dragExpand(key)}
+              aria-expanded={open}
+              className="text-muted-foreground hover:text-foreground flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-2 py-1 text-left text-xs"
+            >
+              <ChevronDown
+                className={cn("size-3 shrink-0 transition-transform", !open && "-rotate-90")}
+              />
+              <KindIcon className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{acc.name}</span>
+              <UpstreamBadge info={acc.upstream} />
+              {/* 展开时收件箱行自己有角标, 折叠时才在账号名上显示, 否则看不出是哪个共享邮箱来了信。 */}
+              {!open && <UnreadBadge count={inboxUnread(mailboxesByAccount[acc.id])} quiet={muted.has(acc.id)} />}
+            </button>
+            {reauth && (
+              <button
+                type="button"
+                onClick={() => openExternal(reauth)}
+                title={t("打开网关后台")}
+                aria-label={t("打开网关后台")}
+                className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-1"
+              >
+                <ExternalLink className="size-3.5" />
+              </button>
+            )}
+          </div>
           {open && (
             <MailboxTree
               mailboxes={mailboxesByAccount[acc.id] ?? []}
@@ -263,6 +284,24 @@ export function MailSidebar({
         </div>
       );
     });
+
+  // 登录自己的个人账号: 只有一个普通账号时直接列文件夹 (与原来相同);
+  // 有多个 (czlmail 网关) 或是网关账号时按账号分组, 否则几个收件箱连在一起分不清, 上游状态也没处显示。
+  const renderOwn = (list: Account[]) =>
+    list.length === 1 && !list[0].upstream
+      ? list.map((acc) => (
+          <MailboxTree
+            key={acc.id}
+            mailboxes={mailboxesByAccount[acc.id] ?? []}
+            selectedId={selectedIn(acc.id)}
+            onSelect={(id) => onSelect(acc.id, id)}
+            onAction={act(acc.id)}
+            quiet={muted.has(acc.id)}
+            accountId={acc.id}
+            onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
+          />
+        ))
+      : renderAccounts(list);
 
   if (syncing && allBoxes.length === 0) return <SidebarSkeleton />;
 
@@ -302,18 +341,7 @@ export function MailSidebar({
           onAdd={() => setFolderAction({ kind: "create", accountId: personal[0].id })}
           headerProps={dragExpand("personal")}
         >
-          {personal.map((acc) => (
-            <MailboxTree
-              key={acc.id}
-              mailboxes={mailboxesByAccount[acc.id] ?? []}
-              selectedId={selectedIn(acc.id)}
-              onSelect={(id) => onSelect(acc.id, id)}
-              onAction={act(acc.id)}
-              quiet={muted.has(acc.id)}
-              accountId={acc.id}
-              onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
-            />
-          ))}
+          {renderOwn(personal)}
         </Section>
       )}
 
@@ -325,7 +353,7 @@ export function MailSidebar({
           unread={sumInbox(shared)}
           headerProps={dragExpand("shared")}
         >
-          {renderShared(shared)}
+          {renderAccounts(shared)}
         </Section>
       )}
       {otherSignIns.map((g) => {
@@ -340,19 +368,8 @@ export function MailSidebar({
             onAdd={g.own.length > 0 ? () => setFolderAction({ kind: "create", accountId: g.own[0].id }) : undefined}
             headerProps={dragExpand(key)}
           >
-            {g.own.map((acc) => (
-              <MailboxTree
-                key={acc.id}
-                mailboxes={mailboxesByAccount[acc.id] ?? []}
-                selectedId={selectedIn(acc.id)}
-                onSelect={(id) => onSelect(acc.id, id)}
-                onAction={act(acc.id)}
-                quiet={muted.has(acc.id)}
-                accountId={acc.id}
-                onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
-              />
-            ))}
-            {renderShared(g.shared)}
+            {renderOwn(g.own)}
+            {renderAccounts(g.shared)}
           </Section>
         );
       })}

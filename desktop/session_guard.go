@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"time"
 
@@ -53,7 +56,7 @@ func (a *App) probeSession(cfg config.Config, httpClient *http.Client) error {
 		}
 		return fmt.Errorf("2062 cannot reach mail server: %w", err)
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -65,6 +68,10 @@ func (a *App) probeSession(cfg config.Config, httpClient *http.Client) error {
 		}
 		return &credentialError{"2060 authentication failed: check the email address and app password (an SSO password will not work here)"}
 	case http.StatusForbidden:
+		// czlmail 网关在用户还没有添加任何上游邮箱时回 403 problem JSON (go-jmap 只解析 application/json 的错误, 这里自己读)。
+		if isNoUpstreamProblem(resp) {
+			return fmt.Errorf("2066 the gateway has no mailbox yet; add one in the gateway admin")
+		}
 		// 登录时按凭据问题提示, 但不当作"登录失效": 403 也可能来自前置的防火墙或被禁用的权限。
 		if cfg.AuthMethod == config.AuthOAuth {
 			return fmt.Errorf("2064 the mail server rejected the OAuth token (HTTP 403); sign in with an app password instead")
@@ -75,6 +82,21 @@ func (a *App) probeSession(cfg config.Config, httpClient *http.Client) error {
 	default:
 		return fmt.Errorf("2063 mail server returned status %d", resp.StatusCode)
 	}
+}
+
+// noUpstreamProblem 是网关 Session 资源在用户没有任何上游邮箱时回的问题类型。
+const noUpstreamProblem = "https://czl.net/jmap/gateway/no-upstream"
+
+// isNoUpstreamProblem 报告 403 响应是否是网关的「还没有邮箱」。
+func isNoUpstreamProblem(resp *http.Response) bool {
+	ct, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if ct != "application/problem+json" && ct != "application/json" {
+		return false
+	}
+	var p struct {
+		Type string `json:"type"`
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&p) == nil && p.Type == noUpstreamProblem
 }
 
 // 启动时恢复会话的重试间隔。
