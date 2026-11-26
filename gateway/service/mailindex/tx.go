@@ -363,15 +363,120 @@ func (tx *Tx) DetachAll(mailboxID string) error {
 
 func (tx *Tx) orphan(ids []string, mailboxID string) error {
 	for chunk := range chunks(ids, 500) {
-		// Only emails left without any membership become orphans.
+		// Still in another real folder: only its mailboxIds changed. Only emails
+		// left without a real membership become orphans; their virtual
+		// memberships (Gmail labels) depended on the one that went.
+		var placed []string
+		if err := tx.db.Table("memberships m").Joins("JOIN mailboxes b ON b.id = m.mailbox_id").
+			Where("m.email_id IN ? AND b.virtual = ?", chunk, false).Distinct().Pluck("m.email_id", &placed).Error; err != nil {
+			return err
+		}
+		still := map[string]bool{}
+		for _, id := range placed {
+			still[id] = true
+			tx.record(TypeEmail, id, KindUpdated)
+		}
+		if len(placed) > 0 {
+			tx.record(TypeMailbox, mailboxID, KindCounts)
+		}
+		var gone []string
+		for _, id := range chunk {
+			if !still[id] {
+				gone = append(gone, id)
+			}
+		}
+		if len(gone) == 0 {
+			continue
+		}
+		if err := tx.dropVirtual(gone); err != nil {
+			return err
+		}
 		err := tx.db.Model(&model.IndexEmail{}).
-			Where("id IN ? AND NOT EXISTS (SELECT 1 FROM memberships m WHERE m.email_id = emails.id)", chunk).
+			Where("id IN ? AND NOT EXISTS (SELECT 1 FROM memberships m WHERE m.email_id = emails.id)", gone).
 			Update("orphaned_from", mailboxID).Error
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// dropVirtual deletes the virtual memberships of emails, counting their mailboxes.
+func (tx *Tx) dropVirtual(emailIDs []string) error {
+	var virt []string
+	if err := tx.db.Model(&model.IndexMailbox{}).Where("virtual = ?", true).Pluck("id", &virt).Error; err != nil || len(virt) == 0 {
+		return err
+	}
+	var mboxes []string
+	if err := tx.db.Model(&Membership{}).Where("email_id IN ? AND mailbox_id IN ?", emailIDs, virt).Distinct().Pluck("mailbox_id", &mboxes).Error; err != nil {
+		return err
+	}
+	if len(mboxes) == 0 {
+		return nil
+	}
+	for _, m := range mboxes {
+		tx.record(TypeMailbox, m, KindCounts)
+	}
+	return tx.db.Where("email_id IN ? AND mailbox_id IN ?", emailIDs, virt).Delete(&Membership{}).Error
+}
+
+// VirtualMailboxes returns the virtual mailboxes an email is in.
+func (tx *Tx) VirtualMailboxes(emailID string) ([]string, error) {
+	var out []string
+	err := tx.db.Table("memberships m").Joins("JOIN mailboxes b ON b.id = m.mailbox_id").
+		Where("m.email_id = ? AND b.virtual = ?", emailID, true).Order("m.mailbox_id").Pluck("m.mailbox_id", &out).Error
+	return out, err
+}
+
+// SetVirtual replaces an email's virtual memberships (Gmail labels) with
+// mailboxIDs, under the source folder's uid. A change is an Email update and
+// changes the counts of the mailboxes it entered or left.
+func (tx *Tx) SetVirtual(emailID string, uid uint32, mailboxIDs []string) error {
+	cur, err := tx.VirtualMailboxes(emailID)
+	if err != nil {
+		return err
+	}
+	want := map[string]bool{}
+	for _, m := range mailboxIDs {
+		want[m] = true
+	}
+	have := map[string]bool{}
+	changed := false
+	for _, m := range cur {
+		have[m] = true
+		if !want[m] {
+			if err := tx.db.Where("mailbox_id = ? AND email_id = ?", m, emailID).Delete(&Membership{}).Error; err != nil {
+				return err
+			}
+			tx.record(TypeMailbox, m, KindCounts)
+			changed = true
+		}
+	}
+	for m := range want {
+		if have[m] {
+			continue
+		}
+		row := Membership{MailboxID: m, UID: uid, EmailID: emailID}
+		if err := tx.db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&row).Error; err != nil {
+			return err
+		}
+		tx.record(TypeMailbox, m, KindCounts)
+		changed = true
+	}
+	if changed {
+		tx.record(TypeEmail, emailID, KindUpdated)
+	}
+	return nil
+}
+
+// SetTrashLabels remembers the labels an email had before the gateway trashed it
+// (nil clears them).
+func (tx *Tx) SetTrashLabels(emailID string, labels []string) error {
+	v := ""
+	if labels != nil {
+		v = EncodeJSON(labels)
+	}
+	return tx.db.Model(&model.IndexEmail{}).Where("id = ?", emailID).Update("trash_labels", v).Error
 }
 
 // Orphan is an email waiting to be re-attached.
@@ -497,7 +602,8 @@ func (tx *Tx) RemoveUIDs(mailboxID string, uids []uint32) error {
 
 func (tx *Tx) destroyIfUnplaced(emailID, mailboxID string) error {
 	var n int64
-	if err := tx.db.Model(&Membership{}).Where("email_id = ?", emailID).Count(&n).Error; err != nil {
+	if err := tx.db.Table("memberships m").Joins("JOIN mailboxes b ON b.id = m.mailbox_id").
+		Where("m.email_id = ? AND b.virtual = ?", emailID, false).Count(&n).Error; err != nil {
 		return err
 	}
 	if n > 0 {
@@ -505,7 +611,12 @@ func (tx *Tx) destroyIfUnplaced(emailID, mailboxID string) error {
 		tx.record(TypeMailbox, mailboxID, KindCounts)
 		return nil
 	}
-	return tx.destroy(emailID, []string{mailboxID})
+	// Virtual memberships cannot outlive the real one.
+	if err := tx.DestroyEmail(emailID); err != nil {
+		return err
+	}
+	tx.record(TypeMailbox, mailboxID, KindCounts)
+	return nil
 }
 
 // DestroyEmail deletes an email with its memberships and references.
