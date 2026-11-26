@@ -388,20 +388,29 @@ func (a *App) SendReadReceipt(accountID, emailID string) error {
 			break
 		}
 	}
-	now := time.Now().Format("2006-01-02 15:04")
-	body := fmt.Sprintf("您发送的邮件已被阅读。\n\n主题：%s\n收件人：%s\n阅读时间：%s\n\n"+
-		"This is a receipt for the mail you sent.\nSubject: %s\nRead at: %s\n",
-		d.Subject, identity.Email, now, d.Subject, now)
+	subject, body := readReceiptText(a.t, a.currentLocale(), d.Subject, identity.Email, time.Now().Format("2006-01-02 15:04"))
 	if err := a.SendEmail(ComposeRequest{
 		AccountID: accountID, IdentityID: identity.ID,
 		To:        []store.Address{{Email: d.Unsubscribe.ReceiptTo}},
-		Subject:   "已读：" + d.Subject,
+		Subject:   subject,
 		TextBody:  body,
 		InReplyTo: d.MessageID,
 	}); err != nil {
 		return err
 	}
 	return a.IgnoreReadReceipt(accountID, emailID)
+}
+
+// readReceiptText 按界面语言写回执的主题与正文。对方未必懂这门语言, 所以非英文时正文后再附一段英文。
+func readReceiptText(t func(string, ...any) string, locale, subject, reader, readAt string) (string, string) {
+	body := t("您发送的邮件已被阅读。") + "\n\n" +
+		t("主题：{0}", subject) + "\n" +
+		t("收件人：{0}", reader) + "\n" +
+		t("阅读时间：{0}", readAt) + "\n"
+	if !strings.HasPrefix(locale, "en") {
+		body += "\nThis is a receipt for the mail you sent.\nSubject: " + subject + "\nRead at: " + readAt + "\n"
+	}
+	return t("已读：{0}", subject), body
 }
 
 // IgnoreReadReceipt 不发回执, 只打标记, 以后不再提示。

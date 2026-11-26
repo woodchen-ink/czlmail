@@ -60,8 +60,19 @@ type AIChunk struct {
 
 var aiCancels sync.Map // id → context.CancelFunc
 
+// defaultTranslateLangs 是没设置翻译语言时的默认值, 按界面语言选, 未列出的用简体中文。
+// 值是发给模型的语言名, 也是界面 t() 的原文, 与设置页的候选一致。
+var defaultTranslateLangs = map[string]string{"en": "English", "cs": "Čeština", "ru": "Русский"}
+
+func defaultTranslateLang(locale string) string {
+	if v, ok := defaultTranslateLangs[langBase(locale)]; ok {
+		return v
+	}
+	return "简体中文"
+}
+
 func (a *App) GetAIConfig() AIConfig {
-	cfg := AIConfig{TranslateLang: "简体中文", ReasoningTranslate: "none", ReasoningWrite: "auto"}
+	cfg := AIConfig{TranslateLang: defaultTranslateLang(a.currentLocale()), ReasoningTranslate: "none", ReasoningWrite: "auto"}
 	st, err := a.currentStore()
 	if err != nil {
 		return cfg

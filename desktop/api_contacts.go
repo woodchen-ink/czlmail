@@ -100,7 +100,12 @@ type ContactService struct {
 	Service string `json:"service"`
 	URI     string `json:"uri"`
 	Label   string `json:"label"`
+	// Link 表示这条来自 JSContact links (网站), 保存时写回 links; 界面显示为「网站」。
+	Link bool `json:"link,omitempty"`
 }
+
+// legacyLinkService 是早期版本把 links 转成在线服务时写进 service 的固定中文名; 读到时按网站处理。
+const legacyLinkService = "网站"
 
 // ContactDate 是纪念日。Date 为 YYYY-MM-DD, 不含年份时为 --MM-DD。
 type ContactDate struct {
@@ -368,12 +373,16 @@ func contactFormFrom(raw []byte) *ContactForm {
 			uri = s.User
 		}
 		if uri != "" {
-			f.OnlineServices = append(f.OnlineServices, ContactService{Service: s.Service, URI: uri, Label: s.Label})
+			if s.Service == legacyLinkService {
+				f.OnlineServices = append(f.OnlineServices, ContactService{URI: uri, Label: s.Label, Link: true})
+			} else {
+				f.OnlineServices = append(f.OnlineServices, ContactService{Service: s.Service, URI: uri, Label: s.Label})
+			}
 		}
 	}
 	for _, k := range sortedMapKeys(c.Links) {
 		if l := c.Links[k]; l.URI != "" {
-			f.OnlineServices = append(f.OnlineServices, ContactService{Service: "网站", URI: l.URI, Label: l.Label})
+			f.OnlineServices = append(f.OnlineServices, ContactService{URI: l.URI, Label: l.Label, Link: true})
 		}
 	}
 	for _, k := range sortedMapKeys(c.Anniversaries) {
@@ -666,22 +675,27 @@ func contactProps(f *ContactForm) (map[string]any, error) {
 	}
 	props["addresses"] = nilIfEmpty(addrs)
 
-	services := map[string]any{}
+	// 网站 (Link 且没填服务名) 写回 links, 其余写 onlineServices。
+	services, links := map[string]any{}, map[string]any{}
 	for i, sv := range f.OnlineServices {
 		if trim(sv.URI) == "" {
 			continue
 		}
 		entry := map[string]any{"uri": trim(sv.URI)}
-		if trim(sv.Service) != "" {
-			entry["service"] = trim(sv.Service)
-		}
 		if trim(sv.Label) != "" {
 			entry["label"] = trim(sv.Label)
+		}
+		if sv.Link && trim(sv.Service) == "" {
+			links[fmt.Sprintf("l%d", i)] = entry
+			continue
+		}
+		if trim(sv.Service) != "" {
+			entry["service"] = trim(sv.Service)
 		}
 		services[fmt.Sprintf("os%d", i)] = entry
 	}
 	props["onlineServices"] = nilIfEmpty(services)
-	props["links"] = nil
+	props["links"] = nilIfEmpty(links)
 
 	anns := map[string]any{}
 	for i, an := range f.Anniversaries {

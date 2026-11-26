@@ -57,3 +57,13 @@ func TestMergeTemplates(t *testing.T) {
 		t.Errorf("merge not idempotent: remoteChanged=%v changes=%d", rc, len(ch))
 	}
 }
+
+// TestUntitledPlaceholderNotUploaded: the local name given to an untitled template, in any UI
+// language, is not written back to the sync file; real names are kept.
+func TestUntitledPlaceholderNotUploaded(t *testing.T) {
+	for name, want := range map[string]string{untitledTemplate: "", "(Untitled template)": "", catalog.T("cs", untitledTemplate): "", "Weekly report": "Weekly report"} {
+		if got := templateToEntry(store.SyncedTemplate{Template: store.Template{ID: "x", Name: name}}).Name; got != want {
+			t.Errorf("%q: got %q want %q", name, got, want)
+		}
+	}
+}

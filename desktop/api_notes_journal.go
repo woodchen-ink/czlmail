@@ -22,36 +22,116 @@ type JournalConfig struct {
 	Template string `json:"template"`
 }
 
-var defaultJournal = JournalConfig{Folder: "日记/YYYY/MM", Name: "YYYY-MM-DD-dddd"}
+// defaultJournalName 是日记文件名的默认写法, 各语言相同 (星期按语言展开)。
+const defaultJournalName = "YYYY-MM-DD-dddd"
 
-// journalTemplates 是内置模板, 按界面语言选。
+// legacyJournalFolder 是早期不分语言的默认目录。库里已有「日记」目录时继续沿用, 旧日记不会从日历里消失。
+const legacyJournalFolder = "日记/YYYY/MM"
+
+// journalFolderNames 是默认日记目录名, 按界面语言选, 未列出的语言用英文。
+var journalFolderNames = map[string]string{"zh": "日记", "en": "Journal", "cs": "Deník", "ru": "Дневник"}
+
+// journalTemplates 是内置模板, 按界面语言选, 未列出的语言用英文。
 var journalTemplates = map[string]string{
 	"zh": "## 今日主题\n\n- \n\n## 今日待办事项\n\n- [ ] \n\n## 情绪/身体状态\n\n- \n\n## 笔记/灵感\n\n- \n\n## 今日总结\n\n- \n",
 	"en": "## Highlights\n\n- \n\n## To do\n\n- [ ] \n\n## Mood & health\n\n- \n\n## Notes & ideas\n\n- \n\n## Summary\n\n- \n",
+	"cs": "## Hlavní téma dne\n\n- \n\n## Úkoly\n\n- [ ] \n\n## Nálada a zdraví\n\n- \n\n## Poznámky a nápady\n\n- \n\n## Shrnutí dne\n\n- \n",
+	"ru": "## Главное за день\n\n- \n\n## Задачи\n\n- [ ] \n\n## Настроение и самочувствие\n\n- \n\n## Заметки и идеи\n\n- \n\n## Итоги дня\n\n- \n",
 }
 
-// GetJournalConfig 读日记设置, 未设置的项取默认值。
-func (a *App) GetJournalConfig() JournalConfig {
-	cfg := defaultJournal
-	st, err := a.currentStore()
-	if err != nil {
-		return cfg
+// langBase 把界面语言 (zh-CN、cs…) 归成两字母代码。
+func langBase(lang string) string {
+	base, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(lang)), "-")
+	return base
+}
+
+// localized 取某语言的值, 没有就用英文。
+func localized(values map[string]string, lang string) string {
+	if v, ok := values[langBase(lang)]; ok {
+		return v
 	}
-	for key, field := range map[string]*string{settingJournalFolder: &cfg.Folder, settingJournalName: &cfg.Name, settingJournalTemplate: &cfg.Template} {
-		if v, err := st.StringSetting(a.ctx, key); err == nil && (v != "" || key == settingJournalTemplate) {
-			*field = v
+	return values["en"]
+}
+
+// journalRootFolder 是「放在笔记根目录」的存法。空字符串表示未设置、取默认目录, 与旧版一致,
+// 旧版本存下的空值和新旧版本设备之间同步的值含义不变。
+const journalRootFolder = "/"
+
+// GetJournalConfig 读日记设置, 未设置的项取默认值; 默认目录按界面语言 lang 命名。
+func (a *App) GetJournalConfig(lang string) JournalConfig {
+	cfg := JournalConfig{Name: defaultJournalName}
+	if st, err := a.currentStore(); err == nil {
+		if v, err := st.StringSetting(a.ctx, settingJournalFolder); err == nil {
+			cfg.Folder = v
 		}
+		if v, err := st.StringSetting(a.ctx, settingJournalName); err == nil && v != "" {
+			cfg.Name = v
+		}
+		if v, err := st.StringSetting(a.ctx, settingJournalTemplate); err == nil {
+			cfg.Template = v
+		}
+	}
+	if cfg.Folder == "" {
+		cfg.Folder = a.defaultJournalFolder(lang)
 	}
 	return cfg
 }
 
-// SetJournalConfig 校验后保存日记设置, 空的位置与文件名恢复默认。
-func (a *App) SetJournalConfig(cfg JournalConfig) (JournalConfig, error) {
-	cfg.Folder = strings.Trim(strings.TrimSpace(cfg.Folder), "/")
+// defaultJournalFolder 是未设置时的日记目录, 按库里已有的默认目录推出, 不写进设置。
+// 这样换界面语言后已有日记仍在原处, 也不会因为某台设备笔记还没同步完就把它猜的目录推给所有设备。
+func (a *App) defaultJournalFolder(lang string) string {
+	s, err := a.noteService()
+	if err != nil {
+		return pickJournalFolder(lang, nil)
+	}
+	vaults, err := s.Vaults()
+	if err != nil {
+		return pickJournalFolder(lang, nil)
+	}
+	return pickJournalFolder(lang, func(name string) bool {
+		for _, v := range vaults {
+			if s.HasFolder(v.ID, name) {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// pickJournalFolder 先找旧默认的「日记」, 再找当前语言的目录名, 再找其他语言的目录名,
+// 库里都没有 (或 hasFolder 为 nil) 才按当前语言命名。
+func pickJournalFolder(lang string, hasFolder func(name string) bool) string {
+	own := localized(journalFolderNames, lang)
+	if hasFolder != nil {
+		legacyRoot, _, _ := strings.Cut(legacyJournalFolder, "/")
+		candidates := []string{legacyRoot, own}
+		for _, code := range journalFolderOrder {
+			candidates = append(candidates, journalFolderNames[code])
+		}
+		for _, name := range candidates {
+			if hasFolder(name) {
+				return name + "/YYYY/MM"
+			}
+		}
+	}
+	return own + "/YYYY/MM"
+}
+
+// journalFolderOrder 固定其他语言目录名的查找顺序 (map 遍历无序)。
+var journalFolderOrder = []string{"zh", "en", "cs", "ru"}
+
+// SetJournalConfig 校验后保存日记设置, 返回按界面语言 lang 展开默认值后的设置。
+// 空的文件名恢复默认; 空的位置恢复默认目录, 只填 / 表示笔记根目录。
+func (a *App) SetJournalConfig(cfg JournalConfig, lang string) (JournalConfig, error) {
+	folder := strings.TrimSpace(cfg.Folder)
+	cfg.Folder = strings.Trim(folder, "/")
+	if cfg.Folder == "" && folder != "" {
+		cfg.Folder = journalRootFolder
+	}
 	cfg.Name = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(cfg.Name), ".md"))
 	cfg.Template = strings.Trim(strings.TrimSpace(cfg.Template), "/")
 	if cfg.Name == "" {
-		cfg.Name = defaultJournal.Name
+		cfg.Name = defaultJournalName
 	}
 	if _, _, err := journalPath(cfg, time.Now(), "zh"); err != nil {
 		return cfg, err
@@ -66,6 +146,9 @@ func (a *App) SetJournalConfig(cfg JournalConfig) (JournalConfig, error) {
 		}
 	}
 	a.syncAISettingsSoon()
+	if cfg.Folder == "" {
+		cfg.Folder = a.defaultJournalFolder(lang)
+	}
 	return cfg, nil
 }
 
@@ -82,15 +165,12 @@ func (a *App) OpenJournal(vault, date, lang string) (notes.Entry, error) {
 	}
 	// 模板里的 {{time}} 取当前钟点, 日期取所选那天。
 	at := time.Date(day.Year(), day.Month(), day.Day(), now.Hour(), now.Minute(), now.Second(), 0, time.Local)
-	cfg := a.GetJournalConfig()
+	cfg := a.GetJournalConfig(lang)
 	folders, name, err := journalPath(cfg, at, lang)
 	if err != nil {
 		return notes.Entry{}, err
 	}
-	template := journalTemplates["en"]
-	if strings.HasPrefix(lang, "zh") {
-		template = journalTemplates["zh"]
-	}
+	template := localized(journalTemplates, lang)
 	if cfg.Template != "" {
 		path := cfg.Template
 		if !strings.HasSuffix(strings.ToLower(path), ".md") {
@@ -162,7 +242,7 @@ func (a *App) ListNotesByDay(from, to, lang string) ([]NoteDay, error) {
 	if err != nil {
 		return []NoteDay{}, nil
 	}
-	cfg := a.GetJournalConfig()
+	cfg := a.GetJournalConfig(lang)
 	days := map[string]*NoteDay{}
 	order := []string{}
 	add := func(day string, item NoteDayItem) {
