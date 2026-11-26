@@ -79,7 +79,7 @@ The admin is served by the gateway itself at `/admin/` (the bare origin redirect
 | 设置 Settings | Your account and password, theme, registration, network and security settings. |
 | 系统 System | Version, database, master key, startup environment; background tasks with their recent runs and a "run now" button; the audit log. |
 
-Mailbox management and OAuth apps arrive with the upstream work packages ([#39](https://github.com/woodchen-ink/czlmail/issues/39), [#42](https://github.com/woodchen-ink/czlmail/issues/42), [#43](https://github.com/woodchen-ink/czlmail/issues/43)); until then those pages say the feature is not ready.
+IMAP mailboxes are managed with the upstream API (`/api/admin/upstreams`). Gmail and Microsoft mailboxes and the OAuth apps arrive with [#42](https://github.com/woodchen-ink/czlmail/issues/42) and [#43](https://github.com/woodchen-ink/czlmail/issues/43), automatic server detection later; until then those parts say the feature is not ready.
 
 ## App passwords
 
@@ -257,7 +257,7 @@ GATEWAY_MASTER_KEY=$(openssl rand -base64 32) GATEWAY_BASE_URL=http://localhost:
 - A table column holding a sealed secret must call `service.RegisterSealedColumn` so `rotate-key` re-encrypts it. Seal with the row's public id in the AAD, never the auto-increment key.
 - Errors to clients are a numeric code plus an English identifier (`{"code":40400,"msg":"not_found"}`); upstream server replies go to logs and the admin only.
 - Logs are JSON lines with `trace_id`; every response carries `X-Request-Id`.
-- Upstream activity for the overview trend is recorded through `service/metrics` (`initapp.App.Metrics`): `UpstreamRequest(accountID)` per request sent to the upstream, `RateLimited(accountID)` when the upstream throttles, `PushLatency(accountID, d)` from the upstream reporting a change to `Changes().Publish`, and `Forget(accountID)` when a mailbox is removed. Calls only touch memory; counts are flushed every minute. Upstream cards and OAuth secret expiry come from `service.UpstreamSource` and `service.OAuthSecretSource`, set on `App.Overview`.
+- Upstream activity for the overview trend is recorded by `service/metrics.Recorder`, which `UpstreamManager.SetMetrics` hands to every upstream it starts: each IMAP command counts as a request (`upstream.Config.OnRequest`, via `imapc.Options.OnCommand`); the runner counts a rate-limit hit when a round fails as `KindThrottled` and a push latency from a watch hint to the published change; removing an upstream forgets its counts. Recording only touches memory; counts are flushed every minute. New upstream kinds (#42 / #43) call `Config.OnRequest` per HTTP request. Upstream cards come from `service.Upstreams` (`UpstreamSource`); the Microsoft secret expiry will come from `App.Overview.Secrets` (`OAuthSecretSource`, #43).
 - Background jobs are `cron.Task`s registered in `initapp.NewApp`; they show in the admin's task center.
 
 ### Admin web

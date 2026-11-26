@@ -27,10 +27,10 @@ type UpstreamCard struct {
 	OwnerEmail  string         `json:"ownerEmail"` // the gateway user it belongs to
 	Status      string         `json:"status"`
 	StatusSince *time.Time     `json:"statusSince"`
-	Code        int            `json:"code"`      // upstream code (40110, 50210, …) or 0
-	WatchMode   string         `json:"watchMode"` // notify, idle, push, poll; "" while unknown
-	LastSyncAt  *time.Time     `json:"lastSyncAt"`
-	InitialSync *SyncProgress  `json:"initialSync"` // null once the first import is done
+	Code        int            `json:"code"`                 // upstream code (40110, 50210, …) or 0
+	WatchMode   string         `json:"watchMode"`            // notify, idle, push, poll; "" while unknown
+	LastSyncAt  *time.Time     `json:"lastSyncAt,omitempty"` // omitted when unknown (not running yet)
+	InitialSync *SyncProgress  `json:"initialSync"`          // null once the first import is done
 	LastError   *UpstreamError `json:"lastError"`
 	Proxy       *ProxyInfo     `json:"proxy"` // null: direct connection
 }

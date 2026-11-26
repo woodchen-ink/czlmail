@@ -48,6 +48,15 @@ type Config struct {
 	// gone. Nil for password upstreams.
 	AccessToken func(ctx context.Context) (string, error)
 	Log         *slog.Logger
+	// OnRequest, if set, is called for every request sent to the upstream (an IMAP
+	// command, an HTTP call); the admin overview counts them. Nil for connection tests.
+	OnRequest func()
+}
+
+// Metrics records upstream activity for the admin overview (service/metrics.Recorder).
+type Metrics interface {
+	RateLimited(accountID string)
+	PushLatency(accountID string, d time.Duration)
 }
 
 // Capabilities are what the server offers, as reported by Probe.

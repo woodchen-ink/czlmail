@@ -160,7 +160,11 @@ func (u *Upstream) dialWith(ctx context.Context, unsolicited func(*imapc.Respons
 // connect dials, signs in and enables the extensions the engine uses.
 func connect(ctx context.Context, cfg upstream.Config, opts Options, unsolicited func(*imapc.Response)) (*imapc.Client, error) {
 	addr := net.JoinHostPort(cfg.IMAP.Host, strconv.Itoa(cfg.IMAP.Port))
-	c, err := imapc.Dial(ctx, cfg.Dialer.DialContext, addr, imapc.Options{TLS: cfg.IMAP.TLS, Unsolicited: unsolicited})
+	var onCommand func(string)
+	if cfg.OnRequest != nil {
+		onCommand = func(string) { cfg.OnRequest() }
+	}
+	c, err := imapc.Dial(ctx, cfg.Dialer.DialContext, addr, imapc.Options{TLS: cfg.IMAP.TLS, Unsolicited: unsolicited, OnCommand: onCommand})
 	if err != nil {
 		return nil, upstream.Classify("connect", err)
 	}

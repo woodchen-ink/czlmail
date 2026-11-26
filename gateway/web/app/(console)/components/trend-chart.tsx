@@ -175,7 +175,7 @@ export function TrendChart({
                 <YAxis
                   tickLine={false}
                   axisLine={false}
-                  width={56}
+                  width={72}
                   tickFormatter={(v: number) => formatMs(v)}
                 />
                 <ChartTooltip
@@ -198,7 +198,7 @@ export function TrendChart({
                     type="monotone"
                     stroke={`var(--color-${k})`}
                     strokeWidth={2}
-                    dot={false}
+                    dot={{ r: 1.5, strokeWidth: 0, fill: `var(--color-${k})` }}
                     isAnimationActive={false}
                     connectNulls
                   />

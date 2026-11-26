@@ -174,3 +174,18 @@ func TestStreamedLiteral(t *testing.T) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+func TestOnCommandCountsCommands(t *testing.T) {
+	c := serve(t, "* OK hi",
+		step{"CAPABILITY", "* CAPABILITY IMAP4rev1\r\nTAG OK\r\n"},
+		step{`LOGIN "u" "p"`, "TAG OK done\r\n"},
+		step{"CAPABILITY", "* CAPABILITY IMAP4rev1\r\nTAG OK\r\n"})
+	var names []string
+	c.opts.OnCommand = func(name string) { names = append(names, name) }
+	if err := c.Login(context.Background(), "u", "p"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(names, ",") != "CAPABILITY,LOGIN,CAPABILITY" {
+		t.Fatalf("commands = %v", names)
+	}
+}

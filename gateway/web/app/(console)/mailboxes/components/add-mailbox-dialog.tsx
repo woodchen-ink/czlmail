@@ -38,6 +38,9 @@ import { cn } from "@/lib/utils"
 
 type Provider = "imap" | "google" | "microsoft"
 
+/** Server detection is shown once the gateway offers GET /upstreams/autoconfig. */
+const AUTOCONFIG_READY = false
+
 const emptyServer = (port: string): ServerDraft => ({
   host: "",
   port,
@@ -340,7 +343,10 @@ function ImapForm({
         {t.mailboxes.passwordHint}
       </p>
 
-      <div className="flex items-center gap-2">
+      {/* TODO(#39 follow-up): server detection (presets → ISPDB → autoconfig) has no API yet. */}
+      <div
+        className={cn("flex items-center gap-2", !AUTOCONFIG_READY && "hidden")}
+      >
         <Button
           type="button"
           variant="outline"

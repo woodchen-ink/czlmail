@@ -150,7 +150,11 @@ func TestOverviewAndSystem(t *testing.T) {
 		LastRun *struct{ OK bool } `json:"lastRun"`
 	}
 	_ = json.Unmarshal(owner.do("GET", "/api/admin/system/tasks", nil), &tasks)
-	if len(tasks) != 5 || tasks[4].Name != "metrics_flush" || tasks[4].LastRun == nil {
+	flushed := false
+	for _, task := range tasks {
+		flushed = flushed || (task.Name == "metrics_flush" && task.LastRun != nil)
+	}
+	if !flushed {
 		t.Fatalf("tasks: %+v", tasks)
 	}
 
@@ -199,4 +203,46 @@ func (a *admin) status(method, path string) int {
 	}
 	res.Body.Close()
 	return res.StatusCode
+}
+
+// The overview lists real upstreams (service.Upstreams) with their live status.
+func TestOverviewRealUpstreams(t *testing.T) {
+	app, base := newGateway(t)
+	token, _ := app.Auth.Accounts.IssueSetupToken()
+	jar, _ := cookiejar.New(nil)
+	owner := &admin{t: t, base: base, http: &http.Client{Jar: jar}}
+	owner.do("POST", "/api/admin/setup", map[string]string{"token": token, "email": "owner@example.com", "password": "correct horse battery"})
+	owner.do("PATCH", "/api/admin/settings", map[string]any{"security.allow_private_networks": true})
+	// Nothing listens on port 1: the upstream ends up unreachable.
+	var up struct{ ID string }
+	_ = json.Unmarshal(owner.do("POST", "/api/admin/upstreams", map[string]any{
+		"name": "Local", "email": "me@example.com",
+		"imap":  map[string]any{"host": "127.0.0.1", "port": 1, "tls": "plain", "username": "me", "password": "secret"},
+		"proxy": map[string]any{"mode": "none"},
+	}), &up)
+
+	var ov overviewResp
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_ = json.Unmarshal(owner.do("GET", "/api/admin/overview", nil), &ov)
+		if len(ov.Upstreams) == 1 && ov.Upstreams[0].Status == service.UpstreamUnreachable {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("overview upstreams: %+v", ov.Upstreams)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	c := ov.Upstreams[0]
+	if c.ID != up.ID || c.Name != "Local" || c.OwnerEmail != "owner@example.com" || c.Proxy != nil ||
+		c.LastError == nil || c.LastError.Code != 50210 || c.LastError.Msg != "unreachable" {
+		t.Fatalf("card: %+v", c)
+	}
+
+	// Removing the upstream removes its card.
+	owner.do("DELETE", "/api/admin/upstreams/"+up.ID, nil)
+	_ = json.Unmarshal(owner.do("GET", "/api/admin/overview", nil), &ov)
+	if len(ov.Upstreams) != 0 {
+		t.Fatalf("after delete: %+v", ov.Upstreams)
+	}
 }

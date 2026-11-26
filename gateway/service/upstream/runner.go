@@ -19,6 +19,8 @@ type Status struct {
 	Error string
 	// Progress is the first import, nil once it finished.
 	Progress *jmapserver.InitialSync
+	// LastSync is when the last sync round completed; zero before the first.
+	LastSync time.Time
 }
 
 // Events receive what a Runner does. Calls are made from the Runner's goroutine
@@ -66,7 +68,8 @@ type Runner struct {
 	log    *slog.Logger
 	timing Timing
 
-	wake chan struct{} // a client connected: sync everything now
+	wake    chan struct{} // a client connected: sync everything now
+	metrics Metrics
 
 	mu         sync.Mutex
 	status     Status
@@ -79,6 +82,9 @@ func NewRunner(accountID string, up Upstream, events Events, log *slog.Logger, t
 	timing.fill()
 	return &Runner{id: accountID, up: up, events: events, log: log, timing: timing, wake: make(chan struct{}, 1), lastClient: time.Now()}
 }
+
+// SetMetrics records throttling and push latency; call it before Run.
+func (r *Runner) SetMetrics(m Metrics) { r.metrics = m }
 
 // Upstream is the running upstream (for reads and writes by JMAP methods).
 func (r *Runner) Upstream() Upstream { return r.up }
@@ -163,6 +169,9 @@ func (r *Runner) Run(ctx context.Context) {
 			return
 		}
 		ue := Classify("sync", err)
+		if ue.Kind == KindThrottled && r.metrics != nil {
+			r.metrics.RateLimited(r.id)
+		}
 		state, code := ue.Status()
 		r.log.Warn("upstream failed", "account", r.id, "status", state, "code", code, "err", err)
 		r.setStatus(state, code, err)
@@ -249,8 +258,14 @@ func (r *Runner) session(ctx context.Context, backoff *time.Duration) error {
 				return err
 			}
 		case h := <-hints:
+			// Push latency: from the upstream's hint to the change being published.
+			hinted := time.Now()
 			req := r.collectHints(ctx, h, hints)
-			if err := r.sync(ctx, req); err != nil {
+			states, err := r.syncStates(ctx, req)
+			if len(states) > 0 && r.metrics != nil {
+				r.metrics.PushLatency(r.id, time.Since(hinted))
+			}
+			if err != nil {
 				return err
 			}
 		case <-poll.C:
@@ -297,9 +312,20 @@ func (r *Runner) collectHints(ctx context.Context, first Hint, more <-chan Hint)
 }
 
 func (r *Runner) sync(ctx context.Context, req SyncRequest) error {
+	_, err := r.syncStates(ctx, req)
+	return err
+}
+
+// syncStates runs one round, publishes the changed states and returns them.
+func (r *Runner) syncStates(ctx context.Context, req SyncRequest) (map[string]string, error) {
 	states, err := r.up.Sync(ctx, req)
 	if len(states) > 0 {
 		r.events.Changed(r.id, states)
 	}
-	return err
+	if err == nil {
+		r.mu.Lock()
+		r.status.LastSync = time.Now().UTC()
+		r.mu.Unlock()
+	}
+	return states, err
 }

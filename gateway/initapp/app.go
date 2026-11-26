@@ -34,8 +34,8 @@ type App struct {
 	// Metrics counts upstream requests, rate-limit hits and push latency for the
 	// overview trend; the upstream packages record through it.
 	Metrics *metrics.Recorder
-	// Overview takes the upstream cards (#39) and OAuth secrets (#43) from its
-	// Upstreams and Secrets sources; set them before serving.
+	// Overview shows the upstream cards from Upstreams and, once #43 sets its
+	// Secrets source, the expiry of the Microsoft client secret.
 	Overview *service.Overview
 	Tasks    *cron.Scheduler
 
@@ -120,6 +120,7 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 	ctx, stop := context.WithCancel(context.Background())
 	tasks.Add(cron.PruneTask("push_subscriptions", cleanupEvery, func() (int64, error) { return pushStore.PruneExpired(time.Now()) }))
 	tasks.Add(cron.PruneTask("changelog", cleanupEvery, mgr.Trim))
+	mgr.SetMetrics(rec)
 	if err := mgr.Run(ctx, jmap); err != nil {
 		stop()
 		return nil, err
@@ -134,7 +135,7 @@ func NewApp(cfg *config.Config, db *gorm.DB, log *slog.Logger, version string) (
 		DataDir: cfg.DataDir, BaseURL: cfg.BaseURL, Version: version, Env: cfg.PublicEnv(),
 		Streams: jmap.StreamCount, AdminWeb: webInstalled,
 	})
-	overview := &service.Overview{Metrics: rec, System: system}
+	overview := &service.Overview{Upstreams: upstreams, Metrics: rec, System: system}
 	auth.Admin.OverviewSvc, auth.Admin.SystemSvc, auth.Admin.Tasks = overview, system, tasks
 
 	h := router.New(router.Deps{
