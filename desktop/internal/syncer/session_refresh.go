@@ -184,7 +184,7 @@ func (s *Syncer) pruneAccounts(ctx context.Context) []string {
 		}
 		// 持同步锁删除: 这个账号可能还有一次拉取在途, 删完它又写回来就成了没有账号行的孤儿数据。
 		s.mu.Lock()
-		err := s.store.RemoveAccount(ctx, acc.ID)
+		err := s.writing(func() error { return s.store.RemoveAccount(ctx, acc.ID) })
 		s.mu.Unlock()
 		if err != nil {
 			s.log.Error("remove account cache", "account", acc.ID, "err", err)

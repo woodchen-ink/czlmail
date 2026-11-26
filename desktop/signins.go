@@ -158,13 +158,20 @@ func (r accountRoute) do(req *jmap.Request) (*jmap.Response, error) {
 }
 
 // stopLocked 停掉这个登录的同步并丢下会话; 配置、凭据与失效原因不动。调用方须持有 a.mu。
-func (si *signIn) stopLocked() {
+// 同步器随之停用 (不等): 还拿着它的后台拉取 (翻页补取、拉取整个文件夹、预取正文) 之后的请求与写库都会失败,
+// 不会拿已退出、已失效的会话接着访问服务器。返回停用的同步器, 要删缓存的调用方先 Close 它等在途写入做完。
+func (si *signIn) stopLocked() *syncer.Syncer {
 	if si.cancelSync != nil {
 		si.cancelSync()
 		si.cancelSync = nil
 	}
+	old := si.sync
+	if old != nil {
+		old.Stop()
+	}
 	si.client = nil
 	si.sync = nil
+	return old
 }
 
 // usernameFor 返回某账号所属登录的用户名 (登录时服务器给出的写法), 不属于任何登录时为空。
@@ -222,7 +229,7 @@ func (a *App) dropSignIn(id string) error {
 		return errNotSignedIn
 	}
 	si.removed = true
-	si.stopLocked()
+	old := si.stopLocked()
 	if si.cancelFlow != nil {
 		si.cancelFlow()
 		si.cancelFlow = nil
@@ -232,6 +239,10 @@ func (a *App) dropSignIn(id string) error {
 	primary := a.primary.cfg
 	st := a.store
 	a.mu.Unlock()
+	// 删缓存之前等在途的写入做完: 之后它们都会被拒, 删完不会再有写回的孤儿行。
+	if old != nil {
+		old.Close()
+	}
 
 	// 钥匙串条目按配置文件里的用户名存 (登录时输入的写法), 内存里的已换成服务器返回的写法。
 	var errs []error

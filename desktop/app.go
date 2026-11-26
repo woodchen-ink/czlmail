@@ -50,6 +50,9 @@ type App struct {
 	// reminders 是移动端交给系统的定时日程提醒 (reminders_schedule.go)。
 	reminders reminderSchedule
 
+	// tap 非空时接住发给界面的事件 (不经 Wails), 托盘也不画; 只有测试设置 (见 multi_signin_mock_test.go)。
+	tap func(name string, data ...any)
+
 	// ready 在启动时读完配置后关闭。界面启动时查询会话状态要等它,
 	// 否则会在库还没打开时读到"未配置", 把已登录的用户显示成登录页。
 	ready     chan struct{}
@@ -73,22 +76,7 @@ func (a *App) startup(ctx context.Context) {
 	defer a.markReady()
 
 	// 配置先读: 缓存库打不开时也要知道用户已经登录过, 不能把人赶回登录页。
-	file, err := config.LoadFile()
-	if err != nil {
-		a.log.Error("load config", "err", err)
-	}
-	a.mu.Lock()
-	a.primary.cfg = file.Config
-	for _, s := range file.SignIns {
-		a.extra = append(a.extra, &signIn{id: s.ID, cfg: s.Config})
-	}
-	a.mu.Unlock()
-	if _, err := a.settleSignedOutPrimary(); err != nil {
-		a.log.Error("clear signed-out primary sign-in", "err", err)
-	}
-	a.mu.RLock()
-	signIns := a.signInsLocked()
-	a.mu.RUnlock()
+	file, signIns := a.loadSignIns()
 
 	dbPath, err := config.DatabasePath()
 	if err != nil {
@@ -130,18 +118,41 @@ func (a *App) startup(ctx context.Context) {
 		a.log.Info("not configured yet, waiting for sign-in")
 	}
 
-	// 已有凭据就静默恢复会话。放后台是因为它要打网络,
-	// 挡在这里会让窗口迟迟不出现。
+	a.restoreSignIns(signIns)
+}
+
+// loadSignIns 读 config.json, 建出全部登录的运行时状态 (主登录在前), 启动的第一步。
+func (a *App) loadSignIns() (config.File, []*signIn) {
+	file, err := config.LoadFile()
+	if err != nil {
+		a.log.Error("load config", "err", err)
+	}
+	a.mu.Lock()
+	a.primary.cfg = file.Config
+	for _, s := range file.SignIns {
+		a.extra = append(a.extra, &signIn{id: s.ID, cfg: s.Config})
+	}
+	a.mu.Unlock()
+	if _, err := a.settleSignedOutPrimary(); err != nil {
+		a.log.Error("clear signed-out primary sign-in", "err", err)
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return file, a.signInsLocked()
+}
+
+// restoreSignIns 用已保存的凭据在后台恢复各个登录的会话。放后台是因为它要打网络, 挡在启动里会让窗口迟迟不出现。
+func (a *App) restoreSignIns(signIns []*signIn) {
 	for _, si := range signIns {
-		if si.cfg.SignedOut {
+		a.mu.Lock()
+		cfg := si.cfg
+		if cfg.SignedOut {
 			// 用户退出的登录: 凭据已删, 不连, 也不提示登录失效。
-			a.mu.Lock()
 			si.signedOut = true
-			a.mu.Unlock()
-			continue
 		}
-		if si.cfg.Configured() {
-			go a.restoreWithRetry(si, si.cfg)
+		a.mu.Unlock()
+		if !cfg.SignedOut && cfg.Configured() {
+			go a.restoreWithRetry(si, cfg)
 		}
 	}
 }
@@ -310,9 +321,8 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 		return errNotSignedIn
 	}
 	st := a.store
-	if si.cancelSync != nil {
-		si.cancelSync()
-	}
+	// 换上新会话 (重新登录、重试连接): 旧会话的同步循环与同步器一并停掉。
+	si.stopLocked()
 	si.client = client
 	cfg.SignedOut = false
 	si.cfg = cfg

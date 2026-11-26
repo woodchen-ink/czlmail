@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"math/rand/v2"
+	"net/http"
 	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
@@ -68,7 +69,7 @@ func (s *Syncer) Run(ctx context.Context) error {
 // listen 建立一次 EventSource 连接并消费到断开为止。
 func (s *Syncer) listen(ctx context.Context) error {
 	stream := &push.EventSource{
-		Client: s.client,
+		Client: s.streamClient(ctx),
 		Handler: func(change *jmap.StateChange) {
 			s.applyStateChange(ctx, change)
 		},
@@ -77,19 +78,36 @@ func (s *Syncer) listen(ctx context.Context) error {
 		Ping: 30,
 	}
 
-	// Listen 不接受 context, 只能靠关闭响应体打断。ctx 取消时由这个协程负责唤醒它。
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		select {
-		case <-ctx.Done():
-			stream.Close()
-		case <-done:
-		}
-	}()
-
 	s.log.Info("push stream connected")
 	return wrap(CodePush, "event source", stream.Listen())
+}
+
+// streamClient 返回推送连接用的客户端: 凭据与失效检测同正在用的客户端, 但每个请求都带上 ctx,
+// ctx 取消时连接立即断开, 不论还在建立还是已经在读。
+//
+// go-jmap 的 EventSource 不收 context, 只能靠 Close 关响应体; 而 Close 与正在建立连接的 connect 并发读写同一个字段
+// (数据竞争), 连接建立前调用 Close 还什么都不做, Listen 随后就一直挂在已经停掉的会话上 (退出登录、凭据失效、移除登录的那一刻正好在重连时)。
+func (s *Syncer) streamClient(ctx context.Context) *jmap.Client {
+	s.client.Lock()
+	sess := s.client.Session
+	s.client.Unlock()
+	hc := *s.client.HttpClient
+	base := hc.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	hc.Transport = ctxTransport{ctx: ctx, base: base}
+	return &jmap.Client{SessionEndpoint: s.client.SessionEndpoint, HttpClient: &hc, Session: sess}
+}
+
+// ctxTransport 让经过它的请求都随 ctx 取消。
+type ctxTransport struct {
+	ctx  context.Context
+	base http.RoundTripper
+}
+
+func (t ctxTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t.base.RoundTrip(req.WithContext(t.ctx))
 }
 
 func (s *Syncer) syncAllAccounts(ctx context.Context) error {

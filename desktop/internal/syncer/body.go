@@ -60,7 +60,7 @@ func (s *Syncer) FetchBodies(ctx context.Context, accountID string, emailIDs []s
 		if !ok {
 			return written, &Error{Code: CodeUnhandled, Msg: "unexpected response to Email/get"}
 		}
-		if err := s.store.WithTx(ctx, func(tx *sql.Tx) error {
+		if err := s.write(ctx, func(tx *sql.Tx) error {
 			for _, msg := range got.List {
 				structure := "{}"
 				if msg.BodyStructure != nil {
@@ -171,7 +171,7 @@ func (s *Syncer) FetchListHeaders(ctx context.Context, accountID, emailID string
 		return store.Unsubscribe{}, &Error{Code: CodeUnhandled, Msg: "email not found on server"}
 	}
 	u := ParseUnsubscribe(got.List[0].Headers)
-	err = s.store.WithTx(ctx, func(tx *sql.Tx) error {
+	err = s.write(ctx, func(tx *sql.Tx) error {
 		return store.SetEmailUnsubscribe(ctx, tx, accountID, emailID, u)
 	})
 	return u, err

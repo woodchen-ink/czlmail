@@ -10,6 +10,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/core"
@@ -80,6 +81,10 @@ type Syncer struct {
 	fileCAS sync.Map
 	// fileSchema 记各账号服务器的 FileNode 属性写法 (account → 是否新写法), 见 filenode_schema.go。
 	fileSchema sync.Map
+
+	// stopped 与 writes 管同步器的寿命, 见 lifetime.go。
+	stopped atomic.Bool
+	writes  sync.RWMutex
 }
 
 // New 构造 Syncer。client 必须已完成 Authenticate, 因为 Core 限制取自 Session。
@@ -272,6 +277,9 @@ func (s *Syncer) syncType(ctx context.Context, accountID string, dt store.DataTy
 // JMAP 的方法错误不体现在 HTTP 状态码上: 请求整体返回 200, 失败的方法在
 // methodResponses 里被替换成一个 error 调用。不显式检查就会把错误当成空结果处理。
 func (s *Syncer) do(req *jmap.Request) (*jmap.Response, error) {
+	if s.stopped.Load() {
+		return nil, errStopped
+	}
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, wrap(CodeRequest, "jmap request", err)

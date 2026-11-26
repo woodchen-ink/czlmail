@@ -65,7 +65,7 @@ func (s *Syncer) ReconcileEmails(ctx context.Context, accountID string) (int, er
 	if len(gone) == 0 {
 		return 0, nil
 	}
-	if err := s.store.WithTx(ctx, func(tx *sql.Tx) error {
+	if err := s.write(ctx, func(tx *sql.Tx) error {
 		return store.DeleteEmails(ctx, tx, accountID, gone)
 	}); err != nil {
 		return 0, err
