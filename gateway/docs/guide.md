@@ -10,10 +10,11 @@
 4. [Add an IMAP mailbox](#4-add-an-imap-mailbox)
 5. [Add Gmail](#5-add-gmail)
 6. [Add Microsoft 365 / Outlook.com](#6-add-microsoft-365--outlookcom)
-7. [Sign in from czlmail](#7-sign-in-from-czlmail)
-8. [Overview and mailbox status](#8-overview-and-mailbox-status)
-9. [Upgrades and backups](#9-upgrades-and-backups)
-10. [FAQ](#10-faq)
+7. [Sending settings](#7-sending-settings)
+8. [Sign in from czlmail](#8-sign-in-from-czlmail)
+9. [Overview and mailbox status](#9-overview-and-mailbox-status)
+10. [Upgrades and backups](#10-upgrades-and-backups)
+11. [FAQ](#11-faq)
 
 ## 1. What the gateway is
 
@@ -229,7 +230,7 @@ Each card shows the status, how the mailbox is watched and its proxy. The watch 
 | IDLE push | The inbox is pushed within about a second; other folders are polled (every minute after a change, every 3 minutes otherwise, every 10 minutes for Junk and Trash) |
 | Polling | The server cannot push; everything is polled |
 
-The card menu has Test connection, Pause sync / Resume sync, Update password, Proxy settings, Make default and Remove mailbox. Removing disconnects the gateway and deletes its local index; the mail on the server is untouched.
+The card menu has Test connection, Pause sync / Resume sync, Update password, Proxy settings, Sending, Make default and Remove mailbox. Removing disconnects the gateway and deletes its local index; the mail on the server is untouched.
 
 ### SOCKS5 proxy
 
@@ -243,8 +244,6 @@ A failing proxy only affects the mailboxes using it: they show **Unreachable** a
 By default the gateway refuses private and loopback addresses, so it cannot be used to probe its own network. If the mail server or proxy sits in the same private network (a proxy sidecar in the same compose file, for example), turn on **Allow private network addresses** under Settings → Network & security.
 
 ## 5. Add Gmail
-
-> Written from the Gmail branch ([#59](https://github.com/woodchen-ink/czlmail/pull/59)); wording may change when it is merged.
 
 Gmail signs in with OAuth: mail is read over IMAP and sent through the Gmail API, and no Gmail password is stored. Google requires each gateway to use its own OAuth app, which an admin creates once in Google Cloud. Users then only click Add mailbox → Gmail and sign in to Google.
 
@@ -285,8 +284,6 @@ Gmail signs in with OAuth: mail is read over IMAP and sent through the Gmail API
 - Sending identities are the addresses under Gmail's Settings → Accounts → **Send mail as**, refreshed every 6 hours; edit them in Gmail.
 
 ## 6. Add Microsoft 365 / Outlook.com
-
-> Written from the Microsoft branch ([#57](https://github.com/woodchen-ink/czlmail/pull/57)); wording may change when it is merged.
 
 Work and school accounts (Microsoft 365, Exchange Online) and personal accounts (Outlook.com, Hotmail, Live) both sign in with OAuth 2.0 to IMAP `outlook.office365.com:993` and SMTP `smtp.office365.com:587`; no password is stored. The gateway needs an app registration in Microsoft Entra, which an admin creates once.
 
@@ -340,10 +337,49 @@ Microsoft 365 can turn IMAP and authenticated SMTP off per mailbox, and new tena
 
 - Exchange has neither NOTIFY nor CONDSTORE / QRESYNC: the inbox is pushed with IDLE, other folders are polled.
 - Folder roles come from Exchange's special-use flags, else from the folder names (including their translations in the mailbox language).
-- Exchange files every message sent over SMTP in Sent Items itself, so the gateway does not add another copy.
+- Exchange files every message sent over SMTP in Sent Items itself, so Microsoft mailboxes start with the Sent copy set to Server saves (see [7.1](#71-sent-copy)); re-authorizing keeps the setting.
 - Microsoft has no way to revoke a single token: removing the mailbox in the gateway deletes its tokens, and users can remove the app's access at <https://account.live.com/consent/Manage> (personal) or <https://myapps.microsoft.com> (work).
 
-## 7. Sign in from czlmail
+## 7. Sending settings
+
+The gateway delivers what czlmail sends right away: IMAP and Microsoft mailboxes through their own SMTP server, Gmail through the Gmail API, always through the mailbox's proxy. **Sending** in a mailbox's card menu manages two things: the Sent copy and the sending identities.
+
+### 7.1 Sent copy
+
+Every message you send leaves exactly one copy in Sent, and it is the same message as the draft in czlmail (its id stays). Some servers file their own copy in Sent when they deliver, others do not, and the gateway needs to know which:
+
+| Option | Meaning |
+| --- | --- |
+| Automatic (default) | the first send waits up to 15 seconds to see whether the server files a copy, then settles on one of the two below |
+| Server saves | the server files its own copy: the gateway waits for it, then deletes the draft |
+| Gateway saves | the server keeps nothing: the gateway moves the draft to Sent |
+
+If in Automatic mode the server's copy does not appear within 15 seconds, the gateway files its own; a server copy that arrives within the next hour replaces it and switches the mailbox to Server saves, so Sent never holds two.
+
+**Test send** settles it at once: the gateway sends a message to the mailbox itself, checks Sent for the server's copy, stores the result and deletes the test message. It takes up to about 15 seconds.
+
+- Microsoft mailboxes start as Server saves: Exchange always files its own copy, so no test is needed.
+- Gmail sends through the Gmail API, which files the copy itself; test send is not available (40933).
+
+### 7.2 Sending identities
+
+Sending identities are the senders czlmail offers when you write. The From address must be one of the mailbox's identities, or the gateway refuses to send.
+
+- **Main address**: the mailbox's own address; it cannot be deleted.
+- **Alias**: **Add alias** with a single address, or `*@example.com` for any address of that domain. The mail server must accept sending from it, or it refuses the sender.
+- **Provider**: Gmail's identities come from Gmail's Settings → Accounts → Send mail as, refreshed every 6 hours; edit them in Gmail.
+
+Each identity can have a display name, Reply-To, Bcc, a plain-text signature and an HTML signature. They are stored in the gateway and shared by czlmail on all your devices.
+
+### 7.3 When sending fails
+
+- If the server refuses any recipient, the whole message is not sent and czlmail lists the refused addresses.
+- A message over the server's size limit is reported as too large.
+- Temporary refusals (4xx) are retried twice; then czlmail reports the server is limiting sending, so try again later.
+- If SMTP authentication fails, the message is not sent and the mailbox turns Re-authorize.
+- Submitting the same draft again within 10 minutes (a retry after a network glitch, say) sends it only once.
+
+## 8. Sign in from czlmail
 
 czlmail signs in with your gateway email and an **app password**: never your admin password, never your Gmail or other mailbox password. Create one app password per device, so a lost device costs only that one.
 
@@ -366,7 +402,7 @@ czlmail recognises the gateway and shows each of its mailboxes as a separate acc
 - The app password list shows when and from which IP each one was last used. A revoked app password is refused on the device's next request, and its push connections close at once.
 - While the gateway has no mailbox, czlmail says so and asks you to add one in the gateway admin.
 
-## 8. Overview and mailbox status
+## 9. Overview and mailbox status
 
 The Overview shows whether the gateway is healthy and what needs your attention. Admins switch between All users and Mine; users see their own mailboxes.
 
@@ -421,7 +457,7 @@ System shows the version, database size, master key status and startup environme
 
 ![System status](images/en/08-system-status-light.jpg)
 
-## 9. Upgrades and backups
+## 10. Upgrades and backups
 
 ### Upgrade
 
@@ -471,7 +507,7 @@ After changing `GATEWAY_BASE_URL`:
 - update the redirect URIs in Google Cloud and Microsoft Entra to the new address
 - change the server address in czlmail, or sign in again with the new one
 
-## 10. FAQ
+## 11. FAQ
 
 **czlmail says no JMAP service was found at this address**
 The server address is wrong, or the reverse proxy does not reach the gateway. Open `https://mail-gw.example.com/.well-known/czlmail.json` in a browser: JSON with a `gateway` object means the gateway is reachable.
