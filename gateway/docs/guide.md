@@ -403,6 +403,18 @@ While a mailbox is Re-authorize or Unreachable, what the gateway already holds (
 | 50212 | TLS handshake failed | encryption and port do not match: 993 / 465 are SSL/TLS, 143 / 587 are STARTTLS |
 | 50213 | the server refused the request | read the server's reply in the test result |
 
+### Gmail / Microsoft sign-in errors
+
+When authorization fails, the browser returns to My mailboxes with an error:
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| 40330 | you declined on the consent page, or the organisation requires admin approval | add the mailbox again and accept; for organisations see [6.4](#64-organisations-that-block-user-consent) |
+| 40331 | the mail permission was unticked on the consent page | add the mailbox again, keeping every box ticked |
+| 40934 | no admin has set up this OAuth app yet | an admin enters the client ID and secret under OAuth apps |
+| 40935 | you re-authorized with a different account | sign in with the mailbox's own address |
+| 50230 | the gateway could not get a token from Google / Microsoft | check that the client secret is right and not expired, and that the mailbox's proxy works |
+
 ### System
 
 System shows the version, database size, master key status and startup environment (secrets show as "set"). Once the master key is backed up, click **I have a backup** and the to-do disappears. Tasks lists the background jobs with their recent runs and lets you run one now; the Audit log records every change in the admin and keeps 180 days.
