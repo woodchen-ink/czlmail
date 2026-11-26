@@ -19,6 +19,7 @@ type Admin struct {
 	Accounts      *service.Accounts
 	Settings      *service.Settings
 	Audit         *service.Audit
+	Upstreams     *service.Upstreams
 	ClientIP      func(*http.Request) string
 	SecureCookies bool
 	Log           *slog.Logger

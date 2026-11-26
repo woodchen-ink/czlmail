@@ -40,8 +40,12 @@ func TestOpenRejectsMisuse(t *testing.T) {
 	other, _ := NewKeyring(1, key(2))
 
 	cases := map[string]func() ([]byte, error){
-		"other row":     func() ([]byte, error) { return k.Open(PurposeUpstreamSecret, AAD{row.Table, "other", row.Column}, sealed) },
-		"other column":  func() ([]byte, error) { return k.Open(PurposeUpstreamSecret, AAD{row.Table, row.RowID, "smtp_password"}, sealed) },
+		"other row": func() ([]byte, error) {
+			return k.Open(PurposeUpstreamSecret, AAD{row.Table, "other", row.Column}, sealed)
+		},
+		"other column": func() ([]byte, error) {
+			return k.Open(PurposeUpstreamSecret, AAD{row.Table, row.RowID, "smtp_password"}, sealed)
+		},
 		"other purpose": func() ([]byte, error) { return k.Open(PurposeProxySecret, row, sealed) },
 		"other key":     func() ([]byte, error) { return other.Open(PurposeUpstreamSecret, row, sealed) },
 		"tampered": func() ([]byte, error) {

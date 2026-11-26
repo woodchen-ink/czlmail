@@ -1,6 +1,6 @@
 # czlmail JMAP gateway
 
-> **Work in progress.** This is the module skeleton; mail support lands in the phase 1 issues tracked in [#48](https://github.com/woodchen-ink/czlmail/issues/48).
+> **Work in progress.** IMAP mailboxes sync and push; the JMAP Mail methods and sending land in the phase 1 issues tracked in [#48](https://github.com/woodchen-ink/czlmail/issues/48).
 
 czlmail is a pure JMAP client. The gateway is a self-hosted companion that connects your other mailboxes — plain IMAP + SMTP, Gmail, Microsoft 365 / Outlook.com — and serves them to czlmail as one JMAP server:
 
@@ -62,7 +62,7 @@ curl -c cookies.txt -H 'Content-Type: application/json' \
 
 The link works once and for 30 minutes; restart the gateway to get a new one. Once the owner exists, no link is printed again.
 
-Roles: the **owner** (the first user) manages everyone; **admins** manage plain users and the settings; **users** manage their own app passwords. Nobody can change their own role or disable or delete themselves, so the owner always stays. Self-service registration is off by default (`site.registration_open`); connecting to private-network hosts is off by default too (`security.allow_private_networks`).
+Roles: the **owner** (the first user) manages everyone; **admins** manage plain users and the settings; **users** manage their own app passwords. Nobody can change their own role or disable or delete themselves, so the owner always stays. Self-service registration is off by default (`site.registration_open`); connecting to private-network hosts is off by default too (`security.allow_private_networks`). `proxy.default` and `proxy.default_password` set the SOCKS5 proxy mailboxes use unless they say otherwise (see Mailboxes).
 
 ## App passwords
 
@@ -76,6 +76,59 @@ The list shows when and from which IP each app password was last used. Revoking 
 
 Failed sign-ins (admin and Basic) are rate limited per username and per IP; over the limit the gateway answers `429` with `Retry-After`. Requests with valid credentials are never limited, and a device retrying the same stale password does not lock its user out.
 
+## Mailboxes
+
+Each mailbox you connect (an *upstream*) becomes one JMAP account in czlmail, with a random account id that never changes. Until the admin pages land ([#44](https://github.com/woodchen-ink/czlmail/issues/44)), add them with the admin API.
+
+### Add an IMAP mailbox
+
+Test the settings first; nothing is saved and nothing is sent:
+
+```sh
+curl -b cookies.txt -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json'   -d '{"name":"Work","email":"me@example.com",
+       "imap":{"host":"imap.example.com","port":993,"tls":"tls","username":"me@example.com","password":"…"},
+       "smtp":{"host":"smtp.example.com","port":465,"tls":"tls"}}'   https://mail-gw.example.com/api/admin/upstreams/test
+```
+
+The answer reports the IMAP sign-in with the server's capabilities (`condstore`, `qresync`, `idle`, `notify`, `move`, `uidplus`, `objectid`, `xguid`, `specialUse`, `listStatus`, `sort`) and the SMTP EHLO + AUTH result, each with `ok`, a code and the server's own reply in `detail`. Then `POST /api/admin/upstreams` with the same body adds it; the first mailbox of a user becomes the default (czlmail's primary account).
+
+- `tls`: `tls` (implicit, ports 993 / 465), `starttls` (ports 143 / 587, required), `plain` (no TLS; trusted networks only).
+- `username` defaults to `email`; SMTP `username` / `password` default to the IMAP ones.
+- Passwords are encrypted in the database and never shown again; when editing, leave a password out (or empty) to keep it.
+- Hosts that resolve to private, loopback or link-local addresses are refused unless `security.allow_private_networks` is on (also for proxies, and checked again at every connection).
+
+The first sync imports every folder's message metadata, newest first, in batches of 500. Until it finishes the account shows `syncing` with `initialSync: {done, total}`; mail methods answer `serverUnavailable` (50310). Message bodies are fetched on demand.
+
+### Proxies
+
+Every connection of a mailbox (IMAP, SMTP, and for Gmail / Microsoft also OAuth and their APIs) can go through a SOCKS5 proxy. Host names are resolved by the proxy.
+
+- `"proxy": {"mode": "follow"}` (default) uses the gateway-wide proxy: settings `proxy.default` (`socks5://[user@]host:port`, empty for direct) and `proxy.default_password` (encrypted; shown as `********`).
+- `{"mode": "none"}` always connects directly.
+- `{"mode": "custom", "url": "socks5://user@proxy.example:1080", "password": "…"}` uses its own proxy.
+
+A proxy that fails affects only the mailboxes using it: they show `unreachable` and retry with backoff (5 s up to 5 min), the others keep syncing. A proxy on a private address (a sidecar container, for example) needs `security.allow_private_networks`.
+
+### Status and controls
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `ok` | | synced and watching |
+| `syncing` | 50310 | first import running |
+| `authRequired` | 40110 | the server rejected the password (or the OAuth grant is gone); retried only after you change it |
+| `unreachable` | 50210 / 42910 | network, proxy, TLS or server failure, or the provider throttles the gateway (42910); retried with backoff |
+| `paused` | 42310 | paused by you |
+
+`POST /upstreams/{id}/pause` and `/resume`, `/default` (primary account), `DELETE /upstreams/{id}` (stops it, deletes its index, removes the account from the Session). Changing the connection settings restarts the mailbox. Each status change also changes the Session state and closes the user's push connections, so clients re-read it.
+
+### How changes reach czlmail
+
+- Push: IMAP NOTIFY for every folder when the server has it, otherwise IDLE on INBOX (renewed every 25 minutes). A change appears in czlmail in about a second.
+- Polling for the other folders: every minute after a change, every 3 minutes otherwise, every 10 minutes for Junk and Trash; every 15 minutes once the user has had no push connection for 30 minutes. A client connecting triggers a check of every folder at once.
+- Sync tiers by advertised capability: QRESYNC (changes and expunges since the last state in one SELECT), CONDSTORE (changes since the last MODSEQ, deletions found by comparing UIDs when counts differ), or neither (the newest 2000 messages compared on every check, everything once a day).
+- Ids stay stable: OBJECTID when the server has it, else Dovecot's X-GUID, else UID binding with (Message-ID, size, date) matching, so a message moved in another client keeps its id, and a UIDVALIDITY reset only reports the messages that really changed. States survive restarts; the changelog keeps 30 days or 200,000 entries.
+- Per mailbox at most one watching and two working connections, with new connections rate limited.
+
 ## Admin API
 
 JSON under `/api/admin/`, responses `{"code","data","msg"}`. The session is an HttpOnly cookie (`gw_session`); writes need the `csrf_token` cookie's value in an `X-CSRF-Token` header and a JSON body. Every write is recorded in the audit log with password, secret, token and key fields masked; records are kept 180 days.
@@ -87,26 +140,35 @@ JSON under `/api/admin/`, responses `{"code","data","msg"}`. The session is an H
 | `GET /me`, `PUT /me/password` | the signed-in user; change password with `{currentPassword, newPassword}` (signs out other sessions) |
 | `GET /app-passwords`, `POST /app-passwords`, `DELETE /app-passwords/{id}` | your app passwords; create with `{name}` (the response holds the password); revoke |
 | `GET /users`, `POST /users`, `GET /users/{id}`, `PATCH /users/{id}`, `DELETE /users/{id}` | admins: manage users (`{email, name, password, role, disabled}`) |
-| `GET /settings`, `PATCH /settings` | admins: settings, update with `{"key": value}` |
+| `GET /upstreams`, `POST /upstreams`, `POST /upstreams/test` | your mailboxes (admins: `?user=<id>`, or `"user"` in the body); add an IMAP mailbox; test settings without saving |
+| `GET /upstreams/{id}`, `PATCH /upstreams/{id}`, `DELETE /upstreams/{id}` | one mailbox; change it (sections left out stay, empty passwords keep the stored ones); delete it |
+| `POST /upstreams/{id}/test`, `/pause`, `/resume`, `/default` | test the saved settings (optionally with changes, not saved); pause; resume; make it the primary account |
+| `GET /settings`, `PATCH /settings` | admins: settings, update with `{"key": value}`; a secret setting takes a string (`""` keeps it, `null` clears it) |
 | `GET /audit-logs?cursor=&limit=` | admins: audit log, newest first |
 
-Error codes (HTTP status + sequence):
+Error codes (HTTP status + sequence; upstream input errors use the x30 sequence):
 
 | Code | msg | | Code | msg |
 | --- | --- | --- | --- | --- |
-| 40000 | `invalid_request` | | 40300 | `csrf_failed` |
-| 40001 | `invalid_email` | | 40301 | `forbidden` |
-| 40002 | `invalid_password` | | 40302 | `cannot_modify_self` |
-| 40003 | `invalid_role` | | 40303 | `registration_closed` |
-| 40004 | `invalid_name` | | 40400 | `not_found` |
-| 40005 | `unknown_setting` | | 40401 | `user_not_found` |
-| 40006 | `invalid_setting` | | 40402 | `app_password_not_found` |
-| 40007 | `wrong_password` | | 40900 | `email_taken` |
-| 40008 | `invalid_cursor` | | 40901 | `setup_completed` |
-| 40100 | `unauthenticated` | | 41500 | `unsupported_media_type` |
-| 40101 | `invalid_credentials` | | 42900 | `too_many_requests` |
-| 40102 | `account_disabled` | | 50000 | `internal_error` |
-| 40103 | `invalid_setup_token` | | 50300 | `database_unavailable` |
+| 40000 | `invalid_request` | | 40102 | `account_disabled` |
+| 40001 | `invalid_email` | | 40103 | `invalid_setup_token` |
+| 40002 | `invalid_password` | | 40300 | `csrf_failed` |
+| 40003 | `invalid_role` | | 40301 | `forbidden` |
+| 40004 | `invalid_name` | | 40302 | `cannot_modify_self` |
+| 40005 | `unknown_setting` | | 40303 | `registration_closed` |
+| 40006 | `invalid_setting` | | 40400 | `not_found` |
+| 40007 | `wrong_password` | | 40401 | `user_not_found` |
+| 40008 | `invalid_cursor` | | 40402 | `app_password_not_found` |
+| 40030 | `invalid_host` | | 40430 | `upstream_not_found` |
+| 40031 | `invalid_port` | | 40900 | `email_taken` |
+| 40032 | `invalid_tls_mode` | | 40901 | `setup_completed` |
+| 40033 | `invalid_proxy` | | 40930 | `upstream_kind_managed` |
+| 40034 | `missing_password` | | 41500 | `unsupported_media_type` |
+| 40035 | `private_network_not_allowed` | | 42900 | `too_many_requests` |
+| 40100 | `unauthenticated` | | 50000 | `internal_error` |
+| 40101 | `invalid_credentials` | | 50300 | `database_unavailable` |
+
+Connection tests report per server: 40110 `authentication_failed`, 40311 `private_network_not_allowed`, 42910 `rate_limited`, 50210 `unreachable` / `timeout` / `connection_closed`, 50211 `proxy_failed`, 50212 `tls_failed`, 50213 `server_rejected`.
 
 Only the gateway's own credentials produce 401; problems with an upstream mailbox never do.
 
@@ -159,7 +221,9 @@ GATEWAY_MASTER_KEY=$(openssl rand -base64 32) GATEWAY_BASE_URL=http://localhost:
 ```
 
 - Separate Go module (`github.com/woodchen-ink/czlmail/gateway`); it does not import `desktop/`.
-- Top-level packages: `config` (startup env), `database` (SQLite, pure Go), `model`, `service` (business logic and data access), `handler`, `router`, `middleware`, `initapp`, `cron`, `pkg` (`pkg/crypto` for sealed secrets and argon2id password hashes, `pkg/jmapserver` for the JMAP Core engine; `pkg/*test` are test helpers, see Testing).
+- Top-level packages: `config` (startup env), `database` (SQLite, pure Go), `model`, `service` (business logic and data access), `handler`, `router`, `middleware`, `initapp`, `cron`, `pkg` (`pkg/crypto` for sealed secrets and argon2id password hashes, `pkg/jmapserver` for the JMAP Core engine, `pkg/netx` for per-upstream dialers, `pkg/imapc` for the IMAP client; `pkg/*test` are test helpers, see Testing).
+- Upstreams: `service/upstream` defines the `Upstream` interface, `Config`, error classes (`KindAuth`, `KindUnreachable`, `KindThrottled`, `KindRejected`) and the `Runner` (state machine, backoff, polling, watcher restarts); `service/upstream/imap` implements it (Gmail and Microsoft reuse it with their own sign-in and `Dialect`); `service/mailindex` is the per-upstream index and changelog (`data/upstreams/<accountId>.sqlite`, states `<generation>-<seq>`); `service.UpstreamManager` runs one runner per mailbox, publishes index commits to the push bus and closes the user's streams on status changes; `UpstreamManager.Lookup(accountId)` gives JMAP methods the running upstream or the `UpstreamError` for `serverUnavailable`.
+- `pkg/imapc` instead of go-imap: go-imap v2 rejects responses it does not know (`unsupported msg-att name`, `unsupported response type`) and drops the connection, so VANISHED (QRESYNC), EMAILID / X-GUID and X-GM-* cannot be read with it. `imapc` parses every response into a generic value tree first.
 - Settings are registered once in `service/settings.go` (key, type, default) and read through `service.Settings`; never query the `settings` table directly.
 - JMAP endpoints authenticate with `service.BasicAuthenticator` through `initapp.jmapAuth`, which also reports the app password used (`ErrUnauthenticated` → 401, `*service.RateLimitError` → 429), and subscribe to `service.Invalidations` to close the EventSource connections and delete the push subscriptions of revoked credentials.
 - JMAP tests drive the server with go-jmap, the client library czlmail uses.
@@ -199,7 +263,8 @@ Test helpers in `pkg/` (imported by tests only):
 - `pkg/smtptest`: Mailpit lookups; send each test's mail to its own `UniqueAddress`.
 - `pkg/gmailtest`: in-memory Gmail account. The IMAP side has X-GM-MSGID / X-GM-THRID / X-GM-LABELS (read and STORE), X-GM-RAW search, XLIST and SPECIAL-USE, APPENDUID / COPYUID, CONDSTORE and IDLE, with per-folder UIDs over one label store, so the jmap-perl#125 traps are reproducible (UIDs only valid in their own folder, labels with spaces must be quoted, `\Draft` flag = `[Gmail]/Drafts`). `SetIntercept` injects command failures, `DropConnections` simulates a network cut. `NewAPI` is the Gmail REST stand-in (`users.messages.send` incl. media upload, `settings.sendAs`, `profile`); sent mail appears in `[Gmail]/Sent Mail` under the returned id.
 - `pkg/oauthtest`: OAuth provider stand-in (authorization endpoint, token endpoint with PKCE); `RevokeRefreshToken`, `FailNext("invalid_grant")`, `ExpireAccessTokens`. Its access tokens are what the Gmail fakes accept.
-- `pkg/gatewaytest`: starts the gateway in-process with `initapp.NewApp` and returns a go-jmap client. `NewUser` goes through the admin API (owner setup token, `POST /api/admin/users`, login, app password); `SessionProblem` reads the Session status (403 `no-upstream` until a mailbox is added). `AddIMAPUpstream` / `AddGmailUpstream` skip the test until #39 / #42.
+- `pkg/gatewaytest`: starts the gateway in-process with `initapp.NewApp` and returns a go-jmap client. `NewUser` goes through the admin API (owner setup token, `POST /api/admin/users`, login, app password); `SessionProblem` reads the Session status (403 `no-upstream` until a mailbox is added). `AddIMAPUpstream` adds a Dovecot user through the admin API and waits for its first sync (`IMAPUpstreamBody`, `CreateUpstream`, `WaitUpstream` for custom cases); `AddGmailUpstream` skips until #42.
+- `pkg/netx/netxtest`: a SOCKS5 server (no-auth or username/password) that records targets and can be stopped like a failing proxy.
 
 ### Releases
 

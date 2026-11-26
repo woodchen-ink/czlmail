@@ -12,6 +12,7 @@ import (
 	"github.com/woodchen-ink/czlmail/gateway/handler"
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 	"github.com/woodchen-ink/czlmail/gateway/service"
+	"github.com/woodchen-ink/czlmail/gateway/service/upstream"
 )
 
 func TestHealthAndNotFound(t *testing.T) {
@@ -62,9 +63,11 @@ func TestJMAPMounted(t *testing.T) {
 	defer database.Close(db)
 	clientIP := func(r *http.Request) string { return r.RemoteAddr }
 	basic := service.NewBasicAuthenticator(db, service.NewRateLimiter(), service.NewInvalidations(), clientIP, log)
+	sets, _ := service.LoadSettings(db, nil)
+	mgr := service.NewUpstreamManager(db, nil, sets, t.TempDir(), log, upstream.Timing{})
 	j, err := jmapserver.New(jmapserver.Options{
 		BaseURL: "https://gw.example.com", DataDir: t.TempDir(),
-		Auth: basic, Accounts: service.NewUpstreamAccounts(db), Log: log,
+		Auth: basic, Accounts: service.NewUpstreamAccounts(db, mgr, "https://gw.example.com/admin/"), Log: log,
 	})
 	if err != nil {
 		t.Fatal(err)

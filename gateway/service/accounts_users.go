@@ -146,6 +146,10 @@ func (a *Accounts) DeleteUser(actor *model.User, publicID string) error {
 		if err := tx.Where("user_id = ?", target.ID).Delete(&model.AppPassword{}).Error; err != nil {
 			return err
 		}
+		// Their runners stop and index files go on the "deleted" invalidation.
+		if err := tx.Where("user_id = ?", target.ID).Delete(&model.Upstream{}).Error; err != nil {
+			return err
+		}
 		if err := endSessions(tx, target.ID, 0); err != nil {
 			return err
 		}

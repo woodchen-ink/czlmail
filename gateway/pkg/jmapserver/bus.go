@@ -20,6 +20,26 @@ type Bus struct {
 	// subscriptions); it is called with mu held. sink gets each flushed batch.
 	wants func(userID string) bool
 	sink  func(userID string, changed Changes, mails []NewMail)
+
+	obsMu     sync.Mutex
+	observers []func(userID string, conns int)
+}
+
+// Observe registers fn to learn how many connections a user has after each
+// connect and disconnect. fn runs outside the bus lock and must not block.
+func (b *Bus) Observe(fn func(userID string, conns int)) {
+	b.obsMu.Lock()
+	defer b.obsMu.Unlock()
+	b.observers = append(b.observers, fn)
+}
+
+func (b *Bus) notifyObservers(userID string, n int) {
+	b.obsMu.Lock()
+	obs := b.observers
+	b.obsMu.Unlock()
+	for _, fn := range obs {
+		fn(userID, n)
+	}
 }
 
 // userHub exists while the user has connections or a pending flush.
@@ -138,26 +158,34 @@ func (b *Bus) flush(userID string, hub *userHub) {
 func (b *Bus) subscribe(userID string, types map[string]bool) *subscription {
 	s := &subscription{userID: userID, types: types, notify: make(chan struct{}, 1), done: make(chan struct{})}
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	hub := b.users[userID]
 	if hub == nil {
 		hub = &userHub{subs: map[*subscription]struct{}{}}
 		b.users[userID] = hub
 	}
 	hub.subs[s] = struct{}{}
+	n := len(hub.subs)
+	b.mu.Unlock()
+	b.notifyObservers(userID, n)
 	return s
 }
 
 func (b *Bus) unsubscribe(s *subscription) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	hub := b.users[s.userID]
 	if hub == nil {
+		b.mu.Unlock()
 		return
 	}
+	_, had := hub.subs[s]
 	delete(hub.subs, s)
-	if len(hub.subs) == 0 && hub.timer == nil {
+	n := len(hub.subs)
+	if n == 0 && hub.timer == nil {
 		b.dropLocked(s.userID, hub)
+	}
+	b.mu.Unlock()
+	if had {
+		b.notifyObservers(s.userID, n)
 	}
 }
 
@@ -172,9 +200,9 @@ func (b *Bus) dropLocked(userID string, hub *userHub) {
 // A pending flush still reaches the push sink.
 func (b *Bus) EndUser(userID string) int {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	hub := b.users[userID]
 	if hub == nil {
+		b.mu.Unlock()
 		return 0
 	}
 	for s := range hub.subs {
@@ -184,6 +212,10 @@ func (b *Bus) EndUser(userID string) int {
 	clear(hub.subs)
 	if hub.timer == nil {
 		b.dropLocked(userID, hub)
+	}
+	b.mu.Unlock()
+	if n > 0 {
+		b.notifyObservers(userID, 0)
 	}
 	return n
 }
