@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -48,6 +49,7 @@ type App struct {
 	OAuth *service.OAuth
 
 	stop context.CancelFunc
+	bg   *sync.WaitGroup // work started by user invalidations
 }
 
 // Options tune an App for tests; the zero value is production.
@@ -118,21 +120,22 @@ func NewAppWith(cfg *config.Config, db *gorm.DB, log *slog.Logger, version strin
 	// with a still-valid app password reconnect at once) and the push subscriptions
 	// of the revoked credentials, so a revoked device stops getting mail summaries.
 	// A deleted user's upstreams stop and their index files go.
+	bg := &sync.WaitGroup{}
 	auth.Invalidations.Subscribe(func(ev service.UserInvalidation) {
 		jmap.EndUserStreams(ev.UserPublicID)
 		if ev.Reason == "deleted" {
-			go mgr.RemoveUser(ev.UserPublicID)
+			bg.Go(func() { mgr.RemoveUser(ev.UserPublicID) })
 		}
 		if ev.Reason == "email_changed" {
 			return // same credentials, same mailboxes
 		}
-		go func() {
+		bg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if err := jmap.DropPushSubscriptions(ctx, ev.UserPublicID, ev.AppPasswordID); err != nil {
 				log.Error("drop push subscriptions", "user", ev.UserPublicID, "err", err)
 			}
-		}()
+		})
 	})
 	// Push connections steer polling: a client connecting syncs everything now,
 	// none for 30 minutes slows polling down.
@@ -188,14 +191,19 @@ func NewAppWith(cfg *config.Config, db *gorm.DB, log *slog.Logger, version strin
 		Czlmail:  &handler.CzlmailConfig{Gateway: gateway},
 		AdminWeb: web,
 	})
-	return &App{Handler: h, Auth: auth, JMAP: jmap, Mail: mailSvc, Metrics: rec, Overview: overview, Tasks: tasks, Upstreams: upstreams, Manager: mgr, Submission: sending, OAuth: oauthSvc, stop: stop}, nil
+	return &App{Handler: h, Auth: auth, JMAP: jmap, Mail: mailSvc, Metrics: rec, Overview: overview, Tasks: tasks, Upstreams: upstreams, Manager: mgr, Submission: sending, OAuth: oauthSvc, stop: stop, bg: bg}, nil
 }
 
 // Close stops the background jobs and upstreams, writes the pending metrics and
-// ends all EventSource streams. Call it before closing the database.
+// ends all EventSource streams. When it returns, no background goroutine of the
+// gateway touches the database or the data directory any more; requests still being
+// served are the caller's, so shut the HTTP server down before closing the database.
 func (a *App) Close() {
 	a.stop()
+	a.Tasks.Wait()
+	a.bg.Wait()
 	a.Manager.Stop()
-	_ = a.Metrics.Flush()
+	a.Mail.Close()
 	a.JMAP.Close()
+	_ = a.Metrics.Flush()
 }

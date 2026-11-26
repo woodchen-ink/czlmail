@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/woodchen-ink/czlmail/gateway/pkg/jmapserver"
 	"github.com/woodchen-ink/czlmail/gateway/service"
@@ -46,6 +47,8 @@ type Service struct {
 	opts  Options
 	log   *slog.Logger
 	cache *Cache
+
+	deliveries sync.WaitGroup // new-mail notifications in flight
 }
 
 // New returns the service; Register adds its methods to a JMAP server.
