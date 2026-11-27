@@ -109,7 +109,6 @@ func TestRemoveSignIn(t *testing.T) {
 		settingUnifiedExcluded: `["s2~e","s3~x"]`,
 		"defaultIdentities":    `{"c":"i1","s2~c":"i2"}`,
 		"reconciledAt:s2~c":    "2026-11-23T00:00:00Z",
-		settingAccountLooks:    `{"c":{"name":"Work"},"s2~c":{"color":"red"},"signin:s2":{"name":"Gmail"},"signin:s3":{"name":"Other"}}`,
 	} {
 		if err := st.SetStringSetting(ctx, k, v); err != nil {
 			t.Fatal(err)
@@ -153,7 +152,6 @@ func TestRemoveSignIn(t *testing.T) {
 		"mutedMailAccounts":    `["c"]`,
 		settingUnifiedExcluded: `["s3~x"]`,
 		"defaultIdentities":    `{"c":"i1"}`,
-		settingAccountLooks:    `{"c":{"name":"Work"},"signin:s3":{"name":"Other"}}`,
 	}
 	for k, v := range want {
 		if got, _ := st.StringSetting(ctx, k); got != v {

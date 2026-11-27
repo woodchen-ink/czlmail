@@ -59,8 +59,7 @@ interface Props {
   onScrolledAway?: (away: boolean) => void;
   /** 给出时每行标出来源(搜索结果所在文件夹、统一视图里的账号), 返回空串不标。 */
   whereOf?: (email: EmailSummary) => string;
-  /** 给出时在头像下方标出邮件所属的邮箱 (统一视图与搜索里的共享邮箱), 返回 null 不标。 */
-  /** 统一视图与搜索里邮件所属的邮箱: label 是列表里的小标记 (没有就不标), color 是账号颜色 (左边一条竖线)。 */
+  /** 统一视图与搜索里邮件所属的邮箱: label 是头像下方的小标记 (没有就不标), color 是账号颜色 (行左边一条细线); 返回 null 都不标。 */
   accountOf?: (email: EmailSummary) => { label?: string; title: string; color?: string } | null;
   /** 已发送、草稿等文件夹: 头像与名字显示收件人, 发件人都是自己。 */
   showRecipients?: boolean;
@@ -319,7 +318,7 @@ export function EmailList({
                     <span
                       aria-hidden
                       title={account.title}
-                      className="absolute inset-y-0 left-0 w-[3px]"
+                      className="absolute inset-y-0 left-0 w-0.5"
                       style={{ backgroundColor: account.color }}
                     />
                   )}

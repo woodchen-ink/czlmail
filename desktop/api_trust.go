@@ -3,9 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"slices"
 	"sort"
-	"strings"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
@@ -206,51 +204,6 @@ type AppSettings struct {
 	UnifiedExcludedAccounts []string `json:"unifiedExcludedAccounts"`
 	// SmimeSigning 是 发件地址(小写) → S/MIME 签名证书与是否默认签名。
 	SmimeSigning map[string]SmimeChoice `json:"smimeSigning"`
-	// AccountLooks 是用户给账号起的名字与颜色, 键是账号 id, 或 "signin:" + 登录前缀 (侧栏一节的标题)。
-	// 只存本机, 服务器上的账号名不变; 没设的账号照旧用服务器给的名字、不着色。
-	AccountLooks map[string]AccountLook `json:"accountLooks"`
-}
-
-// AccountLook 是一个账号 (或登录) 在本机的显示名与颜色; 颜色是前端固定调色板里的键名。
-type AccountLook struct {
-	Name  string `json:"name,omitempty"`
-	Color string `json:"color,omitempty"`
-}
-
-// settingAccountLooks 存 AccountLooks (JSON 对象)。
-const settingAccountLooks = "accountLooks"
-
-// signInLookPrefix 是 AccountLooks 里登录 (而不是账号) 的键前缀。
-const signInLookPrefix = "signin:"
-
-// accountColors 是可选的账号颜色, 与前端 lib/account-looks.ts 的调色板一致。
-var accountColors = []string{"red", "orange", "amber", "green", "teal", "blue", "violet", "pink", "gray"}
-
-// normalizeAccountLooks 去掉空白与空条目, 名字限长, 不认识的颜色丢掉。
-func normalizeAccountLooks(in map[string]AccountLook) map[string]AccountLook {
-	out := map[string]AccountLook{}
-	for id, l := range in {
-		l.Name = strings.TrimSpace(l.Name)
-		if r := []rune(l.Name); len(r) > 64 {
-			l.Name = string(r[:64])
-		}
-		if !slices.Contains(accountColors, l.Color) {
-			l.Color = ""
-		}
-		if id == "" || (l.Name == "" && l.Color == "") {
-			continue
-		}
-		out[id] = l
-	}
-	return out
-}
-
-func accountLooksSetting(raw string) map[string]AccountLook {
-	out := map[string]AccountLook{}
-	if raw != "" {
-		_ = json.Unmarshal([]byte(raw), &out)
-	}
-	return out
 }
 
 var boolSettings = []struct {
@@ -293,8 +246,6 @@ func (a *App) GetSettings() (AppSettings, error) {
 	s.UnifiedExcludedAccounts = a.accountListSetting(st, settingUnifiedExcluded)
 	raw, _ := st.StringSetting(a.ctx, settingSmime)
 	s.SmimeSigning = smimeSettings(raw)
-	looks, _ := st.StringSetting(a.ctx, settingAccountLooks)
-	s.AccountLooks = accountLooksSetting(looks)
 	return s, nil
 }
 
@@ -329,13 +280,6 @@ func (a *App) SaveSettings(s AppSettings) error {
 	if s.SmimeSigning != nil {
 		smimeRaw, _ := json.Marshal(normalizeSmime(s.SmimeSigning))
 		if err := st.SetStringSetting(a.ctx, settingSmime, string(smimeRaw)); err != nil {
-			return err
-		}
-	}
-	// 同上, 旧前端发来 nil 时不动。
-	if s.AccountLooks != nil {
-		looksRaw, _ := json.Marshal(normalizeAccountLooks(s.AccountLooks))
-		if err := st.SetStringSetting(a.ctx, settingAccountLooks, string(looksRaw)); err != nil {
 			return err
 		}
 	}

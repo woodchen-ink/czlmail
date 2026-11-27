@@ -110,6 +110,14 @@
   --event-4: #7B67B5;
   --event-5: #B5565E;
   --event-6: #3A8BB0;
+  /* 账号色 (设置 → 账户 → 名称与颜色): 与日历同一套低饱和色, 暗色主题随 --event-* 一起切换。
+     只画侧栏小圆点与统一视图行左的细线; 键名存设置, 与后端 accountColors 一致。 */
+  --account-blue: var(--event-1);
+  --account-green: var(--event-2);
+  --account-amber: var(--event-3);
+  --account-violet: var(--event-4);
+  --account-red: var(--event-5);
+  --account-gray: var(--folder-trash);
   --radius: 0.5rem;
   --sidebar: #E7ECF2;
   --sidebar-foreground: #2A313A;

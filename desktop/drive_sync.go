@@ -12,14 +12,14 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
-// 跨设备同步的数据(模板、AI 与 MCP 设置)都以 JSON 文件存在个人网盘的 CZL Mail 文件夹里
+// 跨设备同步的数据(模板、AI 与 MCP 设置、账户设置)按类别各一个 JSON 文件, 存在个人网盘的 CZL Mail 文件夹里
 // (服务端的文件存储, 同时可经 WebDAV 访问)。这里是读写这些文件的公共部分。
 
 const driveSyncFolder = "CZL Mail"
 
 // errNoDriveSync 表示服务器没有文件存储 (不公布 FileNode, 例如把 IMAP 转成 JMAP 的网关)。
-// 这时模板与 AI 设置只留在本机; 后台同步遇到它不记警告, 否则每次改设置都会重复同一条。
-var errNoDriveSync = errors.New("2164 the server has no file storage; templates and AI settings stay on this device")
+// 这时模板与同步的设置只留在本机; 后台同步遇到它不记警告, 否则每次改设置都会重复同一条。
+var errNoDriveSync = errors.New("2164 the server has no file storage; templates and synced settings stay on this device")
 
 // driveSyncMu 串行化所有网盘同步: 各同步首次运行时都可能去建 CZL Mail 文件夹,
 // 并发执行会建出两个同名文件夹。
@@ -110,4 +110,5 @@ func (f *driveSyncFile) write(ctx context.Context, data []byte) error {
 func (a *App) syncDriveSoon() {
 	a.syncTemplatesSoon()
 	a.syncAISettingsSoon()
+	a.syncAccountSettingsSoon()
 }

@@ -4,147 +4,133 @@ import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useState } from "react";
-import { Ban, Check, Server, UserRound } from "lucide-react";
+import { toast } from "sonner";
+import { Server } from "lucide-react";
 
 import { Card, SectionTitle } from "@/components/settings/ui";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ACCOUNT_COLORS, accountColorValue, signInLookKey, type AccountLooks } from "@/lib/account-looks";
+import { ACCOUNT_COLORS, accountColorValue, signInLookKey, useAccountLooksState, type AccountLooks } from "@/lib/account-looks";
+import { api, errorMessage, type Account } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { main } from "@/wailsjs/go/models";
-import type { Account, AppSettings } from "@/lib/api";
 
 /**
- * 设置 → 账户 → 名称与颜色: 给账号 (和其它登录在侧栏里的那一节) 起个本机的名字、挑个颜色 (同 Thunderbird)。
- * 名字用在侧栏、统一视图的邮件标记与写信的发件人里; 颜色是侧栏的小圆点与统一视图里邮件行左边的竖线。
- * 只存本机, 服务器上的账号名不变。
+ * 设置 → 账户 → 名称与颜色: 给账号起个名字、挑个颜色, 给附加登录在侧栏里的那一节起个标题。
+ * 按登录分组 (不同登录里可能有同名邮箱); 经个人网盘同步到别的设备, 服务器上的账号名不变。
  */
-export function AccountLooksCard({
-  accounts,
-  settings,
-  save,
-}: {
-  accounts: Account[];
-  settings: AppSettings | null;
-  save: (patch: Partial<AppSettings>) => Promise<void>;
-}) {
+export function AccountLooksCard({ accounts }: { accounts: Account[] }) {
   useI18n();
-  const looks: AccountLooks = settings?.accountLooks ?? {};
+  const { looks, reload } = useAccountLooksState();
+  // 保存并重读完之前先按刚改的显示, 免得颜色点了要等一拍才变。
+  const [pending, setPending] = useState<AccountLooks>({});
+  const shown = { ...looks, ...pending };
 
-  function update(key: string, patch: { name?: string; color?: string }) {
-    const cur = looks[key] ?? { name: "", color: "" };
-    const next = main.AccountLook.createFrom({ ...cur, ...patch });
-    const all = { ...looks, [key]: next };
-    if (!next.name && !next.color) delete all[key];
-    void save({ accountLooks: all });
+  async function update(key: string, patch: { name?: string; color?: string }) {
+    const next = main.AccountLook.createFrom({ ...shown[key], ...patch });
+    setPending((p) => ({ ...p, [key]: next }));
+    try {
+      await api.setAccountLook(key, next);
+      await reload();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+    setPending((p) => {
+      const rest = { ...p };
+      delete rest[key];
+      return rest;
+    });
   }
 
-  // 其它登录各占侧栏一节, 标题默认是服务器地址; 主登录的那节叫「文件夹」, 不用起名。
-  const signIns = [...new Set(accounts.filter((a) => a.signIn).map((a) => a.signIn))].map((id) => ({
-    id,
-    host: accounts.find((a) => a.signIn === id)?.signInHost || id,
-  }));
+  const groups = [...new Set(accounts.map((a) => a.signIn))].map((signIn) => {
+    const list = accounts.filter((a) => a.signIn === signIn);
+    return { signIn, host: list[0].signInHost || signIn, list };
+  });
+  const grouped = groups.length > 1;
 
   return (
     <>
       <SectionTitle
         title={t("名称与颜色")}
-        desc={t("只保存在本机。名称替换侧栏和统一视图里服务器给的名字；颜色显示为侧栏里的圆点和「全部账号」里邮件左侧的竖线。留空则保持默认。")}
+        desc={t("名称替换侧栏与「全部账号」里服务器给的名字，颜色显示为侧栏的圆点与邮件左侧的细线。经个人网盘同步到你的其它设备，服务器上的账号名不变。")}
         small
       />
       <Card className="gap-0 p-0">
-        {signIns.map((s, i) => (
-          <LookRow
-            key={`signin:${s.id}:${looks[signInLookKey(s.id)]?.name ?? ""}`}
-            divider={i > 0}
-            icon={<Server className="text-muted-foreground size-4 shrink-0" />}
-            title={t("登录 {0}", s.host)}
-            placeholder={s.host}
-            name={looks[signInLookKey(s.id)]?.name ?? ""}
-            onName={(name) => update(signInLookKey(s.id), { name })}
-            disabled={!settings}
-          />
-        ))}
-        {accounts.map((a, i) => (
-          <LookRow
-            key={`${a.id}:${looks[a.id]?.name ?? ""}`}
-            divider={i > 0 || signIns.length > 0}
-            icon={<UserRound className="text-muted-foreground size-4 shrink-0" />}
-            title={a.name}
-            placeholder={a.name}
-            name={looks[a.id]?.name ?? ""}
-            onName={(name) => update(a.id, { name })}
-            color={looks[a.id]?.color ?? ""}
-            onColor={(color) => update(a.id, { color })}
-            disabled={!settings}
-          />
+        {groups.map((g, gi) => (
+          <div key={g.signIn} className={cn(gi > 0 && "border-border border-t")}>
+            {grouped && (
+              <div className="text-muted-foreground flex items-center gap-2 px-4 pt-2.5 pb-1 text-xs">
+                <Server className="size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{g.host}</span>
+                {/* 附加登录各占侧栏一节, 标题默认是服务器地址; 主登录那节叫「文件夹」, 不用起名。 */}
+                {g.signIn && (
+                  <NameInput
+                    value={shown[signInLookKey(g.signIn)]?.name ?? ""}
+                    placeholder={g.host}
+                    label={t("侧栏标题")}
+                    onCommit={(name) => update(signInLookKey(g.signIn), { name })}
+                  />
+                )}
+              </div>
+            )}
+            {g.list.map((a) => (
+              <div key={a.id} className={cn("flex items-center gap-3 py-1.5 pr-4 text-sm", grouped ? "pl-9" : "pl-4")}>
+                <ColorPicker value={shown[a.id]?.color ?? ""} onChange={(color) => update(a.id, { color })} />
+                <span className="min-w-0 flex-1 truncate" title={a.name}>
+                  {a.name}
+                </span>
+                <NameInput
+                  value={shown[a.id]?.name ?? ""}
+                  placeholder={a.name}
+                  label={t("显示名称")}
+                  onCommit={(name) => update(a.id, { name })}
+                />
+              </div>
+            ))}
+          </div>
         ))}
       </Card>
     </>
   );
 }
 
-function LookRow({
-  divider,
-  icon,
-  title,
+/** 失焦或回车保存, Esc 放弃; 外面的值变了 (保存完、别的设备同步来) 时草稿跟着换。 */
+function NameInput({
+  value,
   placeholder,
-  name,
-  onName,
-  color,
-  onColor,
-  disabled,
+  label,
+  onCommit,
 }: {
-  divider: boolean;
-  icon: React.ReactNode;
-  title: string;
+  value: string;
   placeholder: string;
-  name: string;
-  onName: (name: string) => void;
-  color?: string;
-  onColor?: (color: string) => void;
-  disabled: boolean;
+  label: string;
+  onCommit: (name: string) => void;
 }) {
-  useI18n();
-  // 保存后的名字变了时外面按新 key 重建这一行, 草稿随之重置。
-  const [draft, setDraft] = useState(name);
-  const commit = () => {
-    if (draft.trim() !== name) onName(draft.trim());
-  };
-
+  const [draft, setDraft] = useState(value);
+  const [seen, setSeen] = useState(value);
+  if (value !== seen) {
+    setSeen(value);
+    setDraft(value);
+  }
   return (
-    <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 text-sm", divider && "border-border border-t")}>
-      <div className="flex min-w-0 flex-1 basis-40 items-center gap-2">
-        {icon}
-        <span className="truncate" title={title}>
-          {title}
-        </span>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Input
-          value={draft}
-          placeholder={placeholder}
-          aria-label={t("显示名称")}
-          disabled={disabled}
-          className="h-8 w-52"
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            if (e.key === "Escape") setDraft(name);
-          }}
-        />
-        {onColor ? (
-          <ColorPicker value={color ?? ""} onChange={onColor} disabled={disabled} />
-        ) : (
-          <span aria-hidden className="size-8" />
-        )}
-      </div>
-    </div>
+    <Input
+      value={draft}
+      placeholder={placeholder}
+      aria-label={label}
+      className="h-7 w-48 shrink-0 text-sm"
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft.trim() !== value) onCommit(draft.trim());
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") setDraft(value);
+      }}
+    />
   );
 }
 
-function ColorPicker({ value, onChange, disabled }: { value: string; onChange: (key: string) => void; disabled: boolean }) {
+function ColorPicker({ value, onChange }: { value: string; onChange: (key: string) => void }) {
   useI18n();
   const [open, setOpen] = useState(false);
   const current = accountColorValue(value);
@@ -152,49 +138,52 @@ function ColorPicker({ value, onChange, disabled }: { value: string; onChange: (
     setOpen(false);
     if (key !== value) onChange(key);
   };
+  const swatches = [{ key: "", value: undefined, label: () => t("无颜色") }, ...ACCOUNT_COLORS];
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          disabled={disabled}
           aria-label={t("颜色")}
           title={t("颜色")}
-          className="border-border hover:bg-secondary flex size-8 shrink-0 items-center justify-center rounded-md border disabled:opacity-50"
+          className="hover:bg-secondary flex size-6 shrink-0 items-center justify-center rounded-full"
         >
-          {current ? (
-            <span className="size-4 rounded-full" style={{ backgroundColor: current }} />
-          ) : (
-            <Ban className="text-muted-foreground size-4" />
-          )}
+          <Swatch color={current} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-auto p-2">
-        <div className="grid grid-cols-5 gap-1.5">
+      <PopoverContent align="start" className="flex w-auto gap-1 p-1.5">
+        {swatches.map((c) => (
           <button
+            key={c.key}
             type="button"
-            onClick={() => pick("")}
-            aria-label={t("无颜色")}
-            title={t("无颜色")}
-            className="border-border hover:bg-secondary flex size-7 items-center justify-center rounded-full border"
+            onClick={() => pick(c.key)}
+            aria-label={c.label()}
+            title={c.label()}
+            aria-pressed={value === c.key}
+            className={cn(
+              "hover:bg-secondary flex size-7 items-center justify-center rounded-full",
+              value === c.key && "bg-secondary",
+            )}
           >
-            <Ban className="text-muted-foreground size-3.5" />
+            <Swatch color={c.value} selected={value === c.key} />
           </button>
-          {ACCOUNT_COLORS.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => pick(c.key)}
-              aria-label={c.label()}
-              title={c.label()}
-              className="flex size-7 items-center justify-center rounded-full ring-offset-2 hover:ring-2 hover:ring-current"
-              style={{ backgroundColor: c.value, color: c.value }}
-            >
-              {value === c.key && <Check className="size-3.5 text-white" />}
-            </button>
-          ))}
-        </div>
+        ))}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** 色块: 没颜色时是一个空心圆。选中时外圈一道细环。 */
+function Swatch({ color, selected }: { color?: string; selected?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "size-3.5 rounded-full",
+        !color && "border-muted-foreground/50 border border-dashed",
+        selected && "ring-foreground/30 ring-offset-background ring-1 ring-offset-2",
+      )}
+      style={color ? { backgroundColor: color } : undefined}
+    />
   );
 }

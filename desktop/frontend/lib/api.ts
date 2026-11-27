@@ -215,6 +215,8 @@ export const api = {
   removeSigningCertificate: guard(App.RemoveSigningCertificate),
   verifySignature: guard(App.VerifySignature),
   saveSettings: guard(App.SaveSettings),
+  getAccountLooks: guard(App.GetAccountLooks),
+  setAccountLook: guard(App.SetAccountLook),
   getVersion: guard(App.GetVersion),
 
   listCalendars: guard(App.ListCalendars),

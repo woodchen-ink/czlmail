@@ -169,10 +169,10 @@ func TestEnsureCacheOwnerKeepsOtherSignIns(t *testing.T) {
 		t.Fatal(err)
 	}
 	for k, v := range map[string]string{
-		store.SettingCacheOwner: "https://one/jmap\x00old@one",
-		"mutedMailAccounts":     `["c","s2~c"]`,
-		"reconciledAt:s2~c":     "2026-11-24T00:00:00Z",
-		settingAccountLooks:     `{"c":{"name":"Old"},"s2~c":{"color":"red"},"signin:s2":{"name":"Gmail"}}`,
+		store.SettingCacheOwner:                  "https://one/jmap\x00old@one",
+		"mutedMailAccounts":                      `["c","s2~c"]`,
+		"reconciledAt:s2~c":                      "2026-11-24T00:00:00Z",
+		accountLookPrefix + "https://one/jmap#c": `{"name":"Old"}`,
 	} {
 		if err := st.SetStringSetting(ctx, k, v); err != nil {
 			t.Fatal(err)
@@ -195,7 +195,7 @@ func TestEnsureCacheOwnerKeepsOtherSignIns(t *testing.T) {
 	if v, _ := st.StringSetting(ctx, "reconciledAt:s2~c"); v == "" {
 		t.Error("reconcile mark of the other sign-in was cleared")
 	}
-	if v, _ := st.StringSetting(ctx, settingAccountLooks); v != `{"s2~c":{"color":"red"},"signin:s2":{"name":"Gmail"}}` {
-		t.Errorf("account looks = %s", v)
+	if looks, _ := st.TimedSettingsWithPrefix(ctx, accountLookPrefix); len(looks) != 0 {
+		t.Errorf("account looks of the previous primary user's drive stayed: %v", looks)
 	}
 }

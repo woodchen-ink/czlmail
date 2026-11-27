@@ -280,13 +280,10 @@ func (a *App) forgetSignInData(st *store.Store, id string) error {
 	if err := st.RemoveSignInData(a.ctx, id); err != nil {
 		return err
 	}
-	if err := a.forgetAccountSettings(st, func(acc string) bool {
+	return a.forgetAccountSettings(st, func(acc string) bool {
 		prefix, _ := accountid.Split(acc)
 		return prefix == id
-	}); err != nil {
-		return err
-	}
-	return a.forgetAccountLooks(st, func(key string) bool { return key == signInLookPrefix+id })
+	})
 }
 
 // forgetAccountSettings 把 owned 认领的账号从按账号 id 记的设置 (静音、统一视图排除、默认身份) 里去掉。
@@ -319,23 +316,5 @@ func (a *App) forgetAccountSettings(st *store.Store, owned func(accountID string
 			return err
 		}
 	}
-	return a.forgetAccountLooks(st, func(key string) bool { return !strings.HasPrefix(key, signInLookPrefix) && owned(key) })
-}
-
-// forgetAccountLooks 从账号名与颜色里删掉 drop 认领的键 (账号 id 或 "signin:" + 登录前缀)。
-func (a *App) forgetAccountLooks(st *store.Store, drop func(key string) bool) error {
-	raw, _ := st.StringSetting(a.ctx, settingAccountLooks)
-	looks := accountLooksSetting(raw)
-	changed := false
-	for key := range looks {
-		if drop(key) {
-			delete(looks, key)
-			changed = true
-		}
-	}
-	if !changed {
-		return nil
-	}
-	out, _ := json.Marshal(looks)
-	return st.SetStringSetting(a.ctx, settingAccountLooks, string(out))
+	return nil
 }

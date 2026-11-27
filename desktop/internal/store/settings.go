@@ -71,6 +71,32 @@ func (s *Store) TimedSettings(ctx context.Context, keys []string) (map[string]Ti
 	return out, nil
 }
 
+// TimedSettingsWithPrefix 读取键以 prefix 开头的全部设置及其修改时间, 结果的键去掉 prefix。
+func (s *Store) TimedSettingsWithPrefix(ctx context.Context, prefix string) (map[string]TimedSetting, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT key, value, updated_at FROM app_settings WHERE substr(key, 1, ?) = ?`, len(prefix), prefix)
+	if err != nil {
+		return nil, wrap(CodeQuery, "read timed settings", err)
+	}
+	defer rows.Close()
+	out := map[string]TimedSetting{}
+	for rows.Next() {
+		var k string
+		var v TimedSetting
+		if err := rows.Scan(&k, &v.Value, &v.UpdatedAt); err != nil {
+			return nil, wrap(CodeQuery, "read timed settings", err)
+		}
+		out[k[len(prefix):]] = v
+	}
+	return out, wrap(CodeQuery, "read timed settings", rows.Err())
+}
+
+// DeleteSettingsWithPrefix 删除键以 prefix 开头的全部设置。
+func (s *Store) DeleteSettingsWithPrefix(ctx context.Context, prefix string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM app_settings WHERE substr(key, 1, ?) = ?`, len(prefix), prefix)
+	return wrap(CodeQuery, "delete settings", err)
+}
+
 // PutTimedSetting 写入从远端合并来的设置, 保留其原有的修改时间。
 // 与 SetStringSetting 不同: 后者代表本地修改, 会把时间改成当前时间。
 func PutTimedSetting(ctx context.Context, tx *sql.Tx, key string, v TimedSetting) error {

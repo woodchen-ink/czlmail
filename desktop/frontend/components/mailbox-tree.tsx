@@ -129,7 +129,11 @@ export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent 
   );
 }
 
-function MailboxRow({
+/**
+ * 一行文件夹, 带右键菜单与拖放。统一视图按账号展开的行也用它 (display 换成账号名与账号色圆点),
+ * 与账号自己那一节里的同一个文件夹行为一致。
+ */
+export function MailboxRow({
   node,
   selected,
   onSelect,
@@ -137,14 +141,17 @@ function MailboxRow({
   indent,
   quiet,
   drop,
+  display,
 }: {
-  node: Node;
+  node: Mailbox & { depth?: number };
   selected: boolean;
   onSelect: (id: string) => void;
   onAction?: Props["onAction"];
   indent: number;
   quiet?: boolean;
   drop?: { accountId: string; onDropEmails: (keys: string[], mailboxId: string) => void };
+  /** 换掉行里的文字与图标; 右键菜单的标题仍是文件夹名。 */
+  display?: { label: string; title: string; leading: React.ReactNode };
 }) {
   useI18n();
   const meta = getKindMeta()[node.kind];
@@ -184,11 +191,12 @@ function MailboxRow({
     <FolderButton
       icon={Icon}
       color={meta?.color}
-      label={label}
-      title={node.name}
+      leading={display?.leading}
+      label={display?.label ?? label}
+      title={display?.title ?? node.name}
       selected={selected}
       onClick={() => onSelect(node.id)}
-      depth={node.depth + indent}
+      depth={(node.depth ?? 0) + indent}
       // 草稿箱显示草稿总数(同 Outlook): 草稿一般都是已读的, 未读数总是 0, 看不出还有几封没写完。
       unread={node.kind === "drafts" ? node.totalEmails : node.unreadEmails}
       // 收件箱用醒目的角标; 其它文件夹(垃圾邮件、归档等)的未读多是不必处理的, 保持灰字。
@@ -266,10 +274,12 @@ export function FolderButton({
   badge,
   quiet,
   dropTarget,
-  stripe,
+  leading,
   ...rest
 }: {
   icon: typeof Inbox;
+  /** 换掉图标的元素 (统一视图按账号展开的行放账号色圆点)。 */
+  leading?: React.ReactNode;
   /** 图标颜色类名(完整字面量), 不给时为灰色。 */
   color?: string;
   label: string;
@@ -284,8 +294,6 @@ export function FolderButton({
   quiet?: boolean;
   /** 拖着邮件停在这个文件夹上, 松开就移进来。 */
   dropTarget?: boolean;
-  /** 账号颜色 (设置 → 账户): 名字前一条细竖线, 统一视图展开的各账号行用; 空串只占位, 让有色、无色的行名字对齐。 */
-  stripe?: string;
 } & Omit<React.ComponentProps<"button">, "onClick" | "title">) {
   return (
     <button
@@ -302,10 +310,7 @@ export function FolderButton({
       )}
       style={{ paddingLeft: `${depth * 12 + 8}px` }}
     >
-      <Icon className={cn("size-4 shrink-0", color ?? "text-muted-foreground")} />
-      {stripe !== undefined && (
-        <span aria-hidden className="-mr-1 h-3.5 w-[3px] shrink-0 rounded-full" style={{ backgroundColor: stripe || "transparent" }} />
-      )}
+      {leading ?? <Icon className={cn("size-4 shrink-0", color ?? "text-muted-foreground")} />}
       <span className="min-w-0 flex-1 truncate" title={title ?? label}>
         {label}
       </span>

@@ -29,7 +29,16 @@ export function AddressChip({
 }) {
   useI18n();
   const email = address.email ?? "";
-  const label = own ? (showOwnAddress && email ? t("我 ({0})", email) : t("我")) : displayAddress(address);
+  // 带上的地址用次一档字色, 「我」仍是一眼看到的那个字。
+  const label = !own ? (
+    displayAddress(address)
+  ) : showOwnAddress && email ? (
+    <>
+      {t("我")} <span className="text-muted-foreground">({email})</span>
+    </>
+  ) : (
+    t("我")
+  );
 
   async function copy() {
     try {

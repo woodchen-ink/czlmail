@@ -697,7 +697,7 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
         </>
       )}
 
-      {accounts.length > 1 && <AccountLooksCard accounts={accounts} settings={settings} save={save} />}
+      {accounts.length > 1 && <AccountLooksCard accounts={accounts} />}
 
       <ImageCacheCard active={active} />
 

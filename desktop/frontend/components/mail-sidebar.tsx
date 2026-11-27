@@ -7,13 +7,14 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ExternalLink, MailWarning, Plus, UserRound } from "lucide-react";
 
-import { accountColor, accountName, signInLookKey, useAccountLooks } from "@/lib/account-looks";
+import { accountColor, accountName, signInLookKey, type AccountLooks } from "@/lib/account-looks";
 
 import { FolderDialog, type FolderAction } from "@/components/folder-dialog";
 
 import {
   FolderButton,
   KIND_ORDER,
+  MailboxRow,
   MailboxTree,
   inboxUnread,
   mailboxColor,
@@ -47,6 +48,8 @@ interface Props {
   syncing?: boolean;
   /** 邮件从列表拖到 accountId 账号的 mailboxId 文件夹上放下。 */
   onDropEmails?: (keys: string[], accountId: string, mailboxId: string) => void;
+  /** 账号名与颜色 (设置 → 账户), 外壳读一次传进来。 */
+  looks: AccountLooks;
 }
 
 const COLLAPSE_KEY = "czlmail.sidebar.collapsed";
@@ -75,11 +78,14 @@ export function MailSidebar({
   onFolderAction,
   syncing,
   onDropEmails,
+  looks,
 }: Props) {
   useI18n();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [folderAction, setFolderAction] = useState<FolderAction | null>(null);
-  const looks = useAccountLooks();
+  // 从「全部账号」按账号展开的行打开的文件夹 (view = 哪一类, key = 账号/文件夹):
+  // 只高亮那一行, 账号自己那一节里的同一个文件夹不再同时高亮。
+  const [via, setVia] = useState<{ view: string; key: string } | null>(null);
 
   const act = (accId: string) => (action: FolderMenuAction, mailbox: Mailbox, label: string) => {
     switch (action) {
@@ -214,7 +220,17 @@ export function MailSidebar({
   const sumInbox = (list: Account[]) =>
     list.reduce((n, a) => n + (muted.has(a.id) ? 0 : inboxUnread(mailboxesByAccount[a.id])), 0);
   // 统一视图里在看的不是某个账号的文件夹, 账号文件夹都不高亮。
-  const selectedIn = (acc: string) => (!unified && acc === accountId ? mailboxId : "");
+  const viaActive =
+    !unified &&
+    !!via &&
+    via.key === `${accountId}/${mailboxId}` &&
+    !isCollapsed("unified") &&
+    !isCollapsed(`unified:${via.view}`);
+  const selectedIn = (acc: string) => (!unified && !viaActive && acc === accountId ? mailboxId : "");
+  const pick = (acc: string, box: string) => {
+    setVia(null);
+    onSelect(acc, box);
+  };
 
   // 统一视图的条目: 至少一个账号有的系统文件夹, 按侧栏固定顺序, 「未读」跟在收件箱后面。
   // 条目按并入统一视图的账号列, 未读数只数其中没静音的账号。
@@ -316,7 +332,7 @@ export function MailSidebar({
             <MailboxTree
               mailboxes={mailboxesByAccount[acc.id] ?? []}
               selectedId={selectedIn(acc.id)}
-              onSelect={(id) => onSelect(acc.id, id)}
+              onSelect={(id) => pick(acc.id, id)}
               onAction={act(acc.id)}
               indent={1}
               quiet={muted.has(acc.id)}
@@ -338,7 +354,7 @@ export function MailSidebar({
             key={acc.id}
             mailboxes={mailboxesByAccount[acc.id] ?? []}
             selectedId={selectedIn(acc.id)}
-            onSelect={(id) => onSelect(acc.id, id)}
+            onSelect={(id) => pick(acc.id, id)}
             onAction={act(acc.id)}
             quiet={muted.has(acc.id)}
             accountId={acc.id}
@@ -392,24 +408,36 @@ export function MailSidebar({
                     />
                   </div>
                   {open &&
-                    row.perAccount!.map(({ account, box }) => (
-                      <div key={`${account.id}/${box.id}`} className="flex items-center">
-                        <span aria-hidden className="w-4 shrink-0" />
-                        <FolderButton
-                          icon={row.icon}
-                          color={row.color}
-                          label={accountName(account, looks)}
-                          title={`${mailboxLabel(box)} · ${account.name}`}
-                          selected={selectedIn(account.id) === box.id}
-                          onClick={() => onSelect(account.id, box.id)}
-                          depth={1}
-                          unread={box.kind === "drafts" ? box.totalEmails : box.unreadEmails}
-                          badge={box.kind === "inbox"}
-                          quiet={muted.has(account.id)}
-                          stripe={accountColor(account.id, looks) ?? ""}
-                        />
-                      </div>
-                    ))}
+                    row.perAccount!.map(({ account, box }) => {
+                      const key = `${account.id}/${box.id}`;
+                      return (
+                        <div key={key} className="flex items-center">
+                          <span aria-hidden className="w-4 shrink-0" />
+                          <MailboxRow
+                            node={box}
+                            indent={1}
+                            display={{
+                              label: accountName(account, looks),
+                              title: `${mailboxLabel(box)} · ${account.name}`,
+                              leading: <AccountDot color={accountColor(account.id, looks)} slot />,
+                            }}
+                            selected={viaActive && via?.key === key}
+                            onSelect={(id) => {
+                              setVia({ view: row.view, key: `${account.id}/${id}` });
+                              onSelect(account.id, id);
+                            }}
+                            onAction={act(account.id)}
+                            quiet={muted.has(account.id)}
+                            drop={
+                              onDropEmails && {
+                                accountId: account.id,
+                                onDropEmails: (keys, boxId) => onDropEmails(keys, account.id, boxId),
+                              }
+                            }
+                          />
+                        </div>
+                      );
+                    })}
                 </div>
               );
             })}
@@ -472,10 +500,22 @@ export function MailSidebar({
   );
 }
 
-/** 账号颜色的小圆点 (设置 → 账户), 没设颜色时不占位。 */
-function AccountDot({ color }: { color?: string }) {
-  if (!color) return null;
-  return <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />;
+/**
+ * 账号颜色的小圆点 (设置 → 账户)。没设颜色时不占位;
+ * slot 时占图标的位置, 没设颜色画一个浅灰圆点, 一列行的名字对齐。
+ */
+function AccountDot({ color, slot }: { color?: string; slot?: boolean }) {
+  if (!slot) {
+    return color ? <span aria-hidden className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} /> : null;
+  }
+  return (
+    <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+      <span
+        className={cn("size-1.5 rounded-full", !color && "bg-muted-foreground/40")}
+        style={color ? { backgroundColor: color } : undefined}
+      />
+    </span>
+  );
 }
 
 function Section({
