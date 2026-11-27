@@ -20,6 +20,26 @@ const helpers = ast.statements.filter((node) => ts.isFunctionDeclaration(node) &
 const compile = (code) => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 const json = (value) => JSON.stringify(value).replaceAll("<", "\\u003c");
 
+// 图片撑开单元格 (bridgeScript 的 unsqueeze): [名称, iframe 宽, 正文, 期望的各图尺寸]。
+// 这几项要读 iframe 里的排版, 用不带 sandbox 的 iframe 跑, 只在默认用例里检查。
+const svg = (w, h) => "data:image/svg+xml;base64," + Buffer.from(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}"/></svg>`).toString("base64");
+const imageCases = [
+  // Outlook 签名: 单元格 width=100, 图片 150x150 写在内联样式里; 应撑开单元格而不是被压成 100x150。
+  ["outlook signature", 680, `<table><tr><td width="100" style="padding:0"><img width="150" height="150"
+    style="width:1.5666in;height:1.5666in" src="${svg(150, 150)}"></td><td>Name<br>Title</td></tr></table>`, ["150x150"]],
+  // 邮件自己写了 max-width 的照它的意思, 宽阅读栏里不放大。
+  ["own max-width", 900, `<table width="100%" cellpadding="0"><tr><td><img width="600"
+    style="display:block;width:100%;max-width:600px;height:auto" src="${svg(600, 300)}"></td></tr></table>`, ["600x300"]],
+  // 窄栏里并排的图: 放开会把表格撑出阅读栏, 仍然压窄, 高度按比例。
+  ["side by side in a narrow pane", 360, `<table width="100%" cellpadding="0"><tr>
+    <td width="50%"><img width="300" height="200" src="${svg(300, 200)}"></td>
+    <td width="50%"><img width="300" height="200" src="${svg(300, 200)}"></td></tr></table>`, ["177x118", "177x118"]],
+  // 比正文栏宽的签名图: 仍按单元格压窄, 高度按比例 (不是 100x150)。
+  ["signature wider than the pane", 120, `<table><tr><td width="100" style="padding:0"><img width="150" height="150"
+    style="width:150px;height:150px" src="${svg(150, 150)}"></td></tr></table>`, ["100x100"]],
+];
+
 async function main() {
   const fixture = process.argv[2];
   const mail = fixture ? fs.readFileSync(fixture, "utf8") : `<style>html, body { height: 100%; }</style>
@@ -68,7 +88,23 @@ async function main() {
           const zoomed = height;
           frame.contentWindow.postMessage({ type: 'czl-zoom', value: 1 }, '*');
           await settle();
-          await fetch('/result', { method: 'POST', body: JSON.stringify([normal, zoomed, height]) });
+          const heights = [normal, zoomed, height];
+          const images = [];
+          for (const [name, width, html] of ${fixture ? "[]" : json(imageCases)}) {
+            const f = document.createElement('iframe');
+            f.width = String(width);
+            f.height = '400';
+            f.srcdoc = htmlDocument(html, 'regression', true, 'light');
+            document.body.append(f);
+            await settle();
+            const sizes = [...f.contentDocument.images].map((img) => {
+              const r = img.getBoundingClientRect();
+              return Math.round(r.width) + 'x' + Math.round(r.height);
+            });
+            images.push([name, sizes]);
+            f.remove();
+          }
+          await fetch('/result', { method: 'POST', body: JSON.stringify({ heights, images }) });
         })();
       </script>`);
     }
@@ -79,7 +115,7 @@ async function main() {
     `--user-data-dir=${dir}`, `http://127.0.0.1:${server.address().port}`], { stdio: "ignore" });
   let timer;
   try {
-    const heights = await Promise.race([result, new Promise((_, reject) => {
+    const { heights, images } = await Promise.race([result, new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error("Timed out waiting for Chromium")), 12000);
       child.once("error", reject);
     })]);
@@ -87,8 +123,10 @@ async function main() {
       assert.ok(heights[0] > 336 && heights[1] > heights[0] && heights[2] === heights[0], JSON.stringify(heights));
     } else {
       assert.deepEqual(heights, [600, 750, 600]);
+      assert.deepEqual(images, imageCases.map(([name, , , sizes]) => [name, sizes]));
     }
     console.log("Email body heights (normal, enlarged, restored):", heights.join(", "));
+    for (const [name, sizes] of images) console.log(`Images (${name}):`, sizes.join(", "));
   } finally {
     clearTimeout(timer);
     server.close();

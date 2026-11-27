@@ -465,6 +465,8 @@ function bridgeScript(nonce: string): string {
   var zoomed = [];
   // 图片放大后的最小宽度(见 fit 末尾): [img, 原 minWidth, 原 height], 每次重算前还原。
   var sized = [];
+  // 被 max-width:100% 压窄的图片(见 unsqueeze): [img, 原 maxWidth, 原 height], 每次重算前还原。
+  var squeezed = [];
   // 用户手动缩放(Ctrl+滚轮、Ctrl+加减), 由父页面送来, 乘在自动缩放之上。
   var userZoom = 1;
   // 阅读栏给正文的宽度, 由父页面送来。正文比阅读栏宽时 iframe 会跟着变宽,
@@ -547,6 +549,11 @@ function bridgeScript(nonce: string): string {
       sized[k][0].style.height = sized[k][2];
     }
     sized = [];
+    for (var s = 0; s < squeezed.length; s++) {
+      squeezed[s][0].style.maxWidth = squeezed[s][1];
+      squeezed[s][0].style.height = squeezed[s][2];
+    }
+    squeezed = [];
     found = false;
     // 缩放的模型: 先按 100% 排版(body 宽 = 正文栏), 比阅读栏还宽的固定版式按阅读栏缩小
     // (不小于看得清的下限), 再整体乘上用户缩放。
@@ -558,6 +565,7 @@ function bridgeScript(nonce: string): string {
     body.style.zoom = "";
     body.style.display = "flow-root";
     body.style.width = col + "px";
+    unsqueeze(body, col, view);
     var auto = 1;
     var w = extent(body);
     if (view > 0 && w > view + 1) {
@@ -597,6 +605,43 @@ function bridgeScript(nonce: string): string {
         }
       }
     }
+  }
+  // 表格单元格按 width 属性定宽, max-width:100% 的图片不会把单元格撑开, 只会被压窄;
+  // 邮件写死的 height(Outlook 签名: style="width:1.5in;height:1.5in")不变, 图就被拉变形。
+  // Outlook 让图片撑开单元格。放得进正文栏的图片照此不压缩; 放不下的仍然压窄, 但高度按比例跟着变。
+  // 只管本页样式的 max-width:100% 压窄的图: 邮件自己写了 max-width(如 width:100%;max-width:600px)的照它的意思,
+  // 否则宽阅读栏里会被放大。放开后正文比原来更宽、伸出阅读栏(窄栏里并排的几张图)时全部退回压窄, 只修比例。
+  function unsqueeze(body, col, view) {
+    var all = body.getElementsByTagName("img"), imgs = [], now = [], prev = [], free = [], lifted = [], i, im;
+    for (i = 0; i < all.length; i++) {
+      if (!all[i].style.maxWidth && getComputedStyle(all[i]).maxWidth === "100%") imgs.push(all[i]);
+    }
+    if (!imgs.length) return;
+    var before = extent(body);
+    for (i = 0; i < imgs.length; i++) now.push(imgs[i].getBoundingClientRect().width);
+    for (i = 0; i < imgs.length; i++) {
+      prev.push(imgs[i].style.maxWidth);
+      imgs[i].style.maxWidth = "none";
+    }
+    for (i = 0; i < imgs.length; i++) free.push(imgs[i].getBoundingClientRect().width);
+    for (i = 0; i < imgs.length; i++) {
+      im = imgs[i];
+      if (free[i] <= now[i] + 0.5) {
+        im.style.maxWidth = prev[i];
+        continue;
+      }
+      squeezed.push([im, prev[i], im.style.height]);
+      if (free[i] > col + 0.5) squeezeBack(im, prev[i]);
+      else lifted.push([im, prev[i]]);
+    }
+    if (lifted.length && extent(body) > Math.max(before, view) + 1) {
+      for (i = 0; i < lifted.length; i++) squeezeBack(lifted[i][0], lifted[i][1]);
+    }
+  }
+  // 压窄的图高度按比例跟着变; 不知道原始比例(没加载、也没写宽高属性)时不动高度。
+  function squeezeBack(im, maxWidth) {
+    im.style.maxWidth = maxWidth;
+    if (im.naturalWidth || (im.getAttribute("width") && im.getAttribute("height"))) im.style.height = "auto";
   }
   function inZoomed(el) {
     for (var i = 0; i < zoomed.length; i++) if (zoomed[i].contains(el)) return true;
