@@ -38,7 +38,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ComposePane, type ComposeDraft } from "@/components/compose/compose-pane";
 import { EmailContextMenu, type EmailMenuActions } from "@/components/email-context-menu";
-import { EmailList } from "@/components/email-list";
+import { EmailList, type ListNav } from "@/components/email-list";
 import { EmailView } from "@/components/email-view";
 import { MailSidebar, UNIFIED_UNREAD } from "@/components/mail-sidebar";
 import { MailSyncState } from "@/components/mail-sync-state";
@@ -70,7 +70,6 @@ import { listen, send, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
 import { beginDraftIntent } from "@/lib/draft-transition";
-import { threadKey, threadRows } from "@/lib/thread-rows";
 import { formatKey, formatKeys, shortcutActionOf, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
 
 const PAGE_SIZE = 50;
@@ -217,6 +216,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   // 当前打开的邮件，供键盘快捷键使用。
   const currentEmail = useRef<EmailDetail | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const listNav = useRef<ListNav>(null);
   // 搜索框提示里显示「搜索」动作的第一个键位; 用户把键位删光时不带括号。
   const shortcuts = useShortcuts();
   const searchKey = shortcuts.search[0];
@@ -1349,18 +1349,10 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       const action = shortcutActionOf(e);
       if (!action) return;
 
-      // 按屏幕上的行移动: 同一会话的几封只占一行, 不能按 emails 逐封走, 否则会选中折叠起来的那封。
+      // 按屏幕上的行移动, 下一行由列表决定: 展开会话里的往来各占一行, 落到会话行时展开它 (同点击)。
       const step = (delta: number) => {
-        const heads = threadRows(emails, flatList).map((r) => r.head);
-        let idx = heads.findIndex((m) => emailKey(m) === selectedKey);
-        // 选中的是展开区里的一封 (折叠在会话里的、别的文件夹的): 从代表该会话的行起步,
-        // 否则会跳回列表第一封。
-        if (idx < 0) {
-          const cur = currentEmail.current;
-          const sel = emails.find((m) => emailKey(m) === selectedKey) ?? (cur && emailKey(cur) === selectedKey ? cur : null);
-          if (sel) idx = heads.findIndex((m) => threadKey(m) === threadKey(sel));
-        }
-        const next = heads[idx < 0 ? 0 : idx + delta];
+        const cur = currentEmail.current;
+        const next = listNav.current?.move(selectedKey, delta, cur && emailKey(cur) === selectedKey ? cur : null);
         if (next) setSelectedKey(emailKey(next));
       };
 
@@ -1684,6 +1676,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 accountOf={searching || unified ? accountOf : undefined}
                 showRecipients={!searching && ["sent", "drafts", "scheduled"].includes(currentKind)}
                 flat={flatList}
+                navRef={listNav}
                 checked={checked}
                 onCheck={checkEmail}
                 // 拖到侧栏文件夹上移动; 窄屏侧栏收起没有可放的地方, 已计划的邮件不移动。
