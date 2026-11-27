@@ -84,8 +84,8 @@ interface Props {
   onScrolledAway?: (away: boolean) => void;
   /** 给出时每行标出来源(搜索结果所在文件夹、统一视图里的账号), 返回空串不标。 */
   whereOf?: (email: EmailSummary) => string;
-  /** 给出时在头像下方标出邮件所属的邮箱 (统一视图与搜索里的共享邮箱), 返回 null 不标。 */
-  accountOf?: (email: EmailSummary) => { label: string; title: string } | null;
+  /** 统一视图与搜索里邮件所属的邮箱: label 是头像下方的小标记 (没有就不标), color 是账号颜色 (行左边一条细线); 返回 null 都不标。 */
+  accountOf?: (email: EmailSummary) => { label?: string; title: string; color?: string } | null;
   /** 已发送、草稿等文件夹: 头像与名字显示收件人, 发件人都是自己。 */
   showRecipients?: boolean;
   /**
@@ -377,7 +377,16 @@ export function EmailList({
           // 多选时会话行左侧多一列勾选框, 成员行也要同样右移, 串联细线才能对齐头像。
           const multi = !!onCheck && (checked?.size ?? 0) > 0;
           return (
-            <li key={key}>
+            <li key={key} className="relative">
+              {/* 账号颜色 (设置 → 账户): 统一视图里一眼分出哪个邮箱的信。画在整个会话 (会话行 + 展开区) 上:
+                行的绝对定位不含它自己的下边框, 画在行里会被行间分隔线截成一段一段; 同一账号的相邻会话连成一条。 */}
+              {account?.color && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 left-0 z-10 w-0.5"
+                  style={{ backgroundColor: account.color }}
+                />
+              )}
               {wrapRow(
                 email,
                 <div
@@ -408,7 +417,7 @@ export function EmailList({
                     }
                   }}
                   className={cn(
-                    "group border-border flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
+                    "group border-border relative flex w-full cursor-default gap-2 border-b px-3 py-2.5 text-left transition-colors",
                     "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
                     ((highlightSelected && key === selectedKey) || isChecked) && "bg-muted",
                     childSelected && "bg-secondary",
@@ -475,7 +484,7 @@ export function EmailList({
                       )}
                     </div>
                     {/* 共享邮箱标记放头像下方, 不占主题行; 负外边距让它最宽可比头像多 8px 而不撑宽头像列 (串联细线按头像列定位)。 */}
-                    {account && (
+                    {account?.label && (
                       <span
                         title={account.title}
                         className="bg-secondary text-muted-foreground -mx-1 mt-1 max-w-11 truncate rounded-sm px-1 text-[10px] leading-4"
@@ -612,7 +621,7 @@ export function EmailList({
                 </div>,
               )}
               {isOpen && (
-                <ul className="border-border bg-secondary/40 border-b py-1">
+                <ul className="border-border bg-secondary/40 border-b">
                   {members.length === 0 && (
                     <li className="text-muted-foreground px-12 py-2 text-xs">
                       {t("载入中…")}</li>
@@ -780,7 +789,8 @@ function ThreadRail({
         className={cn(
           "bg-muted-foreground/30 pointer-events-none absolute w-px",
           inset ? "left-[50px]" : "left-[30px]",
-          first ? "-top-[5px]" : "top-0",
+          // 第一封接到会话行头像下的细线: 越过会话行的下边框。
+          first ? "-top-px" : "top-0",
           last ? "bottom-1/2" : "bottom-0",
         )}
       />

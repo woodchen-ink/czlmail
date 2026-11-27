@@ -1391,5 +1391,18 @@
   "网关连不上这个邮箱的服务器，恢复后会自动同步。": "Brána se nemůže spojit se serverem této schránky; po obnovení se znovu synchronizuje.",
   "网关正在首次导入这个邮箱，完成后邮件会自动出现。": "Brána tuto schránku poprvé importuje; pošta se zobrazí po dokončení.",
   "这个邮箱在网关里已暂停，恢复后会自动同步。": "Tato schránka je v bráně pozastavena; po obnovení se znovu synchronizuje.",
-  "这个邮箱暂时不可用。": "Tato schránka je momentálně nedostupná."
+  "这个邮箱暂时不可用。": "Tato schránka je momentálně nedostupná.",
+  "红色": "Červená",
+  "黄色": "Žlutá",
+  "绿色": "Zelená",
+  "蓝色": "Modrá",
+  "紫色": "Fialová",
+  "灰色": "Šedá",
+  "无颜色": "Bez barvy",
+  "显示名称": "Zobrazovaný název",
+  "收起各账号": "Sbalit účty",
+  "按账号展开": "Rozbalit podle účtů",
+  "在 {0} 中新建文件夹": "Nová složka v {0}",
+  "侧栏标题": "Název v postranním panelu",
+  "圆点与名称是你给邮箱挑的颜色和起的名字，用在侧栏与「全部账号」里，经个人网盘同步到你的其它设备。": " Tečka a název jsou barva a jméno, které schránce dáte; používají se v postranním panelu a ve Všech účtech a synchronizují se na vaše další zařízení přes osobní úložiště."
 }

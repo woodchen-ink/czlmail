@@ -15,6 +15,8 @@ import {
   FolderX,
   Inbox,
   MailOpen,
+  Star,
+  StarOff,
   Pencil,
   RefreshCw,
   Send,
@@ -46,7 +48,8 @@ export type FolderMenuAction =
   | "pull"
   | "empty"
   | "delete"
-  | "refresh";
+  | "refresh"
+  | "favorite";
 
 interface Props {
   mailboxes: Mailbox[];
@@ -61,6 +64,8 @@ interface Props {
   /** 这棵树所属的账号与邮件拖到文件夹上放下时的回调; 不给时文件夹不接收拖放。 */
   accountId?: string;
   onDropEmails?: (keys: string[], mailboxId: string) => void;
+  /** 这个账号里收藏的文件夹 id (侧栏「收藏」), 右键菜单据此显示「收藏」或「取消收藏」。 */
+  favorites?: Set<string>;
 }
 
 /**
@@ -106,7 +111,7 @@ export function mailboxTreeOrder(mailboxes: Mailbox[]): (Mailbox & { depth: numb
   return buildTree(mailboxes);
 }
 
-export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent = 0, quiet, accountId, onDropEmails }: Props) {
+export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent = 0, quiet, accountId, onDropEmails, favorites }: Props) {
   useI18n();
   const nodes = useMemo(() => buildTree(mailboxes), [mailboxes]);
   const drop = accountId && onDropEmails ? { accountId, onDropEmails } : undefined;
@@ -123,13 +128,18 @@ export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent 
           indent={indent}
           quiet={quiet}
           drop={drop}
+          favorite={favorites?.has(node.id)}
         />
       ))}
     </nav>
   );
 }
 
-function MailboxRow({
+/**
+ * 一行文件夹, 带右键菜单与拖放。统一视图按账号展开的行也用它 (display 换成账号名与账号色圆点),
+ * 与账号自己那一节里的同一个文件夹行为一致。
+ */
+export function MailboxRow({
   node,
   selected,
   onSelect,
@@ -137,14 +147,20 @@ function MailboxRow({
   indent,
   quiet,
   drop,
+  display,
+  favorite,
 }: {
-  node: Node;
+  node: Mailbox & { depth?: number };
   selected: boolean;
   onSelect: (id: string) => void;
   onAction?: Props["onAction"];
   indent: number;
   quiet?: boolean;
   drop?: { accountId: string; onDropEmails: (keys: string[], mailboxId: string) => void };
+  /** 换掉行里的文字与图标 (leading 不给时用文件夹图标), hint 是名字后的浅色小字; 右键菜单的标题仍是文件夹名。 */
+  display?: { label: string; title: string; leading?: React.ReactNode; hint?: string };
+  /** 已在侧栏「收藏」里。 */
+  favorite?: boolean;
 }) {
   useI18n();
   const meta = getKindMeta()[node.kind];
@@ -184,11 +200,13 @@ function MailboxRow({
     <FolderButton
       icon={Icon}
       color={meta?.color}
-      label={label}
-      title={node.name}
+      leading={display?.leading}
+      hint={display?.hint}
+      label={display?.label ?? label}
+      title={display?.title ?? node.name}
       selected={selected}
       onClick={() => onSelect(node.id)}
-      depth={node.depth + indent}
+      depth={(node.depth ?? 0) + indent}
       // 草稿箱显示草稿总数(同 Outlook): 草稿一般都是已读的, 未读数总是 0, 看不出还有几封没写完。
       unread={node.kind === "drafts" ? node.totalEmails : node.unreadEmails}
       // 收件箱用醒目的角标; 其它文件夹(垃圾邮件、归档等)的未读多是不必处理的, 保持灰字。
@@ -216,6 +234,9 @@ function MailboxRow({
         <ContextMenuItem onSelect={act("markRead")} disabled={node.unreadEmails === 0 || rights.maySetSeen === false}>
           <MailOpen />
           {t("将文件夹标记为已读")}</ContextMenuItem>
+        <ContextMenuItem onSelect={act("favorite")}>
+          {favorite ? <StarOff /> : <Star />}
+          {favorite ? t("取消收藏") : t("收藏")}</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={act("create")} disabled={rights.mayCreateChild === false}>
           <FolderPlus />
@@ -266,9 +287,15 @@ export function FolderButton({
   badge,
   quiet,
   dropTarget,
+  leading,
+  hint,
   ...rest
 }: {
   icon: typeof Inbox;
+  /** 名字后面的浅色小字 (「收藏」里注明是哪个邮箱)。 */
+  hint?: string;
+  /** 换掉图标的元素 (统一视图按账号展开的行放账号色圆点)。 */
+  leading?: React.ReactNode;
   /** 图标颜色类名(完整字面量), 不给时为灰色。 */
   color?: string;
   label: string;
@@ -291,7 +318,7 @@ export function FolderButton({
       onClick={onClick}
       aria-current={selected ? "page" : undefined}
       className={cn(
-        "group flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors",
+        "group flex w-full min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors",
         "hover:bg-secondary focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
         selected && "bg-muted font-medium",
         // 目标文件夹整行铺强调色, 图标也跟着反白, 一眼看出会落到哪里。
@@ -299,9 +326,10 @@ export function FolderButton({
       )}
       style={{ paddingLeft: `${depth * 12 + 8}px` }}
     >
-      <Icon className={cn("size-4 shrink-0", color ?? "text-muted-foreground")} />
+      {leading ?? <Icon className={cn("size-4 shrink-0", color ?? "text-muted-foreground")} />}
       <span className="min-w-0 flex-1 truncate" title={title ?? label}>
         {label}
+        {hint && <span className="text-muted-foreground ml-1.5 text-xs">{hint}</span>}
       </span>
       {badge ? (
         <UnreadBadge count={unread} quiet={quiet} />

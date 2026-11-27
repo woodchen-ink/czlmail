@@ -17,10 +17,28 @@ import { displayAddress } from "@/lib/format";
  * 收件人一栏里的一个地址：自己的显示「我」，点开看完整地址并可复制、写信。
  * 名字（尤其是「我」）看不出是哪个邮箱，别名、共享账号多的时候要能随手点开确认。
  */
-export function AddressChip({ address, own }: { address: Address; own: boolean }) {
+export function AddressChip({
+  address,
+  own,
+  showOwnAddress,
+}: {
+  address: Address;
+  own: boolean;
+  /** 「我」后面带上是哪个地址 (自己有多个地址时)。 */
+  showOwnAddress?: boolean;
+}) {
   useI18n();
   const email = address.email ?? "";
-  const label = own ? t("我") : displayAddress(address);
+  // 带上的地址用次一档字色, 「我」仍是一眼看到的那个字。
+  const label = !own ? (
+    displayAddress(address)
+  ) : showOwnAddress && email ? (
+    <>
+      {t("我")} <span className="text-muted-foreground">({email})</span>
+    </>
+  ) : (
+    t("我")
+  );
 
   async function copy() {
     try {

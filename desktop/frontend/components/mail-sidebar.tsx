@@ -7,11 +7,15 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ExternalLink, MailWarning, Plus, UserRound } from "lucide-react";
 
+import { accountColor, accountName, signInLookKey, type AccountLooks } from "@/lib/account-looks";
+import type { FavoriteFolder } from "@/lib/favorite-folders";
+
 import { FolderDialog, type FolderAction } from "@/components/folder-dialog";
 
 import {
   FolderButton,
   KIND_ORDER,
+  MailboxRow,
   MailboxTree,
   inboxUnread,
   mailboxColor,
@@ -45,6 +49,10 @@ interface Props {
   syncing?: boolean;
   /** 邮件从列表拖到 accountId 账号的 mailboxId 文件夹上放下。 */
   onDropEmails?: (keys: string[], accountId: string, mailboxId: string) => void;
+  /** 账号名与颜色 (设置 → 账户), 外壳读一次传进来。 */
+  looks: AccountLooks;
+  /** 「收藏」里的文件夹 (右键文件夹收藏), 按收藏的先后。 */
+  favorites: FavoriteFolder[];
 }
 
 const COLLAPSE_KEY = "czlmail.sidebar.collapsed";
@@ -73,10 +81,15 @@ export function MailSidebar({
   onFolderAction,
   syncing,
   onDropEmails,
+  looks,
+  favorites,
 }: Props) {
   useI18n();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [folderAction, setFolderAction] = useState<FolderAction | null>(null);
+  // 从「收藏」或「全部账号」按账号展开的行打开的文件夹 (key = 账号/文件夹, from = 哪一节的行,
+  // sections = 那一行要展开着才看得到的节): 只高亮那一行, 别处的同一个文件夹不再同时高亮。
+  const [via, setVia] = useState<{ key: string; from: string; sections: string[] } | null>(null);
 
   const act = (accId: string) => (action: FolderMenuAction, mailbox: Mailbox, label: string) => {
     switch (action) {
@@ -88,6 +101,10 @@ export function MailSidebar({
         return setFolderAction({ kind: action, accountId: accId, mailbox });
       case "pull":
         return pull(accId, mailbox.id, label);
+      case "favorite":
+        return api
+          .setFavoriteFolder(accId, mailbox.id, !favoriteSet(accId).has(mailbox.id))
+          .catch((err) => toast.error(errorMessage(err)));
       default:
         return onFolderAction(accId, action, mailbox);
     }
@@ -122,7 +139,9 @@ export function MailSidebar({
   // 有统一视图时它是日常入口, 「文件夹」「共享」默认收起; 用户展开、收起过的按记下的来。
   const hasUnified = accounts.length > 1;
   const defaultCollapsed = (key: string) =>
-    hasUnified && (key === "personal" || key === "shared" || key.startsWith("signin:"));
+    // 统一视图里各类别按账号展开的子行 (同 Thunderbird) 默认收起, 外观与原来一样。
+    key.startsWith("unified:") ||
+    (hasUnified && (key === "personal" || key === "shared" || key.startsWith("signin:")));
   const isCollapsed = (key: string) => collapsed[key] ?? defaultCollapsed(key);
 
   function toggle(key: string, open?: boolean) {
@@ -202,13 +221,31 @@ export function MailSidebar({
       list,
       own,
       shared: list.filter((a) => !a.isPersonal),
-      title: grouped && host ? host : (own[0] ?? list[0]).name,
+      // 用户在设置里给这个登录起了名字就用它 (服务器地址如 http://localhost:18090 说明不了是哪个邮箱)。
+      title: looks[signInLookKey(id)]?.name || (grouped && host ? host : accountName(own[0] ?? list[0], looks)),
     };
   });
   const sumInbox = (list: Account[]) =>
     list.reduce((n, a) => n + (muted.has(a.id) ? 0 : inboxUnread(mailboxesByAccount[a.id])), 0);
   // 统一视图里在看的不是某个账号的文件夹, 账号文件夹都不高亮。
-  const selectedIn = (acc: string) => (!unified && acc === accountId ? mailboxId : "");
+  const viaActive =
+    !unified &&
+    !!via &&
+    via.key === `${accountId}/${mailboxId}` &&
+    via.sections.every((sec) => !isCollapsed(sec));
+  const selectedIn = (acc: string) => (!unified && !viaActive && acc === accountId ? mailboxId : "");
+  const pick = (acc: string, box: string) => {
+    setVia(null);
+    onSelect(acc, box);
+  };
+
+  // 收藏: 文件夹已被删掉、账号已不在的条目不列。
+  const favoriteSet = (acc: string) => new Set(favorites.filter((f) => f.accountId === acc).map((f) => f.mailboxId));
+  const favoriteRows = favorites.flatMap((f) => {
+    const account = accounts.find((a) => a.id === f.accountId);
+    const box = mailboxesByAccount[f.accountId]?.find((m) => m.id === f.mailboxId);
+    return account && box ? [{ account, box }] : [];
+  });
 
   // 统一视图的条目: 至少一个账号有的系统文件夹, 按侧栏固定顺序, 「未读」跟在收件箱后面。
   // 条目按并入统一视图的账号列, 未读数只数其中没静音的账号。
@@ -221,8 +258,20 @@ export function MailSidebar({
     kind === "drafts"
       ? unifiedBoxes.filter((m) => m.kind === kind).reduce((n, m) => n + m.totalEmails, 0)
       : countedBoxes.filter((m) => m.kind === kind).reduce((n, m) => n + m.unreadEmails, 0);
-  const unifiedRows = KIND_ORDER.filter((kind) => unifiedBoxes.some((m) => m.kind === kind)).map((kind) => ({
+  const unifiedRows: {
+    view: string;
+    icon: typeof MailWarning;
+    color?: string;
+    label: string;
+    unread: number;
+    badge: boolean;
+    perAccount?: { account: Account; box: Mailbox }[];
+  }[] = KIND_ORDER.filter((kind) => unifiedBoxes.some((m) => m.kind === kind)).map((kind) => ({
     view: kind,
+    // 展开后每个账号的同类文件夹一行, 点了直接进那个账号的文件夹。
+    perAccount: unifiedAccounts.flatMap((account) =>
+      (mailboxesByAccount[account.id] ?? []).filter((m) => m.kind === kind).map((box) => ({ account, box })),
+    ),
     icon: mailboxIcon(kind),
     color: mailboxColor(kind),
     label: mailboxLabel({ kind, name: kind }),
@@ -242,7 +291,8 @@ export function MailSidebar({
 
   // 共享邮箱, 以及同一登录下的多个个人账号 (czlmail 网关每个上游邮箱一个): 每个账号一行可折叠的标题。
   // 网关账号的标题带上游类型图标与状态 (需要重新授权 / 连不上 / 同步中), 能重新授权时旁边给网关后台入口。
-  const renderAccounts = (list: Account[]) =>
+  // own: 登录自己的个人邮箱, 每行带「新建文件夹」; 一个登录下有多个邮箱时节标题上的「+」分不清建到哪个邮箱, 放到这里。
+  const renderAccounts = (list: Account[], own = false) =>
     list.map((acc) => {
       const key = `acc:${acc.id}`;
       const open = !isCollapsed(key);
@@ -250,7 +300,7 @@ export function MailSidebar({
       const reauth = acc.upstream?.reauthUrl;
       return (
         <div key={acc.id} className="flex flex-col">
-          <div className="flex items-center">
+          <div className="group/acc flex items-center">
             <button
               type="button"
               onClick={() => toggle(key)}
@@ -262,7 +312,10 @@ export function MailSidebar({
                 className={cn("size-3 shrink-0 transition-transform", !open && "-rotate-90")}
               />
               <KindIcon className="size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{acc.name}</span>
+              <AccountDot color={accountColor(acc.id, looks)} />
+              <span className="min-w-0 flex-1 truncate" title={acc.name}>
+                {accountName(acc, looks)}
+              </span>
               <UpstreamBadge info={acc.upstream} />
               {/* 展开时收件箱行自己有角标, 折叠时才在账号名上显示, 否则看不出是哪个共享邮箱来了信。 */}
               {!open && <UnreadBadge count={inboxUnread(mailboxesByAccount[acc.id])} quiet={muted.has(acc.id)} />}
@@ -278,13 +331,25 @@ export function MailSidebar({
                 <ExternalLink className="size-3.5" />
               </button>
             )}
+            {own && (
+              <button
+                type="button"
+                onClick={() => setFolderAction({ kind: "create", accountId: acc.id })}
+                aria-label={t("在 {0} 中新建文件夹", accountName(acc, looks))}
+                title={t("在 {0} 中新建文件夹", accountName(acc, looks))}
+                className="text-muted-foreground hover:bg-secondary hover:text-foreground rounded-sm p-1 opacity-0 group-hover/acc:opacity-100 focus-visible:opacity-100"
+              >
+                <Plus className="size-3.5" />
+              </button>
+            )}
           </div>
           {open && (
             <MailboxTree
               mailboxes={mailboxesByAccount[acc.id] ?? []}
               selectedId={selectedIn(acc.id)}
-              onSelect={(id) => onSelect(acc.id, id)}
+              onSelect={(id) => pick(acc.id, id)}
               onAction={act(acc.id)}
+              favorites={favoriteSet(acc.id)}
               indent={1}
               quiet={muted.has(acc.id)}
               accountId={acc.id}
@@ -297,21 +362,23 @@ export function MailSidebar({
 
   // 登录自己的个人账号: 只有一个普通账号时直接列文件夹 (与原来相同);
   // 有多个 (czlmail 网关) 或是网关账号时按账号分组, 否则几个收件箱连在一起分不清, 上游状态也没处显示。
+  const ownGrouped = (list: Account[]) => !(list.length === 1 && !list[0].upstream);
   const renderOwn = (list: Account[]) =>
-    list.length === 1 && !list[0].upstream
+    !ownGrouped(list)
       ? list.map((acc) => (
           <MailboxTree
             key={acc.id}
             mailboxes={mailboxesByAccount[acc.id] ?? []}
             selectedId={selectedIn(acc.id)}
-            onSelect={(id) => onSelect(acc.id, id)}
+            onSelect={(id) => pick(acc.id, id)}
             onAction={act(acc.id)}
+            favorites={favoriteSet(acc.id)}
             quiet={muted.has(acc.id)}
             accountId={acc.id}
             onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
           />
         ))
-      : renderAccounts(list);
+      : renderAccounts(list, true);
 
   if (syncing && allBoxes.length === 0) return <SidebarSkeleton />;
 
@@ -326,29 +393,126 @@ export function MailSidebar({
           unread={sumInbox(accounts)}
         >
           <nav className="flex flex-col gap-0.5" aria-label={t("全部账号")}>
-            {unifiedRows.map((row) => (
-              <FolderButton
-                key={row.view}
-                icon={row.icon}
-                color={row.color}
-                label={row.label}
-                selected={unified === row.view}
-                onClick={() => onSelectUnified(row.view)}
-                unread={row.unread}
-                badge={row.badge}
-              />
-            ))}
+            {unifiedRows.map((row) => {
+              const key = `unified:${row.view}`;
+              const expandable = (row.perAccount?.length ?? 0) > 1;
+              const open = expandable && !isCollapsed(key);
+              return (
+                <div key={row.view} className="flex flex-col gap-0.5">
+                  <div className="flex items-center">
+                    {expandable ? (
+                      <button
+                        type="button"
+                        onClick={() => toggle(key)}
+                        aria-expanded={open}
+                        aria-label={open ? t("收起各账号") : t("按账号展开")}
+                        title={open ? t("收起各账号") : t("按账号展开")}
+                        className="text-muted-foreground hover:text-foreground flex w-4 shrink-0 justify-center rounded-sm py-1.5"
+                      >
+                        <ChevronDown className={cn("size-3 transition-transform", !open && "-rotate-90")} />
+                      </button>
+                    ) : (
+                      <span aria-hidden className="w-4 shrink-0" />
+                    )}
+                    <FolderButton
+                      icon={row.icon}
+                      color={row.color}
+                      label={row.label}
+                      selected={unified === row.view}
+                      onClick={() => onSelectUnified(row.view)}
+                      unread={row.unread}
+                      badge={row.badge}
+                    />
+                  </div>
+                  {open &&
+                    row.perAccount!.map(({ account, box }) => {
+                      const key = `${account.id}/${box.id}`;
+                      return (
+                        <div key={key} className="flex items-center">
+                          <span aria-hidden className="w-4 shrink-0" />
+                          <MailboxRow
+                            node={box}
+                            indent={1}
+                            display={{
+                              label: accountName(account, looks),
+                              title: `${mailboxLabel(box)} · ${account.name}`,
+                              leading: <AccountDot color={accountColor(account.id, looks)} slot />,
+                            }}
+                            selected={viaActive && via?.from === `unified:${row.view}` && via.key === key}
+                            onSelect={(id) => {
+                              setVia({
+                                key: `${account.id}/${id}`,
+                                from: `unified:${row.view}`,
+                                sections: ["unified", `unified:${row.view}`],
+                              });
+                              onSelect(account.id, id);
+                            }}
+                            favorite={favoriteSet(account.id).has(box.id)}
+                            onAction={act(account.id)}
+                            quiet={muted.has(account.id)}
+                            drop={
+                              onDropEmails && {
+                                accountId: account.id,
+                                onDropEmails: (keys, boxId) => onDropEmails(keys, account.id, boxId),
+                              }
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                </div>
+              );
+            })}
+          </nav>
+        </Section>
+      )}
+
+      {favoriteRows.length > 0 && (
+        <Section title={t("收藏")} open={!isCollapsed("favorites")} onToggle={() => toggle("favorites")}>
+          <nav className="flex flex-col gap-0.5" aria-label={t("收藏")}>
+            {favoriteRows.map(({ account, box }) => {
+              const key = `${account.id}/${box.id}`;
+              return (
+                <MailboxRow
+                  key={key}
+                  node={box}
+                  indent={0}
+                  // 多个账号时在名字后注明是哪个邮箱 (用户起的名字优先); 一个账号时不注。
+                  display={{
+                    label: mailboxLabel(box),
+                    title: `${box.name} · ${account.name}`,
+                    hint: accounts.length > 1 ? accountName(account, looks) : undefined,
+                  }}
+                  selected={viaActive && via?.from === "favorites" && via.key === key}
+                  onSelect={(id) => {
+                    setVia({ key: `${account.id}/${id}`, from: "favorites", sections: ["favorites"] });
+                    onSelect(account.id, id);
+                  }}
+                  onAction={act(account.id)}
+                  favorite
+                  quiet={muted.has(account.id)}
+                  drop={
+                    onDropEmails && {
+                      accountId: account.id,
+                      onDropEmails: (keys, boxId) => onDropEmails(keys, account.id, boxId),
+                    }
+                  }
+                />
+              );
+            })}
           </nav>
         </Section>
       )}
 
       {personal.length > 0 && (
         <Section
-          title={tContext("heading", "文件夹")}
+          // 主登录只有一个个人邮箱且用户给它起了名字 (设置 → 账户): 节标题用这个名字, 否则照旧「文件夹」。
+          title={(personal.length === 1 && looks[personal[0].id]?.name) || tContext("heading", "文件夹")}
+          color={personal.length === 1 ? accountColor(personal[0].id, looks) : undefined}
           open={!isCollapsed("personal")}
           onToggle={() => toggle("personal")}
           unread={sumInbox(personal)}
-          onAdd={() => setFolderAction({ kind: "create", accountId: personal[0].id })}
+          onAdd={ownGrouped(personal) ? undefined : () => setFolderAction({ kind: "create", accountId: personal[0].id })}
           headerProps={dragExpand("personal")}
         >
           {renderOwn(personal)}
@@ -372,10 +536,11 @@ export function MailSidebar({
           <Section
             key={key}
             title={g.title}
+            color={g.own.length === 1 && !g.own[0].upstream ? accountColor(g.own[0].id, looks) : undefined}
             open={!isCollapsed(key)}
             onToggle={() => toggle(key)}
             unread={sumInbox(g.list)}
-            onAdd={g.own.length > 0 ? () => setFolderAction({ kind: "create", accountId: g.own[0].id }) : undefined}
+            onAdd={g.own.length > 0 && !ownGrouped(g.own) ? () => setFolderAction({ kind: "create", accountId: g.own[0].id }) : undefined}
             headerProps={dragExpand(key)}
           >
             {renderOwn(g.own)}
@@ -394,8 +559,27 @@ export function MailSidebar({
   );
 }
 
+/**
+ * 账号颜色的小圆点 (设置 → 账户)。没设颜色时不占位;
+ * slot 时占图标的位置, 没设颜色画一个空心小圈 (与「灰色」分开), 一列行的名字对齐。
+ */
+function AccountDot({ color, slot }: { color?: string; slot?: boolean }) {
+  if (!slot) {
+    return color ? <span aria-hidden className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} /> : null;
+  }
+  return (
+    <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+      <span
+        className={cn("size-1.5 rounded-full", !color && "border-muted-foreground/50 border")}
+        style={color ? { backgroundColor: color } : undefined}
+      />
+    </span>
+  );
+}
+
 function Section({
   title,
+  color,
   open,
   onToggle,
   onAdd,
@@ -404,6 +588,8 @@ function Section({
   children,
 }: {
   title: string;
+  /** 这一节只有一个账号时它的颜色 (设置 → 账户), 标题前一个小圆点。 */
+  color?: string;
   open: boolean;
   onToggle: () => void;
   onAdd?: () => void;
@@ -425,6 +611,7 @@ function Section({
           className="hover:bg-secondary flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-2 py-1 text-left text-sm font-semibold"
         >
           <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", !open && "-rotate-90")} />
+          <AccountDot color={color} />
           <span className="min-w-0 flex-1 truncate">{title}</span>
           {!open && <UnreadBadge count={unread} />}
         </button>

@@ -694,13 +694,16 @@ export function EmailView({
   );
 }
 
-/** 收件人一栏：每个地址可点开看完整邮箱，自己的显示「我」。 */
+/**
+ * 收件人一栏：每个地址可点开看完整邮箱，自己的显示「我」。
+ * 自己有不止一个地址 (多个账号、别名) 时「我」后面带上地址, 否则看不出信是发到哪个邮箱的。
+ */
 function AddressLine({ list, own }: { list: Address[] | undefined; own: Set<string> }) {
   useI18n();
   if (!list || list.length === 0) return <span>{t("(未列出)")}</span>;
   return list.map((a, i) => (
     <span key={i}>
-      <AddressChip address={a} own={own.has((a.email ?? "").toLowerCase())} />
+      <AddressChip address={a} own={own.has((a.email ?? "").toLowerCase())} showOwnAddress={own.size > 1} />
       {i < list.length - 1 && "、"}
     </span>
   ));

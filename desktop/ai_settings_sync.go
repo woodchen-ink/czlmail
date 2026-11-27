@@ -196,13 +196,21 @@ func markAIKeyChanged(ctx context.Context, st *store.Store) error {
 	return st.SetStringSetting(ctx, settingAIKeyUpdatedAt, strconv.FormatInt(time.Now().Unix(), 10))
 }
 
-// mergeSettings 逐项合并本地与远端, 返回合并结果、需要写回本地的项, 以及远端是否需要更新。
-// 只在一边存在的项取那一边; 两边都有时取修改时间较新的, 相同时不动。
-// 远端有而本程序不认识的键原样保留, 新版本加的设置不会被旧版本抹掉。
+// mergeSettings 合并 AI 设置 (见 mergeTimed); 远端有而本程序不认识的键原样保留, 新版本加的设置不会被旧版本抹掉。
 func mergeSettings(local, remote map[string]store.TimedSetting) (map[string]store.TimedSetting, map[string]store.TimedSetting, bool) {
 	known := map[string]bool{aiSyncAPIKey: true}
 	for _, k := range aiSyncedSettings {
 		known[k] = true
+	}
+	return mergeTimed(local, remote, func(k string) bool { return known[k] })
+}
+
+// mergeTimed 逐项合并本地与远端, 返回合并结果、需要写回本地的项, 以及远端是否需要更新。
+// 只在一边存在的项取那一边; 两边都有时取修改时间较新的, 相同时不动。
+// known 为 nil 时所有键都认; 不认识的键只保留远端的值, 不写回本地。
+func mergeTimed(local, remote map[string]store.TimedSetting, known func(string) bool) (map[string]store.TimedSetting, map[string]store.TimedSetting, bool) {
+	if known == nil {
+		known = func(string) bool { return true }
 	}
 	merged := make(map[string]store.TimedSetting, len(remote)+len(local))
 	changes := map[string]store.TimedSetting{}
@@ -212,7 +220,7 @@ func mergeSettings(local, remote map[string]store.TimedSetting) (map[string]stor
 		merged[k] = r
 		l, ok := local[k]
 		switch {
-		case !known[k]:
+		case !known(k):
 		case !ok || r.UpdatedAt > l.UpdatedAt:
 			if !ok || r.Value != l.Value {
 				changes[k] = r

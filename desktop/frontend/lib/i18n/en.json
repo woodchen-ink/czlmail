@@ -1391,5 +1391,18 @@
   "网关连不上这个邮箱的服务器，恢复后会自动同步。": "The gateway cannot reach this mailbox's server; it syncs again once the server is back.",
   "网关正在首次导入这个邮箱，完成后邮件会自动出现。": "The gateway is importing this mailbox for the first time; mail appears when it finishes.",
   "这个邮箱在网关里已暂停，恢复后会自动同步。": "This mailbox is paused in the gateway; it syncs again once resumed.",
-  "这个邮箱暂时不可用。": "This mailbox is unavailable for now."
+  "这个邮箱暂时不可用。": "This mailbox is unavailable for now.",
+  "红色": "Red",
+  "黄色": "Yellow",
+  "绿色": "Green",
+  "蓝色": "Blue",
+  "紫色": "Violet",
+  "灰色": "Gray",
+  "无颜色": "No color",
+  "显示名称": "Display name",
+  "收起各账号": "Collapse accounts",
+  "按账号展开": "Expand by account",
+  "在 {0} 中新建文件夹": "New folder in {0}",
+  "侧栏标题": "Sidebar title",
+  "圆点与名称是你给邮箱挑的颜色和起的名字，用在侧栏与「全部账号」里，经个人网盘同步到你的其它设备。": " The dot and name are the color and name you give a mailbox, used in the sidebar and in All accounts, and synced to your other devices through your personal drive."
 }

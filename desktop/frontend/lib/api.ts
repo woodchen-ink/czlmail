@@ -215,6 +215,10 @@ export const api = {
   removeSigningCertificate: guard(App.RemoveSigningCertificate),
   verifySignature: guard(App.VerifySignature),
   saveSettings: guard(App.SaveSettings),
+  getAccountLooks: guard(App.GetAccountLooks),
+  setAccountLook: guard(App.SetAccountLook),
+  getFavoriteFolders: guard(App.GetFavoriteFolders),
+  setFavoriteFolder: guard(App.SetFavoriteFolder),
   getVersion: guard(App.GetVersion),
 
   listCalendars: guard(App.ListCalendars),
