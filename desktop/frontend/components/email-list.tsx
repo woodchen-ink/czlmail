@@ -415,12 +415,13 @@ export function EmailList({
                     dragging.has(key) && "opacity-40",
                   )}
                 >
-                  {/* 账号颜色 (设置 → 账户): 统一视图里一眼分出哪个邮箱的信, 同 Thunderbird。 */}
+                  {/* 账号颜色 (设置 → 账户): 统一视图里一眼分出哪个邮箱的信。短竖条与头像 (size-9, 距顶 py-2.5) 垂直居中,
+                    不撑满整行: 撑满时会被行间分隔线截成一段一段。 */}
                   {account?.color && (
                     <span
                       aria-hidden
                       title={account.title}
-                      className="absolute inset-y-0 left-0 w-0.5"
+                      className="absolute top-4 left-1 h-6 w-[3px] rounded-full"
                       style={{ backgroundColor: account.color }}
                     />
                   )}
