@@ -139,6 +139,12 @@ func summarize(list []store.EmailSummary, names map[string]string) []map[string]
 			"id": e.ID, "threadId": e.ThreadID, "subject": e.Subject, "from": e.From, "receivedAt": e.ReceivedAt,
 			"preview": e.Preview, "isUnread": e.IsUnread, "isFlagged": e.IsFlagged, "hasAttachment": e.HasAttachment,
 		}
+		if e.IsCompleted {
+			m["isCompleted"] = true
+		}
+		if len(e.Labels) > 0 {
+			m["labels"] = e.Labels
+		}
 		if e.ThreadCount > 1 {
 			m["threadCount"] = e.ThreadCount
 		}

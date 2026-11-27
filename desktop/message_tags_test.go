@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmaptest"
@@ -19,7 +20,10 @@ func TestTagKeyword(t *testing.T) {
 		"Žluťoučký kůň":     "zlutoucky-kun",
 		"R&D / Łódź":        "r-d-lodz",
 		"Straße":            "strasse",
-		"项目":                "tag",
+		"项目":                "tag-" + tagNameHash("项目"),
+		"项目A":               "a-" + tagNameHash("项目A"),
+		"工作 2026":           "2026-" + tagNameHash("工作 2026"),
+		"!!!":               "tag-" + tagNameHash("!!!"),
 		"Junk":              "tag-junk",
 		"a(b)c%d*e":         "abcde",
 	}
@@ -31,6 +35,16 @@ func TestTagKeyword(t *testing.T) {
 		if err := validateLabel(got); err != nil {
 			t.Errorf("tagKeyword(%q) = %q is not a valid keyword: %v", in, got, err)
 		}
+	}
+	// 中文名各不相同就得到不同的关键字, 同名 (不分大小写、空白) 在哪台设备上都一样。
+	if tagKeyword("工作") == tagKeyword("家庭") || tagKeyword("工作 2026") == tagKeyword("家庭 2026") {
+		t.Error("different CJK names must not share a keyword")
+	}
+	if tagKeyword("项目A") != tagKeyword(" 项目a ") {
+		t.Error("the same name must give the same keyword")
+	}
+	if long := tagKeyword(strings.Repeat("abc ", 30) + "工作"); len(long) > 48 || validateLabel(long) != nil {
+		t.Errorf("long mixed name gave %q", long)
 	}
 }
 
@@ -56,16 +70,17 @@ func TestSaveMessageTag(t *testing.T) {
 	if again, _ := a.SaveMessageTag(MessageTag{Name: "práce", Color: "green"}); again.Keyword != "prace" {
 		t.Fatalf("same name got keyword %q", again.Keyword)
 	}
-	// 名字不同但生成同一个关键字: 加序号。
+	// 名字不同但生成同一个关键字: 接上名字的短哈希 (各设备上相同)。
 	other, err := a.SaveMessageTag(MessageTag{Name: "Prace", Color: "chartreuse"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if other.Keyword != "prace-2" || other.Color != "" {
+	clash := "prace-" + tagNameHash("Prace")
+	if other.Keyword != clash || other.Color != "" {
 		t.Fatalf("clashing tag = %+v", other)
 	}
 	// 改名: 关键字不变。
-	if _, err := a.SaveMessageTag(MessageTag{Keyword: "prace-2", Name: "Úřad", Color: "red"}); err != nil {
+	if _, err := a.SaveMessageTag(MessageTag{Keyword: clash, Name: "Úřad", Color: "red"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.SaveMessageTag(MessageTag{Keyword: "$flagged", Name: "x"}); err == nil {
@@ -76,7 +91,7 @@ func TestSaveMessageTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []MessageTag{{Keyword: "prace", Name: "práce", Color: "green"}, {Keyword: "prace-2", Name: "Úřad", Color: "red"}}
+	want := []MessageTag{{Keyword: "prace", Name: "práce", Color: "green"}, {Keyword: clash, Name: "Úřad", Color: "red"}}
 	if !slices.Equal(tags, want) {
 		t.Fatalf("tags = %+v, want %+v", tags, want)
 	}
@@ -85,7 +100,7 @@ func TestSaveMessageTag(t *testing.T) {
 		t.Fatal(err)
 	}
 	tags, _ = a.GetMessageTags()
-	if len(tags) != 1 || tags[0].Keyword != "prace-2" {
+	if len(tags) != 1 || tags[0].Keyword != clash {
 		t.Fatalf("after delete tags = %+v", tags)
 	}
 	rows, _ := st.TimedSettingsWithPrefix(ctx, messageTagPrefix)

@@ -48,13 +48,27 @@ func (a *App) addOrganizeTools(server *mcp.Server) {
 
 	type flagIn struct {
 		emailBatchIn
-		Flagged bool `json:"flagged" jsonschema:"true 加星标, false 取消"`
+		Flagged   bool `json:"flagged" jsonschema:"true 加星标(待办), false 取消"`
+		Completed bool `json:"completed,omitempty" jsonschema:"true 时标为已完成的待办(去掉星标/旗标, 记为已完成); 只在用户开了待办旗标时用"`
 	}
-	mcp.AddTool(server, &mcp.Tool{Name: "flag_emails", Description: "给邮件加上或取消星标。", Annotations: writeTool(false, true)},
+	mcp.AddTool(server, &mcp.Tool{Name: "flag_emails",
+		Description: "给邮件加上或取消星标。用户在设置里开了待办旗标时星标显示为待办旗标, 还可以标为已完成 (isCompleted)。",
+		Annotations: writeTool(false, true)},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in flagIn) (*mcp.CallToolResult, any, error) {
 			acc, err := a.mcpBatch(in.emailBatchIn)
 			if err != nil {
 				return nil, nil, err
+			}
+			// 待办旗标模式下取消要连 $completed 一起清, 与界面上「清除旗标」一致。
+			if settings, err := a.GetSettings(); in.Completed || (err == nil && settings.TaskFlags) {
+				state := "none"
+				switch {
+				case in.Completed:
+					state = "completed"
+				case in.Flagged:
+					state = "flagged"
+				}
+				return nil, map[string]any{"ok": true}, a.SetTaskFlag(acc, in.EmailIDs, state)
 			}
 			return nil, map[string]any{"ok": true}, a.MarkFlagged(acc, in.EmailIDs, in.Flagged)
 		})

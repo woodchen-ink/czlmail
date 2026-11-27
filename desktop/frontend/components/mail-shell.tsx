@@ -59,7 +59,7 @@ import { MobileNavButton, PaneLayout, type MobilePane } from "@/components/pane-
 import { useCompact } from "@/lib/use-compact";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { SourceDialog } from "@/components/source-dialog";
-import type { ToolbarActions } from "@/components/email-toolbar";
+import { TaskFlagItems, type ToolbarActions } from "@/components/email-toolbar";
 import { UserMenu } from "@/components/user-menu";
 import {
   Events,
@@ -1665,12 +1665,19 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                     <DropdownMenuItem onSelect={() => markReadIds([...checked], false)}>
                       <MailIcon className="size-4" />
                       {t("标为未读")}</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => flagIds([...checked], true)}>
-                      <Star className="size-4" />
-                      {t("加星标")}</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => flagIds([...checked], false)}>
-                      <Star className="size-4" />
-                      {t("取消星标")}</DropdownMenuItem>
+                    {marks.taskFlags ? (
+                      // 旗标模式下改的是 $flagged 与 $completed 两个, 不能走星标 (只改 $flagged)。
+                      <TaskFlagItems state={null} onSet={(st) => taskFlagIds([...checked], st)} Item={DropdownMenuItem} />
+                    ) : (
+                      <>
+                        <DropdownMenuItem onSelect={() => flagIds([...checked], true)}>
+                          <Star className="size-4" />
+                          {t("加星标")}</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => flagIds([...checked], false)}>
+                          <Star className="size-4" />
+                          {t("取消星标")}</DropdownMenuItem>
+                      </>
+                    )}
                     <DropdownMenuItem onSelect={() => junkIds([...checked], currentKind !== "junk")}>
                       <ShieldAlert className="size-4" />
                       {currentKind === "junk" ? t("不是垃圾邮件") : t("标记为垃圾邮件")}

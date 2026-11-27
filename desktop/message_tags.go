@@ -3,7 +3,9 @@ package main
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -84,10 +86,12 @@ func decodeTagValue(s string) messageTagValue {
 var hiddenLabels = []string{"junk", "nonjunk", "notjunk"}
 
 // tagKeyword 由标签名生成关键字: 去掉音调符号, 转小写, 空白与常见分隔符换成 "-",
-// 其余 RFC 8621 不允许或不好看的字符丢掉 (汉字等整个丢掉时退回 "tag")。
+// 其余 RFC 8621 不允许或不好看的字符丢掉。汉字等转不成 ASCII 的字被丢掉时, 后面接名字的短哈希
+// (「工作」→ tag-<8 位>,「项目A」→ a-<8 位>): 否则不同的中文名都落到 tag、tag-2 上,
+// 编号又只看本机已有的标签, 两台设备各自新建的标签会拿到同一个关键字。哈希只取决于名字, 各设备上同名得到同一个。
 func tagKeyword(name string) string {
 	var b strings.Builder
-	dash := false
+	dash, dropped := false, false
 	for _, r := range norm.NFD.String(strings.ToLower(name)) {
 		switch {
 		case unicode.Is(unicode.Mn, r):
@@ -108,19 +112,30 @@ func tagKeyword(name string) string {
 				b.WriteByte('-')
 				dash = true
 			}
+		case unicode.IsLetter(r) || unicode.IsNumber(r):
+			dropped = true
 		}
 	}
 	kw := strings.TrimRight(b.String(), "-")
+	if dropped || kw == "" {
+		if len(kw) > 39 {
+			kw = strings.TrimRight(kw[:39], "-")
+		}
+		return cmp.Or(kw, "tag") + "-" + tagNameHash(name)
+	}
 	if len(kw) > 48 {
 		kw = strings.TrimRight(kw[:48], "-")
-	}
-	if kw == "" {
-		kw = "tag"
 	}
 	if slices.Contains(hiddenLabels, kw) {
 		kw = "tag-" + kw
 	}
 	return kw
+}
+
+// tagNameHash 是标签名 (不分大小写, 空白合并) 的 8 位十六进制短哈希。
+func tagNameHash(name string) string {
+	sum := sha256.Sum256([]byte(norm.NFC.String(strings.ToLower(strings.Join(strings.Fields(name), " ")))))
+	return hex.EncodeToString(sum[:4])
 }
 
 // GetMessageTags 列出定义过名字或颜色的标签, 按名字排序。
@@ -181,11 +196,19 @@ func (a *App) SaveMessageTag(tag MessageTag) (MessageTag, error) {
 }
 
 // uniqueTagKeyword 让新标签的关键字不与别的已定义标签相撞; 名字相同 (不分大小写) 的就是同一个标签。
+// 撞上名字不同的标签 (「Práce」与「Prace」) 时先接名字的短哈希, 与 tagKeyword 一样各设备上结果相同;
+// 哈希也撞上 (几乎不会) 才加序号。
 func uniqueTagKeyword(base, name string, rows map[string]store.TimedSetting) string {
-	for i := 1; ; i++ {
+	hashed := base
+	if !strings.HasSuffix(base, "-"+tagNameHash(name)) {
+		hashed = base + "-" + tagNameHash(name)
+	}
+	for i := 0; ; i++ {
 		kw := base
-		if i > 1 {
-			kw = base + "-" + strconv.Itoa(i)
+		if i == 1 {
+			kw = hashed
+		} else if i > 1 {
+			kw = hashed + "-" + strconv.Itoa(i)
 		}
 		row, ok := rows[kw]
 		if !ok || row.Value == "" {
