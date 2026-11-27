@@ -16,7 +16,12 @@ import { isNative } from "@/lib/native-bridge";
 
 type Status = SignatureCheck["status"];
 
-const STORAGE_KEY = "czlmail.signatures";
+const STORAGE_KEY = "czlmail.signatures.v2";
+/**
+ * 旧版的存储键。旧版把读不懂的签名 (Outlook / Apple Mail 的 BER 编码等) 也记成 invalid,
+ * 这些邮件的结果不能沿用, 否则列表里一直是红色、要逐封打开才重新核对; 其它结果照旧搬过来。
+ */
+const LEGACY_STORAGE_KEY = "czlmail.signatures";
 /** 最多记这么多封, 超出时丢掉最早记下的。 */
 const LIMIT = 3000;
 /** 原文超过这个大小的签名邮件不在后台核对 (带大附件), 打开时由阅读栏核对。 */
@@ -58,8 +63,15 @@ function load(): Map<string, Status> {
   statuses = new Map();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    const obj = raw ? (JSON.parse(raw) as Record<string, Status>) : {};
-    for (const [k, v] of Object.entries(obj)) if (typeof v === "string") statuses.set(k, v);
+    const legacy = raw === null ? localStorage.getItem(LEGACY_STORAGE_KEY) : null;
+    const obj = JSON.parse(raw ?? legacy ?? "{}") as Record<string, Status>;
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === "string" && !(legacy !== null && v === "invalid")) statuses.set(k, v);
+    }
+    if (legacy !== null) {
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+      save();
+    }
   } catch {
     // 存储不可用或内容损坏: 从空开始。
   }
