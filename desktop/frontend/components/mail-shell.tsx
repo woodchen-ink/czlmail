@@ -1352,8 +1352,9 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       // 按屏幕上的行移动, 下一行由列表决定: 展开会话里的往来各占一行, 落到会话行时展开它 (同点击)。
       const step = (delta: number) => {
         const cur = currentEmail.current;
-        const next = listNav.current?.move(selectedKey, delta, cur && emailKey(cur) === selectedKey ? cur : null);
-        if (next) setSelectedKey(emailKey(next));
+        const go = (next: EmailSummary) => setSelectedKey(emailKey(next));
+        const next = listNav.current?.move(selectedKey, delta, cur && emailKey(cur) === selectedKey ? cur : null, go);
+        if (next) go(next);
       };
       /** ← / → : 收起 / 展开选中的那封所在的会话; 收起时选中回到会话行。 */
       const openThreadOf = (open: boolean) => {

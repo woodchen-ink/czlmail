@@ -85,7 +85,7 @@ export function SignatureMark({
   email,
   className,
 }: {
-  email: { accountId: string; id: string; signed?: boolean; size?: number };
+  email: { accountId: string; id: string; signed?: boolean; size?: number; from?: { email?: string }[] | null };
   className?: string;
 }) {
   useI18n();
@@ -94,9 +94,14 @@ export function SignatureMark({
   const Icon = tone === "good" ? ShieldCheck : tone === "neutral" ? Shield : ShieldAlert;
   const title = status ? texts({ status } as SignatureCheck).title : t("数字签名");
   return (
-    <span role="img" aria-label={title} title={title} className="inline-flex shrink-0">
-      <Icon className={cn(TITLE_CLASS[tone], className)} />
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span role="img" aria-label={title} className="inline-flex shrink-0">
+          <Icon className={cn(TITLE_CLASS[tone], className)} />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{title}</TooltipContent>
+    </Tooltip>
   );
 }
 

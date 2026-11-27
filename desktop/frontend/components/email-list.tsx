@@ -38,11 +38,13 @@ export interface ListNav {
   /**
    * 从选中的那封往下 (delta = 1) 或往上 (-1) 移一行, 返回那一行的邮件; 落在会话行上时像点击一样展开它。
    * selected: 选中的那封不在列表里时 (展开区里别的文件夹的), 由调用方给出, 用来找它所在的会话行。
+   * later: 选中的会话行刚展开、成员还没读回来时往下走, 先返回 null, 成员到了再用第一封调它。
    */
   move(
     selectedKey: string,
     delta: number,
     selected?: { accountId: string; threadId?: string; id: string } | null,
+    later?: (email: EmailSummary) => void,
   ): EmailSummary | null;
   /**
    * 展开 (open) 或收起选中的那封所在的会话。收起时选中的是会话里的一封, 返回会话行那封, 选中回到会话行;
@@ -215,8 +217,23 @@ export function EmailList({
   const keyboardInList = useRef(false);
   // 键盘上下移动按屏幕上的行走, 同 Outlook: 落到会话行就展开它 (与点击一样, 同时收起别的会话),
   // 展开的会话里逐封走, 包括别的文件夹里的往来。会话行代表的那封在展开区里也有一行, 不重复走。
+  // 刚展开、成员还没读回来的会话上按 ↓: 记下来, 成员到了再走到第一封, 否则连按时直接跳过整个会话。
+  const pendingStep = useRef<{ from: string; thread: string; later: (email: EmailSummary) => void } | null>(null);
+  useEffect(() => {
+    const p = pendingStep.current;
+    if (!p || threads[p.thread] === undefined) return;
+    pendingStep.current = null;
+    if (p.from !== selectedKey || expanded !== p.thread) return;
+    const head = rows.find((r) => threadKey(r.head) === p.thread)?.head;
+    const first = [...threads[p.thread]].reverse().find((m) => !head || emailKey(m) !== emailKey(head));
+    if (first) p.later(first);
+    // 只在成员读回来时接着走。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threads]);
+
   useImperativeHandle(navRef, () => ({
-    move(selectedKey, delta, selected) {
+    move(selectedKey, delta, selected, later) {
+      pendingStep.current = null;
       keyboardInList.current = !!scrollRef.current?.contains(document.activeElement);
       const visible: { email: EmailSummary; head: boolean }[] = [];
       for (const { head } of rows) {
@@ -232,6 +249,11 @@ export function EmailList({
       if (idx < 0) {
         const sel = emails.find((m) => emailKey(m) === selectedKey) ?? selected;
         if (sel) idx = visible.findIndex((v) => v.head && threadKey(v.email) === threadKey(sel));
+      }
+      const cur = visible[idx];
+      if (later && delta > 0 && cur?.head && expanded === threadKey(cur.email) && threads[expanded] === undefined) {
+        pendingStep.current = { from: selectedKey, thread: expanded, later };
+        return null;
       }
       const next = visible[idx < 0 ? 0 : idx + delta];
       if (!next) {
