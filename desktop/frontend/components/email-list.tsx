@@ -621,7 +621,7 @@ export function EmailList({
                 </div>,
               )}
               {isOpen && (
-                <ul className="border-border bg-secondary/40 border-b py-1">
+                <ul className="border-border bg-secondary/40 border-b">
                   {members.length === 0 && (
                     <li className="text-muted-foreground px-12 py-2 text-xs">
                       {t("载入中…")}</li>
@@ -789,7 +789,8 @@ function ThreadRail({
         className={cn(
           "bg-muted-foreground/30 pointer-events-none absolute w-px",
           inset ? "left-[50px]" : "left-[30px]",
-          first ? "-top-[5px]" : "top-0",
+          // 第一封接到会话行头像下的细线: 越过会话行的下边框。
+          first ? "-top-px" : "top-0",
           last ? "bottom-1/2" : "bottom-0",
         )}
       />
