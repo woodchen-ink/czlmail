@@ -377,7 +377,16 @@ export function EmailList({
           // 多选时会话行左侧多一列勾选框, 成员行也要同样右移, 串联细线才能对齐头像。
           const multi = !!onCheck && (checked?.size ?? 0) > 0;
           return (
-            <li key={key}>
+            <li key={key} className="relative">
+              {/* 账号颜色 (设置 → 账户): 统一视图里一眼分出哪个邮箱的信。画在整个会话 (会话行 + 展开区) 上:
+                行的绝对定位不含它自己的下边框, 画在行里会被行间分隔线截成一段一段; 同一账号的相邻会话连成一条。 */}
+              {account?.color && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 left-0 z-10 w-0.5"
+                  style={{ backgroundColor: account.color }}
+                />
+              )}
               {wrapRow(
                 email,
                 <div
@@ -415,16 +424,6 @@ export function EmailList({
                     dragging.has(key) && "opacity-40",
                   )}
                 >
-                  {/* 账号颜色 (设置 → 账户): 统一视图里一眼分出哪个邮箱的信。短竖条与头像 (size-9, 距顶 py-2.5) 垂直居中,
-                    不撑满整行: 撑满时会被行间分隔线截成一段一段。 */}
-                  {account?.color && (
-                    <span
-                      aria-hidden
-                      title={account.title}
-                      className="absolute top-4 left-1 h-6 w-[3px] rounded-full"
-                      style={{ backgroundColor: account.color }}
-                    />
-                  )}
                   {/* 未读用头像旁的色点而不是整行加粗：整行加粗在长列表里显得噪杂，
                     色点在扫视时反而更容易定位。 */}
                   {multi && (
