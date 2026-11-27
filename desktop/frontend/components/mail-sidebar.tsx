@@ -502,7 +502,7 @@ export function MailSidebar({
 
 /**
  * 账号颜色的小圆点 (设置 → 账户)。没设颜色时不占位;
- * slot 时占图标的位置, 没设颜色画一个浅灰圆点, 一列行的名字对齐。
+ * slot 时占图标的位置, 没设颜色画一个空心小圈 (与「灰色」分开), 一列行的名字对齐。
  */
 function AccountDot({ color, slot }: { color?: string; slot?: boolean }) {
   if (!slot) {
@@ -511,7 +511,7 @@ function AccountDot({ color, slot }: { color?: string; slot?: boolean }) {
   return (
     <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
       <span
-        className={cn("size-1.5 rounded-full", !color && "bg-muted-foreground/40")}
+        className={cn("size-1.5 rounded-full", !color && "border-muted-foreground/50 border")}
         style={color ? { backgroundColor: color } : undefined}
       />
     </span>

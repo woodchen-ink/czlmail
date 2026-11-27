@@ -9,6 +9,7 @@ import { Server } from "lucide-react";
 
 import { Card, SectionTitle } from "@/components/settings/ui";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ACCOUNT_COLORS, accountColorValue, signInLookKey, useAccountLooksState, type AccountLooks } from "@/lib/account-looks";
 import { api, errorMessage, type Account } from "@/lib/api";
@@ -16,10 +17,22 @@ import { cn } from "@/lib/utils";
 import { main } from "@/wailsjs/go/models";
 
 /**
- * 设置 → 账户 → 名称与颜色: 给账号起个名字、挑个颜色, 给附加登录在侧栏里的那一节起个标题。
- * 按登录分组 (不同登录里可能有同名邮箱); 经个人网盘同步到别的设备, 服务器上的账号名不变。
+ * 设置 → 账户 → 可访问的邮箱: 每个邮箱一行, 左边的圆点挑颜色, 右边起名字、决定共享邮箱是否并入「全部账号」。
+ * 多个登录时按登录分组 (不同登录里可能有同名邮箱), 附加登录的组头可以给它在侧栏里的那一节起标题。
+ * 名字与颜色经个人网盘同步到别的设备, 服务器上的账号名不变。
  */
-export function AccountLooksCard({ accounts }: { accounts: Account[] }) {
+export function MailboxesCard({
+  accounts,
+  excluded,
+  onToggleUnified,
+  disabled,
+}: {
+  accounts: Account[];
+  /** 不并入「全部账号」的共享邮箱。 */
+  excluded: Set<string>;
+  onToggleUnified: (accountId: string, on: boolean) => void;
+  disabled: boolean;
+}) {
   useI18n();
   const { looks, reload } = useAccountLooksState();
   // 保存并重读完之前先按刚改的显示, 免得颜色点了要等一拍才变。
@@ -51,8 +64,13 @@ export function AccountLooksCard({ accounts }: { accounts: Account[] }) {
   return (
     <>
       <SectionTitle
-        title={t("名称与颜色")}
-        desc={t("名称替换侧栏与「全部账号」里服务器给的名字，颜色显示为侧栏的圆点与邮件左侧的细线。经个人网盘同步到你的其它设备，服务器上的账号名不变。")}
+        title={t("可访问的邮箱")}
+        desc={
+          <>
+            {t("由服务器按你的权限共享，在邮件侧栏的「共享」下显示，新共享的邮箱会自动出现。开关决定是否并入「全部账号」；关闭后仍可在「共享」下单独查看，统一搜索照常包含它。")}
+            {t("圆点与名称是你给邮箱挑的颜色和起的名字，用在侧栏与「全部账号」里，经个人网盘同步到你的其它设备。")}
+          </>
+        }
         small
       />
       <Card className="gap-0 p-0">
@@ -66,25 +84,41 @@ export function AccountLooksCard({ accounts }: { accounts: Account[] }) {
                 {g.signIn && (
                   <NameInput
                     value={shown[signInLookKey(g.signIn)]?.name ?? ""}
-                    placeholder={g.host}
-                    label={t("侧栏标题")}
+                    placeholder={t("侧栏标题")}
                     onCommit={(name) => update(signInLookKey(g.signIn), { name })}
                   />
                 )}
+                <span aria-hidden className="w-[4.75rem] shrink-0" />
               </div>
             )}
-            {g.list.map((a) => (
-              <div key={a.id} className={cn("flex items-center gap-3 py-1.5 pr-4 text-sm", grouped ? "pl-9" : "pl-4")}>
+            {g.list.map((a, i) => (
+              <div
+                key={a.id}
+                className={cn(
+                  "flex items-center gap-3 py-2 pr-4 pl-3 text-sm",
+                  (i > 0 || grouped) && "border-border border-t",
+                )}
+              >
                 <ColorPicker value={shown[a.id]?.color ?? ""} onChange={(color) => update(a.id, { color })} />
                 <span className="min-w-0 flex-1 truncate" title={a.name}>
                   {a.name}
                 </span>
                 <NameInput
                   value={shown[a.id]?.name ?? ""}
-                  placeholder={a.name}
-                  label={t("显示名称")}
+                  placeholder={t("显示名称")}
                   onCommit={(name) => update(a.id, { name })}
                 />
+                <span className="text-muted-foreground w-7 shrink-0 text-xs">{a.isPersonal ? t("个人") : t("共享")}</span>
+                {a.isPersonal ? (
+                  <span aria-hidden className="w-8 shrink-0" />
+                ) : (
+                  <Switch
+                    aria-label={t("并入全部账号")}
+                    checked={!excluded.has(a.id)}
+                    disabled={disabled}
+                    onCheckedChange={(on) => onToggleUnified(a.id, on)}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -98,12 +132,10 @@ export function AccountLooksCard({ accounts }: { accounts: Account[] }) {
 function NameInput({
   value,
   placeholder,
-  label,
   onCommit,
 }: {
   value: string;
   placeholder: string;
-  label: string;
   onCommit: (name: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
@@ -116,8 +148,8 @@ function NameInput({
     <Input
       value={draft}
       placeholder={placeholder}
-      aria-label={label}
-      className="h-7 w-48 shrink-0 text-sm"
+      aria-label={placeholder}
+      className="h-7 w-44 shrink-0 text-sm"
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
         if (draft.trim() !== value) onCommit(draft.trim());
@@ -151,7 +183,7 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (key: strin
           <Swatch color={current} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="flex w-auto gap-1 p-1.5">
+      <PopoverContent align="start" className="w-auto flex-row gap-1 p-1.5">
         {swatches.map((c) => (
           <button
             key={c.key}

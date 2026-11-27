@@ -1400,10 +1400,9 @@
   "灰色": "Gray",
   "无颜色": "No color",
   "显示名称": "Display name",
-  "名称与颜色": "Names and colors",
   "收起各账号": "Collapse accounts",
   "按账号展开": "Expand by account",
   "在 {0} 中新建文件夹": "New folder in {0}",
-  "名称替换侧栏与「全部账号」里服务器给的名字，颜色显示为侧栏的圆点与邮件左侧的细线。经个人网盘同步到你的其它设备，服务器上的账号名不变。": "A name replaces the server's name in the sidebar and in All accounts; a color shows as a dot in the sidebar and a thin line beside messages. Synced to your other devices through your personal drive; the account name on the server stays the same.",
-  "侧栏标题": "Sidebar title"
+  "侧栏标题": "Sidebar title",
+  "圆点与名称是你给邮箱挑的颜色和起的名字，用在侧栏与「全部账号」里，经个人网盘同步到你的其它设备。": " The dot and name are the color and name you give a mailbox, used in the sidebar and in All accounts, and synced to your other devices through your personal drive."
 }

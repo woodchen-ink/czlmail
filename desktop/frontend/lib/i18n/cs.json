@@ -1400,10 +1400,9 @@
   "灰色": "Šedá",
   "无颜色": "Bez barvy",
   "显示名称": "Zobrazovaný název",
-  "名称与颜色": "Názvy a barvy",
   "收起各账号": "Sbalit účty",
   "按账号展开": "Rozbalit podle účtů",
   "在 {0} 中新建文件夹": "Nová složka v {0}",
-  "名称替换侧栏与「全部账号」里服务器给的名字，颜色显示为侧栏的圆点与邮件左侧的细线。经个人网盘同步到你的其它设备，服务器上的账号名不变。": "Název nahradí jméno ze serveru v postranním panelu a ve Všech účtech; barva se zobrazí jako tečka v postranním panelu a tenká čára u zpráv. Synchronizuje se na vaše další zařízení přes osobní úložiště; název účtu na serveru zůstává stejný.",
-  "侧栏标题": "Název v postranním panelu"
+  "侧栏标题": "Název v postranním panelu",
+  "圆点与名称是你给邮箱挑的颜色和起的名字，用在侧栏与「全部账号」里，经个人网盘同步到你的其它设备。": " Tečka a název jsou barva a jméno, které schránce dáte; používají se v postranním panelu a ve Všech účtech a synchronizují se na vaše další zařízení přes osobní úložiště."
 }
