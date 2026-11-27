@@ -104,4 +104,18 @@ func TestVerifyOutlookStyle(t *testing.T) {
 	if v, _ := VerifyMessage(broken, "martin@example.cz", time.Now(), roots); v == nil || v.Status != StatusUnsupported {
 		t.Fatalf("unreadable signature: %+v", v)
 	}
+
+	// 外层定长、只有里层不定长的写法也要能读。
+	h, content := testTLV(t, der)
+	inner := encodeDER(der[:1], toIndefinite(t, content, 4))
+	if h == 0 || bytes.Equal(inner, der) || inner[1] == 0x80 {
+		t.Fatal("inner BER sample not built")
+	}
+	var mixed []byte
+	mixed = append(mixed, msg[:start]...)
+	mixed = append(mixed, base64.StdEncoding.EncodeToString(inner)+"\r\n"...)
+	mixed = append(mixed, msg[end:]...)
+	if v, err := VerifyMessage(mixed, "martin@example.cz", time.Now(), roots); err != nil || v == nil || v.Status != StatusValid {
+		t.Fatalf("inner BER: %+v %v", v, err)
+	}
 }

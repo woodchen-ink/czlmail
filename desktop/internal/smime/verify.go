@@ -141,11 +141,10 @@ func VerifyMessage(raw []byte, from string, now time.Time, roots *x509.CertPool)
 			return &Verification{Status: StatusUnsupported, Detail: "signature is not base64"}, nil
 		}
 	}
-	// Outlook、Apple Mail 用不定长的 BER 编码。
-	if len(der) > 1 && der[1] == 0x80 {
-		if der, err = berToDER(der); err != nil {
-			return &Verification{Status: StatusUnsupported, Detail: "cannot read BER signature"}, nil
-		}
+	// Outlook、Apple Mail 用不定长的 BER 编码; 不定长也可能只出现在里层, 所以每次都转。
+	// 本来就是 DER 的原样返回; 转不了的交给 verifyDetached 解析, 读不懂时同样是 unsupported。
+	if d, err := berToDER(der); err == nil {
+		der = d
 	}
 	return verifyDetached(content, der, from, now, roots), nil
 }
