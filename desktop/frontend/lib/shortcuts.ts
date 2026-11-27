@@ -18,6 +18,8 @@ import { t } from "@/lib/i18n";
 export const SHORTCUT_ACTIONS = [
   "next",
   "prev",
+  "expandThread",
+  "collapseThread",
   "compose",
   "reply",
   "replyAll",
@@ -40,6 +42,9 @@ export type ShortcutMap = Readonly<Record<ShortcutAction, readonly string[]>>;
 export const DEFAULT_SHORTCUTS: ShortcutMap = {
   next: ["j", "ArrowDown"],
   prev: ["k", "ArrowUp"],
+  // 同 Outlook: → 展开选中的会话, ← 收起 (选中的是会话里的一封时回到会话行)。
+  expandThread: ["ArrowRight"],
+  collapseThread: ["ArrowLeft"],
   compose: ["c"],
   reply: ["r"],
   replyAll: ["a"],
@@ -63,6 +68,10 @@ export function shortcutLabel(action: ShortcutAction): string {
       return t("下一封");
     case "prev":
       return t("上一封");
+    case "expandThread":
+      return t("展开会话");
+    case "collapseThread":
+      return t("收起会话");
     case "compose":
       return t("写邮件");
     case "reply":
