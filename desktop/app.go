@@ -100,6 +100,11 @@ func (a *App) startup(ctx context.Context) {
 
 	a.log.Info("store ready", "path", dbPath)
 
+	// 界面加载完之前的通知与托盘文字也用上次的界面语言。
+	if a.restoreUILocale(ctx, st) {
+		a.setTrayMenuText()
+	}
+
 	go a.runUpdateChecks(ctx)
 	go func() {
 		if err := a.registerHandlers(); err != nil {

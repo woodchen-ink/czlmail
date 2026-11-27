@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -12,7 +15,43 @@ import (
 	"testing"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/i18n"
+	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
+
+// 上次的界面语言在下次启动、界面告知之前就用上 (登录失效等通知不再是中文); 界面告知后以界面为准。
+func TestRestoreUILocale(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "cache.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	first := &App{store: st, log: quiet}
+	if first.restoreUILocale(ctx, st) {
+		t.Fatal("restored a locale before any was remembered")
+	}
+	first.rememberUILocale("cs")
+
+	next := &App{store: st, log: quiet}
+	if !next.restoreUILocale(ctx, st) || next.currentLocale() != "cs" {
+		t.Fatalf("after restart: locale %q", next.currentLocale())
+	}
+	if got := next.t("登录已失效"); got == "登录已失效" {
+		t.Fatalf("notification title still in the source language: %q", got)
+	}
+
+	reported := &App{store: st, log: quiet, uiLocale: "en"}
+	if reported.restoreUILocale(ctx, st) || reported.currentLocale() != "en" {
+		t.Fatalf("restore overrode the locale the UI reported: %q", reported.currentLocale())
+	}
+
+	first.rememberUILocale("fr") // 没有词典的语言不拿来用
+	if (&App{store: st, log: quiet}).restoreUILocale(ctx, st) {
+		t.Fatal("restored a locale without a dictionary")
+	}
+}
 
 func TestSetUILocaleRejectsUnknown(t *testing.T) {
 	a := &App{}
