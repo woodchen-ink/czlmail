@@ -17,7 +17,7 @@ export function NotePreview({ vaultId, noteId, text, onLink, onTask }: {
     restoreReadingViewport(host, session.viewport);
     return () => { session.viewport = readingViewport(host); };
   }, [vaultId, noteId]);
-  return <div ref={root} className="czl-scroll h-full overflow-y-auto"><article className={`mx-auto max-w-4xl px-8 py-6 pb-40 ${noteMarkdownClassName}`}>
+  return <div ref={root} className="czl-scroll h-full overflow-y-auto"><article data-selectable data-select-all className={`mx-auto max-w-4xl px-8 py-6 pb-40 ${noteMarkdownClassName}`}>
     <NoteMarkdown vaultId={vaultId} noteId={noteId} text={text} onLink={onLink} onTask={onTask} />
   </article></div>;
 }

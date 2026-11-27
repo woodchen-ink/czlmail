@@ -459,7 +459,7 @@ export function EmailView({
       />
 
       <ScrollArea className={bodyWide ? "min-h-0 flex-1 overflow-x-auto" : "min-h-0 flex-1"}>
-        <div className="mx-auto flex max-w-4xl flex-col gap-4 p-5">
+        <div data-selectable className="mx-auto flex max-w-4xl flex-col gap-4 p-5">
           <h1 className="text-lg leading-snug font-semibold">
             {translation?.subject || email.subject || t("(无主题)")}
           </h1>
@@ -638,7 +638,7 @@ export function EmailView({
                 <Sparkles className="size-3.5" />
                 {t("AI 总结")}</div>
               {summary.text ? (
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{summary.text}</p>
+                <p data-select-all className="text-sm leading-relaxed whitespace-pre-wrap">{summary.text}</p>
               ) : (
                 <p className="text-muted-foreground text-sm">{t("正在生成…")}</p>
               )}

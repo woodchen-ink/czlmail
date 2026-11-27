@@ -1005,7 +1005,7 @@ function ContactDetailPane({
       </div>
 
       <TabsContent value="info" className="czl-scroll @container min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-4xl flex-col gap-6 p-4 @xl:p-6">
+        <div data-selectable className="mx-auto flex max-w-4xl flex-col gap-6 p-4 @xl:p-6">
           {isGroup ? (
             <section className="flex flex-col gap-1">
               <h2 className="text-muted-foreground mb-1 text-xs font-medium">{t("成员（{0}）", members.length)}</h2>

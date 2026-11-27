@@ -191,6 +191,29 @@
   html {
     @apply font-sans;
   }
+
+  /* 客户端里界面文字默认不可选 (拖动不会选中侧栏、按钮上的字), 内容区可选; 网页端保持浏览器默认。
+     标记由 lib/app-selection.ts 在首帧前挂上; 新的内容区挂 data-selectable, 可整块 Ctrl/⌘+A 的再加 data-select-all。
+     WKWebView 只认带前缀的写法; 输入框必须显式恢复, 否则在 WKWebView 里跟着祖先变得无法输入。
+     写在 base 层, 组件上的 select-text / select-none 工具类可覆盖。 */
+  html[data-app-shell] body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  html[data-app-shell] :is(
+    [data-selectable], [data-select-all],
+    [data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"], [data-slot="hover-card-content"],
+    [data-sonner-toast], pre, code, input, textarea, [contenteditable]:not([contenteditable="false"])
+  ) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  /* 内容区里的控件仍不可选。 */
+  html[data-app-shell] :is([data-selectable], [data-select-all], [data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"], [data-slot="hover-card-content"], [data-sonner-toast])
+    :is(button, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="switch"], [role="checkbox"], [role="radio"], label, summary) {
+    -webkit-user-select: none;
+    user-select: none;
+  }
 }
 /* 原生细滚动条。颜色取边框 token，悬停时加深，两个主题自动跟随。 */
 @layer components {

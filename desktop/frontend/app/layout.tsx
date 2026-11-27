@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
 
 import { LocaleProvider } from "@/components/locale-provider";
+import { SelectionGuard } from "@/components/selection-guard";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { appShellBootScript } from "@/lib/app-selection";
 import { nativeBootScript } from "@/lib/native-bridge";
 import { themeBootScript } from "@/lib/theme";
 
@@ -37,6 +39,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* 同步执行，赶在首帧绘制前把 dark class 挂上，避免暗色用户启动时闪白。 */}
         {/* 移动端壳里装上 window.go / window.runtime, 必须先于一切绑定调用。 */}
         <script dangerouslySetInnerHTML={{ __html: nativeBootScript }} />
+        {/* 客户端里界面文字默认不可选 (globals.css 的 html[data-app-shell]), 要在 nativeBootScript 之后。 */}
+        <script dangerouslySetInnerHTML={{ __html: appShellBootScript }} />
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         {/* macOS 窗口隐藏了标题栏, 红绿灯浮在网页左上角; 同样赶在首帧前打上标记, 好让下面的标题条占位。 */}
         <script dangerouslySetInnerHTML={{ __html: macBootScript }} />
@@ -44,6 +48,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       {/* 主壳锁死视口高度并禁止整页滚动: 三栏各自内部滚动,
           否则邮件列表变长会把整个窗口撑出滚动条, 侧栏与工具条跟着跑掉。 */}
       <body className="h-full overflow-hidden">
+        <SelectionGuard />
         <LocaleProvider>
           <TooltipProvider delayDuration={300}>
             <div className="flex h-full flex-col pt-[env(safe-area-inset-top)]">
