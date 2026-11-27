@@ -19,7 +19,7 @@ import (
 // 验证结果。
 const (
 	StatusValid         = "valid"     // 签名有效, 证书可信, 地址相符
-	StatusInvalid       = "invalid"   // 签名对不上: 签名后内容被改动
+	StatusInvalid       = "invalid"   // 签名对不上: 签名后内容被改动 (只用于摘要或签名不符, 读不懂的格式算 unsupported)
 	StatusUntrusted     = "untrusted" // 签名对得上, 但证书链不可信 (或不能用于邮件)
 	StatusSenderUnknown = "sender_unknown"
 	StatusAddress       = "address"     // 签名有效, 但证书上没有发件地址
@@ -117,16 +117,17 @@ func VerifyMessage(raw []byte, from string, now time.Time, roots *x509.CertPool)
 
 	parts, _, _, err := splitMultipart(body, params["boundary"])
 	if err != nil || len(parts) != 2 {
-		return &Verification{Status: StatusInvalid, Detail: "malformed multipart/signed"}, nil
+		return &Verification{Status: StatusUnsupported, Detail: "malformed multipart/signed"}, nil
 	}
 	content := parts[0]
 	sh, sb, err := splitEntity(parts[1])
 	if err != nil {
-		return &Verification{Status: StatusInvalid, Detail: "malformed signature part"}, nil
+		return &Verification{Status: StatusUnsupported, Detail: "malformed signature part"}, nil
 	}
 	sigType, _, typeErr := mime.ParseMediaType(headerValue(sh, "Content-Type"))
-	if typeErr != nil || !strings.EqualFold(sigType, params["protocol"]) {
-		return &Verification{Status: StatusInvalid, Detail: "unexpected signature part type"}, nil
+	// Outlook 在外层写 x-pkcs7-signature, 签名部分却是 pkcs7-signature; 两者是同一种格式。
+	if typeErr != nil || !samePKCS7Type(sigType, params["protocol"]) {
+		return &Verification{Status: StatusUnsupported, Detail: "unexpected signature part type " + sigType}, nil
 	}
 	der := sb
 	if strings.EqualFold(headerValue(sh, "Content-Transfer-Encoding"), "base64") {
@@ -137,7 +138,13 @@ func VerifyMessage(raw []byte, from string, now time.Time, roots *x509.CertPool)
 			return r
 		}, string(sb))
 		if der, err = base64.StdEncoding.DecodeString(clean); err != nil {
-			return &Verification{Status: StatusInvalid, Detail: "signature is not base64"}, nil
+			return &Verification{Status: StatusUnsupported, Detail: "signature is not base64"}, nil
+		}
+	}
+	// Outlook、Apple Mail 用不定长的 BER 编码。
+	if len(der) > 1 && der[1] == 0x80 {
+		if der, err = berToDER(der); err != nil {
+			return &Verification{Status: StatusUnsupported, Detail: "cannot read BER signature"}, nil
 		}
 	}
 	return verifyDetached(content, der, from, now, roots), nil
@@ -148,32 +155,32 @@ func verifyDetached(content, der []byte, from string, now time.Time, roots *x509
 
 	var ci cmsContentInfo
 	if _, err := asn1.Unmarshal(der, &ci); err != nil || !ci.ContentType.Equal(oidSignedData) {
-		return bad(StatusInvalid, "not a CMS SignedData")
+		return bad(StatusUnsupported, "not a CMS SignedData")
 	}
 	var sd cmsSignedData
 	if _, err := asn1.Unmarshal(ci.Content.Bytes, &sd); err != nil {
-		return bad(StatusInvalid, "malformed SignedData: "+err.Error())
+		return bad(StatusUnsupported, "malformed SignedData: "+err.Error())
 	}
 	certs, err := x509.ParseCertificates(sd.Certificates.Bytes)
 	if err != nil {
-		return bad(StatusInvalid, "malformed certificates: "+err.Error())
+		return bad(StatusUnsupported, "malformed certificates: "+err.Error())
 	}
 	var infos []cmsSignerInfo
 	for rest := sd.SignerInfos.Bytes; len(rest) > 0; {
 		var si cmsSignerInfo
 		if rest, err = asn1.Unmarshal(rest, &si); err != nil {
-			return bad(StatusInvalid, "malformed SignerInfo: "+err.Error())
+			return bad(StatusUnsupported, "malformed SignerInfo: "+err.Error())
 		}
 		infos = append(infos, si)
 	}
 	if len(infos) == 0 {
-		return bad(StatusInvalid, "no signer")
+		return bad(StatusUnsupported, "no signer")
 	}
 	si := infos[0]
 
 	signer := findSigner(certs, si.SID)
 	if signer == nil {
-		return bad(StatusInvalid, "signer certificate not included")
+		return bad(StatusUnsupported, "signer certificate not included")
 	}
 	desc := Describe(signer, now)
 	result := &Verification{Signer: &desc, Expired: now.After(signer.NotAfter)}
@@ -191,7 +198,7 @@ func verifyDetached(content, der []byte, from string, now time.Time, roots *x509
 		for rest := si.SignedAttrs.Bytes; len(rest) > 0; {
 			var a cmsAttribute
 			if rest, err = asn1.Unmarshal(rest, &a); err != nil {
-				result.Status, result.Detail = StatusInvalid, "malformed attributes"
+				result.Status, result.Detail = StatusUnsupported, "malformed attributes"
 				return result
 			}
 			switch {
@@ -253,6 +260,12 @@ func verifyDetached(content, der []byte, from string, now time.Time, roots *x509
 	}
 	result.Status = StatusValid
 	return result
+}
+
+// samePKCS7Type: application/pkcs7-signature 与旧名 application/x-pkcs7-signature 视为相同。
+func samePKCS7Type(a, b string) bool {
+	norm := func(s string) string { return strings.Replace(strings.ToLower(s), "/x-", "/", 1) }
+	return norm(a) == norm(b)
 }
 
 func findSigner(certs []*x509.Certificate, sid asn1.RawValue) *x509.Certificate {
