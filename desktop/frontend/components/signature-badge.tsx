@@ -4,12 +4,13 @@ import { dateLocale, t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useEffect, useState } from "react";
-import { ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
+import { Shield, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { api, type Attachment, type EmailDetail, type SignatureCheck } from "@/lib/api";
+import { rememberSignature, useSignatureStatus } from "@/lib/signature-status";
 
 /** S/MIME 签名部件 (smime.p7s): 阅读视图不把它当附件列出, 由签名标记代替。 */
 export function isSignaturePart(a: Attachment): boolean {
@@ -77,6 +78,29 @@ function dateTime(v: unknown) {
 }
 
 /**
+ * 列表行里的签名标记, 同 Outlook 列表里的签名图标: 有效绿色、可疑黄色、签名后被改动红色,
+ * 还没核对 (或核对不了) 时灰色。结果与阅读栏共用, 见 lib/signature-status。
+ */
+export function SignatureMark({
+  email,
+  className,
+}: {
+  email: { accountId: string; id: string; signed?: boolean; size?: number };
+  className?: string;
+}) {
+  useI18n();
+  const status = useSignatureStatus(email);
+  const tone = status ? toneOf(status) : "neutral";
+  const Icon = tone === "good" ? ShieldCheck : tone === "neutral" ? Shield : ShieldAlert;
+  const title = status ? texts({ status } as SignatureCheck).title : t("数字签名");
+  return (
+    <span role="img" aria-label={title} title={title} className="inline-flex shrink-0">
+      <Icon className={cn(TITLE_CLASS[tone], className)} />
+    </span>
+  );
+}
+
+/**
  * 签名邮件在发件人邮箱地址后面的标记: 打开邮件时下载原文核对签名, 绿色有效, 黄色可疑, 红色被改动。
  * 点开显示签名者、颁发者与有效期。不是签名邮件或核对不了 (离线) 时不显示。
  */
@@ -92,7 +116,11 @@ export function SignatureBadge({ accountId, email }: { accountId: string; email:
     let cancelled = false;
     api
       .verifySignature(accountId, email.id)
-      .then((result) => !cancelled && setChecked({ key, result: result ?? null }))
+      .then((result) => {
+        // 列表里的签名标记跟着变色, 不必再核对一次。
+        rememberSignature(key, result);
+        if (!cancelled) setChecked({ key, result: result ?? null });
+      })
       .catch(() => !cancelled && setChecked({ key, result: null }));
     return () => {
       cancelled = true;

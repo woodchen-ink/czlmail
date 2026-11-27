@@ -1355,6 +1355,12 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         const next = listNav.current?.move(selectedKey, delta, cur && emailKey(cur) === selectedKey ? cur : null);
         if (next) setSelectedKey(emailKey(next));
       };
+      /** ← / → : 收起 / 展开选中的那封所在的会话; 收起时选中回到会话行。 */
+      const openThreadOf = (open: boolean) => {
+        const cur = currentEmail.current;
+        const head = listNav.current?.setOpen(selectedKey, open, cur && emailKey(cur) === selectedKey ? cur : null);
+        if (head) setSelectedKey(emailKey(head));
+      };
 
       /** 已读类操作的对象: 有多选时是多选, 否则是选中的那封。 */
       const readTarget = (): { keys: string[]; unread: boolean; batch: boolean } | null => {
@@ -1377,6 +1383,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       const general: Partial<Record<ShortcutAction, () => void>> = {
         next: () => step(1),
         prev: () => step(-1),
+        expandThread: () => openThreadOf(true),
+        collapseThread: () => openThreadOf(false),
         search: () => searchRef.current?.focus(),
         help: () => setShowShortcuts(true),
         compose: () => setDraft({ to: "", cc: "", subject: "", html: "" }),

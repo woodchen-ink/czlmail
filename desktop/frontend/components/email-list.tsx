@@ -16,13 +16,13 @@ import {
   Check,
   Paperclip,
   Pin,
-  Shield,
   Star,
   Trash2,
 } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SenderAvatar } from "@/components/sender-avatar";
+import { SignatureMark } from "@/components/signature-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AttachmentChips, OtpChip } from "@/components/email-chips";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -42,6 +42,15 @@ export interface ListNav {
   move(
     selectedKey: string,
     delta: number,
+    selected?: { accountId: string; threadId?: string; id: string } | null,
+  ): EmailSummary | null;
+  /**
+   * 展开 (open) 或收起选中的那封所在的会话。收起时选中的是会话里的一封, 返回会话行那封, 选中回到会话行;
+   * 其余情况返回 null, 选中不变。
+   */
+  setOpen(
+    selectedKey: string,
+    open: boolean,
     selected?: { accountId: string; threadId?: string; id: string } | null,
   ): EmailSummary | null;
 }
@@ -231,6 +240,25 @@ export function EmailList({
       }
       if (next.head) expandThread(next.email);
       return next.email;
+    },
+    setOpen(selectedKey, open, selected) {
+      if (flat) return null;
+      const members = Object.values(threads).flat();
+      const sel =
+        emails.find((m) => emailKey(m) === selectedKey) ??
+        members.find((m) => emailKey(m) === selectedKey) ??
+        selected;
+      const head = sel ? rows.find((r) => threadKey(r.head) === threadKey(sel))?.head : undefined;
+      if (!sel || !head || !head.threadId || (head.threadCount ?? 0) < 2) return null;
+      if (open) {
+        expandThread(head);
+        return null;
+      }
+      if (expanded === threadKey(head)) {
+        keyboardInList.current = !!scrollRef.current?.contains(document.activeElement);
+        setExpanded("");
+      }
+      return emailKey(sel) === emailKey(head) ? null : head;
     },
   }));
 
@@ -478,6 +506,9 @@ export function EmailList({
                       {email.hasAttachment && (
                         <Paperclip className="text-muted-foreground size-3.5 shrink-0" aria-label={t("附件")} />
                       )}
+                      {/* 签名标记与回形针一起放在日期旁, 同 Outlook; 无效的签名标红。多封的会话行不标:
+                          行代表整个会话, 签名只属于其中的某几封 (常常只有自己发的), 展开后在各封上标出。 */}
+                      {email.signed && count < 2 && <SignatureMark email={email} className="size-3.5" />}
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                         {listDate(email.receivedAt)}
                       </span>
@@ -504,9 +535,6 @@ export function EmailList({
                         >
                           {where}
                         </span>
-                      )}
-                      {email.signed && (
-                        <Shield className="text-muted-foreground size-3.5 shrink-0" aria-label={t("数字签名")} />
                       )}
                       {email.isPinned && (
                         <Pin className="text-accent size-3.5 shrink-0" aria-label={t("已固定")} />
@@ -641,9 +669,7 @@ export function EmailList({
                             {m.hasAttachment && (
                               <Paperclip className="text-muted-foreground size-3 shrink-0" />
                             )}
-                            {m.signed && (
-                              <Shield className="text-muted-foreground size-3 shrink-0" aria-label={t("数字签名")} />
-                            )}
+                            {m.signed && <SignatureMark email={m} className="size-3" />}
                             {onDelete && (
                               <button
                                 type="button"
