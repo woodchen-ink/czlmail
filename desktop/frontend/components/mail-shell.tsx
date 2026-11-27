@@ -45,6 +45,7 @@ import { MailSyncState } from "@/components/mail-sync-state";
 import { UpstreamState } from "@/components/upstream-status";
 import { upstreamOK } from "@/lib/upstream";
 import { accountColor, useAccountLooks } from "@/lib/account-looks";
+import { useFavoriteFolders } from "@/lib/favorite-folders";
 import { mailboxLabel } from "@/components/mailbox-tree";
 import { MobileNavButton, PaneLayout, type MobilePane } from "@/components/pane-layout";
 import { useCompact } from "@/lib/use-compact";
@@ -150,6 +151,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   const [username, setUsername] = useState("");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const accountLooks = useAccountLooks();
+  const favoriteFolders = useFavoriteFolders();
   const [mailboxesByAccount, setMailboxesByAccount] = useState<Record<string, Mailbox[]>>({});
   const [accountId, setAccountId] = useState("");
   const [mailboxId, setMailboxId] = useState("");
@@ -1506,6 +1508,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
               <MailSidebar
                 accounts={accounts}
                 looks={accountLooks}
+                favorites={favoriteFolders}
                 mailboxesByAccount={mailboxesByAccount}
                 accountId={accountId}
                 mailboxId={mailboxId}

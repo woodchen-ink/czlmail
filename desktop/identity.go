@@ -69,9 +69,11 @@ func (a *App) ensureCacheOwner(ctx context.Context, st *store.Store, cfg config.
 	} else if err := st.ResetIdentityData(ctx, identitySettings()); err != nil {
 		return err
 	}
-	// 账号名与颜色同步自主登录的网盘 (account-settings.json), 换了人改从新网盘取, 上一个人的不留。
-	if err := st.DeleteSettingsWithPrefix(ctx, accountLookPrefix); err != nil {
-		return err
+	// 账号名与颜色、收藏的文件夹同步自主登录的网盘 (account-settings.json), 换了人改从新网盘取, 上一个人的不留。
+	for _, prefix := range []string{accountLookPrefix, favoriteFolderPrefix} {
+		if err := st.DeleteSettingsWithPrefix(ctx, prefix); err != nil {
+			return err
+		}
 	}
 	if err := keychain.Delete(config.KeyringService, aiKeyringKey); err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		a.log.Warn("clear ai key", "err", err)

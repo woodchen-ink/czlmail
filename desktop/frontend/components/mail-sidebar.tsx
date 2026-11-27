@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ChevronDown, ExternalLink, MailWarning, Plus, UserRound } from "lucide-react";
 
 import { accountColor, accountName, signInLookKey, type AccountLooks } from "@/lib/account-looks";
+import type { FavoriteFolder } from "@/lib/favorite-folders";
 
 import { FolderDialog, type FolderAction } from "@/components/folder-dialog";
 
@@ -50,6 +51,8 @@ interface Props {
   onDropEmails?: (keys: string[], accountId: string, mailboxId: string) => void;
   /** 账号名与颜色 (设置 → 账户), 外壳读一次传进来。 */
   looks: AccountLooks;
+  /** 「收藏」里的文件夹 (右键文件夹收藏), 按收藏的先后。 */
+  favorites: FavoriteFolder[];
 }
 
 const COLLAPSE_KEY = "czlmail.sidebar.collapsed";
@@ -79,13 +82,14 @@ export function MailSidebar({
   syncing,
   onDropEmails,
   looks,
+  favorites,
 }: Props) {
   useI18n();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [folderAction, setFolderAction] = useState<FolderAction | null>(null);
-  // 从「全部账号」按账号展开的行打开的文件夹 (view = 哪一类, key = 账号/文件夹):
-  // 只高亮那一行, 账号自己那一节里的同一个文件夹不再同时高亮。
-  const [via, setVia] = useState<{ view: string; key: string } | null>(null);
+  // 从「收藏」或「全部账号」按账号展开的行打开的文件夹 (key = 账号/文件夹, from = 哪一节的行,
+  // sections = 那一行要展开着才看得到的节): 只高亮那一行, 别处的同一个文件夹不再同时高亮。
+  const [via, setVia] = useState<{ key: string; from: string; sections: string[] } | null>(null);
 
   const act = (accId: string) => (action: FolderMenuAction, mailbox: Mailbox, label: string) => {
     switch (action) {
@@ -97,6 +101,10 @@ export function MailSidebar({
         return setFolderAction({ kind: action, accountId: accId, mailbox });
       case "pull":
         return pull(accId, mailbox.id, label);
+      case "favorite":
+        return api
+          .setFavoriteFolder(accId, mailbox.id, !favoriteSet(accId).has(mailbox.id))
+          .catch((err) => toast.error(errorMessage(err)));
       default:
         return onFolderAction(accId, action, mailbox);
     }
@@ -224,13 +232,20 @@ export function MailSidebar({
     !unified &&
     !!via &&
     via.key === `${accountId}/${mailboxId}` &&
-    !isCollapsed("unified") &&
-    !isCollapsed(`unified:${via.view}`);
+    via.sections.every((sec) => !isCollapsed(sec));
   const selectedIn = (acc: string) => (!unified && !viaActive && acc === accountId ? mailboxId : "");
   const pick = (acc: string, box: string) => {
     setVia(null);
     onSelect(acc, box);
   };
+
+  // 收藏: 文件夹已被删掉、账号已不在的条目不列。
+  const favoriteSet = (acc: string) => new Set(favorites.filter((f) => f.accountId === acc).map((f) => f.mailboxId));
+  const favoriteRows = favorites.flatMap((f) => {
+    const account = accounts.find((a) => a.id === f.accountId);
+    const box = mailboxesByAccount[f.accountId]?.find((m) => m.id === f.mailboxId);
+    return account && box ? [{ account, box }] : [];
+  });
 
   // 统一视图的条目: 至少一个账号有的系统文件夹, 按侧栏固定顺序, 「未读」跟在收件箱后面。
   // 条目按并入统一视图的账号列, 未读数只数其中没静音的账号。
@@ -334,6 +349,7 @@ export function MailSidebar({
               selectedId={selectedIn(acc.id)}
               onSelect={(id) => pick(acc.id, id)}
               onAction={act(acc.id)}
+              favorites={favoriteSet(acc.id)}
               indent={1}
               quiet={muted.has(acc.id)}
               accountId={acc.id}
@@ -356,6 +372,7 @@ export function MailSidebar({
             selectedId={selectedIn(acc.id)}
             onSelect={(id) => pick(acc.id, id)}
             onAction={act(acc.id)}
+            favorites={favoriteSet(acc.id)}
             quiet={muted.has(acc.id)}
             accountId={acc.id}
             onDropEmails={onDropEmails && ((keys, box) => onDropEmails(keys, acc.id, box))}
@@ -421,11 +438,16 @@ export function MailSidebar({
                               title: `${mailboxLabel(box)} · ${account.name}`,
                               leading: <AccountDot color={accountColor(account.id, looks)} slot />,
                             }}
-                            selected={viaActive && via?.key === key}
+                            selected={viaActive && via?.from === `unified:${row.view}` && via.key === key}
                             onSelect={(id) => {
-                              setVia({ view: row.view, key: `${account.id}/${id}` });
+                              setVia({
+                                key: `${account.id}/${id}`,
+                                from: `unified:${row.view}`,
+                                sections: ["unified", `unified:${row.view}`],
+                              });
                               onSelect(account.id, id);
                             }}
+                            favorite={favoriteSet(account.id).has(box.id)}
                             onAction={act(account.id)}
                             quiet={muted.has(account.id)}
                             drop={
@@ -439,6 +461,43 @@ export function MailSidebar({
                       );
                     })}
                 </div>
+              );
+            })}
+          </nav>
+        </Section>
+      )}
+
+      {favoriteRows.length > 0 && (
+        <Section title={t("收藏")} open={!isCollapsed("favorites")} onToggle={() => toggle("favorites")}>
+          <nav className="flex flex-col gap-0.5" aria-label={t("收藏")}>
+            {favoriteRows.map(({ account, box }) => {
+              const key = `${account.id}/${box.id}`;
+              return (
+                <MailboxRow
+                  key={key}
+                  node={box}
+                  indent={0}
+                  // 多个账号时在名字后注明是哪个邮箱 (用户起的名字优先); 一个账号时不注。
+                  display={{
+                    label: mailboxLabel(box),
+                    title: `${box.name} · ${account.name}`,
+                    hint: accounts.length > 1 ? accountName(account, looks) : undefined,
+                  }}
+                  selected={viaActive && via?.from === "favorites" && via.key === key}
+                  onSelect={(id) => {
+                    setVia({ key: `${account.id}/${id}`, from: "favorites", sections: ["favorites"] });
+                    onSelect(account.id, id);
+                  }}
+                  onAction={act(account.id)}
+                  favorite
+                  quiet={muted.has(account.id)}
+                  drop={
+                    onDropEmails && {
+                      accountId: account.id,
+                      onDropEmails: (keys, boxId) => onDropEmails(keys, account.id, boxId),
+                    }
+                  }
+                />
               );
             })}
           </nav>

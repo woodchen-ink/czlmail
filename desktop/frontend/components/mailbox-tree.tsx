@@ -15,6 +15,8 @@ import {
   FolderX,
   Inbox,
   MailOpen,
+  Star,
+  StarOff,
   Pencil,
   RefreshCw,
   Send,
@@ -46,7 +48,8 @@ export type FolderMenuAction =
   | "pull"
   | "empty"
   | "delete"
-  | "refresh";
+  | "refresh"
+  | "favorite";
 
 interface Props {
   mailboxes: Mailbox[];
@@ -61,6 +64,8 @@ interface Props {
   /** 这棵树所属的账号与邮件拖到文件夹上放下时的回调; 不给时文件夹不接收拖放。 */
   accountId?: string;
   onDropEmails?: (keys: string[], mailboxId: string) => void;
+  /** 这个账号里收藏的文件夹 id (侧栏「收藏」), 右键菜单据此显示「收藏」或「取消收藏」。 */
+  favorites?: Set<string>;
 }
 
 /**
@@ -106,7 +111,7 @@ export function mailboxTreeOrder(mailboxes: Mailbox[]): (Mailbox & { depth: numb
   return buildTree(mailboxes);
 }
 
-export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent = 0, quiet, accountId, onDropEmails }: Props) {
+export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent = 0, quiet, accountId, onDropEmails, favorites }: Props) {
   useI18n();
   const nodes = useMemo(() => buildTree(mailboxes), [mailboxes]);
   const drop = accountId && onDropEmails ? { accountId, onDropEmails } : undefined;
@@ -123,6 +128,7 @@ export function MailboxTree({ mailboxes, selectedId, onSelect, onAction, indent 
           indent={indent}
           quiet={quiet}
           drop={drop}
+          favorite={favorites?.has(node.id)}
         />
       ))}
     </nav>
@@ -142,6 +148,7 @@ export function MailboxRow({
   quiet,
   drop,
   display,
+  favorite,
 }: {
   node: Mailbox & { depth?: number };
   selected: boolean;
@@ -150,8 +157,10 @@ export function MailboxRow({
   indent: number;
   quiet?: boolean;
   drop?: { accountId: string; onDropEmails: (keys: string[], mailboxId: string) => void };
-  /** 换掉行里的文字与图标; 右键菜单的标题仍是文件夹名。 */
-  display?: { label: string; title: string; leading: React.ReactNode };
+  /** 换掉行里的文字与图标 (leading 不给时用文件夹图标), hint 是名字后的浅色小字; 右键菜单的标题仍是文件夹名。 */
+  display?: { label: string; title: string; leading?: React.ReactNode; hint?: string };
+  /** 已在侧栏「收藏」里。 */
+  favorite?: boolean;
 }) {
   useI18n();
   const meta = getKindMeta()[node.kind];
@@ -192,6 +201,7 @@ export function MailboxRow({
       icon={Icon}
       color={meta?.color}
       leading={display?.leading}
+      hint={display?.hint}
       label={display?.label ?? label}
       title={display?.title ?? node.name}
       selected={selected}
@@ -224,6 +234,9 @@ export function MailboxRow({
         <ContextMenuItem onSelect={act("markRead")} disabled={node.unreadEmails === 0 || rights.maySetSeen === false}>
           <MailOpen />
           {t("将文件夹标记为已读")}</ContextMenuItem>
+        <ContextMenuItem onSelect={act("favorite")}>
+          {favorite ? <StarOff /> : <Star />}
+          {favorite ? t("取消收藏") : t("收藏")}</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={act("create")} disabled={rights.mayCreateChild === false}>
           <FolderPlus />
@@ -275,9 +288,12 @@ export function FolderButton({
   quiet,
   dropTarget,
   leading,
+  hint,
   ...rest
 }: {
   icon: typeof Inbox;
+  /** 名字后面的浅色小字 (「收藏」里注明是哪个邮箱)。 */
+  hint?: string;
   /** 换掉图标的元素 (统一视图按账号展开的行放账号色圆点)。 */
   leading?: React.ReactNode;
   /** 图标颜色类名(完整字面量), 不给时为灰色。 */
@@ -313,6 +329,7 @@ export function FolderButton({
       {leading ?? <Icon className={cn("size-4 shrink-0", color ?? "text-muted-foreground")} />}
       <span className="min-w-0 flex-1 truncate" title={title ?? label}>
         {label}
+        {hint && <span className="text-muted-foreground ml-1.5 text-xs">{hint}</span>}
       </span>
       {badge ? (
         <UnreadBadge count={unread} quiet={quiet} />

@@ -131,3 +131,49 @@ func TestMergeTimedAccountLooks(t *testing.T) {
 		t.Errorf("merged = %v", merged)
 	}
 }
+
+// 收藏按加入的先后排, 同一台服务器的两个登录只列一次, 移出留墓碑。
+func TestFavoriteFolders(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "cache.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	a := &App{ctx: ctx, store: st, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	a.tap = func(string, ...any) {}
+	a.primary.cfg = config.Config{SessionEndpoint: "https://mail.example/jmap", Username: "me@example"}
+	a.extra = []*signIn{
+		{id: "s2", cfg: config.Config{SessionEndpoint: "https://other.example/jmap", Username: "gw"}},
+		{id: "s3", cfg: config.Config{SessionEndpoint: "https://mail.example/jmap", Username: "colleague@example"}},
+	}
+
+	rows := map[string]store.TimedSetting{
+		"https://mail.example/jmap#e/inbox":  {Value: "1", UpdatedAt: 300},
+		"https://other.example/jmap#a/b1":    {Value: "1", UpdatedAt: 100},
+		"https://mail.example/jmap#c/old":    {Value: "", UpdatedAt: 200},
+		"https://gone.example/jmap#x/inbox":  {Value: "1", UpdatedAt: 50},
+		"https://mail.example/jmap#@me/oops": {Value: "1", UpdatedAt: 60},
+	}
+	got := localFavoriteFolders(rows, a.lookSignIns())
+	want := []FavoriteFolder{{"s2~a", "b1"}, {"e", "inbox"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("localFavoriteFolders = %v, want %v", got, want)
+	}
+
+	if err := a.SetFavoriteFolder("s2~a", "b1", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetFavoriteFolder("s2~a", "b1", false); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := st.StringSetting(ctx, favoriteFolderPrefix+"https://other.example/jmap#a/b1"); err != nil || v != "" {
+		t.Errorf("removed favorite should stay as a tombstone: %q %v", v, err)
+	}
+	if got, _ := a.GetFavoriteFolders(); len(got) != 0 {
+		t.Errorf("removed favorite still listed: %v", got)
+	}
+	if err := a.SetFavoriteFolder("signin:s2", "b1", true); err == nil {
+		t.Error("a sign-in key is not an account")
+	}
+}
