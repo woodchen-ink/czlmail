@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -12,7 +16,63 @@ import (
 	"testing"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/i18n"
+	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
+
+// 上次的界面语言在下次启动、界面告知之前就用上 (登录失效等通知不再是中文); 界面告知后以界面为准。
+func TestRestoreUILocale(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "cache.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	saved := func() string {
+		t.Helper()
+		v, err := st.StringSetting(ctx, settingUILocale)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			t.Fatal(err)
+		}
+		return v
+	}
+
+	first := &App{store: st, log: quiet}
+	if first.restoreUILocale(ctx, st) {
+		t.Fatal("restored a locale before any was remembered")
+	}
+	first.uiLocale = "cs"
+	first.rememberUILocale()
+
+	next := &App{store: st, log: quiet}
+	if !next.restoreUILocale(ctx, st) || next.currentLocale() != "cs" {
+		t.Fatalf("after restart: locale %q", next.currentLocale())
+	}
+	if got := next.t("登录已失效"); got == "登录已失效" {
+		t.Fatalf("notification title still in the source language: %q", got)
+	}
+
+	// 界面在缓存库打开前就告知了 (那次存不进去): 不被覆盖, 启动时补存。
+	early := &App{log: quiet, uiLocale: "en"}
+	early.rememberUILocale()
+	if saved() != "cs" {
+		t.Fatalf("remembered without a store: %q", saved())
+	}
+	early.store = st
+	if early.restoreUILocale(ctx, st) || early.currentLocale() != "en" {
+		t.Fatalf("restore overrode the locale the UI reported: %q", early.currentLocale())
+	}
+	if saved() != "en" {
+		t.Fatalf("locale reported before the store opened was not saved: %q", saved())
+	}
+
+	if err := st.SetStringSetting(ctx, settingUILocale, "fr"); err != nil { // 没有词典的语言不拿来用
+		t.Fatal(err)
+	}
+	if (&App{store: st, log: quiet}).restoreUILocale(ctx, st) {
+		t.Fatal("restored a locale without a dictionary")
+	}
+}
 
 func TestSetUILocaleRejectsUnknown(t *testing.T) {
 	a := &App{}
