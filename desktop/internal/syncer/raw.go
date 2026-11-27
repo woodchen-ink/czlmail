@@ -84,6 +84,33 @@ func (s *Syncer) SetKeyword(ctx context.Context, accountID string, emailIDs []st
 	return s.patchKeyword(ctx, accountID, emailIDs, keyword, set)
 }
 
+// SetKeywords 在一次请求里设或清几个关键字 (值为 true 设上, false 清除), 别的关键字不动。
+// 待办旗标的「完成」要同时去掉 $flagged、打上 $completed, 分两次请求中途失败会两个都有或都没有。
+func (s *Syncer) SetKeywords(ctx context.Context, accountID string, emailIDs []string, keywords map[string]bool) error {
+	if len(emailIDs) == 0 || len(keywords) == 0 {
+		return nil
+	}
+	patch := jmap.Patch{}
+	for k, on := range keywords {
+		if k == "" {
+			return fmt.Errorf("1132 keyword is empty")
+		}
+		if on {
+			patch["keywords/"+k] = true
+		} else {
+			patch["keywords/"+k] = nil
+		}
+	}
+	updates := make(map[jmap.ID]jmap.Patch, len(emailIDs))
+	for _, id := range emailIDs {
+		updates[jmap.ID(id)] = patch
+	}
+	return s.applySet(ctx, accountID, &email.Set{
+		Account: s.server(accountID),
+		Update:  updates,
+	})
+}
+
 // MarkJunk 把邮件移入目标邮箱并同时设置垃圾标记。
 //
 // $junk / $notjunk 是给服务器反垃圾学习用的信号(RFC 8621 注册的关键字),

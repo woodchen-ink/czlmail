@@ -38,9 +38,11 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { Input } from "@/components/ui/input";
 import { mailboxIcon, mailboxLabel, mailboxTreeOrder } from "@/components/mailbox-tree";
-import { api, type EmailSummary, type Mailbox } from "@/lib/api";
+import { type EmailSummary, type Mailbox } from "@/lib/api";
+import { NewTagInput, TagDot, TaskFlagIcon } from "@/components/message-tags";
+import { TaskFlagItems } from "@/components/email-toolbar";
+import { tagOptions, taskFlagState, useMessageMarks, type TaskFlagState } from "@/lib/message-tags";
 import { emailKey, parseEmailKey } from "@/lib/email-key";
 
 /**
@@ -57,6 +59,8 @@ export interface EmailMenuActions {
   junk: (keys: string[], junk: boolean) => void;
   markRead: (keys: string[], read: boolean) => void;
   toggleFlag: (email: EmailSummary) => void;
+  /** 设置待办旗标 (设置里打开「用旗标标记待办」时), 可作用于多选。 */
+  taskFlag: (keys: string[], state: TaskFlagState) => void;
   togglePin: (email: EmailSummary) => void;
   setLabel: (keys: string[], label: string, set: boolean) => void;
 }
@@ -107,9 +111,9 @@ export function EmailContextMenu({
   const keys = batch ? [...checked] : [key];
   // 文件夹属于各自的账号, 多选跨账号时没有共同的目标文件夹。
   const oneAccount = keys.every((k) => parseEmailKey(k).accountId === accountId);
-  // 列表摘要里没有标签, 打开菜单时从本地缓存读。
-  const [labels, setLabels] = useState<string[] | null>(null);
-  const [draft, setDraft] = useState("");
+  const marks = useMessageMarks();
+  // 列表摘要带着标签; 菜单开着时勾选先改这份副本, 不等同步回来。
+  const [labels, setLabels] = useState<string[]>(email.labels ?? []);
   // 每行都挂着一个菜单, 文件夹列表只在打开时才计算。
   const [open, setOpen] = useState(false);
 
@@ -118,22 +122,13 @@ export function EmailContextMenu({
   const targets = open && oneAccount
     ? mailboxTreeOrder(mailboxes).filter((m) => m.id !== mailboxId && m.kind !== "drafts" && m.kind !== "scheduled")
     : [];
-  const allLabels = Array.from(new Set([...knownLabels, ...(labels ?? [])])).sort();
+  const options = open && !batch ? tagOptions(marks, labels, knownLabels) : [];
 
   return (
     <ContextMenu
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) {
-          setDraft("");
-          return;
-        }
-        if (!batch) {
-          api
-            .getEmail(accountId, email.id)
-            .then((d) => setLabels(d.labels ?? []))
-            .catch(() => setLabels([]));
-        }
+        if (next) setLabels(email.labels ?? []);
       }}
     >
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
@@ -198,12 +193,24 @@ export function EmailContextMenu({
             </ContextMenuSubContent>
           </ContextMenuSub>
         )}
+        {marks.taskFlags && (
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <TaskFlagIcon state={batch ? "flagged" : taskFlagState(email)} className="size-4" />
+              {t("待办旗标")}</ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-52">
+              <TaskFlagItems state={batch ? null : taskFlagState(email)} onSet={(st) => actions.taskFlag(keys, st)} Item={ContextMenuItem} />
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+        )}
         {!batch && (
           <>
-            <ContextMenuItem onSelect={() => actions.toggleFlag(email)}>
-              {email.isFlagged ? <StarOff /> : <Star />}
-              {email.isFlagged ? t("取消星标") : t("加星标")}
-            </ContextMenuItem>
+            {!marks.taskFlags && (
+              <ContextMenuItem onSelect={() => actions.toggleFlag(email)}>
+                {email.isFlagged ? <StarOff /> : <Star />}
+                {email.isFlagged ? t("取消星标") : t("加星标")}
+              </ContextMenuItem>
+            )}
             <ContextMenuItem onSelect={() => actions.togglePin(email)}>
               {email.isPinned ? <PinOff /> : <Pin />}
               {email.isPinned ? t("取消固定") : t("固定")}
@@ -213,46 +220,33 @@ export function EmailContextMenu({
                 <Tag />
                 {t("标签")}</ContextMenuSubTrigger>
               <ContextMenuSubContent className="w-56">
-                {allLabels.length === 0 && <p className="text-muted-foreground px-2 py-1.5 text-xs">{t("还没有标签")}</p>}
-                {allLabels.map((label) => {
-                  const on = labels?.includes(label) ?? false;
-                  return (
+                {options.length === 0 && <p className="text-muted-foreground px-2 py-1.5 text-xs">{t("还没有标签")}</p>}
+                <div className="max-h-72 overflow-y-auto">
+                  {options.map((o) => (
                     <ContextMenuCheckboxItem
-                      key={label}
-                      checked={on}
-                      disabled={labels === null}
+                      key={o.keyword}
+                      checked={o.on}
                       onCheckedChange={(v) => {
-                        setLabels((prev) => (v ? [...(prev ?? []), label] : (prev ?? []).filter((l) => l !== label)));
-                        actions.setLabel(keys, label, v);
+                        setLabels((prev) => (v ? [...prev, o.keyword] : prev.filter((l) => l !== o.keyword)));
+                        actions.setLabel(keys, o.keyword, v);
                       }}
                       // 勾选后不关闭菜单，方便一次打多个标签。
                       onSelect={(e) => e.preventDefault()}
+                      title={o.name !== o.keyword ? o.keyword : undefined}
                     >
-                      {label}
+                      <TagDot color={o.color} className="size-2" />
+                      <span className="truncate">{o.name}</span>
                     </ContextMenuCheckboxItem>
-                  );
-                })}
+                  ))}
+                </div>
                 <ContextMenuSeparator />
-                <form
-                  className="p-1"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const v = draft.trim();
-                    if (!v) return;
-                    setLabels((prev) => [...(prev ?? []), v]);
-                    actions.setLabel(keys, v, true);
-                    setDraft("");
+                <NewTagInput
+                  known={knownLabels}
+                  onAdd={(kw) => {
+                    setLabels((prev) => (prev.includes(kw) ? prev : [...prev, kw]));
+                    actions.setLabel(keys, kw, true);
                   }}
-                >
-                  <Input
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    // 菜单会抢键盘事件用于上下选择，输入框里的按键不能冒泡上去。
-                    onKeyDown={(e) => e.stopPropagation()}
-                    placeholder={t("新标签（英文），回车添加")}
-                    className="h-8 text-sm"
-                  />
-                </form>
+                />
               </ContextMenuSubContent>
             </ContextMenuSub>
           </>

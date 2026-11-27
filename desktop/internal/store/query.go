@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,6 +42,12 @@ type EmailSummary struct {
 	IsDraft   bool   `json:"isDraft"`
 	// IsPinned 是 $pinned 关键字(与 Bulwark 相同), 置顶的邮件在列表里排在最前。
 	IsPinned bool `json:"isPinned"`
+	// IsCompleted 是 $completed 关键字: 已完成的待办 (同 Outlook 的「标记为已完成」)。
+	// 待办的旗标就是 $flagged (别的客户端里显示为旗标或星标); 完成时去掉 $flagged、打上 $completed,
+	// 别的客户端里旗标随之消失, 与 Outlook 经 IMAP 完成待办的效果一样。
+	IsCompleted bool `json:"isCompleted"`
+	// Labels 是邮件上的标签 (自定义关键字), 不含 $ 开头的系统标志与 hiddenLabels; 已排序。
+	Labels []string `json:"labels"`
 	// ThreadCount 是同一会话的邮件总数(跨文件夹); 只有列表查询会填, 其它查询为 0。
 	ThreadCount int `json:"threadCount"`
 	// DraftCount 是同一会话里的草稿数(跨文件夹, 筛选同 ThreadCount, 含本行自己); 只有列表查询会填。
@@ -63,11 +70,9 @@ type EmailDetail struct {
 	InReplyTo string `json:"inReplyTo"`
 	// Attachments 在正文拉取后才有内容。
 	Attachments []Attachment `json:"attachments"`
-	// Labels 是自定义关键字, 不含 $ 开头的系统标志。
-	Labels      []string `json:"labels"`
-	BodyText    string   `json:"bodyText"`
-	BodyHTML    string   `json:"bodyHtml"`
-	BodyFetched bool     `json:"bodyFetched"`
+	BodyText    string       `json:"bodyText"`
+	BodyHTML    string       `json:"bodyHtml"`
+	BodyFetched bool         `json:"bodyFetched"`
 	// Unsubscribe 是 List-Unsubscribe 解析结果; nil 表示还没检查过。
 	Unsubscribe *Unsubscribe `json:"unsubscribe"`
 	// MDNSent 表示已回复或已忽略已读回执请求($mdnsent)。
@@ -94,7 +99,31 @@ const keywordFlags = `
 	    EXISTS (SELECT 1 FROM email_keywords k
 	            WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$draft')   AS is_draft,
 	    EXISTS (SELECT 1 FROM email_keywords k
-	            WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$pinned')  AS is_pinned`
+	            WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$pinned')  AS is_pinned,
+	    EXISTS (SELECT 1 FROM email_keywords k
+	            WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$completed') AS is_completed,
+	    (SELECT group_concat(k.keyword, char(31)) FROM email_keywords k
+	     WHERE k.account_id = e.account_id AND k.email_id = e.id AND ` + labelKeywordSQL + `) AS labels`
+
+// labelKeywordSQL 选出可以当标签显示的关键字 (表别名 k): $ 开头的是系统标志;
+// junk / nonjunk / notjunk 是 Thunderbird 等客户端不带 $ 的垃圾邮件判定, 也不是用户打的标签。
+const labelKeywordSQL = `k.keyword NOT LIKE '$%' AND lower(k.keyword) NOT IN ('junk', 'nonjunk', 'notjunk')`
+
+// labelSeparator 是 group_concat 拼接标签用的分隔符 (char(31)); 关键字只能是可见 ASCII, 不会含它。
+const labelSeparator = "\x1f"
+
+// summaryColumnCount 是 summaryColumns 的列数; 多出的两列是会话的邮件数与草稿数。
+const summaryColumnCount = 18
+
+// splitLabels 拆开 group_concat 拼起来的标签并排序。
+func splitLabels(v sql.NullString) []string {
+	out := []string{}
+	if v.Valid && v.String != "" {
+		out = strings.Split(v.String, labelSeparator)
+		slices.Sort(out)
+	}
+	return out
+}
 
 // summaryColumns 是邮件摘要的列, 顺序与 scanSummaries 一致。
 const summaryColumns = `e.account_id, e.id, e.thread_id, e.subject, e.from_json, e.to_json, e.received_at,
@@ -190,18 +219,18 @@ var threadCountColumn = `,
 func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 	var out []EmailSummary
 	cols, _ := rows.Columns()
-	withThread := len(cols) > 16
+	withThread := len(cols) > summaryColumnCount
 	for rows.Next() {
 		var e EmailSummary
 		var fromJSON, toJSON string
 		var receivedAt int64
-		var hasAttachment, signed, unread, flagged, draft, pinned int
-		var names sql.NullString
+		var hasAttachment, signed, unread, flagged, draft, pinned, completed int
+		var names, labels sql.NullString
 
 		dest := []any{
 			&e.AccountID, &e.ID, &e.ThreadID, &e.Subject, &fromJSON, &toJSON, &receivedAt,
 			&e.Preview, &hasAttachment, &signed, &e.Size, &names,
-			&unread, &flagged, &draft, &pinned,
+			&unread, &flagged, &draft, &pinned, &completed, &labels,
 		}
 		if withThread {
 			dest = append(dest, &e.ThreadCount, &e.DraftCount)
@@ -223,6 +252,8 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 		e.IsFlagged = flagged != 0
 		e.IsDraft = draft != 0
 		e.IsPinned = pinned != 0
+		e.IsCompleted = completed != 0
+		e.Labels = splitLabels(labels)
 		if e.HasAttachment && names.Valid {
 			_ = json.Unmarshal([]byte(names.String), &e.AttachmentNames)
 		}
@@ -274,7 +305,8 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	var d EmailDetail
 	var fromJSON, toJSON, ccJSON, bccJSON, replyToJSON string
 	var receivedAt int64
-	var hasAttachment, signed, unread, flagged, draft, pinned int
+	var hasAttachment, signed, unread, flagged, draft, pinned, completed int
+	var labels sql.NullString
 	var bodyText, bodyHTML sql.NullString
 	var bodyFetchedAt sql.NullInt64
 	var attachmentsJSON string
@@ -294,7 +326,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	).Scan(
 		&d.ID, &d.ThreadID, &d.Subject, &fromJSON, &receivedAt,
 		&d.Preview, &hasAttachment, &signed, &d.Size,
-		&unread, &flagged, &draft, &pinned,
+		&unread, &flagged, &draft, &pinned, &completed, &labels,
 		&toJSON, &ccJSON, &bccJSON, &replyToJSON,
 		&d.BlobID, &d.MessageID, &d.InReplyTo, &attachmentsJSON,
 		&bodyText, &bodyHTML, &bodyFetchedAt, &unsubscribe, &d.MDNSent,
@@ -326,6 +358,8 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	d.IsFlagged = flagged != 0
 	d.IsDraft = draft != 0
 	d.IsPinned = pinned != 0
+	d.IsCompleted = completed != 0
+	d.Labels = splitLabels(labels)
 	d.BodyText = bodyText.String
 	// 正文拉过时按正文认, 摘要只有开头一两百字, 验证码可能在更后面。
 	if bodyText.Valid && bodyText.String != "" {
@@ -350,42 +384,15 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 		return nil, wrap(CodeDecode, "decode attachments", err)
 	}
 
-	labels, err := s.emailLabels(ctx, accountID, emailID)
-	if err != nil {
-		return nil, err
-	}
-	d.Labels = labels
-
 	return &d, nil
-}
-
-func (s *Store) emailLabels(ctx context.Context, accountID, emailID string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT keyword FROM email_keywords
-		WHERE account_id = ? AND email_id = ? AND keyword NOT LIKE '$%'
-		ORDER BY keyword`, accountID, emailID)
-	if err != nil {
-		return nil, wrap(CodeQuery, "query email labels", err)
-	}
-	defer rows.Close()
-
-	out := []string{}
-	for rows.Next() {
-		var kw string
-		if err := rows.Scan(&kw); err != nil {
-			return nil, wrap(CodeQuery, "scan email label", err)
-		}
-		out = append(out, kw)
-	}
-	return out, wrap(CodeQuery, "iterate email labels", rows.Err())
 }
 
 // Labels 列出账号内出现过的全部自定义标签。
 func (s *Store) Labels(ctx context.Context, accountID string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT DISTINCT keyword FROM email_keywords
-		WHERE account_id = ? AND keyword NOT LIKE '$%'
-		ORDER BY keyword`, accountID)
+		SELECT DISTINCT k.keyword FROM email_keywords k
+		WHERE k.account_id = ? AND `+labelKeywordSQL+`
+		ORDER BY k.keyword`, accountID)
 	if err != nil {
 		return nil, wrap(CodeQuery, "query labels", err)
 	}

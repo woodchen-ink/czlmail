@@ -16,9 +16,11 @@ import { AttachmentList } from "@/components/attachment-list";
 import { EmailBanners, UnsubscribeButton, useListHeaders } from "@/components/email-banners";
 import { EmailBody } from "@/components/email-body";
 import { EmailDetails } from "@/components/email-details";
-import { EmailToolbar, type ToolbarActions } from "@/components/email-toolbar";
+import { EmailToolbar, LabelMenu, TaskFlagMenu, type ToolbarActions } from "@/components/email-toolbar";
 import { OtpChip } from "@/components/email-chips";
 import { SenderAvatar } from "@/components/sender-avatar";
+import { TagChips, TaskFlagIcon } from "@/components/message-tags";
+import { taskFlagState, useMessageMarks } from "@/lib/message-tags";
 import { isSignaturePart, SignatureBadge } from "@/components/signature-badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -470,18 +472,7 @@ export function EmailView({
             </div>
           )}
 
-          {email.labels && email.labels.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {email.labels.map((l) => (
-                <span
-                  key={l}
-                  className="bg-secondary text-secondary-foreground rounded-sm px-1.5 py-0.5 text-xs"
-                >
-                  {l}
-                </span>
-              ))}
-            </div>
-          )}
+          <EmailMarks email={email} labels={labels} actions={actions(email)} />
 
           <div className="flex items-start gap-3">
             <SenderAvatar
@@ -707,4 +698,38 @@ function AddressLine({ list, own }: { list: Address[] | undefined; own: Set<stri
       {i < list.length - 1 && "、"}
     </span>
   ));
+}
+
+/**
+ * 主题下方的待办旗标与标签 (同 Outlook 的信息栏与类别): 点旗标打开旗标菜单, 点标签打开标签菜单。
+ * 没有旗标也没有标签时不占地方; 打标签走工具栏的「标签」。
+ */
+function EmailMarks({ email, labels, actions }: { email: EmailDetail; labels: string[]; actions: ToolbarActions }) {
+  useI18n();
+  const { taskFlags } = useMessageMarks();
+  const state = taskFlags ? taskFlagState(email) : "none";
+  const tags = email.labels ?? [];
+  if (state === "none" && tags.length === 0) return null;
+  return (
+    <div className="-mt-2 flex flex-wrap items-center gap-1.5">
+      {state !== "none" && (
+        <TaskFlagMenu state={state} onSet={actions.taskFlag}>
+          <button
+            type="button"
+            className="bg-secondary text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-sm px-1.5 text-xs leading-5"
+          >
+            <TaskFlagIcon state={state} className="size-3" />
+            {state === "flagged" ? t("待办") : t("待办已完成")}
+          </button>
+        </TaskFlagMenu>
+      )}
+      {tags.length > 0 && (
+        <LabelMenu current={tags} known={labels} onSet={actions.setLabel}>
+          <button type="button" className="rounded-sm hover:opacity-80" aria-label={t("标签")}>
+            <TagChips labels={tags} className="flex-wrap" />
+          </button>
+        </LabelMenu>
+      )}
+    </div>
+  );
 }

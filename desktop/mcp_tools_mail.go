@@ -195,7 +195,7 @@ func (a *App) addMailTools(server *mcp.Server) {
 		return nil, map[string]any{
 			"id": d.ID, "threadId": d.ThreadID, "subject": d.Subject, "from": d.From, "replyTo": d.ReplyTo,
 			"to": d.To, "cc": d.CC, "receivedAt": d.ReceivedAt, "folders": folders, "labels": d.Labels,
-			"isUnread": d.IsUnread, "isFlagged": d.IsFlagged, "attachments": attachmentList(d),
+			"isUnread": d.IsUnread, "isFlagged": d.IsFlagged, "isCompleted": d.IsCompleted, "attachments": attachmentList(d),
 			"body": truncateText(emailText(d), mcpBodyLimit),
 		}, nil
 	})

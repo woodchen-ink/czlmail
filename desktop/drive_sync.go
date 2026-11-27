@@ -111,4 +111,5 @@ func (a *App) syncDriveSoon() {
 	a.syncTemplatesSoon()
 	a.syncAISettingsSoon()
 	a.syncAccountSettingsSoon()
+	a.syncMessageTagsSoon()
 }

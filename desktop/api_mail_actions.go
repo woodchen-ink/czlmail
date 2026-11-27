@@ -72,7 +72,8 @@ func (a *App) SetLabel(accountID string, emailIDs []string, label string, set bo
 	if err != nil {
 		return err
 	}
-	label = strings.TrimSpace(label)
+	// 关键字不分大小写, Stalwart 等服务器存成小写: 本机也用小写, 免得同步回来前后显示成两个标签。
+	label = strings.ToLower(strings.TrimSpace(label))
 	if err := validateLabel(label); err != nil {
 		return err
 	}

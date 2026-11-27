@@ -128,8 +128,8 @@ export function MailboxesCard({
   );
 }
 
-/** 失焦或回车保存, Esc 放弃; 外面的值变了 (保存完、别的设备同步来) 时草稿跟着换。 */
-function NameInput({
+/** 失焦或回车保存, Esc 放弃; 外面的值变了 (保存完、别的设备同步来) 时草稿跟着换。设置 → 标签也用。 */
+export function NameInput({
   value,
   placeholder,
   onCommit,
@@ -162,7 +162,7 @@ function NameInput({
   );
 }
 
-function ColorPicker({ value, onChange }: { value: string; onChange: (key: string) => void }) {
+export function ColorPicker({ value, onChange }: { value: string; onChange: (key: string) => void }) {
   useI18n();
   const [open, setOpen] = useState(false);
   const current = accountColorValue(value);

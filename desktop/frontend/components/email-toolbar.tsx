@@ -5,12 +5,12 @@ import { useI18n } from "@/components/locale-provider";
 import { formatKey, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
 import { MobileNavButton } from "@/components/pane-layout";
 
-import { useState } from "react";
 import {
   Archive,
   Code2,
   Download,
   Expand,
+  FlagOff,
   FolderInput,
   Forward,
   Keyboard,
@@ -40,9 +40,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { EmailDetail, Mailbox } from "@/lib/api";
+import { NewTagInput, TagDot, TaskFlagIcon } from "@/components/message-tags";
+import { tagOptions, taskFlagState, useMessageMarks, type TaskFlagState } from "@/lib/message-tags";
 
 export interface ToolbarActions {
   reply: () => void;
@@ -56,6 +57,8 @@ export interface ToolbarActions {
   junk: (junk: boolean) => void;
   markUnread: () => void;
   toggleFlag: () => void;
+  /** 待办旗标 (设置里打开「用旗标标记待办」时)。 */
+  taskFlag: (state: TaskFlagState) => void;
   print: () => void;
   viewSource: () => void;
   exportEml: () => void;
@@ -86,6 +89,7 @@ export function EmailToolbar({
   actions,
 }: Props) {
   useI18n();
+  const { taskFlags } = useMessageMarks();
   const inJunk = currentKind === "junk";
   const keys = useShortcuts();
   /** 提示里显示动作的第一个键位; 用户把键位删光时不显示。 */
@@ -104,6 +108,7 @@ export function EmailToolbar({
       <Action icon={Trash2} label={t("删除")} shortcut={hint("trash")} onClick={actions.trash} showLabel />
       <MoveMenu mailboxes={mailboxes} onMove={actions.move} />
       <LabelMenu current={email.labels ?? []} known={labels} onSet={actions.setLabel} />
+      {taskFlags && <TaskFlagMenu state={taskFlagState(email)} onSet={actions.taskFlag} shortcut={hint("toggleFlag")} />}
       {inJunk ? (
         <Action icon={ShieldCheck} label={t("不是垃圾邮件")} onClick={() => actions.junk(false)} showLabel />
       ) : (
@@ -128,11 +133,13 @@ export function EmailToolbar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onSelect={actions.toggleFlag}>
-            <Star className="size-4" />
-            {email.isFlagged ? t("取消星标") : t("加星标")}
-            <Kbd>S</Kbd>
-          </DropdownMenuItem>
+          {!taskFlags && (
+            <DropdownMenuItem onSelect={actions.toggleFlag}>
+              <Star className="size-4" />
+              {email.isFlagged ? t("取消星标") : t("加星标")}
+              <Kbd>S</Kbd>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={actions.viewSource}>
             <Code2 className="size-4" />
             {t("查看源码")}</DropdownMenuItem>
@@ -224,69 +231,138 @@ function MoveMenu({ mailboxes, onMove }: { mailboxes: Mailbox[]; onMove: (id: st
   );
 }
 
-function LabelMenu({
+/** 标签菜单: 勾选打上或去掉, 底部输入名字新建。阅读栏里点标签也打开它 (children 作为触发按钮)。 */
+export function LabelMenu({
   current,
   known,
   onSet,
+  children,
 }: {
   current: string[];
   known: string[];
   onSet: (label: string, set: boolean) => void;
+  children?: React.ReactNode;
 }) {
   useI18n();
-  const [draft, setDraft] = useState("");
-  const all = Array.from(new Set([...known, ...current])).sort();
+  const marks = useMessageMarks();
+  const options = tagOptions(marks, current, known);
 
   return (
-    <DropdownMenu onOpenChange={(open) => !open && setDraft("")}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 shrink-0" aria-label={t("标签")}>
-              <Tag className="size-4" />
-              <span className="hidden 2xl:inline">{t("标签")}</span>
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent>{t("标签")}</TooltipContent>
-      </Tooltip>
+    <DropdownMenu>
+      {children ? (
+        <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8 shrink-0" aria-label={t("标签")}>
+                <Tag className="size-4" />
+                <span className="hidden 2xl:inline">{t("标签")}</span>
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{t("标签")}</TooltipContent>
+        </Tooltip>
+      )}
       <DropdownMenuContent align="start" className="w-56">
         <DropdownMenuLabel>{t("标签")}</DropdownMenuLabel>
-        {all.length === 0 && (
+        {options.length === 0 && (
           <p className="text-muted-foreground px-2 py-1.5 text-xs">{t("还没有标签")}</p>
         )}
-        {all.map((label) => (
-          <DropdownMenuCheckboxItem
-            key={label}
-            checked={current.includes(label)}
-            onCheckedChange={(checked) => onSet(label, checked)}
-            // 勾选后不关闭菜单，方便一次打多个标签。
-            onSelect={(e) => e.preventDefault()}
-          >
-            {label}
-          </DropdownMenuCheckboxItem>
-        ))}
+        <div className="max-h-72 overflow-y-auto">
+          {options.map((o) => (
+            <DropdownMenuCheckboxItem
+              key={o.keyword}
+              checked={o.on}
+              onCheckedChange={(checked) => onSet(o.keyword, checked)}
+              // 勾选后不关闭菜单，方便一次打多个标签。
+              onSelect={(e) => e.preventDefault()}
+              title={o.name !== o.keyword ? o.keyword : undefined}
+            >
+              <TagDot color={o.color} className="size-2" />
+              <span className="truncate">{o.name}</span>
+            </DropdownMenuCheckboxItem>
+          ))}
+        </div>
         <DropdownMenuSeparator />
-        <form
-          className="p-1"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const v = draft.trim();
-            if (v) onSet(v, true);
-            setDraft("");
-          }}
-        >
-          <Input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            // 菜单会抢键盘事件用于上下选择，输入框里的按键不能冒泡上去。
-            onKeyDown={(e) => e.stopPropagation()}
-            placeholder={t("新标签（英文），回车添加")}
-            className="h-8 text-sm"
-          />
-        </form>
+        <NewTagInput known={known} onAdd={(kw) => onSet(kw, true)} />
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** 待办旗标菜单 (同 Outlook 的「后续标志」, 不带日期)。 */
+export function TaskFlagMenu({
+  state,
+  onSet,
+  shortcut,
+  children,
+}: {
+  state: TaskFlagState;
+  onSet: (state: TaskFlagState) => void;
+  shortcut?: string;
+  children?: React.ReactNode;
+}) {
+  useI18n();
+  return (
+    <DropdownMenu>
+      {children ? (
+        <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8 shrink-0" aria-label={t("待办旗标")}>
+                <TaskFlagIcon state={state} className="size-4" />
+                <span className="hidden 2xl:inline">{t("待办旗标")}</span>
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>
+            {t("待办旗标")}
+            {shortcut && <Kbd>{shortcut}</Kbd>}
+          </TooltipContent>
+        </Tooltip>
+      )}
+      <DropdownMenuContent align="start" className="w-56">
+        <TaskFlagItems state={state} onSet={onSet} Item={DropdownMenuItem} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** 旗标菜单项, 下拉菜单与右键菜单共用 (Item 是各自的菜单项组件)。 */
+export function TaskFlagItems({
+  state,
+  onSet,
+  Item,
+}: {
+  state: TaskFlagState | null;
+  onSet: (state: TaskFlagState) => void;
+  Item: React.ComponentType<{ onSelect?: (e: Event) => void; children?: React.ReactNode }>;
+}) {
+  useI18n();
+  return (
+    <>
+      {state !== "flagged" && (
+        <Item onSelect={() => onSet("flagged")}>
+          <TaskFlagIcon state="flagged" className="size-4" />
+          {t("标记为待办")}
+        </Item>
+      )}
+      {state !== "completed" && (
+        <Item onSelect={() => onSet("completed")}>
+          <TaskFlagIcon state="completed" className="size-4" />
+          {t("标记为已完成")}
+        </Item>
+      )}
+      {state !== "none" && (
+        <Item onSelect={() => onSet("none")}>
+          <FlagOff className="size-4" />
+          {t("清除旗标")}
+        </Item>
+      )}
+    </>
   );
 }
 
