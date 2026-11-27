@@ -7,6 +7,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -15,13 +16,13 @@ import {
   Check,
   Paperclip,
   Pin,
-  Shield,
   Star,
   Trash2,
 } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SenderAvatar } from "@/components/sender-avatar";
+import { SignatureMark } from "@/components/signature-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AttachmentChips, OtpChip } from "@/components/email-chips";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,6 +32,30 @@ import { api, type EmailSummary } from "@/lib/api";
 import { emailKey } from "@/lib/email-key";
 import { threadKey, threadRows } from "@/lib/thread-rows";
 import { endEmailDrag, onEmailDrag, startEmailDrag } from "@/lib/email-drag";
+
+/** 列表交给 mail-shell 的键盘移动接口: 屏幕上有哪些行 (展开会话里的往来) 只有列表知道。 */
+export interface ListNav {
+  /**
+   * 从选中的那封往下 (delta = 1) 或往上 (-1) 移一行, 返回那一行的邮件; 落在会话行上时像点击一样展开它。
+   * selected: 选中的那封不在列表里时 (展开区里别的文件夹的), 由调用方给出, 用来找它所在的会话行。
+   * later: 选中的会话行刚展开、成员还没读回来时往下走, 先返回 null, 成员到了再用第一封调它。
+   */
+  move(
+    selectedKey: string,
+    delta: number,
+    selected?: { accountId: string; threadId?: string; id: string } | null,
+    later?: (email: EmailSummary) => void,
+  ): EmailSummary | null;
+  /**
+   * 展开 (open) 或收起选中的那封所在的会话。收起时选中的是会话里的一封, 返回会话行那封, 选中回到会话行;
+   * 其余情况返回 null, 选中不变。
+   */
+  setOpen(
+    selectedKey: string,
+    open: boolean,
+    selected?: { accountId: string; threadId?: string; id: string } | null,
+  ): EmailSummary | null;
+}
 
 interface Props {
   emails: EmailSummary[];
@@ -77,6 +102,8 @@ interface Props {
    * 同 Outlook; 合并后较早的草稿藏在会话行下面, 展开区又混进收发的往来)。
    */
   flat?: boolean;
+  /** 上下键 / J/K 由 mail-shell 的全局快捷键处理, 通过它问列表下一行是哪封。 */
+  navRef?: React.Ref<ListNav>;
 }
 
 export function EmailList({
@@ -101,6 +128,7 @@ export function EmailList({
   emptyState,
   draggable = false,
   flat = false,
+  navRef,
 }: Props) {
   useI18n();
   // 正被拖走的邮件键: 这些行变淡, 看得出拖的是哪几封。
@@ -185,6 +213,77 @@ export function EmailList({
     setThreads((prev) => ({ ...prev, [key]: applyOverlay(list) }));
   }
 
+  /** 键盘移动前焦点在列表的某一行上: 那一行随会话收起被卸掉时, 焦点仍要跟到新选中的行。 */
+  const keyboardInList = useRef(false);
+  // 键盘上下移动按屏幕上的行走, 同 Outlook: 落到会话行就展开它 (与点击一样, 同时收起别的会话),
+  // 展开的会话里逐封走, 包括别的文件夹里的往来。会话行代表的那封在展开区里也有一行, 不重复走。
+  // 刚展开、成员还没读回来的会话上按 ↓: 记下来, 成员到了再走到第一封, 否则连按时直接跳过整个会话。
+  const pendingStep = useRef<{ from: string; thread: string; later: (email: EmailSummary) => void } | null>(null);
+  useEffect(() => {
+    const p = pendingStep.current;
+    if (!p || threads[p.thread] === undefined) return;
+    pendingStep.current = null;
+    if (p.from !== selectedKey || expanded !== p.thread) return;
+    const head = rows.find((r) => threadKey(r.head) === p.thread)?.head;
+    const first = [...threads[p.thread]].reverse().find((m) => !head || emailKey(m) !== emailKey(head));
+    if (first) p.later(first);
+    // 只在成员读回来时接着走。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threads]);
+
+  useImperativeHandle(navRef, () => ({
+    move(selectedKey, delta, selected, later) {
+      pendingStep.current = null;
+      keyboardInList.current = !!scrollRef.current?.contains(document.activeElement);
+      const visible: { email: EmailSummary; head: boolean }[] = [];
+      for (const { head } of rows) {
+        visible.push({ email: head, head: true });
+        const tk = threadKey(head);
+        if (flat || !head.threadId || expanded !== tk) continue;
+        for (const m of [...(threads[tk] ?? [])].reverse()) {
+          if (emailKey(m) !== emailKey(head)) visible.push({ email: m, head: false });
+        }
+      }
+      let idx = visible.findIndex((v) => emailKey(v.email) === selectedKey);
+      // 选中的是收起的会话里的一封 (较早的、别的文件夹的): 从代表该会话的行起步, 否则会跳回列表第一行。
+      if (idx < 0) {
+        const sel = emails.find((m) => emailKey(m) === selectedKey) ?? selected;
+        if (sel) idx = visible.findIndex((v) => v.head && threadKey(v.email) === threadKey(sel));
+      }
+      const cur = visible[idx];
+      if (later && delta > 0 && cur?.head && expanded === threadKey(cur.email) && threads[expanded] === undefined) {
+        pendingStep.current = { from: selectedKey, thread: expanded, later };
+        return null;
+      }
+      const next = visible[idx < 0 ? 0 : idx + delta];
+      if (!next) {
+        keyboardInList.current = false;
+        return null;
+      }
+      if (next.head) expandThread(next.email);
+      return next.email;
+    },
+    setOpen(selectedKey, open, selected) {
+      if (flat) return null;
+      const members = Object.values(threads).flat();
+      const sel =
+        emails.find((m) => emailKey(m) === selectedKey) ??
+        members.find((m) => emailKey(m) === selectedKey) ??
+        selected;
+      const head = sel ? rows.find((r) => threadKey(r.head) === threadKey(sel))?.head : undefined;
+      if (!sel || !head || !head.threadId || (head.threadCount ?? 0) < 2) return null;
+      if (open) {
+        expandThread(head);
+        return null;
+      }
+      if (expanded === threadKey(head)) {
+        keyboardInList.current = !!scrollRef.current?.contains(document.activeElement);
+        setExpanded("");
+      }
+      return emailKey(sel) === emailKey(head) ? null : head;
+    },
+  }));
+
   // 从通讯录、通知或链接打开的邮件可能在屏幕外, 选中变化后把那一行滚进视野。
   // block: "nearest" 在行已经可见时什么都不做, 所以点击行本身不会引起跳动;
   // 记下滚过的键, 列表刷新(新邮件、标记已读)时不把用户滚回去。
@@ -218,13 +317,16 @@ export function EmailList({
     if (!selectedKey || focusedFor.current === selectedKey) return;
     const root = scrollRef.current;
     const active = document.activeElement;
-    if (!root || !(active instanceof HTMLElement) || !active.dataset.emailKey || !root.contains(active)) {
+    const inList = active instanceof HTMLElement && !!active.dataset.emailKey && !!root?.contains(active);
+    if (!root || (!inList && !keyboardInList.current)) {
       focusedFor.current = selectedKey;
+      keyboardInList.current = false;
       return;
     }
     const row = rowOf(selectedKey);
     if (!row) return;
     focusedFor.current = selectedKey;
+    keyboardInList.current = false;
     if (row !== active) row.focus({ preventScroll: true });
   }, [selectedKey, rowOf, threads]);
 
@@ -435,6 +537,9 @@ export function EmailList({
                       {email.hasAttachment && (
                         <Paperclip className="text-muted-foreground size-3.5 shrink-0" aria-label={t("附件")} />
                       )}
+                      {/* 签名标记与回形针一起放在日期旁, 同 Outlook; 无效的签名标红。多封的会话行不标:
+                          行代表整个会话, 签名只属于其中的某几封 (常常只有自己发的), 展开后在各封上标出。 */}
+                      {email.signed && count < 2 && <SignatureMark email={email} className="size-3.5" />}
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                         {listDate(email.receivedAt)}
                       </span>
@@ -461,9 +566,6 @@ export function EmailList({
                         >
                           {where}
                         </span>
-                      )}
-                      {email.signed && (
-                        <Shield className="text-muted-foreground size-3.5 shrink-0" aria-label={t("数字签名")} />
                       )}
                       {email.isPinned && (
                         <Pin className="text-accent size-3.5 shrink-0" aria-label={t("已固定")} />
@@ -598,9 +700,7 @@ export function EmailList({
                             {m.hasAttachment && (
                               <Paperclip className="text-muted-foreground size-3 shrink-0" />
                             )}
-                            {m.signed && (
-                              <Shield className="text-muted-foreground size-3 shrink-0" aria-label={t("数字签名")} />
-                            )}
+                            {m.signed && <SignatureMark email={m} className="size-3" />}
                             {onDelete && (
                               <button
                                 type="button"
