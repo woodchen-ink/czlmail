@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
-	_ "git.sr.ht/~rockorager/go-jmap/core" // 注册 Core capability, 否则会话解析不出限制值
+	"git.sr.ht/~rockorager/go-jmap/core"   // 同时注册 Core capability, 否则会话解析不出限制值
 	_ "git.sr.ht/~rockorager/go-jmap/mail" // 注册 Mail capability 与方法
 	"golang.org/x/oauth2"
 
@@ -20,6 +20,7 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
 	"github.com/woodchen-ink/czlmail/desktop/internal/capability"
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
+	"github.com/woodchen-ink/czlmail/desktop/internal/jmaplimit"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 	"github.com/woodchen-ink/czlmail/desktop/notify"
@@ -286,6 +287,19 @@ func (a *App) connect(si *signIn, cfg config.Config, httpClient *http.Client, to
 	// 同步循环只会当成断线一直重连。
 	client.HttpClient = auth.Watch(httpClient, func() {
 		a.suspectCredentials(si, client, cfg, httpClient, tokens)
+	})
+	// 同时在途的 API 请求不超过会话公布的上限: 超出时服务器直接回 400, 连上后那一轮同步会一次发出好几个。
+	client.HttpClient = jmaplimit.Wrap(client.HttpClient, func() (string, int) {
+		client.Lock()
+		defer client.Unlock()
+		if client.Session == nil {
+			return "", 0
+		}
+		max := 0
+		if c, ok := client.Session.Capabilities[jmap.CoreURI].(*core.Core); ok {
+			max = int(c.MaxConcurrentRequests)
+		}
+		return client.Session.APIURL, max
 	})
 	// go-jmap 的 Authenticate 不接受 context, 客户端又不能设全局超时(推送连接是长连接),
 	// 在这里单独限时, 服务器无响应时报错而不是让登录界面一直转圈。
