@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"errors"
 	"io/fs"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/i18n"
@@ -44,7 +45,7 @@ func (a *App) SetUILocale(locale string) {
 	// 每次都交给宿主: 原生壳刚装好时还没存过, 只在变化时发会漏掉第一次。
 	a.reportUILocale(locale)
 	if changed {
-		a.rememberUILocale(locale)
+		a.rememberUILocale()
 		a.setTrayMenuText()
 		a.redrawTrayUnread()
 		a.planRemindersSoon(false)
@@ -52,31 +53,40 @@ func (a *App) SetUILocale(locale string) {
 	}
 }
 
-// rememberUILocale 记下界面告知的语言, 下次启动时由 restoreUILocale 读回。
-func (a *App) rememberUILocale(locale string) {
+// rememberUILocale 记下界面当前语言, 下次启动时由 restoreUILocale 读回。缓存库还没打开时什么都不做,
+// 由 restoreUILocale 补存。在锁内重新取语言: 启动补存与界面告知同时发生时以最后一次为准。
+func (a *App) rememberUILocale() {
 	st, err := a.currentStore()
 	if err != nil {
 		return
 	}
-	if err := st.SetStringSetting(context.Background(), settingUILocale, locale); err != nil {
+	a.localeSave.Lock()
+	defer a.localeSave.Unlock()
+	if err := st.SetStringSetting(context.Background(), settingUILocale, a.currentLocale()); err != nil {
 		a.log.Warn("remember ui locale", "err", err)
 	}
 }
 
-// restoreUILocale 在启动时先用上次记住的界面语言, 界面告知以后照常以界面为准。
-// 界面已经告知过、没记住过或记住的语言没有词典时什么都不做; 返回是否换了语言。
+// restoreUILocale 在缓存库打开后调用: 界面还没告知时先用上次记住的语言 (没有词典的与源语言不用),
+// 界面告知以后照常以界面为准; 返回是否换了语言。
+// startup 与页面加载同时进行, 界面可能在库打开前就告知了, 那次没存进去, 之后告知的语言不变也不会再存, 这里补存。
 func (a *App) restoreUILocale(ctx context.Context, st *store.Store) bool {
 	saved, err := st.StringSetting(ctx, settingUILocale)
-	if err != nil || saved == i18n.Source || !catalog.Has(saved) {
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		a.log.Warn("read ui locale", "err", err)
 		return false
 	}
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.uiLocale != "" {
-		return false
+	reported := a.uiLocale
+	restored := reported == "" && saved != i18n.Source && catalog.Has(saved)
+	if restored {
+		a.uiLocale = saved
 	}
-	a.uiLocale = saved
-	return true
+	a.mu.Unlock()
+	if reported != "" && reported != saved {
+		a.rememberUILocale()
+	}
+	return restored
 }
 
 // locale 是界面当前语言, 界面还没告知时为源语言。调用方持有 a.mu。

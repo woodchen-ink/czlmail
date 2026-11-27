@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -27,12 +28,21 @@ func TestRestoreUILocale(t *testing.T) {
 	}
 	defer st.Close()
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	saved := func() string {
+		t.Helper()
+		v, err := st.StringSetting(ctx, settingUILocale)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			t.Fatal(err)
+		}
+		return v
+	}
 
 	first := &App{store: st, log: quiet}
 	if first.restoreUILocale(ctx, st) {
 		t.Fatal("restored a locale before any was remembered")
 	}
-	first.rememberUILocale("cs")
+	first.uiLocale = "cs"
+	first.rememberUILocale()
 
 	next := &App{store: st, log: quiet}
 	if !next.restoreUILocale(ctx, st) || next.currentLocale() != "cs" {
@@ -42,12 +52,23 @@ func TestRestoreUILocale(t *testing.T) {
 		t.Fatalf("notification title still in the source language: %q", got)
 	}
 
-	reported := &App{store: st, log: quiet, uiLocale: "en"}
-	if reported.restoreUILocale(ctx, st) || reported.currentLocale() != "en" {
-		t.Fatalf("restore overrode the locale the UI reported: %q", reported.currentLocale())
+	// 界面在缓存库打开前就告知了 (那次存不进去): 不被覆盖, 启动时补存。
+	early := &App{log: quiet, uiLocale: "en"}
+	early.rememberUILocale()
+	if saved() != "cs" {
+		t.Fatalf("remembered without a store: %q", saved())
+	}
+	early.store = st
+	if early.restoreUILocale(ctx, st) || early.currentLocale() != "en" {
+		t.Fatalf("restore overrode the locale the UI reported: %q", early.currentLocale())
+	}
+	if saved() != "en" {
+		t.Fatalf("locale reported before the store opened was not saved: %q", saved())
 	}
 
-	first.rememberUILocale("fr") // 没有词典的语言不拿来用
+	if err := st.SetStringSetting(ctx, settingUILocale, "fr"); err != nil { // 没有词典的语言不拿来用
+		t.Fatal(err)
+	}
 	if (&App{store: st, log: quiet}).restoreUILocale(ctx, st) {
 		t.Fatal("restored a locale without a dictionary")
 	}
