@@ -784,7 +784,7 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
             </div>
           )}
           {draft.quoteHtml && (
-            <details className="text-muted-foreground px-4 pb-4 text-sm">
+            <details className="text-muted-foreground px-4 pb-4 text-sm" open={!!settings?.expandQuote}>
               <summary className="cursor-pointer select-none">{t("显示引用的原邮件")}</summary>
               <div className="czl-signature mt-2" dangerouslySetInnerHTML={{ __html: quotePreview }} />
             </details>

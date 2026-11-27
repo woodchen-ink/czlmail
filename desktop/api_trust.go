@@ -198,6 +198,8 @@ type AppSettings struct {
 	// WarnEmptySubject / WarnMissingAttachment 发送前的检查。
 	WarnEmptySubject      bool `json:"warnEmptySubject"`
 	WarnMissingAttachment bool `json:"warnMissingAttachment"`
+	// ExpandQuote 为真时, 回复/转发的写信窗格里引用的原邮件默认展开, 不用先点「显示引用的原邮件」。
+	ExpandQuote bool `json:"expandQuote"`
 	// DefaultIdentities 是 账号 id → 默认发件身份 id。
 	DefaultIdentities map[string]string `json:"defaultIdentities"`
 	// MutedMailAccounts 是关闭了新邮件通知的账号(多为共享邮箱)。
@@ -222,6 +224,7 @@ var boolSettings = []struct {
 	{"readReceiptDefault", false, func(s *AppSettings) *bool { return &s.ReadReceiptDefault }},
 	{"warnEmptySubject", true, func(s *AppSettings) *bool { return &s.WarnEmptySubject }},
 	{"warnMissingAttachment", true, func(s *AppSettings) *bool { return &s.WarnMissingAttachment }},
+	{"expandQuote", false, func(s *AppSettings) *bool { return &s.ExpandQuote }},
 }
 
 func (a *App) GetSettings() (AppSettings, error) {

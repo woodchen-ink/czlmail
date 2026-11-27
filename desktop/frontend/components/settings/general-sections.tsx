@@ -263,6 +263,10 @@ export function ComposeSection({ active }: { active: boolean }) {
             onCheckedChange={(on) => save({ readReceiptDefault: on })}
           />
         </Row>
+        <Divider />
+        <Row title={t("默认展开引用的原邮件")} desc={t("回复或转发时，正文下方直接显示原邮件，不用先点「显示引用的原邮件」")}>
+          <Switch checked={!!settings?.expandQuote} disabled={!settings} onCheckedChange={(on) => save({ expandQuote: on })} />
+        </Row>
       </Card>
       <SectionTitle title={t("发送前检查")} small />
       <Card>

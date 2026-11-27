@@ -1421,5 +1421,7 @@
   "其它客户端打的标签。起个名字、挑个颜色后，在列表里显示得更清楚。": "Štítky přidané jinými programy. Když jim dáte název a barvu, budou v seznamu lépe vidět.",
   "命名": "Pojmenovat",
   "用旗标标记待办": "Používat příznaky k zpracování",
-  "同 Outlook：点旗标标记为待办，再点一下标记为已完成，清除旗标在右键菜单里。其它客户端里待办显示为旗标或星标。关闭时显示为星标。": "Jako v Outlooku: kliknutím na praporek zprávu označíte příznakem, dalším kliknutím jako dokončenou, příznak vymažete v místní nabídce. Jiné poštovní programy zobrazí zprávu s příznakem jako praporek nebo hvězdičku. Když je volba vypnutá, zobrazuje se hvězdička."
+  "同 Outlook：点旗标标记为待办，再点一下标记为已完成，清除旗标在右键菜单里。其它客户端里待办显示为旗标或星标。关闭时显示为星标。": "Jako v Outlooku: kliknutím na praporek zprávu označíte příznakem, dalším kliknutím jako dokončenou, příznak vymažete v místní nabídce. Jiné poštovní programy zobrazí zprávu s příznakem jako praporek nebo hvězdičku. Když je volba vypnutá, zobrazuje se hvězdička.",
+  "默认展开引用的原邮件": "Rovnou rozbalit citovanou původní zprávu",
+  "回复或转发时，正文下方直接显示原邮件，不用先点「显示引用的原邮件」": "Při odpovídání a přeposílání se původní zpráva zobrazí hned pod textem, není třeba klikat na „Zobrazit citovanou původní zprávu“"
 }
