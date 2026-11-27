@@ -45,6 +45,14 @@ import { MailSyncState } from "@/components/mail-sync-state";
 import { UpstreamState } from "@/components/upstream-status";
 import { upstreamOK } from "@/lib/upstream";
 import { accountColor, useAccountLooks } from "@/lib/account-looks";
+import {
+  MessageMarksContext,
+  nextTaskFlag,
+  taskFlagPatch,
+  taskFlagState,
+  useMessageMarksState,
+  type TaskFlagState,
+} from "@/lib/message-tags";
 import { useFavoriteFolders } from "@/lib/favorite-folders";
 import { mailboxLabel } from "@/components/mailbox-tree";
 import { MobileNavButton, PaneLayout, type MobilePane } from "@/components/pane-layout";
@@ -104,7 +112,7 @@ interface UndoEntry {
 /** 带「撤销」按钮的提示多停留一会儿, 来得及点。 */
 const UNDO_TOAST_MS = 8000;
 
-const PATCH_FIELDS = ["isUnread", "isFlagged", "isPinned"] as const;
+const PATCH_FIELDS = ["isUnread", "isFlagged", "isCompleted", "isPinned"] as const;
 
 /**
  * patch 生效前各封的原值, 按原值分组: 键是原值的 JSON, 值是这一组的邮件键。
@@ -136,9 +144,12 @@ function previousValues(
   return out;
 }
 
-/** 把 patch(已读、星标、固定之一)提交到服务器。 */
+/** 把 patch(已读、星标、待办旗标、固定之一)提交到服务器。待办旗标的 patch 总是同时带 isFlagged 与 isCompleted。 */
 function patchOp(accountId: string, ids: string[], patch: Partial<EmailSummary>): Promise<unknown> {
   if (patch.isUnread !== undefined) return api.markRead(accountId, ids, !patch.isUnread);
+  if (patch.isCompleted !== undefined) {
+    return api.setTaskFlag(accountId, ids, patch.isCompleted ? "completed" : patch.isFlagged ? "flagged" : "none");
+  }
   if (patch.isFlagged !== undefined) return api.markFlagged(accountId, ids, patch.isFlagged);
   if (patch.isPinned !== undefined) return api.setPinned(accountId, ids, patch.isPinned);
   return Promise.resolve();
@@ -151,6 +162,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   const [username, setUsername] = useState("");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const accountLooks = useAccountLooks();
+  const marks = useMessageMarksState();
   const favoriteFolders = useFavoriteFolders();
   const [mailboxesByAccount, setMailboxesByAccount] = useState<Record<string, Mailbox[]>>({});
   const [accountId, setAccountId] = useState("");
@@ -981,9 +993,20 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     [mutate],
   );
 
+  /** 待办旗标 (设置里打开「用旗标标记待办」时): 一并改 $flagged 与 $completed, 可撤销。 */
+  const taskFlagIds = useCallback(
+    (keys: string[], state: TaskFlagState) =>
+      mutate({ keys, patch: taskFlagPatch(state), op: (acc, ids) => api.setTaskFlag(acc, ids, state) }),
+    [mutate],
+  );
+
+  /** 点旗标或星标, 快捷键同。旗标模式下: 没有 → 待办 → 完成 → 待办 (同 Outlook)。 */
   const toggleFlag = useCallback(
-    (email: EmailSummary | EmailDetail) => flagIds([emailKey(email)], !email.isFlagged),
-    [flagIds],
+    (email: EmailSummary | EmailDetail) =>
+      marks.taskFlags
+        ? taskFlagIds([emailKey(email)], nextTaskFlag(taskFlagState(email)))
+        : flagIds([emailKey(email)], !email.isFlagged),
+    [flagIds, taskFlagIds, marks.taskFlags],
   );
 
   const togglePin = useCallback(
@@ -1255,10 +1278,11 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       junk: junkIds,
       markRead: markReadIds,
       toggleFlag,
+      taskFlag: taskFlagIds,
       togglePin,
       setLabel: setLabelIds,
     }),
-    [withDetail, startReply, setDraft, markReadOnReply, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, togglePin, setLabelIds],
+    [withDetail, startReply, setDraft, markReadOnReply, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, taskFlagIds, togglePin, setLabelIds],
   );
 
   /**
@@ -1314,6 +1338,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
           leaveAfterUnread(key);
         },
         toggleFlag: () => toggleFlag(email),
+        taskFlag: (state) => taskFlagIds([key], state),
         print: () => printEmail(email, false),
         viewSource: () => setSourceTarget({ accountId: acc, emailId: email.id }),
         exportEml: async () => {
@@ -1330,7 +1355,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         toggleBodyLight: () => setBodyAppearance(bodyAppearance === "light" ? "follow" : "light"),
       };
     },
-    [archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, markReadOnReply, leaveAfterUnread, toggleFlag, importEmails, bodyAppearance, setBodyAppearance, setDraft, startReply],
+    [archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, markReadOnReply, leaveAfterUnread, toggleFlag, taskFlagIds, importEmails, bodyAppearance, setBodyAppearance, setDraft, startReply],
   );
 
   /* ---------- 键盘快捷键 ---------- */
@@ -1467,6 +1492,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   }
 
   return (
+    <MessageMarksContext.Provider value={marks}>
     <div className="h-full">
       <PaneLayout
         id="mail"
@@ -1779,6 +1805,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       <SourceDialog target={sourceTarget} onClose={() => setSourceTarget(null)} />
       <ShortcutsDialog open={showShortcuts} onClose={() => setShowShortcuts(false)} />
     </div>
+    </MessageMarksContext.Provider>
   );
 }
 

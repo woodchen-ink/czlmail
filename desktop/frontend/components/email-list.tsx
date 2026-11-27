@@ -16,13 +16,13 @@ import {
   Check,
   Paperclip,
   Pin,
-  Star,
   Trash2,
 } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SenderAvatar } from "@/components/sender-avatar";
 import { SignatureMark } from "@/components/signature-badge";
+import { FlagButton, TagChips, TagDots } from "@/components/message-tags";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AttachmentChips, OtpChip } from "@/components/email-chips";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -584,29 +584,14 @@ export function EmailList({
                           <Trash2 className="size-3.5" />
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleFlag(email);
-                        }}
-                        aria-label={email.isFlagged ? t("取消星标") : t("加星标")}
-                        className="hover:bg-muted shrink-0 rounded-sm p-0.5"
-                      >
-                        <Star
-                          className={cn(
-                            "size-3.5",
-                            email.isFlagged
-                              ? "fill-chart-4 text-chart-4"
-                              : "text-muted-foreground opacity-0 group-hover:opacity-100",
-                          )}
-                        />
-                      </button>
+                      <FlagButton email={email} idleClass="opacity-0 group-hover:opacity-100" onToggleFlag={onToggleFlag} />
                     </div>
 
-                    <p className="text-muted-foreground mt-0.5 truncate text-xs">
-                      {email.preview}
-                    </p>
+                    {/* 标签放在摘要行右侧 (同 Outlook 的类别), 不挤主题; 最多两个, 其余收成 +N。会话行只看代表的这封。 */}
+                    <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                      <p className="text-muted-foreground min-w-0 flex-1 truncate text-xs">{email.preview}</p>
+                      <TagChips labels={email.labels} max={2} className="max-w-[60%] shrink-0" />
+                    </div>
 
                     {/* 验证码与附件名单独一行, 只在有的时候出现; 一行放不下时附件名先缩, 不换行。 */}
                     {(email.code || (email.attachmentNames?.length ?? 0) > 0) && (
@@ -701,6 +686,7 @@ export function EmailList({
                               <Paperclip className="text-muted-foreground size-3 shrink-0" />
                             )}
                             {m.signed && <SignatureMark email={m} className="size-3" />}
+                            <TagDots labels={m.labels} />
                             {onDelete && (
                               <button
                                 type="button"
@@ -715,24 +701,7 @@ export function EmailList({
                                 <Trash2 className="size-3.5" />
                               </button>
                             )}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onToggleFlag(m);
-                              }}
-                              aria-label={m.isFlagged ? t("取消星标") : t("加星标")}
-                              className="hover:bg-muted shrink-0 rounded-sm p-0.5"
-                            >
-                              <Star
-                                className={cn(
-                                  "size-3.5",
-                                  m.isFlagged
-                                    ? "fill-chart-4 text-chart-4"
-                                    : "text-muted-foreground opacity-0 group-hover/member:opacity-100",
-                                )}
-                              />
-                            </button>
+                            <FlagButton email={m} idleClass="opacity-0 group-hover/member:opacity-100" onToggleFlag={onToggleFlag} />
                             <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                               {listDate(m.receivedAt)}
                             </span>
