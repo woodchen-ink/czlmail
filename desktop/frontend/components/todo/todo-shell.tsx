@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "@/lib/i18n";
+import { t, tContext } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -249,7 +249,7 @@ export function TodoShell({ active }: { active: boolean }) {
   const listPane = (
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="border-border flex h-11 shrink-0 items-center gap-2 border-b px-4">
-        <h2 className="text-base font-semibold">{t("待办")}</h2>
+        <h2 className="text-base font-semibold">{tContext("module", "待办")}</h2>
         {loading && <Loader2 className="text-muted-foreground size-4 animate-spin" />}
         {writable.length > 1 && (
           <OptionSelect value={list} onChange={setList} options={listOptions} className="ml-auto h-8 w-40" />

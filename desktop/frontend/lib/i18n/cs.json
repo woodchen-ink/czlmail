@@ -1485,5 +1485,6 @@
   "{0} 到期": "Termín {0}",
   "今天 {0} 到期": "Termín dnes v {0}",
   "找不到这个任务，可能已被删除": "Úkol se nepodařilo najít. Možná byl smazán.",
-  "重复": "Opakuje se"
+  "重复": "Opakuje se",
+  "待办|module": "Úkoly"
 }

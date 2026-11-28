@@ -1485,5 +1485,6 @@
   "{0} 到期": "Due {0}",
   "今天 {0} 到期": "Due today at {0}",
   "找不到这个任务，可能已被删除": "This task could not be found. It may have been deleted.",
-  "重复": "Repeats"
+  "重复": "Repeats",
+  "待办|module": "To-do"
 }

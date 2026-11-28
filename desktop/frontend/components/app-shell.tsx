@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "@/lib/i18n";
+import { t, tContext } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,7 +43,7 @@ const MODULE_FEATURE: Partial<Record<Module, Feature>> = { calendar: "calendars"
 
 const getNav: () => ({ id: Module; label: string; icon: typeof Mail; shortcut: string }[]) = () => ([
   { id: "mail", label: t("邮件"), icon: Mail, shortcut: `${MOD}1` },
-  { id: "todo", label: t("待办"), icon: ListTodo, shortcut: `${MOD}7` },
+  { id: "todo", label: tContext("module", "待办"), icon: ListTodo, shortcut: `${MOD}7` },
   { id: "calendar", label: t("日历"), icon: CalendarDays, shortcut: `${MOD}2` },
   { id: "contacts", label: t("通讯录"), icon: UsersRound, shortcut: `${MOD}3` },
   { id: "files", label: t("文件"), icon: FolderOpen, shortcut: `${MOD}4` },
