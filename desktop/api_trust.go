@@ -187,6 +187,8 @@ type AppSettings struct {
 	// NotifyMail / NotifyEvents 控制新邮件通知与日程提醒。
 	NotifyMail   bool `json:"notifyMail"`
 	NotifyEvents bool `json:"notifyEvents"`
+	// NotifyTasks 控制任务到期提醒。
+	NotifyTasks bool `json:"notifyTasks"`
 	// TaskFlags 为真时 $flagged 显示为待办旗标 (同 Outlook: 旗标 → 点一下完成 → 清除), 否则显示为星标。
 	TaskFlags bool `json:"taskFlags"`
 	// MarkRead 是打开邮件后标记已读的时机: immediate / delay / never。
@@ -217,6 +219,7 @@ var boolSettings = []struct {
 	{store.SettingSenderAvatars, true, func(s *AppSettings) *bool { return &s.SenderAvatars }},
 	{"notifyMail", true, func(s *AppSettings) *bool { return &s.NotifyMail }},
 	{"notifyEvents", true, func(s *AppSettings) *bool { return &s.NotifyEvents }},
+	{"notifyTasks", true, func(s *AppSettings) *bool { return &s.NotifyTasks }},
 	{"taskFlags", false, func(s *AppSettings) *bool { return &s.TaskFlags }},
 	{"signatureSeparator", true, func(s *AppSettings) *bool { return &s.SignatureSeparator }},
 	{"readReceiptDefault", false, func(s *AppSettings) *bool { return &s.ReadReceiptDefault }},

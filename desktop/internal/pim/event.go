@@ -206,6 +206,39 @@ func (e *Event) Loc() *time.Location {
 	return time.Local
 }
 
+// AlertList 返回事件或任务自带的提醒 (已确认的除外)。
+func (e *Event) AlertList() []Alert { return convertAlerts(e.Alerts) }
+
+// HasAlerts 报告事件或任务带着提醒定义 (含已确认、读不懂的): 有定义就按它们来, 一条都不生效时也不该改用默认提醒。
+func (e *Event) HasAlerts() bool { return len(e.Alerts) > 0 }
+
+// DueTimes 返回任务在 [from, to] 内的截止时刻: 重复的任务按截止时间展开 (规则与覆盖项同事件), 不重复的只有一个。
+func (e *Event) DueTimes(from, to time.Time) ([]time.Time, error) {
+	if e.Due == nil || *e.Due == "" {
+		return nil, nil
+	}
+	c := *e
+	c.Start = *e.Due
+	c.Duration = "PT0S"
+	occs, err := c.Expand(from.Add(-time.Second), to.Add(time.Second))
+	if err != nil {
+		return nil, err
+	}
+	var out []time.Time
+	for _, o := range occs {
+		if !o.Start.Before(from) && !o.Start.After(to) {
+			out = append(out, o.Start)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Before(out[j]) })
+	return out, nil
+}
+
+// Done 报告任务已完成或已取消: 这样的任务不再提醒。
+func (e *Event) Done() bool {
+	return e.Progress != nil && (*e.Progress == "completed" || *e.Progress == "cancelled")
+}
+
 // StartTime 返回首次发生的开始时间。
 func (e *Event) StartTime() (time.Time, error) {
 	return parseLocal(e.Start, e.Loc())

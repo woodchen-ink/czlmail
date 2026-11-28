@@ -79,10 +79,9 @@ func upcomingReminders(occs []EventOccurrence, defaults defaultAlerts, now time.
 				continue
 			}
 			seen[key] = true
-			sum := sha256.Sum256([]byte(key))
 			title, body := reminderText(o, at, t)
 			out = append(out, scheduledReminder{
-				ID:       hex.EncodeToString(sum[:8]),
+				ID:       reminderID(key),
 				Title:    title,
 				Body:     body,
 				ActionID: "event:" + o.AccountID + "/" + o.EventID,
@@ -90,6 +89,17 @@ func upcomingReminders(occs []EventOccurrence, defaults defaultAlerts, now time.
 			})
 		}
 	}
+	return nearestReminders(out, limit)
+}
+
+// reminderID 是一条定时通知的稳定 id: 同一条提醒每次登记都是同一个 id。
+func reminderID(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:8])
+}
+
+// nearestReminders 按触发时间排序, 只留最近的 limit 条。
+func nearestReminders(out []scheduledReminder, limit int) []scheduledReminder {
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].At != out[j].At {
 			return out[i].At < out[j].At
@@ -102,7 +112,7 @@ func upcomingReminders(occs []EventOccurrence, defaults defaultAlerts, now time.
 	return out
 }
 
-// reminderPlan 是此刻应当登记的提醒表。未登录或关掉了日程提醒时为空表 (清掉已登记的);
+// reminderPlan 是此刻应当登记的提醒表 (日程与任务)。未登录或两种提醒都关掉时为空表 (清掉已登记的);
 // 读不到缓存时返回错误, 调用方保持原样不动。
 func (a *App) reminderPlan(now time.Time) ([]scheduledReminder, error) {
 	st, err := a.currentStore()
@@ -110,15 +120,27 @@ func (a *App) reminderPlan(now time.Time) ([]scheduledReminder, error) {
 		return nil, err
 	}
 	accounts := a.reminderAccounts(st)
-	if len(accounts) == 0 || !a.settingOn("notifyEvents", true) {
-		return []scheduledReminder{}, nil
+	events, tasks := a.settingOn("notifyEvents", true), a.settingOn("notifyTasks", true)
+	out := []scheduledReminder{}
+	if len(accounts) == 0 {
+		return out, nil
 	}
-	// 提醒可能比事件早很多 (提前一周), 也可能在事件开始之后 (相对结束、绝对时间): 两头各放宽 reminderLookahead。
-	occs, err := a.expandEvents(st, accounts, now.Add(-reminderLookahead), now.Add(reminderHorizon+reminderLookahead))
-	if err != nil {
-		return nil, err
+	if events {
+		// 提醒可能比事件早很多 (提前一周), 也可能在事件开始之后 (相对结束、绝对时间): 两头各放宽 reminderLookahead。
+		occs, err := a.expandEvents(st, accounts, now.Add(-reminderLookahead), now.Add(reminderHorizon+reminderLookahead))
+		if err != nil {
+			return nil, err
+		}
+		out = upcomingReminders(occs, calendarDefaultAlerts(a.ctx, st), now, reminderHorizon, scheduledReminderMax, a.t)
 	}
-	return upcomingReminders(occs, calendarDefaultAlerts(a.ctx, st), now, reminderHorizon, scheduledReminderMax, a.t), nil
+	if tasks {
+		list, err := a.taskDueReminders(st, accounts, now.Add(time.Second), now.Add(reminderHorizon))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, scheduledTaskReminders(list, a.t)...)
+	}
+	return nearestReminders(out, scheduledReminderMax), nil
 }
 
 // syncReminders 重新计算并登记。force 为假时内容没变就不打扰原生壳;

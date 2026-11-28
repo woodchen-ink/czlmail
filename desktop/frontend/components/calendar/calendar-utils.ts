@@ -40,7 +40,7 @@ export function coversDay(o: EventOccurrence, day: Date): boolean {
   return start < dayEnd && end > dayStart;
 }
 
-export type CalendarView = "month" | "week" | "day" | "agenda" | "tasks";
+export type CalendarView = "month" | "week" | "day" | "agenda";
 
 /** 拖放时携带的数据类型，避免与外部拖入的文件混淆。 */
 export const EVENT_DRAG_TYPE = "application/x-czlmail-event";

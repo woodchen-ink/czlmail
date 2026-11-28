@@ -1469,5 +1469,21 @@
   "网盘里的附加登录同步文件已损坏。重设同步口令后重新开始同步，其它设备需要输入新口令。": "Soubor synchronizace přihlášení ve vašich souborech je poškozený. Obnovením synchronizačního hesla začnete znovu; ostatní zařízení budou potřebovat nové heslo.",
   "重设": "Obnovit",
   "个人网盘还没同步完，请稍后再试。": "Osobní soubory se ještě nedosynchronizovaly. Zkuste to za chvíli.",
-  "个人网盘正在被其它设备更新，请稍后再试。": "Osobní soubory právě aktualizuje jiné zařízení. Zkuste to za chvíli."
+  "个人网盘正在被其它设备更新，请稍后再试。": "Osobní soubory právě aktualizuje jiné zařízení. Zkuste to za chvíli.",
+  "任务到期提醒": "Připomínky splatnosti úkolů",
+  "未完成的任务到截止时间时通知，全天任务在当天早上 9 点；任务自带提醒时按它的时间": "Upozornit, když nastane termín nedokončeného úkolu; celodenní úkoly v 9:00 toho dne. Úkoly s vlastní připomínkou se řídí jejím časem.",
+  "清单": "Seznam",
+  "全部清单": "Všechny seznamy",
+  "没有待办。": "Nic k vyřízení.",
+  "在设置 → 标签里打开「用旗标标记待办」后，打了旗标的邮件也会列在这里。": "Po zapnutí volby „Používat příznaky k zpracování“ v Nastavení → Štítky se zde zobrazí i e-maily s vlajkou.",
+  "已过期": "Po termínu",
+  "之后": "Nadcházející",
+  "没有日期": "Bez data",
+  "旗标邮件": "E-maily s vlajkou",
+  "(无标题任务)": "(Úkol bez názvu)",
+  "今天到期": "Termín dnes",
+  "{0} 到期": "Termín {0}",
+  "今天 {0} 到期": "Termín dnes v {0}",
+  "找不到这个任务，可能已被删除": "Úkol se nepodařilo najít. Možná byl smazán.",
+  "重复": "Opakuje se"
 }

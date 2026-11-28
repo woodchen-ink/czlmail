@@ -13,7 +13,7 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/notify"
 )
 
-// 日程提醒: 按事件的 alerts 在到点时弹系统通知。
+// 日程提醒: 按事件的 alerts 在到点时弹系统通知。任务的到期提醒在 task_reminders.go, 共用这里的轮询。
 //
 // 规则与 Bulwark 一致:
 //   - 事件 useDefaultAlerts 为真时用所属日历的默认提醒(全天与定时事件各一套)
@@ -66,7 +66,8 @@ func (a *App) runReminders(ctx context.Context) {
 
 // checkReminders 触发时刻落在 (now-reminderStale, now] 且尚未提醒过的全部提醒。
 func (a *App) checkReminders(state *reminderState, now time.Time) {
-	if !a.settingOn("notifyEvents", true) {
+	events, tasks := a.settingOn("notifyEvents", true), a.settingOn("notifyTasks", true)
+	if !events && !tasks {
 		return
 	}
 	st, err := a.currentStore()
@@ -77,11 +78,6 @@ func (a *App) checkReminders(state *reminderState, now time.Time) {
 	if len(accounts) == 0 {
 		return
 	}
-	occs, err := a.expandEvents(st, accounts, now.Add(-reminderLookahead), now.Add(reminderLookahead))
-	if err != nil {
-		return
-	}
-	defaults := calendarDefaultAlerts(a.ctx, st)
 
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -90,6 +86,17 @@ func (a *App) checkReminders(state *reminderState, now time.Time) {
 			delete(state.fired, key)
 		}
 	}
+	if tasks {
+		a.checkTaskReminders(st, accounts, state, now)
+	}
+	if !events {
+		return
+	}
+	occs, err := a.expandEvents(st, accounts, now.Add(-reminderLookahead), now.Add(reminderLookahead))
+	if err != nil {
+		return
+	}
+	defaults := calendarDefaultAlerts(a.ctx, st)
 
 	for _, o := range occs {
 		alerts := o.Alerts

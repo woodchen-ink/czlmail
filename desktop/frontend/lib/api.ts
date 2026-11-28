@@ -299,6 +299,8 @@ export const api = {
   importCalendarSource: guard(App.ImportCalendarSource),
   listScheduledSends: guard(App.ListScheduledSends),
   listTasks: guard(App.ListTasks),
+  listTodoEmails: guard(App.ListTodoEmails),
+  refreshTodoEmails: guard(App.RefreshTodoEmails),
   maxDelayedSend: guard(App.MaxDelayedSend),
   moveContacts: guard(App.MoveContacts),
   moveMailbox: guard(App.MoveMailbox),

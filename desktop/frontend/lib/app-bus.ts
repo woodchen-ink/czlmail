@@ -7,12 +7,14 @@
 
 import type { EmailDetail } from "@/lib/api";
 
-export type Module = "mail" | "calendar" | "contacts" | "files" | "notes" | "assistant" | "settings";
+export type Module = "mail" | "todo" | "calendar" | "contacts" | "files" | "notes" | "assistant" | "settings";
 
 export interface AppMessages {
   navigate: { module: Module };
   compose: { to: string; cc?: string; bcc?: string; subject?: string; body?: string };
   openEmail: { accountId: string; emailId: string };
+  /** 在待办模块里打开一个任务 (点了任务提醒)。 */
+  openTask: { accountId: string; id: string };
   /** 在邮件模块里显示一封本地解析的 .eml (本机文件或邮件里的 .eml 附件), name 是文件名。 */
   openFileEmail: { detail: EmailDetail; name: string };
   /** 打开一篇笔记(笔记模块可能还没挂载, 见 lib/notes/api 的 requestOpenNote)。 */
@@ -40,6 +42,20 @@ export function requestOpenEmail(detail: AppMessages["openEmail"]) {
 export function takePendingOpenEmail(): AppMessages["openEmail"] | null {
   const d = pendingOpenEmail;
   pendingOpenEmail = null;
+  return d;
+}
+
+// 同上: 点任务提醒时待办模块可能还没挂载。
+let pendingOpenTask: AppMessages["openTask"] | null = null;
+
+export function requestOpenTask(detail: AppMessages["openTask"]) {
+  pendingOpenTask = detail;
+  send("openTask", detail);
+}
+
+export function takePendingOpenTask(): AppMessages["openTask"] | null {
+  const d = pendingOpenTask;
+  pendingOpenTask = null;
   return d;
 }
 

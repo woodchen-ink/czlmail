@@ -11,6 +11,35 @@ type MailboxRef struct {
 	MailboxID string
 }
 
+// FlaggedInMailboxes 取这些文件夹里带 $flagged 的邮件 (待办里的旗标邮件), 按收件时间倒序, 最多 limit 封。
+func (s *Store) FlaggedInMailboxes(ctx context.Context, boxes []MailboxRef, limit int) ([]EmailSummary, error) {
+	if len(boxes) == 0 {
+		return nil, nil
+	}
+	conds := make([]string, len(boxes))
+	args := make([]any, 0, len(boxes)*2+1)
+	for i, b := range boxes {
+		conds[i] = "(m.account_id = ? AND m.mailbox_id = ?)"
+		args = append(args, b.AccountID, b.MailboxID)
+	}
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT `+summaryColumns+threadCountColumn+`
+		FROM emails e
+		WHERE EXISTS (SELECT 1 FROM email_keywords k
+		              WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$flagged')
+		  AND EXISTS (SELECT 1 FROM email_mailboxes m
+		              WHERE m.account_id = e.account_id AND m.email_id = e.id
+		                AND (`+strings.Join(conds, " OR ")+`))
+		ORDER BY e.received_at DESC, e.account_id, e.id
+		LIMIT ?`, args...)
+	if err != nil {
+		return nil, wrap(CodeQuery, "query flagged emails", err)
+	}
+	defer rows.Close()
+	return scanSummaries(rows)
+}
+
 // EmailsInMailboxes 跨账号列出若干文件夹里的邮件, 按收件时间倒序, 供统一视图使用。
 // 同一封邮件在多个文件夹里只出现一次; unreadOnly 只列未读。
 //

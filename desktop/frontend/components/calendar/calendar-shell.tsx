@@ -33,7 +33,6 @@ import {
 } from "@/components/calendar/event-dialog";
 import { MiniMonth } from "@/components/calendar/mini-month";
 import { MonthView } from "@/components/calendar/month-view";
-import { TasksView } from "@/components/calendar/tasks-view";
 import { TimeGrid } from "@/components/calendar/time-grid";
 import {
   ContextMenu,
@@ -144,7 +143,9 @@ export function CalendarShell({ active }: { active: boolean }) {
 
   useEffect(() => {
     setHidden(new Set(readJSON<string[]>(HIDDEN_KEY, [])));
-    setView(readJSON<CalendarView>(VIEW_KEY, "month"));
+    // 旧版的「任务」视图已挪到待办模块。
+    const saved = readJSON<string>(VIEW_KEY, "month");
+    setView(["month", "week", "day", "agenda"].includes(saved) ? (saved as CalendarView) : "month");
   }, []);
 
   const range = useMemo(() => {
@@ -161,8 +162,6 @@ export function CalendarShell({ active }: { active: boolean }) {
         return { from: cursor, to: addDays(cursor, 1) };
       case "agenda":
         return { from: cursor, to: addDays(cursor, 60) };
-      case "tasks":
-        return { from: cursor, to: addDays(cursor, 1) };
     }
   }, [view, cursor]);
 
@@ -310,8 +309,6 @@ export function CalendarShell({ active }: { active: boolean }) {
           return addDays(c, dir);
         case "agenda":
           return addDays(c, 30 * dir);
-        case "tasks":
-          return c;
       }
     });
   }
@@ -382,13 +379,11 @@ export function CalendarShell({ active }: { active: boolean }) {
   }
 
   const title =
-    view === "tasks"
-      ? t("任务")
-      : view === "month" || view === "agenda"
-        ? monthTitle(cursor)
-        : view === "week"
-          ? t("{0} 年 {1} – {2}", startOfWeek(cursor).getFullYear(), shortDate(startOfWeek(cursor)), shortDate(addDays(startOfWeek(cursor), 6)))
-          : dayTitle(cursor);
+    view === "month" || view === "agenda"
+      ? monthTitle(cursor)
+      : view === "week"
+        ? t("{0} 年 {1} – {2}", startOfWeek(cursor).getFullYear(), shortDate(startOfWeek(cursor)), shortDate(addDays(startOfWeek(cursor), 6)))
+        : dayTitle(cursor);
 
   const accountName = (id: string) =>
     accounts.find((a) => a.id === id)?.name ?? id;
@@ -509,7 +504,6 @@ export function CalendarShell({ active }: { active: boolean }) {
     { value: "week", label: t("周") },
     { value: "day", label: t("天") },
     { value: "agenda", label: t("议程") },
-    { value: "tasks", label: t("任务") },
   ];
 
   const importItems = importable.map((c) => (
@@ -539,19 +533,15 @@ export function CalendarShell({ active }: { active: boolean }) {
         <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" />
       )}
       <div className="ml-auto flex shrink-0 items-center">
-        {view !== "tasks" && (
-          <>
-            <Button variant="ghost" size="icon" className="size-8" aria-label={t("上一页")} onClick={() => step(-1)}>
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="size-8" aria-label={t("下一页")} onClick={() => step(1)}>
-              <ChevronRight className="size-4" />
-            </Button>
-            <Button variant="ghost" size="sm" className="px-2" onClick={() => setCursor(startOfDay(new Date()))}>
-              {t("今天")}
-            </Button>
-          </>
-        )}
+        <Button variant="ghost" size="icon" className="size-8" aria-label={t("上一页")} onClick={() => step(-1)}>
+          <ChevronLeft className="size-4" />
+        </Button>
+        <Button variant="ghost" size="icon" className="size-8" aria-label={t("下一页")} onClick={() => step(1)}>
+          <ChevronRight className="size-4" />
+        </Button>
+        <Button variant="ghost" size="sm" className="px-2" onClick={() => setCursor(startOfDay(new Date()))}>
+          {t("今天")}
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="ml-1 gap-0.5 px-2">
@@ -641,7 +631,7 @@ export function CalendarShell({ active }: { active: boolean }) {
 
       <div className="relative flex min-h-0 flex-1">
         {/* 窄屏没有侧栏里的「新建日程」, 浮在右下角; 建在选中的那天。 */}
-        {compact && view !== "tasks" && !target && (
+        {compact && !target && (
           <Button
             size="icon"
             className="absolute right-4 bottom-4 z-10 size-12 rounded-full shadow-lg"
@@ -712,9 +702,6 @@ export function CalendarShell({ active }: { active: boolean }) {
                 changeView("day");
               }}
             />
-          )}
-          {view === "tasks" && (
-            <TasksView calendars={calendars} hidden={hidden} active={active} />
           )}
           {view === "agenda" && (
             <AgendaView

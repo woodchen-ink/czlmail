@@ -66,7 +66,7 @@ public final class Notifications {
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-            .setCategory(actionId.startsWith("event:") ? NotificationCompat.CATEGORY_EVENT : NotificationCompat.CATEGORY_EMAIL)
+            .setCategory(category(actionId))
             .setAutoCancel(true)
             .setGroup(GROUP_MAIL)
             .setContentIntent(openIntent(ctx, id, actionId));
@@ -75,6 +75,13 @@ public final class Notifications {
         } catch (SecurityException ignored) {
             // Android 13+ 未授予 POST_NOTIFICATIONS
         }
+    }
+
+    /** 日程提醒归「日程」, 任务到期提醒归「提醒」, 其余是新邮件。 */
+    private static String category(String actionId) {
+        if (actionId.startsWith("event:")) return NotificationCompat.CATEGORY_EVENT;
+        if (actionId.startsWith("task:")) return NotificationCompat.CATEGORY_REMINDER;
+        return NotificationCompat.CATEGORY_EMAIL;
     }
 
     /** 后台同步服务的常驻通知, 点开回到程序。 */

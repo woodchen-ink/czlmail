@@ -36,6 +36,18 @@ func (a *App) initNotifier() {
 			a.emit(EventOpenEvent, ref)
 			return
 		}
+		// 任务提醒同邮件走打开请求队列: 手机上点提醒常是冷启动, 直接发事件时界面还没加载, 会丢。
+		if ref, ok := strings.CutPrefix(actionID, "task:"); ok {
+			acc, id, found := strings.Cut(ref, "/")
+			if !found || acc == "" || id == "" {
+				return
+			}
+			a.opens.mu.Lock()
+			a.opens.pending = append(a.opens.pending, OpenRequest{Kind: "task", AccountID: acc, ID: id})
+			a.opens.mu.Unlock()
+			a.emit(EventOpenRequest)
+			return
+		}
 		// 邮件走与 czlmail:// 链接相同的打开队列: 移动端点通知常是冷启动, 这时界面还没加载,
 		// 直接发事件没人收, 会停在默认的收件箱; 队列里的请求由界面加载完后自己来取。
 		acc, id, ok := a.mailActionTarget(actionID)

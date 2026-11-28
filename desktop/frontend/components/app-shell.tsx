@@ -4,7 +4,7 @@ import { t } from "@/lib/i18n";
 import { useI18n } from "@/components/locale-provider";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, CalendarDays, FolderOpen, Mail, NotebookPen, Settings, UsersRound } from "lucide-react";
+import { Bot, CalendarDays, Ellipsis, FolderOpen, ListTodo, Mail, NotebookPen, Settings, UsersRound } from "lucide-react";
 import { NotesShell } from "@/components/notes/notes-shell";
 import { flushNotes, noteApi, noteEvents, type NoteConfig } from "@/lib/notes/api";
 
@@ -15,6 +15,13 @@ import { FilesShell } from "@/components/files/files-shell";
 import { Integration } from "@/components/integration";
 import { MailShell } from "@/components/mail-shell";
 import { SettingsShell } from "@/components/settings/settings-shell";
+import { TodoShell } from "@/components/todo/todo-shell";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UnreadBadge } from "@/components/unread-badge";
 import { useCompact } from "@/lib/use-compact";
@@ -36,6 +43,7 @@ const MODULE_FEATURE: Partial<Record<Module, Feature>> = { calendar: "calendars"
 
 const getNav: () => ({ id: Module; label: string; icon: typeof Mail; shortcut: string }[]) = () => ([
   { id: "mail", label: t("邮件"), icon: Mail, shortcut: `${MOD}1` },
+  { id: "todo", label: t("待办"), icon: ListTodo, shortcut: `${MOD}7` },
   { id: "calendar", label: t("日历"), icon: CalendarDays, shortcut: `${MOD}2` },
   { id: "contacts", label: t("通讯录"), icon: UsersRound, shortcut: `${MOD}3` },
   { id: "files", label: t("文件"), icon: FolderOpen, shortcut: `${MOD}4` },
@@ -162,7 +170,7 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
         return;
       }
       // Shortcuts are explicit: moving AI to the bottom or hiding notes never renumbers them.
-      const shortcuts: Record<string, Module> = { "1": "mail", "2": "calendar", "3": "contacts", "4": "files", "5": "assistant", "6": "notes" };
+      const shortcuts: Record<string, Module> = { "1": "mail", "2": "calendar", "3": "contacts", "4": "files", "5": "assistant", "6": "notes", "7": "todo" };
       const target = shortcuts[e.key];
       if (target && (target !== "notes" || notesGate.current)) {
         e.preventDefault(); void go(target);
@@ -210,6 +218,11 @@ export function AppShell({ onSignedOut }: { onSignedOut: () => void }) {
         <Pane show={module === "mail"}>
           <MailShell active={module === "mail"} onSignedOut={onSignedOut} />
         </Pane>
+        {visited.has("todo") && (
+          <Pane show={module === "todo"}>
+            <TodoShell active={module === "todo"} />
+          </Pane>
+        )}
         {visited.has("calendar") && (
           <Pane show={module === "calendar"}>
             <CalendarShell active={module === "calendar"} />
@@ -306,8 +319,14 @@ function RailButton({
   );
 }
 
+/** 窄屏底部固定显示的模块 (按这个顺序取前 4 个可用的), 其余收进「更多」。 */
+const BOTTOM_PRIMARY: Module[] = ["mail", "todo", "calendar", "notes", "contacts", "files"];
+const BOTTOM_SLOTS = 4;
+
 /**
  * 窄屏的底部模块栏, 替代左侧竖栏; 底部留出 Home 指示条的安全区。
+ * 固定 4 个常用模块 (邮件、待办、日历、笔记; 没开笔记时由通讯录补上), 其余与设置收进「更多」菜单:
+ * 通讯录、文件多半从邮件里跳过去 (点发件人、打开附件), 不必占底部的位置。
  * 不放 AI 助手: 它管的是 MCP, 要本机 AI 客户端连进来, 手机上没有意义。
  */
 function BottomNav({
@@ -324,41 +343,66 @@ function BottomNav({
   onSelect: (m: Module) => void;
 }) {
   useI18n();
-  const all: { id: Module; label: string; icon: typeof Mail; count?: number; dot?: boolean }[] = [
-    ...items.map((i) => ({ ...i, count: i.id === "mail" ? unread : 0 })),
+  const primaryIds = BOTTOM_PRIMARY.filter((id) => items.some((i) => i.id === id)).slice(0, BOTTOM_SLOTS);
+  const primary = primaryIds.map((id) => items.find((i) => i.id === id)!);
+  const more: { id: Module; label: string; icon: typeof Mail; dot?: boolean }[] = [
+    ...items.filter((i) => !primaryIds.includes(i.id)),
     { id: "settings", label: t("设置"), icon: Settings, dot: updateBadge },
   ];
+  const moreActive = more.some((i) => i.id === module);
+  const slot = "text-muted-foreground relative flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[11px]";
   return (
     <nav
       className="border-border bg-sidebar flex shrink-0 border-t pb-[env(safe-area-inset-bottom)]"
       aria-label={t("模块")}
     >
-      {all.map((item) => {
+      {primary.map((item) => {
         const Icon = item.icon;
         const active = module === item.id;
+        const count = item.id === "mail" ? unread : 0;
         return (
           <button
             key={item.id}
             type="button"
             onClick={() => onSelect(item.id)}
             aria-current={active ? "page" : undefined}
-            className={cn(
-              "text-muted-foreground relative flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[11px]",
-              active && "text-foreground",
-            )}
+            className={cn(slot, active && "text-foreground")}
           >
             <span className="relative">
               <Icon className="size-5" />
-              {item.count ? (
-                <UnreadBadge count={item.count} className="ring-sidebar absolute -top-1.5 -right-3 ring-2" />
-              ) : item.dot ? (
-                <span className="bg-destructive ring-sidebar absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2" />
-              ) : null}
+              {count > 0 && <UnreadBadge count={count} className="ring-sidebar absolute -top-1.5 -right-3 ring-2" />}
             </span>
             <span className="max-w-full truncate px-0.5">{item.label}</span>
           </button>
         );
       })}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" aria-current={moreActive ? "page" : undefined} className={cn(slot, moreActive && "text-foreground")}>
+            <span className="relative">
+              <Ellipsis className="size-5" />
+              {updateBadge && <span className="bg-destructive ring-sidebar absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2" />}
+            </span>
+            <span className="max-w-full truncate px-0.5">{t("更多")}</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="end" sideOffset={6} className="min-w-44">
+          {more.map((item) => {
+            const Icon = item.icon;
+            return (
+              <DropdownMenuItem
+                key={item.id}
+                onSelect={() => onSelect(item.id)}
+                className={cn("gap-3 py-2.5", module === item.id && "bg-muted")}
+              >
+                <Icon className="size-4" />
+                <span className="flex-1">{item.label}</span>
+                {item.dot && <span className="bg-destructive size-2 rounded-full" />}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </nav>
   );
 }

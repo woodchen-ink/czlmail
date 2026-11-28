@@ -77,7 +77,7 @@ func (a *App) refreshHandlers() {
 
 // OpenRequest 是一个外部打开请求。
 type OpenRequest struct {
-	// Kind: compose / ics / eml / email / thread
+	// Kind: compose / ics / eml / email / thread / task
 	Kind    string `json:"kind"`
 	To      string `json:"to"`
 	CC      string `json:"cc"`
@@ -86,7 +86,7 @@ type OpenRequest struct {
 	Body    string `json:"body"`
 	// Path 是本地 .ics / .eml 文件, 或 webcal 订阅地址(已转换为 https)。
 	Path string `json:"path"`
-	// AccountID 与 ID 是 czlmail:// 链接指向的邮件或会话。
+	// AccountID 与 ID 是 czlmail:// 链接指向的邮件或会话, 或点了提醒的任务。
 	AccountID string `json:"accountId"`
 	ID        string `json:"id"`
 }

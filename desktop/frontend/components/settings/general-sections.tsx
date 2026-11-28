@@ -92,6 +92,10 @@ export function NotificationsSection({ active }: { active: boolean }) {
         <Row title={t("日程提醒")} desc={t("按日程上设置的提醒时间通知；在服务器上设置的提醒与其它设备一致")}>
           <Switch checked={!!settings?.notifyEvents} disabled={!settings} onCheckedChange={(on) => save({ notifyEvents: on })} />
         </Row>
+        <Divider />
+        <Row title={t("任务到期提醒")} desc={t("未完成的任务到截止时间时通知，全天任务在当天早上 9 点；任务自带提醒时按它的时间")}>
+          <Switch checked={!!settings?.notifyTasks} disabled={!settings} onCheckedChange={(on) => save({ notifyTasks: on })} />
+        </Row>
       </Card>
 
       {accounts.length > 1 && (

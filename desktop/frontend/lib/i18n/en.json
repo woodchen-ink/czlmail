@@ -1469,5 +1469,21 @@
   "网盘里的附加登录同步文件已损坏。重设同步口令后重新开始同步，其它设备需要输入新口令。": "The sign-in sync file in your files is damaged. Reset the sync passphrase to start over; your other devices will need the new passphrase.",
   "重设": "Reset",
   "个人网盘还没同步完，请稍后再试。": "Your personal files have not finished syncing yet. Try again in a moment.",
-  "个人网盘正在被其它设备更新，请稍后再试。": "Your personal files are being updated by another device. Try again in a moment."
+  "个人网盘正在被其它设备更新，请稍后再试。": "Your personal files are being updated by another device. Try again in a moment.",
+  "任务到期提醒": "Task due reminders",
+  "未完成的任务到截止时间时通知，全天任务在当天早上 9 点；任务自带提醒时按它的时间": "Notify when an open task is due; all-day tasks at 9 AM that day. Tasks with their own reminders use those times.",
+  "清单": "List",
+  "全部清单": "All lists",
+  "没有待办。": "Nothing to do.",
+  "在设置 → 标签里打开「用旗标标记待办」后，打了旗标的邮件也会列在这里。": "Turn on “Use follow-up flags” in Settings → Labels to list flagged emails here too.",
+  "已过期": "Overdue",
+  "之后": "Upcoming",
+  "没有日期": "No date",
+  "旗标邮件": "Flagged emails",
+  "(无标题任务)": "(Untitled task)",
+  "今天到期": "Due today",
+  "{0} 到期": "Due {0}",
+  "今天 {0} 到期": "Due today at {0}",
+  "找不到这个任务，可能已被删除": "This task could not be found. It may have been deleted.",
+  "重复": "Repeats"
 }

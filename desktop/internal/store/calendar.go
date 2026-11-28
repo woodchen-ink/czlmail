@@ -161,6 +161,12 @@ func (s *Store) AllEventObjects(ctx context.Context) ([]RawObject, error) {
 	return s.rawObjects(ctx, `SELECT account_id, id, raw_json FROM calendar_events`)
 }
 
+// DueObjects 读带截止时间的日历对象原文 (任务到期提醒用)。按原文粗筛, 调用方仍要解析后判断是不是任务:
+// 每 30 秒一次的提醒检查不能把全部日程都解析一遍。
+func (s *Store) DueObjects(ctx context.Context) ([]RawObject, error) {
+	return s.rawObjects(ctx, `SELECT account_id, id, raw_json FROM calendar_events WHERE raw_json LIKE '%"due"%'`)
+}
+
 // SearchEvents 按标题、地点、描述检索事件原文。
 func (s *Store) SearchEvents(ctx context.Context, query string, limit int) ([]RawObject, error) {
 	like := "%" + escapeLike(strings.ToLower(query)) + "%"

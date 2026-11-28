@@ -157,6 +157,8 @@ type TaskItem struct {
 	Completed bool   `json:"completed"`
 	Priority  int    `json:"priority"`
 	Updated   string `json:"updated"`
+	// Recurring 表示任务按规则重复; Due 是今天起的下一次截止 (都过了时是最后一次), 不是第一次。
+	Recurring bool `json:"recurring"`
 }
 
 // ListTasks 列出全部账号的任务。
@@ -178,7 +180,9 @@ func (a *App) ListTasks() ([]TaskItem, error) {
 		t := TaskItem{
 			AccountID: r.AccountID, ID: e.ID, Title: e.Title, Description: e.Description,
 			Priority: e.Priority, Updated: e.Updated, DueAllDay: e.ShowWithoutTime,
-			Completed: e.Progress != nil && *e.Progress == "completed",
+			// 取消了的任务与完成的一样不再待办 (也不提醒, 见 task_reminders.go)。
+			Completed: e.Done(),
+			Recurring: e.IsRecurring(),
 		}
 		if ids := e.CalendarIDList(); len(ids) > 0 {
 			t.CalendarID = ids[0]
@@ -186,6 +190,13 @@ func (a *App) ListTasks() ([]TaskItem, error) {
 		if e.Due != nil && *e.Due != "" {
 			if due, err := pim.ParseLocalIn(*e.Due, e.Loc()); err == nil {
 				t.Due = due.In(time.Local).Format(pim.LocalDateTime)
+			}
+			// 重复的任务显示下一次截止, 否则第一次一过就永远停在「已过期」。
+			if t.Recurring {
+				today := startOfLocalDay(time.Now())
+				if next, err := e.DueTimes(today, today.AddDate(1, 0, 0)); err == nil && len(next) > 0 {
+					t.Due = next[0].In(time.Local).Format(pim.LocalDateTime)
+				}
 			}
 		}
 		out = append(out, t)

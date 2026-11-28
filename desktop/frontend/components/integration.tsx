@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Switch } from "@/components/ui/switch";
 import { Events, api, errorMessage, onEvent, type Calendar, type IntegrationStatus, type OpenRequest } from "@/lib/api";
 import { supports } from "@/lib/account-features";
-import { requestOpenEmail, requestOpenFileEmail, send } from "@/lib/app-bus";
+import { requestOpenEmail, requestOpenFileEmail, requestOpenTask, send } from "@/lib/app-bus";
 import { onFileDrop } from "@/lib/file-drop";
 
 const ONBOARD_KEY = "czlmail.onboarded.integration";
@@ -62,6 +62,10 @@ export function Integration() {
           }
           send("navigate", { module: "mail" });
           requestOpenEmail({ accountId: r.accountId, emailId });
+        } else if (r.kind === "task" && r.accountId && r.id) {
+          // 点了任务提醒: 待办模块可能还没挂载, 请求先排队。
+          requestOpenTask({ accountId: r.accountId, id: r.id });
+          send("navigate", { module: "todo" });
         }
       }
     } catch {
