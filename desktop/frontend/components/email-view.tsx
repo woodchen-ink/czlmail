@@ -5,7 +5,7 @@ import { useI18n } from "@/components/locale-provider";
 import { MobileNavButton } from "@/components/pane-layout";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Languages, Loader2, ShieldCheck, Sparkles, Undo2 } from "lucide-react";
+import { ChevronDown, Languages, Loader2, ShieldCheck, Sparkles, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -46,6 +46,35 @@ import { htmlToText } from "@/lib/html";
 import { displayAddress, fullDate } from "@/lib/format";
 import { defaultTranslateLang } from "@/lib/ai-lang";
 
+/** 正文的译文视图; html/text 是替换了文字之后的正文, 排版与样式保持原样。 */
+interface TranslationView {
+  subject: string;
+  /** 带 data-czl-tr 标记的正文；译文经 postMessage 打进 iframe，这个字符串整轮翻译里都不变。 */
+  html: string;
+  text: string;
+  /** 已翻译的片段，全量。 */
+  translated: [number, string][];
+  running: boolean;
+  done: number;
+  total: number;
+}
+
+/**
+ * 最近显示着译文的邮件 (账号/邮件 id → 译文, 还在翻译的记 "running")。只在内存里:
+ * 部分段落没译成的结果不落缓存, 换个位置重新挂载 (点回复后原邮件移到左侧) 也要原样接着显示。
+ */
+const shownTranslations = new Map<string, TranslationView | "running">();
+const SHOWN_TRANSLATIONS_MAX = 50;
+
+function rememberTranslation(key: string, view: TranslationView | null) {
+  shownTranslations.delete(key);
+  if (!view) return;
+  shownTranslations.set(key, view.running ? "running" : view);
+  if (shownTranslations.size > SHOWN_TRANSLATIONS_MAX) {
+    shownTranslations.delete(shownTranslations.keys().next().value!);
+  }
+}
+
 interface Props {
   accountId: string;
   emailId: string;
@@ -67,6 +96,11 @@ interface Props {
   onMarkRead: (id: string) => void;
   /** 邮件模块是否在前台; 切走时只是隐藏, 正文缩放快捷键要跟着停。 */
   active: boolean;
+  /**
+   * 写回复时对照用的原邮件 (盖在侧栏与列表上): 工具条换成一行标题与关闭按钮,
+   * 回复、删除、移动这类操作不在这里做, 翻译、总结、附件照常可用。
+   */
+  reference?: { onClose: () => void };
 }
 
 export function EmailView({
@@ -84,6 +118,7 @@ export function EmailView({
   onOpenEmail,
   onMarkRead,
   active,
+  reference,
 }: Props) {
   useI18n();
   const [email, setEmail] = useState<EmailDetail | null>(null);
@@ -92,25 +127,22 @@ export function EmailView({
   const [senderTrusted, setSenderTrusted] = useState(false);
   const [ai, setAI] = useState<AIConfig | null>(null);
   // 译文替换正文显示; null 表示显示原文。
-  // html/text 是替换了文字之后的正文, 排版与样式保持原样。
-  const [translation, setTranslation] = useState<null | {
-    subject: string;
-    /** 带 data-czl-tr 标记的正文；译文经 postMessage 打进 iframe，这个字符串整轮翻译里都不变。 */
-    html: string;
-    text: string;
-    /** 已翻译的片段，全量。 */
-    translated: [number, string][];
-    running: boolean;
-    done: number;
-    total: number;
-  }>(null);
+  // 同一封邮件刚才在别处显示着译文 (阅读栏 → 写回复时的原邮件面板) 就接着显示, 不重新翻译。
+  const shownKey = `${accountId}/${emailId}`;
+  const [handedOver] = useState(() => shownTranslations.get(shownKey));
+  const [translation, setTranslation] = useState<TranslationView | null>(
+    handedOver && handedOver !== "running" ? handedOver : null,
+  );
+  useEffect(() => {
+    rememberTranslation(shownKey, translation);
+  }, [shownKey, translation]);
   const translateAbort = useRef<AbortController | null>(null);
   // AI 总结: 流式追加, 不落库 —— 关掉再点就是重新生成。
   const [summary, setSummary] = useState<null | { text: string; running: boolean }>(null);
   const summaryAbort = useRef<AbortController | null>(null);
   const [hasCachedTranslation, setHasCachedTranslation] = useState(false);
   // 译过的邮件打开时自动显示译文, 每次挂载只触发一次(点了「显示原文」后不再自动切回)。
-  const autoTranslated = useRef(false);
+  const autoTranslated = useRef(!!handedOver && handedOver !== "running");
 
   useEffect(() => {
     if (!ai?.enabled) return;
@@ -121,13 +153,14 @@ export function EmailView({
   }, [accountId, emailId, ai]);
 
   useEffect(() => {
-    if (!hasCachedTranslation || !email?.bodyFetched || !ai?.hasKey || !ai.model) return;
+    // 交过来时还在翻译 (上一处翻到一半就卸载了, 请求随之取消): 在这里重新翻一遍。
+    if (!(hasCachedTranslation || handedOver === "running") || !email?.bodyFetched || !ai?.hasKey || !ai.model) return;
     if (autoTranslated.current) return;
     autoTranslated.current = true;
     translate();
     // translate 每次渲染都是新函数, 这里只关心缓存与正文就绪的时机。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasCachedTranslation, email?.bodyFetched, ai]);
+  }, [hasCachedTranslation, handedOver, email?.bodyFetched, ai]);
 
   const [own, setOwn] = useState<Set<string>>(new Set());
   // 详情面板每封邮件默认收起：记下展开的是哪一封，换邮件自然就收起了。
@@ -450,15 +483,19 @@ export function EmailView({
 
   return (
     <div className="flex h-full flex-col">
-      <EmailToolbar
-        email={email}
-        mailboxes={mailboxes}
-        currentKind={currentKind}
-        labels={labels}
-        focusMode={focusMode}
-        bodyAlwaysLight={bodyAlwaysLight}
-        actions={actions(email)}
-      />
+      {reference ? (
+        <ReferenceHeader onClose={reference.onClose} />
+      ) : (
+        <EmailToolbar
+          email={email}
+          mailboxes={mailboxes}
+          currentKind={currentKind}
+          labels={labels}
+          focusMode={focusMode}
+          bodyAlwaysLight={bodyAlwaysLight}
+          actions={actions(email)}
+        />
+      )}
 
       <ScrollArea className={bodyWide ? "min-h-0 flex-1 overflow-x-auto" : "min-h-0 flex-1"}>
         <div data-selectable className="mx-auto flex max-w-4xl flex-col gap-4 p-5">
@@ -682,6 +719,19 @@ export function EmailView({
         </div>
       </ScrollArea>
     </div>
+  );
+}
+
+/** 对照原邮件的标题行, 高度与写信面板的标题行一致, 两边的分隔线对齐。 */
+function ReferenceHeader({ onClose }: { onClose: () => void }) {
+  useI18n();
+  return (
+    <header className="border-border flex shrink-0 items-center gap-2 border-b px-3 py-2">
+      <h2 className="flex-1 text-base font-semibold">{t("原邮件")}</h2>
+      <Button variant="ghost" size="icon" className="size-8" aria-label={t("隐藏原邮件")} title={t("隐藏原邮件")} onClick={onClose}>
+        <X className="size-4" />
+      </Button>
+    </header>
   );
 }
 

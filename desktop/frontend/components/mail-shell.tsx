@@ -215,6 +215,16 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     commitDraft(d);
     return true;
   }, [commitDraft]);
+  // 写回复、转发时盖在侧栏与列表上对照的原邮件。从草稿箱续编的回复要按 In-Reply-To 找, 找到后记在这里 (按草稿对象区分)。
+  const [foundSource, setFoundSource] = useState<{ draft: ComposeDraft; ref: EmailRef } | null>(null);
+  const draftSource = draft
+    ? (draft.replyTo ?? draft.forwardOf ?? (foundSource?.draft === draft ? foundSource.ref : undefined))
+    : undefined;
+  const [sourceOpen, setSourceOpen] = useState(readSourcePanel);
+  const toggleSource = useCallback((open: boolean) => {
+    setSourceOpen(open);
+    writeSourcePanel(open);
+  }, []);
   const [focusMode, setFocusMode] = useState(false);
   // 窄屏下显示哪一栏。选中的邮件一变 (点了列表、通知或链接打开、删除后跳到下一封) 就进正文;
   // 返回列表时保留选中, 回来还能看到刚才那一行。用渲染期比较而不是 effect, 避免先闪一帧列表。
@@ -1043,8 +1053,12 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       try {
         let email = await api.getEmail(acc, id);
         if (!email.bodyFetched && current()) email = await api.fetchBody(acc, id);
-        if (!current() || !email.bodyFetched || !(await setDraft(draftFromEmail(email, acc)))) return;
+        const d = draftFromEmail(email, acc);
+        if (!current() || !email.bodyFetched || !(await setDraft(d))) return;
         setSelectedKey(key);
+        findOriginal(email)
+          .then((ref) => ref && setFoundSource({ draft: d, ref }))
+          .catch(() => {});
       } catch (err) {
         toast.error(errorMessage(err));
       }
@@ -1497,6 +1511,27 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       <PaneLayout
         id="mail"
         collapsed={focusMode}
+        overlay={
+          draftSource && sourceOpen && !compact ? (
+            <EmailView
+              key={`${draftSource.accountId}/${draftSource.emailId}`}
+              accountId={draftSource.accountId}
+              emailId={draftSource.emailId}
+              mailboxes={mailboxesByAccount[draftSource.accountId] ?? []}
+              currentKind={currentKind}
+              labels={labelsByAccount[draftSource.accountId] ?? []}
+              focusMode={false}
+              bodyMode={bodyMode}
+              bodyAlwaysLight={bodyAppearance === "light"}
+              actions={actionsFor}
+              onLoaded={() => {}}
+              revision={revision}
+              onMarkRead={(id) => markReadIds([emailKey({ accountId: draftSource.accountId, id })], true, false)}
+              active={active}
+              reference={{ onClose: () => toggleSource(false) }}
+            />
+          ) : undefined
+        }
         mobilePane={mobilePane}
         ownMobileNav
         onMobilePaneChange={async (p) => {
@@ -1775,6 +1810,11 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 accountId={draft.accountId ?? composeAccount}
                 draft={draft}
                 leaveRef={leaveDraft}
+                sourcePanel={
+                  draftSource && !compact && !focusMode
+                    ? { open: sourceOpen, onToggle: () => toggleSource(!sourceOpen) }
+                    : undefined
+                }
                 onClose={() => {
                   if (openDraft.current !== draft) return;
                   ++intent.current;
@@ -1928,6 +1968,7 @@ function forwardDraft(email: EmailDetail, accountId: string): ComposeDraft {
       .filter((a) => !a.inline)
       .map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, size: a.size })),
     fromCandidates: fromCandidatesOf(email),
+    forwardOf: { accountId, emailId: email.id },
     accountId,
   };
 }
@@ -1942,6 +1983,7 @@ function forwardAsAttachmentDraft(email: EmailDetail, accountId: string): Compos
     html: "",
     attachments: [{ blobId: email.blobId, type: "message/rfc822", name: `${email.subject || "email"}.eml`, size: email.size }],
     fromCandidates: fromCandidatesOf(email),
+    forwardOf: { accountId, emailId: email.id },
   };
 }
 
@@ -1970,6 +2012,44 @@ async function findReplyDraft(email: EmailDetail, boxes: Mailbox[]): Promise<Ema
     return d;
   }
   return null;
+}
+
+/**
+ * 续编的回复草稿对应的原邮件: 同一会话里 Message-ID 等于草稿 In-Reply-To 的那封, 从新到旧找。
+ * 会话一般只有几封, 逐封读本地缓存。没有返回 null。
+ */
+async function findOriginal(draft: EmailDetail): Promise<EmailRef | null> {
+  const target = normalizeMessageId(draft.inReplyTo);
+  if (!target || !draft.threadId) return null;
+  const members = ((await api.threadEmails(draft.accountId, draft.id)) ?? [])
+    .filter((m) => !m.isDraft)
+    .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+  for (const m of members) {
+    const d = await api.getEmail(m.accountId, m.id);
+    if (normalizeMessageId(d.messageId) === target) return { accountId: m.accountId, emailId: m.id };
+  }
+  return null;
+}
+
+type EmailRef = { accountId: string; emailId: string };
+
+// 对照原邮件开着还是关着, 只记本机 (跟着这台机器的屏幕宽度走)。默认开。
+const SOURCE_PANEL_KEY = "czlmail.compose.sourcePanel";
+
+function readSourcePanel(): boolean {
+  try {
+    return localStorage.getItem(SOURCE_PANEL_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function writeSourcePanel(open: boolean) {
+  try {
+    localStorage.setItem(SOURCE_PANEL_KEY, open ? "1" : "0");
+  } catch {
+    // 隐私窗口等环境下写不进去, 只是不记忆。
+  }
 }
 
 /** 打开已有草稿继续编辑。 */

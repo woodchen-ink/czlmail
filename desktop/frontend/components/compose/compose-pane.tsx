@@ -12,6 +12,8 @@ import {
   FileText,
   Loader2,
   MailCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
   Paperclip,
   Send,
   ShieldCheck,
@@ -86,6 +88,8 @@ export interface ComposeDraft {
   draftId?: string;
   /** 回复的原邮件, 供 AI 起草回复使用。 */
   replyTo?: { accountId: string; emailId: string };
+  /** 转发的原邮件; 与 replyTo 一起决定写信时盖在侧栏与列表上对照的那封。 */
+  forwardOf?: { accountId: string; emailId: string };
   /**
    * 优先用作发件身份的地址, 按顺序匹配。回复/转发是原邮件寄到的地址(对方写给 support@a 就用 support@a 回),
    * 续编草稿是草稿的发件人; 都匹配不上时按默认身份。
@@ -118,6 +122,8 @@ interface Props {
   onClose: () => void;
   onSent: () => void;
   leaveRef: { current: (() => Promise<boolean>) | null };
+  /** 对照原邮件的开关; 没有原邮件或布局放不下 (窄屏、专注阅读) 时不传, 不显示按钮。 */
+  sourcePanel?: { open: boolean; onToggle: () => void };
 }
 
 const AUTOSAVE_MS = 4000;
@@ -132,7 +138,7 @@ const LANGUAGES = ["简体中文", "English", "Čeština", "日本語", "한국�
  * 签名与引用不放进编辑器: 切换发件身份时签名要整体替换, 放在编辑器里就得在用户改过的 HTML 里
  * 找旧签名; 分开放, 发送时再按「正文 + 分隔线 + 签名 + 引用」拼起来。
  */
-export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Props) {
+export function ComposePane({ accountId, draft, onClose, onSent, leaveRef, sourcePanel }: Props) {
   useI18n();
   // 发件人下拉: 写信账号的身份在前, 有别的登录时再列它们个人账号的身份 (#15)。
   const [groups, setGroups] = useState<ComposeIdentityGroup[]>([]);
@@ -648,7 +654,20 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef }: Pro
         <Button variant="ghost" size="icon" className="size-8" aria-label={t("关闭")} onClick={close}>
           <X className="size-4" />
         </Button>
-        <h2 className="text-base font-semibold">{draft.replyTo ? t("回复") : t("新邮件")}</h2>
+        <h2 className="flex-1 text-base font-semibold">{draft.replyTo ? t("回复") : t("新邮件")}</h2>
+        {sourcePanel && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground h-8"
+            aria-pressed={sourcePanel.open}
+            title={sourcePanel.open ? t("隐藏原邮件") : t("在左侧显示原邮件")}
+            onClick={sourcePanel.onToggle}
+          >
+            {sourcePanel.open ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+            {t("原邮件")}
+          </Button>
+        )}
       </header>
 
       <div className="border-border flex shrink-0 flex-col border-b text-sm">
