@@ -65,6 +65,7 @@ import {
   type UploadedAttachment,
 } from "@/lib/api";
 import { fileSize } from "@/lib/format";
+import { isSendShortcut, sendShortcutText } from "@/lib/shortcuts";
 import { htmlToText, isHtmlEmpty, sanitizeInline, textToHtml } from "@/lib/html";
 import { allowDraftLeave, hasDraftContent } from "@/lib/draft-transition";
 import { onFileDrop } from "@/lib/file-drop";
@@ -534,6 +535,12 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef, sourc
     checks(() => send(date.toISOString()));
   }
 
+  // 快捷键发送延后一拍执行, 要取到那时最新的状态, 所以经 ref 调。
+  const sendNow = useRef(() => {});
+  useLayoutEffect(() => {
+    sendNow.current = () => checks(() => send());
+  });
+
   async function runAITask(title: string, req: main.AIRequest) {
     aiAbort.current?.abort();
     const ctl = new AbortController();
@@ -647,6 +654,13 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef, sourc
         if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
       }}
       onDrop={() => setDragging(false)}
+      onKeyDown={(e) => {
+        // 只认面板里的按键: 弹窗经 portal 渲染, React 事件也会冒泡到这里。
+        if (!isSendShortcut(e.nativeEvent) || !rootRef.current?.contains(e.target as Node)) return;
+        e.preventDefault();
+        // 收件人框会在同一次 Enter 里确认还没敲完的地址, 等它的状态更新后再取最新的 checks / send。
+        setTimeout(() => sendNow.current());
+      }}
     >
       {dragging && (
         <div className="border-accent bg-card/90 text-accent pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-md border-2 border-dashed text-sm font-medium">
@@ -888,9 +902,19 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef, sourc
         <Button variant="ghost" size="sm" onClick={discard} disabled={sending}>
           {t("丢弃")}</Button>
         <div className="flex">
-          <Button className="rounded-r-none" onClick={() => checks(() => send())} disabled={sending || uploading}>
-            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            {t("发送")}</Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                className={cn(maxDelay > 0 && "rounded-r-none")}
+                onClick={() => checks(() => send())}
+                disabled={sending || uploading}
+                aria-keyshortcuts="Control+Shift+Enter Meta+Shift+Enter"
+              >
+                {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                {t("发送")}</Button>
+            </TooltipTrigger>
+            <TooltipContent>{`${t("发送")} (${sendShortcutText()})`}</TooltipContent>
+          </Tooltip>
           {maxDelay > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

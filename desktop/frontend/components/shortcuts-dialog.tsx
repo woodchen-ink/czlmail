@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { send } from "@/lib/app-bus";
 import { isNative } from "@/lib/native-bridge";
-import { SHORTCUT_ACTIONS, formatKeys, shortcutLabel, useShortcuts } from "@/lib/shortcuts";
+import { SHORTCUT_ACTIONS, formatKeys, sendShortcutText, shortcutLabel, useShortcuts } from "@/lib/shortcuts";
 
 /** 键位来自 lib/shortcuts (mail-shell 按同一张表处理按键); Esc 是固定的。 */
 export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -22,6 +22,7 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
   const rows = [
     ...SHORTCUT_ACTIONS.map((action) => ({ id: action, keys: formatKeys(keys[action]), action: shortcutLabel(action) })),
     { id: "escape", keys: "Esc", action: t("退出全屏阅读 / 关闭对话框") },
+    { id: "send", keys: sendShortcutText(), action: t("写邮件时发送") },
     { id: "toolbar", keys: "Alt+F10", action: t("写邮件时跳到格式工具条") },
   ];
   return (

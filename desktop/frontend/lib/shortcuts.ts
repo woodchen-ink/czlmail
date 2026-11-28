@@ -167,6 +167,21 @@ export function formatKeys(keys: readonly string[]): string {
   return keys.map(formatKey).join(" / ");
 }
 
+/**
+ * 写信面板的「发送」: Ctrl+Shift+Enter (macOS 上 ⌘+Shift+Enter), 两种修饰键在各平台都认。
+ * 不用 Ctrl+Enter: 有人习惯用它换行, 误触会直接把信发出去。固定不可改, 不进 SHORTCUT_ACTIONS
+ * (那张表是邮件列表的动作, 输入框里不处理)。
+ */
+export function isSendShortcut(e: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "isComposing">): boolean {
+  return e.key === "Enter" && e.shiftKey && (e.ctrlKey || e.metaKey) && !e.altKey && !e.isComposing;
+}
+
+/** 发送快捷键的显示形式, 只显示本平台的修饰键。 */
+export function sendShortcutText(): string {
+  const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+  return mac ? "⌘+Shift+Enter" : "Ctrl+Shift+Enter";
+}
+
 /** 存储里只放与默认不同的动作; 损坏或过时的内容按没改过处理。 */
 function parse(raw: string | null): ShortcutMap {
   if (!raw) return DEFAULT_SHORTCUTS;

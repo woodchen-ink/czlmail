@@ -1249,6 +1249,7 @@
   "恢复默认键位": "Restore defaults",
   "格式工具条": "Formatting toolbar",
   "写邮件时跳到格式工具条": "Go to the formatting toolbar (while writing)",
+  "写邮件时发送": "Send (while writing)",
   "已撤销": "Undone",
   "无法撤销": "Cannot undo",
   "撤销上一步操作": "Undo last action",
