@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Menu } from "lucide-react";
 import { usePanelRef, type LayoutChangedMeta } from "react-resizable-panels";
 
@@ -37,6 +37,11 @@ interface Props {
    * 省下一行高度, 按钮也和其它操作并排。
    */
   ownMobileNav?: boolean;
+  /**
+   * 盖在侧栏与列表上的一层 (写回复时的原邮件), 右边界对齐详情栏。下面两栏照常挂载, 关掉后原样回来;
+   * 列表与详情之间的分隔线露在外面, 照样能拖。只在多栏布局且没收起时显示, 窄屏不显示。
+   */
+  overlay?: React.ReactNode;
 }
 
 /** 窄屏下给模块工具栏用的导航动作; 宽屏 (多栏) 时为 null, 工具栏照旧不显示这两个按钮。 */
@@ -143,6 +148,7 @@ function WidePanes({
   collapsed = false,
   sidebarWidth = 256,
   listWidth = 384,
+  overlay,
 }: Props) {
   const panelIds = collapsed
     ? ["detail"]
@@ -155,6 +161,9 @@ function WidePanes({
 
   const sidebarPanel = usePanelRef();
   const listPanel = usePanelRef();
+  const frameRef = useRef<HTMLDivElement>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const overlayWidth = useOverlayWidth(frameRef, detailRef, !!overlay && !collapsed);
 
   const onLayoutChanged = (_layout: unknown, meta: LayoutChangedMeta) => {
     const current = readWidths(key);
@@ -171,45 +180,83 @@ function WidePanes({
     if (!current) storage.removeItem(legacyLayoutKey(id, panelIds));
   };
 
+  const covering = !!overlay && !collapsed && !!(sidebar || list);
+
   return (
-    <ResizablePanelGroup orientation="horizontal" defaultLayout={legacy} onLayoutChanged={onLayoutChanged}>
-      {!collapsed && sidebar && (
-        <>
-          <ResizablePanel
-            id="sidebar"
-            panelRef={sidebarPanel}
-            defaultSize={saved?.sidebar ?? sidebarWidth}
-            minSize={180}
-            maxSize={480}
-            groupResizeBehavior="preserve-pixel-size"
-            className="bg-sidebar flex flex-col"
-          >
-            {sidebar}
-          </ResizablePanel>
-          <ResizableHandle />
-        </>
+    <div ref={frameRef} className="relative h-full">
+      <ResizablePanelGroup orientation="horizontal" defaultLayout={legacy} onLayoutChanged={onLayoutChanged}>
+        {!collapsed && sidebar && (
+          <>
+            <ResizablePanel
+              id="sidebar"
+              panelRef={sidebarPanel}
+              defaultSize={saved?.sidebar ?? sidebarWidth}
+              minSize={180}
+              maxSize={480}
+              groupResizeBehavior="preserve-pixel-size"
+              className="bg-sidebar flex flex-col"
+            >
+              {sidebar}
+            </ResizablePanel>
+            <ResizableHandle className={covering && !list ? "z-30" : undefined} />
+          </>
+        )}
+        {!collapsed && list && (
+          <>
+            <ResizablePanel
+              id="list"
+              panelRef={listPanel}
+              defaultSize={saved?.list ?? listWidth}
+              minSize={260}
+              maxSize={720}
+              groupResizeBehavior="preserve-pixel-size"
+              className="flex flex-col"
+            >
+              {list}
+            </ResizablePanel>
+            <ResizableHandle className={covering ? "z-30" : undefined} />
+          </>
+        )}
+        <ResizablePanel id="detail" minSize={320} className="min-w-0">
+          <div ref={detailRef} className="h-full">
+            {detail}
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
+      {covering && overlayWidth > 0 && (
+        <div className="bg-background absolute inset-y-0 left-0 z-20 flex flex-col" style={{ width: overlayWidth }}>
+          {overlay}
+        </div>
       )}
-      {!collapsed && list && (
-        <>
-          <ResizablePanel
-            id="list"
-            panelRef={listPanel}
-            defaultSize={saved?.list ?? listWidth}
-            minSize={260}
-            maxSize={720}
-            groupResizeBehavior="preserve-pixel-size"
-            className="flex flex-col"
-          >
-            {list}
-          </ResizablePanel>
-          <ResizableHandle />
-        </>
-      )}
-      <ResizablePanel id="detail" minSize={320} className="min-w-0">
-        {detail}
-      </ResizablePanel>
-    </ResizablePanelGroup>
+    </div>
   );
+}
+
+/**
+ * 覆盖层的宽度: 从左边到详情栏左边的分隔线为止。拖分隔线、拉伸窗口都会改变详情栏的宽度, 跟着重算。
+ */
+function useOverlayWidth(
+  frameRef: React.RefObject<HTMLDivElement | null>,
+  detailRef: React.RefObject<HTMLDivElement | null>,
+  enabled: boolean,
+): number {
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    const detail = detailRef.current;
+    if (!enabled || !frame || !detail) return;
+    const measure = () => {
+      // 分隔线 1px 宽, 留在覆盖层外面。
+      const px = Math.round(detail.getBoundingClientRect().left - frame.getBoundingClientRect().left) - 1;
+      setWidth(Math.max(0, px));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(frame);
+    observer.observe(detail);
+    return () => observer.disconnect();
+  }, [frameRef, detailRef, enabled]);
+  return enabled ? width : 0;
 }
 
 /**
