@@ -35,6 +35,7 @@ import {
   type EmailSummary,
   type Mailbox,
 } from "@/lib/api";
+import { cachedEmail, forgetCachedEmails, rememberEmail } from "@/lib/email-cache";
 import { main } from "@/wailsjs/go/models";
 import {
   batchSegments,
@@ -126,10 +127,15 @@ export function EmailView({
   file,
 }: Props) {
   useI18n();
-  const [email, setEmail] = useState<EmailDetail | null>(null);
+  // 看过或预热过的邮件先用快照渲染 (lib/email-cache), 下面的加载照常重读并替换。
+  const [snapshot] = useState(() => cachedEmail(accountId, emailId));
+  const [email, setEmail] = useState<EmailDetail | null>(snapshot?.detail ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // 信任状态不取快照: 名单可能已变 (关了「信任通讯录联系人」、别的设备改了 Trusted Senders),
+  // 用旧的「受信任」会在核实前就放行远程图片。快照记着受信任时, 正文等这次核实回来再画 (本机查询, 很快)。
   const [senderTrusted, setSenderTrusted] = useState(false);
+  const [trustPending, setTrustPending] = useState(!!snapshot?.trusted);
   const [ai, setAI] = useState<AIConfig | null>(null);
   // 译文替换正文显示; null 表示显示原文。
   // 同一封邮件刚才在别处显示着译文 (阅读栏 → 写回复时的原邮件面板) 就接着显示, 不重新翻译。
@@ -403,19 +409,23 @@ export function EmailView({
 
         // 先问信任状态再渲染正文，否则可信发件人的图片会先被屏蔽一瞬再出现。
         const from = detail.from?.[0]?.email ?? "";
+        let trusted = false;
         if (from) {
-          const trusted = await api.isSenderTrusted(accountId, from);
+          trusted = await api.isSenderTrusted(accountId, from);
           if (!cancelled) setSenderTrusted(trusted);
         }
+        if (!cancelled) setTrustPending(false);
 
         // 正文未缓存时再打一次网络。先渲染已有的元数据，
         // 让用户立刻看到发件人与主题，而不是盯着一个整体的加载态。
+        let full = detail;
         if (!detail.bodyFetched) {
-          const withBody = await api.fetchBody(accountId, emailId);
+          full = await api.fetchBody(accountId, emailId);
           if (cancelled) return;
-          setEmail(withBody);
-          onLoaded(withBody);
+          setEmail(full);
+          onLoaded(full);
         }
+        rememberEmail(accountId, full, trusted);
 
         // 按设置标记已读。放在正文取回之后，避免网络失败时
         // 邮件已被标记已读却什么都没显示。
@@ -680,7 +690,7 @@ export function EmailView({
             </div>
           )}
 
-          {loading && !email.bodyFetched ? (
+          {trustPending ? null : loading && !email.bodyFetched ? (
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <Loader2 className="size-4 animate-spin" />
               {t("正在取回正文")}</div>
@@ -707,6 +717,7 @@ export function EmailView({
                   onZoomStep={stepZoom}
                   zoomShortcuts={active}
                   onWideChange={setBodyWide}
+                  layoutKey={`${accountId}/${emailId}${translation ? ":tr" : ""}`}
                   senderEmail={sender?.email ?? ""}
                   senderTrusted={senderTrusted}
                   mode={bodyMode}
@@ -714,6 +725,7 @@ export function EmailView({
                   onTrustSender={async (address) => {
                     try {
                       await api.trustSender(accountId, address);
+                      forgetCachedEmails();
                       setSenderTrusted(true);
                     } catch (err) {
                       setError(errorMessage(err));

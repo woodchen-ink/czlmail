@@ -58,6 +58,24 @@ interface Props {
    * 由阅读栏横向滚动, 滚动条在窗口底部始终看得到, 而不是藏在长邮件的末尾。
    */
   onWideChange?: (wide: boolean) => void;
+  /**
+   * 这份正文的标识 (账号/邮件, 译文另带后缀)。给了就记住上次量出的高度, 再打开时 iframe 直接用它,
+   * 不从默认高度起步、等内容量完再撑开 (阅读栏下方的内容会跟着跳一下)。
+   */
+  layoutKey?: string;
+}
+
+/**
+ * 正文高度快照: layoutKey|缩放 → 像素。只用来给外层容器占位 (min-height), iframe 本身仍从默认高度起步:
+ * 直接把 iframe 设成上次的高度, 版式跟随视口 (100vh) 的邮件会被它撑开, 每打开一次多 16px。
+ */
+const MAX_HEIGHTS = 300;
+const heights = new Map<string, number>();
+
+function rememberHeight(key: string, h: number) {
+  heights.delete(key);
+  heights.set(key, h);
+  if (heights.size > MAX_HEIGHTS) heights.delete(heights.keys().next().value!);
 }
 
 function isEditable(target: EventTarget | null): boolean {
@@ -89,6 +107,7 @@ export function EmailBody({
   onZoomStep,
   zoomShortcuts = false,
   onWideChange,
+  layoutKey,
 }: Props) {
   useI18n();
   // 自带配色的邮件在暗色主题下仍用亮色纸面，见 hasOwnColors。
@@ -100,7 +119,15 @@ export function EmailBody({
   const allowImages = senderTrusted || allowOnce;
 
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const heightKey = layoutKey ? `${layoutKey}|${zoom}` : "";
   const [height, setHeight] = useState(320);
+  // 第一次量出高度前占住上次的高度, 阅读栏下方的内容不跟着跳; 量出来就放开。
+  const [reserve, setReserve] = useState(() => (heightKey && heights.get(heightKey)) || 0);
+  // 消息处理只挂一次, 经 ref 取最新的 key (切换译文、缩放会变)。
+  const heightKeyRef = useRef(heightKey);
+  useEffect(() => {
+    heightKeyRef.current = heightKey;
+  }, [heightKey]);
   // 正文实际需要的宽度; 不比阅读栏宽时为 0, iframe 跟着容器宽。
   const [contentWidth, setContentWidth] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -320,7 +347,10 @@ export function EmailBody({
       if (msg.type === "height" && typeof msg.height === "number") {
         // 留一点余量，避免因为四舍五入出现一条内部滚动条。
         // 上限只防失控; 长邮件放大到 300% 能有几万像素高, 封顶太低会在正文里多出一条滚动条。
-        setHeight(Math.min(Math.max(msg.height + 16, 120), 200000));
+        const h = Math.min(Math.max(msg.height + 16, 120), 200000);
+        setHeight(h);
+        setReserve(0);
+        if (heightKeyRef.current) rememberHeight(heightKeyRef.current, h);
         if (typeof msg.width === "number") {
           const view = viewRef.current;
           setContentWidth(view && msg.width > view + 1 ? Math.min(Math.ceil(msg.width), 20000) : 0);
@@ -365,7 +395,7 @@ export function EmailBody({
             ? "bg-paper overflow-hidden rounded-md p-4"
             : "overflow-hidden rounded-md") + (contentWidth ? " w-max min-w-full" : "")
         }
-        style={shift ? { marginLeft: -shift } : undefined}
+        style={shift || reserve ? { ...(shift ? { marginLeft: -shift } : {}), ...(reserve ? { minHeight: reserve + (mode === "light" ? 32 : 0) } : {}) } : undefined}
       >
         <iframe
           ref={frameRef}

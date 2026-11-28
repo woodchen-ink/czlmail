@@ -16,6 +16,7 @@ import { Card, Divider, Row, SectionTitle, useSettings } from "@/components/sett
 import { api, errorMessage, type Account, type IntegrationStatus } from "@/lib/api";
 import { useAppearance, type ThemePreference } from "@/lib/theme";
 import { isNative } from "@/lib/native-bridge";
+import { clearAvatarCache } from "@/lib/avatar-cache";
 
 export function AppearanceSection({ active }: { active: boolean }) {
   useI18n();
@@ -49,7 +50,10 @@ export function AppearanceSection({ active }: { active: boolean }) {
         </Row>
         <Divider />
         <Row title={t("显示发件人头像")} desc={t("头像由本程序代理获取（Gravatar、发件方网站图标），发件方看不到你的 IP；关闭后显示首字母")}>
-          <Switch checked={!!settings?.senderAvatars} disabled={!settings} onCheckedChange={(on) => save({ senderAvatars: on })} />
+          <Switch checked={!!settings?.senderAvatars} disabled={!settings} onCheckedChange={(on) => {
+              // 已显示的头像在内存里, 关掉后要撤下; 打开时也重新取。等设置存好再清, 否则重新取时后端还没关。
+              void save({ senderAvatars: on }).then(clearAvatarCache);
+            }} />
         </Row>
       </Card>
     </>

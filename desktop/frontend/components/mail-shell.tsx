@@ -82,8 +82,11 @@ import { useAppearance } from "@/lib/theme";
 import { listen, send, takePendingFileEmail, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
+import { warmEmails } from "@/lib/email-cache";
+import { cachedList, rememberList } from "@/lib/list-cache";
 import { beginDraftIntent } from "@/lib/draft-transition";
 import { formatKey, formatKeys, shortcutActionOf, useShortcuts, type ShortcutAction } from "@/lib/shortcuts";
+import { clearSessionCaches } from "@/lib/session-caches";
 
 const PAGE_SIZE = 50;
 
@@ -379,6 +382,21 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       });
   }, []);
 
+  // 列表的最新值, 供乐观更新与静默刷新在回调里读取, 不必把 emails 列进依赖。
+  const emailsRef = useRef(emails);
+  useEffect(() => {
+    emailsRef.current = emails;
+  }, [emails]);
+
+  // 列表现在装的是哪个文件夹的邮件 (加载完成时记下)。切换文件夹的那一帧 emails 还是旧的,
+  // 靠它区分, 免得把旧文件夹的列表记到新文件夹名下。
+  const listView = useRef("");
+  // 列表每次变化 (加载、乐观删除移动、标记) 都更新快照, 切回来时看到的是离开时的样子。
+  useEffect(() => {
+    const view = `${unified}|${accountId}|${mailboxId}`;
+    if (listView.current === view && emails.length > 0) rememberList(view, emails, hasMore);
+  }, [emails, hasMore, unified, accountId, mailboxId]);
+
   // 当前视图的一页: 某个账号的文件夹, 或统一视图。
   const fetchPage = useCallback(
     (limit: number, offset: number) =>
@@ -400,6 +418,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         if (token !== loadToken.current) return;
         const list = page ?? [];
         const shown = overlay(list);
+        listView.current = `${unified}|${accountId}|${mailboxId}`;
         setEmails((prev) => {
           if (offset === 0) return shown;
           // 乐观移除的邮件让 offset 比服务端少算几封, 下一页开头可能与已有的重叠。
@@ -415,12 +434,6 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     },
     [unified, accountId, mailboxId, fetchPage, overlay],
   );
-
-  // 列表的最新值, 供乐观更新与静默刷新在回调里读取, 不必把 emails 列进依赖。
-  const emailsRef = useRef(emails);
-  useEffect(() => {
-    emailsRef.current = emails;
-  }, [emails]);
 
   // 当前看的是哪个列表。撤销删除时只在同一个列表里把选中放回恢复的那封。
   const viewKey = `${unified}|${accountId}|${mailboxId}`;
@@ -452,6 +465,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
           out.push(...page);
           if (page.length < n) break;
         }
+        listView.current = `${unified}|${accountId}|${mailboxId}`;
         setEmails(overlay(out));
         setHasMore(out.length >= want);
       } catch (err) {
@@ -537,14 +551,22 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     setQuery("");
     setChecked(new Set());
     minDepth.current = pending ? locateDepth(pending.index) : 0;
-    // 要打开的邮件不在第一页时一次加载到它所在的那一页。
-    if (pending && pending.index >= PAGE_SIZE) {
+    const cached = pending ? undefined : cachedList(`${unified}|${accountId}|${mailboxId}`);
+    if (cached && !(!unified && emptying.current.has(`${accountId}/${mailboxId}`))) {
+      // 看过的列表: 先摆出上次的内容, 再按同样的深度静默重读。
+      listView.current = `${unified}|${accountId}|${mailboxId}`;
+      setEmails(overlay(cached.emails));
+      setHasMore(cached.hasMore);
+      setLoading(false);
+      loadPrefix(loadToken.current, Math.max(PAGE_SIZE, cached.emails.length));
+    } else if (pending && pending.index >= PAGE_SIZE) {
+      // 要打开的邮件不在第一页时一次加载到它所在的那一页。
       setLoading(true);
       loadPrefix(loadToken.current, minDepth.current);
     } else {
       loadPage(0, loadToken.current);
     }
-  }, [unified, mailboxId, accountId, loadPage, loadPrefix]);
+  }, [unified, mailboxId, accountId, loadPage, loadPrefix, overlay]);
 
   // 操作(标记已读、移动、立即同步、导入)完成后才调用 reload, 那时用户可能已切到别的文件夹。
   // 经 ref 取最新的 refreshLoaded, 重新加载的总是正在看的列表; 用发起时的闭包会把旧文件夹
@@ -571,7 +593,12 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     const ids = near.filter((e) => e.accountId === acc).map((e) => e.id);
     if (ids.length === 0) return;
     const t = setTimeout(() => api.prefetchBodies(acc, ids).catch(() => {}), 400);
-    return () => clearTimeout(t);
+    // 正文已在本机库的, 顺带把阅读栏快照备好 (lib/email-cache), 翻过去时不出骨架屏。
+    const w = setTimeout(() => void warmEmails(acc, ids), 600);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(w);
+    };
   }, [selectedKey, emails]);
 
   /* ---------- 后台同步事件 ---------- */
@@ -673,6 +700,8 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         // 统一视图里搜全部账号。
         const found = unified ? await api.searchAllEmails(q, 100) : await api.searchEmails(accountId, q, 100);
         if (token !== loadToken.current) return;
+        // 搜索结果不是文件夹列表, 不记进列表缓存。
+        listView.current = "";
         setEmails(overlay(found ?? []));
         setHasMore(false);
       } catch (err) {
@@ -686,7 +715,10 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
         const merged = unified
           ? await api.searchAllEmailsOnServer(q, 100)
           : await api.searchEmailsOnServer(accountId, q, 100);
-        if (token === loadToken.current) setEmails(overlay(merged ?? []));
+        if (token === loadToken.current) {
+          listView.current = "";
+          setEmails(overlay(merged ?? []));
+        }
       } catch {
         // 服务端检索只是补充，失败时保留本地结果。
       } finally {
@@ -1684,6 +1716,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                   return;
                 }
                 await api.signOut();
+                clearSessionCaches();
                 onSignedOut();
               }}
             />

@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { api, errorMessage, type SessionStatus, type SignInHint } from "@/lib/api";
 import { openExternal } from "@/lib/external";
+import { clearSessionCaches } from "@/lib/session-caches";
 
 /** 网关的部署说明: Gmail、Outlook 与普通 IMAP 邮箱要先部署 czlmail 网关才能用。 */
 const GATEWAY_README_URL = "https://github.com/woodchen-ink/czlmail-gateway#readme";
@@ -43,9 +44,12 @@ function signInCalls(target: Props["target"]) {
       oauth: (server: string, idp: string, clientId: string) => api.signInAgainOAuth(id, server, idp, clientId),
     };
   }
+  // 主登录可能换了人: 先前用户的界面快照不能带过来。
   return {
-    password: (server: string, email: string, pass: string) => api.signInWithPassword(server, email, pass),
-    oauth: (server: string, idp: string, clientId: string) => api.signIn(server, idp, clientId),
+    password: (server: string, email: string, pass: string) =>
+      api.signInWithPassword(server, email, pass).then((r) => (clearSessionCaches(), r)),
+    oauth: (server: string, idp: string, clientId: string) =>
+      api.signIn(server, idp, clientId).then((r) => (clearSessionCaches(), r)),
   };
 }
 

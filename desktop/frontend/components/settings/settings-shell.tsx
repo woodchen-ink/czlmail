@@ -70,6 +70,7 @@ import {
   type Template,
   type UpdateInfo,
 } from "@/lib/api";
+import { forgetCachedEmails } from "@/lib/email-cache";
 import { anyAccountSupports, useAccounts as useAllAccounts, usePrimarySupports, type Feature } from "@/lib/account-features";
 import { BrowserOpenURL } from "@/wailsjs/runtime/runtime";
 import { NotesSection } from "@/components/settings/notes-section";
@@ -91,6 +92,7 @@ import { SignInsCard } from "@/components/settings/sign-ins-section";
 import { MailboxesCard } from "@/components/settings/mailboxes-card";
 import { store } from "@/wailsjs/go/models";
 import { listen } from "@/lib/app-bus";
+import { clearSessionCaches } from "@/lib/session-caches";
 
 type Section =
   | "account"
@@ -325,6 +327,7 @@ function PrivacySection({ active }: { active: boolean }) {
     }
     try {
       await api.trustSender(accountId, addr);
+      forgetCachedEmails();
       setAdding("");
       setSenders((s) => [...new Set([...s, addr])].sort());
     } catch (err) {
@@ -335,6 +338,7 @@ function PrivacySection({ active }: { active: boolean }) {
   async function remove(addr: string) {
     try {
       await api.untrustSender(accountId, addr);
+      forgetCachedEmails();
       setSenders((s) => s.filter((x) => x !== addr));
     } catch (err) {
       toast.error(errorMessage(err));
@@ -754,6 +758,7 @@ function AccountSection({ active, onSignedOut }: { active: boolean; onSignedOut:
               onClick={async () => {
                 try {
                   await api.signOut();
+                  clearSessionCaches();
                   onSignedOut();
                 } catch (err) {
                   toast.error(errorMessage(err));
