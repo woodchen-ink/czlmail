@@ -53,10 +53,10 @@ func (s *Store) EmailsWith(ctx context.Context, addresses []string, direction st
 		return nil, 0, nil
 	}
 	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM emails e WHERE `+where, args...).Scan(&total); err != nil {
+	if err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM emails e WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, 0, wrap(CodeQuery, "count emails with", err)
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT `+summaryColumns+`
 		FROM emails e
 		WHERE `+where+`

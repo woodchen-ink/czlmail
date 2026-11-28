@@ -251,7 +251,7 @@ func encodeNames(names []string) any {
 
 // EmailsMissingAttachmentNames 列出带附件、但还没有附件名的邮件 (升级前缓存的), 最多 limit 封。
 func (s *Store) EmailsMissingAttachmentNames(ctx context.Context, accountID string, limit int) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT id FROM emails
 		WHERE account_id = ? AND has_attachment = 1 AND attachment_names IS NULL
 		ORDER BY received_at DESC

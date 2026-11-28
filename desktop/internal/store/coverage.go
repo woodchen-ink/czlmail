@@ -10,7 +10,7 @@ import (
 // 首次引导只取整个账号最近的一个窗口, 归档这类以旧邮件为主的邮箱本地几乎是空的;
 // 调用方据此判断翻页时要不要向服务端补取。
 func (s *Store) MailboxCoverage(ctx context.Context, accountID, mailboxID string) (local, total int64, err error) {
-	err = s.db.QueryRowContext(ctx, `
+	err = s.rd.QueryRowContext(ctx, `
 		SELECT
 			(SELECT COUNT(*) FROM email_mailboxes WHERE account_id = ? AND mailbox_id = ?),
 			COALESCE((SELECT total_emails FROM mailboxes WHERE account_id = ? AND id = ?), 0)`,
@@ -33,7 +33,7 @@ func (s *Store) MissingEmailIDs(ctx context.Context, accountID string, ids []str
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT id FROM emails WHERE account_id = ? AND id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`,
 		args...)
 	if err != nil {
@@ -65,7 +65,7 @@ func (s *Store) MissingEmailIDs(ctx context.Context, accountID string, ids []str
 // EmailsWithoutBody 返回某账号最近收到、尚未缓存正文的邮件 id, 供后台预取。
 // 只看收件箱类文件夹之外也无妨: 按收件时间取最新的, 用户最可能打开的就是这些。
 func (s *Store) EmailsWithoutBody(ctx context.Context, accountID string, since int64, limit int) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT id FROM emails
 		WHERE account_id = ? AND body_fetched_at IS NULL AND received_at >= ?
 		ORDER BY received_at DESC LIMIT ?`, accountID, since, limit)
@@ -94,7 +94,7 @@ func (s *Store) BodyCached(ctx context.Context, accountID string, ids []string) 
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT id FROM emails WHERE account_id = ? AND body_fetched_at IS NOT NULL AND id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`,
 		args...)
 	if err != nil {
@@ -113,7 +113,7 @@ func (s *Store) BodyCached(ctx context.Context, accountID string, ids []string) 
 
 // LocalEmailIDs 列出某账号本地缓存的全部邮件 id。
 func (s *Store) LocalEmailIDs(ctx context.Context, accountID string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM emails WHERE account_id = ?`, accountID)
+	rows, err := s.rd.QueryContext(ctx, `SELECT id FROM emails WHERE account_id = ?`, accountID)
 	if err != nil {
 		return nil, wrap(CodeQuery, "list local email ids", err)
 	}

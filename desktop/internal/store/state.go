@@ -26,7 +26,7 @@ const (
 // 调用方据此区分"需要全量引导"与"可以走 /changes 增量"。
 func (s *Store) State(ctx context.Context, accountID string, dt DataType) (string, error) {
 	var state string
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT state FROM sync_state WHERE account_id = ? AND data_type = ?`,
 		accountID, dt,
 	).Scan(&state)

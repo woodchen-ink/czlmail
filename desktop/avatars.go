@@ -12,7 +12,8 @@ import (
 // 在 Wails 启动前调用, 此时缓存库尚未打开, 因此各处理器按需取 store 而不是在这里捕获。
 func (a *App) assetHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(avatar.Path, a.avatarHandler())
+	a.avatars = a.avatarHandler()
+	mux.Handle(avatar.Path, a.avatars)
 	mux.HandleFunc(BlobPath, a.serveBlob)
 	mux.HandleFunc("/czl-note-resource", a.serveNoteResource)
 	mux.HandleFunc(RemoteImagePath, a.serveRemoteImage)
@@ -20,7 +21,7 @@ func (a *App) assetHandler() http.Handler {
 	return mux
 }
 
-func (a *App) avatarHandler() http.Handler {
+func (a *App) avatarHandler() *avatar.Service {
 	return avatar.New(
 		func() *store.Store {
 			a.mu.RLock()
@@ -37,4 +38,18 @@ func (a *App) avatarHandler() http.Handler {
 		},
 		a.log,
 	)
+}
+
+// warmAvatars 为刚同步到的邮件的发件人预先取头像。
+func (a *App) warmAvatars(emails []store.Email) {
+	if a.avatars == nil {
+		return
+	}
+	var addrs []string
+	for i := range emails {
+		for _, f := range emails[i].From {
+			addrs = append(addrs, f.Email)
+		}
+	}
+	a.avatars.Warm(addrs)
 }

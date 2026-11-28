@@ -152,7 +152,7 @@ func (s *Store) EmailsByMailbox(
 		return out, nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT `+summaryColumns+threadCountColumn+`
 		FROM emails e
 		JOIN email_mailboxes m
@@ -177,7 +177,7 @@ func (s *Store) EmailsByMailbox(
 
 // pinnedInMailbox 列出邮箱里置顶的邮件, 按收件时间倒序。
 func (s *Store) pinnedInMailbox(ctx context.Context, accountID, mailboxID string) ([]EmailSummary, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT `+summaryColumns+threadCountColumn+`
 		FROM email_keywords p
 		JOIN email_mailboxes m
@@ -267,7 +267,7 @@ func scanSummaries(rows *sql.Rows) ([]EmailSummary, error) {
 // LatestInThread 返回会话里最新一封邮件的 id, 不在回收站/垃圾邮件里的优先; 本地没有时为空。
 func (s *Store) LatestInThread(ctx context.Context, accountID, threadID string) (string, error) {
 	var id string
-	err := s.db.QueryRowContext(ctx, `
+	err := s.rd.QueryRowContext(ctx, `
 		SELECT e.id FROM emails e
 		WHERE e.account_id = ? AND e.thread_id = ?
 		ORDER BY `+discardedSQL("e")+` ASC, e.received_at DESC
@@ -283,7 +283,7 @@ func (s *Store) LatestInThread(ctx context.Context, accountID, threadID string) 
 // anchor 是界面上代表会话的那封: 它不在回收站/垃圾邮件里时, 只在那里的往来不列出
 // (否则刚删掉的邮件仍留在展开区, 看起来像没删掉); 它本身在回收站里时全部列出。
 func (s *Store) ThreadEmails(ctx context.Context, accountID, anchorID string, limit int) ([]EmailSummary, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT `+summaryColumns+`
 		FROM emails a
 		JOIN emails e ON e.account_id = a.account_id AND e.thread_id = a.thread_id
@@ -312,7 +312,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 	var attachmentsJSON string
 	var unsubscribe sql.NullString
 
-	err := s.db.QueryRowContext(ctx, `
+	err := s.rd.QueryRowContext(ctx, `
 		SELECT e.id, e.thread_id, e.subject, e.from_json, e.received_at,
 		       e.preview, e.has_attachment, e.signed, e.size,`+keywordFlags+`,
 		       e.to_json, e.cc_json, e.bcc_json, e.reply_to_json,
@@ -389,7 +389,7 @@ func (s *Store) Email(ctx context.Context, accountID, emailID string) (*EmailDet
 
 // Labels 列出账号内出现过的全部自定义标签。
 func (s *Store) Labels(ctx context.Context, accountID string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT DISTINCT k.keyword FROM email_keywords k
 		WHERE k.account_id = ? AND `+labelKeywordSQL+`
 		ORDER BY k.keyword`, accountID)
@@ -428,7 +428,7 @@ type Account struct {
 
 // Accounts 读出已缓存的账号, 个人账号排在共享账号前面。
 func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT id, name, is_personal, is_primary, account_capabilities FROM accounts
 		ORDER BY is_personal DESC, is_primary DESC, name`)
 	if err != nil {

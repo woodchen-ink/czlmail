@@ -20,7 +20,7 @@ func (s *Store) Avatar(ctx context.Context, key string) (*CachedAvatar, error) {
 	var a CachedAvatar
 	var missing int
 	var fetched int64
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT content_type, data, missing, fetched_at FROM avatar_cache WHERE key = ?`, key,
 	).Scan(&a.ContentType, &a.Data, &missing, &fetched)
 	if errors.Is(err, sql.ErrNoRows) {

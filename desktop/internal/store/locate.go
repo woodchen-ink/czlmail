@@ -24,7 +24,7 @@ type EmailLocation struct {
 func (s *Store) LocateEmail(ctx context.Context, accountID, emailID, prefer string) (EmailLocation, error) {
 	var receivedAt int64
 	var pinned bool
-	err := s.db.QueryRowContext(ctx, `
+	err := s.rd.QueryRowContext(ctx, `
 		SELECT e.received_at,
 		       EXISTS (SELECT 1 FROM email_keywords k
 		               WHERE k.account_id = e.account_id AND k.email_id = e.id AND k.keyword = '$pinned')
@@ -56,7 +56,7 @@ func (s *Store) LocateEmail(ctx context.Context, accountID, emailID, prefer stri
 // mailboxForEmail 在邮件所属的文件夹里挑一个给界面显示。
 // 优先 prefer, 其次收件箱, 再次任何不是垃圾邮件/回收站的文件夹。
 func (s *Store) mailboxForEmail(ctx context.Context, accountID, emailID, prefer string) (string, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT mailbox_id FROM email_mailboxes
 		WHERE account_id = ? AND email_id = ?`,
 		accountID, emailID)
@@ -113,7 +113,7 @@ func (s *Store) mailboxForEmail(ctx context.Context, accountID, emailID, prefer 
 func (s *Store) rankInMailbox(ctx context.Context, accountID, mailboxID string, receivedAt int64, pinned bool) (int, error) {
 	count := func(query string, args ...any) (int, error) {
 		var n int
-		if err := s.db.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+		if err := s.rd.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
 			return 0, wrap(CodeQuery, "count emails before", err)
 		}
 		return n, nil

@@ -25,6 +25,9 @@ func dsn(path string, p Pragmas) string {
 	if p.ForeignKeys {
 		q = append(q, "_pragma=foreign_keys(ON)")
 	}
+	if p.QueryOnly {
+		q = append(q, "_pragma=query_only(1)")
+	}
 	if len(q) == 0 {
 		return path
 	}

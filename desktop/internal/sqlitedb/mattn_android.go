@@ -27,6 +27,9 @@ func dsn(path string, p Pragmas) string {
 	if p.ForeignKeys {
 		q = append(q, "_foreign_keys=on")
 	}
+	if p.QueryOnly {
+		q = append(q, "_query_only=true")
+	}
 	u := "file:" + (&url.URL{Path: path}).EscapedPath()
 	if len(q) == 0 {
 		return u

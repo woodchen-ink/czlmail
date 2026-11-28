@@ -107,7 +107,7 @@ func (s *Store) FileNodeByName(ctx context.Context, accountID, parentID, name st
 }
 
 func (s *Store) scanFileNodes(ctx context.Context, query string, args ...any) ([]FileNode, error) {
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, wrap(CodeQuery, "query file nodes", err)
 	}
@@ -131,7 +131,7 @@ func (s *Store) scanFileNodes(ctx context.Context, query string, args ...any) ([
 // FileNodeRawSample 返回该账号任意一个文件节点的服务器原文, 用来判断服务器的 FileNode 写法; 没有缓存时返回空串。
 func (s *Store) FileNodeRawSample(ctx context.Context, accountID string) (string, error) {
 	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT raw_json FROM file_nodes WHERE account_id = ? AND raw_json <> '' LIMIT 1`, accountID).Scan(&raw)
+	err := s.rd.QueryRowContext(ctx, `SELECT raw_json FROM file_nodes WHERE account_id = ? AND raw_json <> '' LIMIT 1`, accountID).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}

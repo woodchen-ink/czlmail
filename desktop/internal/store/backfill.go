@@ -54,7 +54,7 @@ func (s *Store) backfillBodyTextBatch(ctx context.Context, offset int) (changed,
 	}
 
 	// body_text = body_html 正是"没有 text/plain 部件"的特征: 两列取自同一个部件。
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT account_id, id, body_text FROM emails
 		WHERE body_fetched_at IS NOT NULL
 		  AND body_html IS NOT NULL AND body_html != ''

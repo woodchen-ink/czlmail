@@ -14,7 +14,7 @@ type SyncedTemplate struct {
 
 // TemplatesForSync 返回全部模板, 包括墓碑。
 func (s *Store) TemplatesForSync(ctx context.Context) ([]SyncedTemplate, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT id, name, category, subject, body, is_html,
 		       default_to, default_cc, default_bcc, identity_id,
 		       is_favorite, created_at, updated_at, remote_rev, COALESCE(deleted_at, 0)

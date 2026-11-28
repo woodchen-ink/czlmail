@@ -18,6 +18,11 @@ func TestDriveSyncFileWriteIsConditional(t *testing.T) {
 	ta.signInPrimary(ts.one, "alice@one.test", "pw-alice")
 	ta.waitSubjects("a", "inbox", "hello from one")
 
+	// 与生产代码一样拿着网盘同步锁: 登录后 (以及下面 CatchUpFiles 发出的 pim:changed) 会启动模板、
+	// 设置等后台同步, 它们也写网盘; 不排除掉, 这里模拟的"另一台设备"之外还多出本机自己的写入, 结果看时序。
+	driveSyncMu.Lock()
+	defer driveSyncMu.Unlock()
+
 	const name = "conflict-test.json"
 	open := func() *driveSyncFile {
 		t.Helper()

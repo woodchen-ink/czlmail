@@ -29,7 +29,7 @@ func (s *Store) EmailPlacements(ctx context.Context, accountID string, emailIDs 
 	}
 
 	byID := make(map[string]*EmailPlacement, len(emailIDs))
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT email_id, mailbox_id FROM email_mailboxes
 		WHERE account_id = ? AND email_id IN `+in+`
 		ORDER BY email_id, mailbox_id`, args...)
@@ -55,7 +55,7 @@ func (s *Store) EmailPlacements(ctx context.Context, accountID string, emailIDs 
 		return nil, wrap(CodeQuery, "query email mailboxes", err)
 	}
 
-	rows, err = s.db.QueryContext(ctx, `
+	rows, err = s.rd.QueryContext(ctx, `
 		SELECT email_id, keyword FROM email_keywords
 		WHERE account_id = ? AND keyword IN ('$junk', '$notjunk') AND email_id IN `+in, args...)
 	if err != nil {

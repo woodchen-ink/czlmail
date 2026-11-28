@@ -10,11 +10,18 @@ import (
 	"github.com/woodchen-ink/czlmail/desktop/internal/sqlitedb"
 )
 
-// Store 持有单个 SQLite 连接池。SQLite 的写入是全库串行的, 因此写连接限制为 1,
-// 由驱动排队而不是让并发写撞上 SQLITE_BUSY。
+// Store 持有两个连接池。SQLite 的写入是全库串行的, 写与事务走 db, 限制为 1 条连接,
+// 由驱动排队而不是让并发写撞上 SQLITE_BUSY。事务外的查询走 rd (多条只读连接):
+// WAL 下读不等写, 同步落一大批邮件时列表、正文、头像照样立刻查得到;
+// 共用一条连接时它们要排在同步事务后面, 界面就会卡住。
 type Store struct {
 	db *sql.DB
+	rd *sql.DB
 }
+
+// readConns 是只读连接数。界面一次并发的查询不多 (列表、正文、一屏头像),
+// 每条连接各占一份页缓存, 开多了只是多占内存。
+const readConns = 4
 
 // pragmas 在每条连接建立时生效, 必须走 DSN 而不是 Open 之后执行一次,
 // 否则只有连接池里第一条连接被设置到。
@@ -25,6 +32,9 @@ type Store struct {
 //     缓存数据可从服务端重新拉取, 不需要 FULL 的代价
 //   - foreign_keys=ON: SQLite 默认关闭外键约束
 var pragmas = sqlitedb.Pragmas{JournalMode: "WAL", BusyTimeoutMs: 5000, Synchronous: "NORMAL", ForeignKeys: true}
+
+// readPragmas 不设 journal_mode: 它是库级设置, 写连接已经切到 WAL; 在只读连接上设置会被 query_only 拒绝。
+var readPragmas = sqlitedb.Pragmas{BusyTimeoutMs: 5000, QueryOnly: true}
 
 // Open 打开或创建数据库并把 schema 升到当前版本。
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -46,11 +56,31 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+
+	// 迁移完成后再开读连接, 读连接上看到的总是最新 schema。
+	rd, err := sqlitedb.Open(path, readPragmas)
+	if err == nil {
+		rd.SetMaxOpenConns(readConns)
+		rd.SetMaxIdleConns(readConns)
+		err = rd.PingContext(ctx)
+		if err != nil {
+			rd.Close()
+		}
+	}
+	if err != nil {
+		db.Close()
+		return nil, wrap(CodeOpen, "open read connections", err)
+	}
+	s.rd = rd
 	return s, nil
 }
 
 func (s *Store) Close() error {
-	return s.db.Close()
+	rerr := s.rd.Close()
+	if err := s.db.Close(); err != nil {
+		return err
+	}
+	return rerr
 }
 
 // DB 暴露底层句柄给同包内的查询实现, 不对外导出使用。

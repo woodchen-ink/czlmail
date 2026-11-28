@@ -18,6 +18,7 @@ import (
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/accountid"
 	"github.com/woodchen-ink/czlmail/desktop/internal/auth"
+	"github.com/woodchen-ink/czlmail/desktop/internal/avatar"
 	"github.com/woodchen-ink/czlmail/desktop/internal/capability"
 	"github.com/woodchen-ink/czlmail/desktop/internal/config"
 	"github.com/woodchen-ink/czlmail/desktop/internal/jmaplimit"
@@ -38,6 +39,8 @@ type App struct {
 	prefetch prefetcher
 	mcp      mcpState
 	images   imageCache
+	// avatars 是 /czl-avatar 的处理器, 新邮件到达时也用它预热头像。
+	avatars *avatar.Service
 	// firstStatus 只记一次前端首次查询会话的耗时。
 	firstStatus sync.Once
 	ctx         context.Context

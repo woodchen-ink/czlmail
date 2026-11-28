@@ -23,7 +23,7 @@ func (s *Store) FlaggedInMailboxes(ctx context.Context, boxes []MailboxRef, limi
 		args = append(args, b.AccountID, b.MailboxID)
 	}
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT `+summaryColumns+threadCountColumn+`
 		FROM emails e
 		WHERE EXISTS (SELECT 1 FROM email_keywords k
@@ -64,7 +64,7 @@ func (s *Store) EmailsInMailboxes(
 	}
 	args = append(args, limit, offset)
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT `+summaryColumns+threadCountColumn+`
 		FROM emails e
 		WHERE EXISTS (SELECT 1 FROM email_mailboxes m

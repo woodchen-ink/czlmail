@@ -30,7 +30,7 @@ type Template struct {
 
 // Templates 列出全部未删除的模板。
 func (s *Store) Templates(ctx context.Context) ([]Template, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT id, name, category, subject, body, is_html,
 		       default_to, default_cc, default_bcc, identity_id,
 		       is_favorite, created_at, updated_at, remote_rev
@@ -55,7 +55,7 @@ func (s *Store) Templates(ctx context.Context) ([]Template, error) {
 
 // Template 读单个模板。
 func (s *Store) Template(ctx context.Context, id string) (*Template, error) {
-	row := s.db.QueryRowContext(ctx, `
+	row := s.rd.QueryRowContext(ctx, `
 		SELECT id, name, category, subject, body, is_html,
 		       default_to, default_cc, default_bcc, identity_id,
 		       is_favorite, created_at, updated_at, remote_rev

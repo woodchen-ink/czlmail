@@ -75,7 +75,7 @@ func ReplaceCalendars(ctx context.Context, tx *sql.Tx, accountID string, list []
 
 // Calendars 列出全部账号的日历, 个人账号在前。
 func (s *Store) Calendars(ctx context.Context) ([]Calendar, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT c.account_id, c.id, c.name, c.description, c.color, c.sort_order,
 		       c.is_visible, c.is_subscribed, c.is_default, c.my_rights,
 		       c.default_alerts_with_time, c.default_alerts_without_time
@@ -179,7 +179,7 @@ func (s *Store) SearchEvents(ctx context.Context, query string, limit int) ([]Ra
 // Event 读单个事件原文。
 func (s *Store) Event(ctx context.Context, accountID, id string) (string, error) {
 	var raw string
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT raw_json FROM calendar_events WHERE account_id = ? AND id = ?`, accountID, id).Scan(&raw)
 	if err == sql.ErrNoRows {
 		return "", ErrNotFound
@@ -190,7 +190,7 @@ func (s *Store) Event(ctx context.Context, accountID, id string) (string, error)
 // EventIDByUID 按 iCalendar UID 找本地事件, 找不到返回空串。
 func (s *Store) EventIDByUID(ctx context.Context, accountID, uid string) (string, error) {
 	var id string
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT id FROM calendar_events WHERE account_id = ? AND uid = ? LIMIT 1`, accountID, uid).Scan(&id)
 	if err == sql.ErrNoRows {
 		return "", nil
@@ -199,7 +199,7 @@ func (s *Store) EventIDByUID(ctx context.Context, accountID, uid string) (string
 }
 
 func (s *Store) rawObjects(ctx context.Context, query string, args ...any) ([]RawObject, error) {
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, wrap(CodeQuery, "query objects", err)
 	}
@@ -243,7 +243,7 @@ func (s *Store) ObjectsEmpty(ctx context.Context, table, accountID string) (bool
 		return false, &Error{Code: CodeQuery, Msg: "unknown table " + table}
 	}
 	var one int
-	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM `+table+` WHERE account_id = ? LIMIT 1`, accountID).Scan(&one)
+	err := s.rd.QueryRowContext(ctx, `SELECT 1 FROM `+table+` WHERE account_id = ? LIMIT 1`, accountID).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return true, nil
 	}

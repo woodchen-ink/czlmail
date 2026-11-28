@@ -9,7 +9,7 @@ import (
 // Translation 读取缓存的译文, 没有时返回空串。content 由界面决定格式(按文字片段的 JSON 数组)。
 func (s *Store) Translation(ctx context.Context, accountID, emailID, language string) (string, error) {
 	var content string
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT content FROM translations WHERE account_id = ? AND email_id = ? AND language = ?`,
 		accountID, emailID, language).Scan(&content)
 	if err == sql.ErrNoRows {

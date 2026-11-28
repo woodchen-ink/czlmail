@@ -103,7 +103,7 @@ func DeleteMailboxes(ctx context.Context, tx *sql.Tx, accountID string, ids []st
 // Mailboxes 读出某账号的全部邮箱, 按 sort_order 再按名称排序。
 // 建树由上层完成, 本层只负责按稳定顺序吐出平表。
 func (s *Store) Mailboxes(ctx context.Context, accountID string) ([]Mailbox, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT id, COALESCE(parent_id, ''), name, COALESCE(role, ''), sort_order,
 		       total_emails, unread_emails, total_threads, unread_threads,
 		       my_rights, is_subscribed

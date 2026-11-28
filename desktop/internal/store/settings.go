@@ -26,7 +26,7 @@ const (
 // StringSetting 读字符串设置, 不存在时返回 ErrNotFound。
 func (s *Store) StringSetting(ctx context.Context, key string) (string, error) {
 	var v string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = ?`, key).Scan(&v)
+	err := s.rd.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = ?`, key).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
@@ -54,11 +54,17 @@ type TimedSetting struct {
 }
 
 // TimedSettings 读取给定键的值与修改时间, 未设置的键不出现在结果里。
+// 在一个读事务里读完: 逐条各读各的快照, 可能看到另一处一次写入的多个键只写了一半。
 func (s *Store) TimedSettings(ctx context.Context, keys []string) (map[string]TimedSetting, error) {
+	tx, err := s.rd.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, wrap(CodeQuery, "begin read", err)
+	}
+	defer tx.Rollback()
 	out := make(map[string]TimedSetting, len(keys))
 	for _, k := range keys {
 		var v TimedSetting
-		err := s.db.QueryRowContext(ctx, `SELECT value, updated_at FROM app_settings WHERE key = ?`, k).
+		err := tx.QueryRowContext(ctx, `SELECT value, updated_at FROM app_settings WHERE key = ?`, k).
 			Scan(&v.Value, &v.UpdatedAt)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
@@ -73,7 +79,7 @@ func (s *Store) TimedSettings(ctx context.Context, keys []string) (map[string]Ti
 
 // TimedSettingsWithPrefix 读取键以 prefix 开头的全部设置及其修改时间, 结果的键去掉 prefix。
 func (s *Store) TimedSettingsWithPrefix(ctx context.Context, prefix string) (map[string]TimedSetting, error) {
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT key, value, updated_at FROM app_settings WHERE substr(key, 1, ?) = ?`, len(prefix), prefix)
 	if err != nil {
 		return nil, wrap(CodeQuery, "read timed settings", err)

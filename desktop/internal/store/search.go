@@ -26,7 +26,7 @@ func (s *Store) SearchEmails(ctx context.Context, accountID, query string, limit
 		return s.searchByPrefix(ctx, accountID, query, limit)
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT `+summaryColumns+threadCountColumn+`
 		FROM emails_fts f
 		JOIN emails e ON e.rowid = f.rowid
@@ -46,7 +46,7 @@ func (s *Store) SearchEmails(ctx context.Context, accountID, query string, limit
 func (s *Store) searchByPrefix(ctx context.Context, accountID, query string, limit int) ([]EmailSummary, error) {
 	pattern := "%" + escapeLike(query) + "%"
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT `+summaryColumns+threadCountColumn+`
 		FROM emails e
 		WHERE e.account_id = ?
@@ -87,7 +87,7 @@ func (s *Store) EmailsByIDs(ctx context.Context, accountID string, ids []string)
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT `+summaryColumns+threadCountColumn+`
 		FROM emails e
 		WHERE e.account_id = ? AND e.id IN (?`+strings.Repeat(",?", len(ids)-1)+`)
@@ -112,7 +112,7 @@ func (s *Store) FillMailboxIDs(ctx context.Context, accountID string, list []Ema
 		args = append(args, e.ID)
 		index[e.ID] = i
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT email_id, mailbox_id FROM email_mailboxes
 		 WHERE account_id = ? AND email_id IN (?`+strings.Repeat(",?", len(list)-1)+`)`,
 		args...)

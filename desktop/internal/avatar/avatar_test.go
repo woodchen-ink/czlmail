@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 )
@@ -84,4 +85,85 @@ type failingTransport struct{}
 
 func (failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, http.ErrHandlerTimeout
+}
+
+func newTestService(t *testing.T, fetch func(key string) (*store.CachedAvatar, bool)) (*Service, *store.Store) {
+	t.Helper()
+	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "a.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	svc := New(func() *store.Store { return st }, func() bool { return true }, slog.Default())
+	svc.fetchKey = func(_ context.Context, key string) (*store.CachedAvatar, bool) { return fetch(key) }
+	return svc, st
+}
+
+var png = &store.CachedAvatar{ContentType: "image/png", Data: []byte(strings.Repeat("x", 200))}
+
+// 缓存过期时先返回旧图, 后台再拉; 冷却期内不重复拉。
+func TestStaleAvatarServedWhileRefreshing(t *testing.T) {
+	ctx := context.Background()
+	fetched := make(chan string, 4)
+	release := make(chan struct{})
+	svc, st := newTestService(t, func(key string) (*store.CachedAvatar, bool) {
+		fetched <- key
+		<-release
+		return png, true
+	})
+	if err := st.PutAvatar(ctx, "g:old", *png); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-positiveTTL - time.Hour).Unix()
+	if _, err := st.DB().Exec(`UPDATE avatar_cache SET fetched_at = ? WHERE key = 'g:old'`, old); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	if img := svc.lookup(ctx, "g:old"); img == nil || img.Missing {
+		t.Fatalf("stale image not served: %+v", img)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal("lookup waited for the upstream")
+	}
+	select {
+	case <-fetched:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no background refresh")
+	}
+	close(release)
+
+	// 冷却期内再看到过期缓存不再拉。
+	svc.mu.Lock()
+	svc.refreshed["g:other"] = time.Now()
+	svc.mu.Unlock()
+	svc.refresh(st, "g:other")
+	select {
+	case k := <-fetched:
+		t.Fatalf("refreshed %s during cooldown", k)
+	default:
+	}
+}
+
+// Gravatar 命中时不等域名图标。
+func TestFirstHitDoesNotWaitForLowerPriority(t *testing.T) {
+	block := make(chan struct{})
+	defer close(block)
+	svc, _ := newTestService(t, func(key string) (*store.CachedAvatar, bool) {
+		if strings.HasPrefix(key, "f:") {
+			<-block
+			return &store.CachedAvatar{Missing: true}, true
+		}
+		return png, true
+	})
+	done := make(chan *store.CachedAvatar, 1)
+	go func() { done <- svc.firstHit(context.Background(), []string{"g:a", "f:b"}) }()
+	select {
+	case img := <-done:
+		if img == nil {
+			t.Fatal("no hit")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("waited for the lower-priority candidate")
+	}
 }

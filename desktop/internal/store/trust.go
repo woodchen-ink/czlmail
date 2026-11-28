@@ -39,7 +39,7 @@ func (s *Store) IsSenderTrusted(ctx context.Context, accountID, address string) 
 	}
 
 	var n int
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM trusted_senders WHERE account_id = ? AND address = ?`,
 		accountID, addr,
 	).Scan(&n)
@@ -71,7 +71,7 @@ func (s *Store) IsSenderTrusted(ctx context.Context, accountID, address string) 
 // LIKE '%addr%' 会让 bob@x.com 命中 rob@x.com 之类的子串。
 func (s *Store) isInAddressBook(ctx context.Context, accountID, addr string) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `
+	err := s.rd.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM contacts c, json_each(c.emails_json) e
 		WHERE c.account_id = ?
@@ -107,7 +107,7 @@ func UntrustSender(ctx context.Context, tx *sql.Tx, accountID, address string) e
 
 // TrustedSenders 列出信任名单, 供设置页管理。
 func (s *Store) TrustedSenders(ctx context.Context, accountID string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT address FROM trusted_senders WHERE account_id = ? ORDER BY address`,
 		accountID)
 	if err != nil {
@@ -129,7 +129,7 @@ func (s *Store) TrustedSenders(ctx context.Context, accountID string) ([]string,
 // BoolSetting 读布尔设置, 未设置时返回给定默认值。
 func (s *Store) BoolSetting(ctx context.Context, key string, fallback bool) (bool, error) {
 	var v string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = ?`, key).Scan(&v)
+	err := s.rd.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = ?`, key).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fallback, nil
 	}

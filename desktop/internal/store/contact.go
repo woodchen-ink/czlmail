@@ -84,7 +84,7 @@ func ReplaceAddressBooks(ctx context.Context, tx *sql.Tx, accountID string, list
 
 // AddressBooks 列出全部账号的通讯录。
 func (s *Store) AddressBooks(ctx context.Context) ([]AddressBook, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT b.account_id, b.id, b.name, b.description, b.sort_order, b.is_subscribed, b.is_default, b.my_rights
 		FROM address_books b
 		LEFT JOIN accounts a ON a.id = b.account_id
@@ -179,7 +179,7 @@ func (s *Store) Contacts(ctx context.Context, accountID, bookID, query string, l
 	sqlText += ` ORDER BY sort_name LIMIT ?`
 	args = append(args, limit)
 
-	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	rows, err := s.rd.QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, wrap(CodeQuery, "list contacts", err)
 	}
@@ -212,7 +212,7 @@ func (s *Store) Contacts(ctx context.Context, accountID, bookID, query string, l
 
 // ContactUIDs 返回 id → uid(只含存在的联系人)。
 func (s *Store) ContactUIDs(ctx context.Context, accountID string) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, uid FROM contacts WHERE account_id = ?`, accountID)
+	rows, err := s.rd.QueryContext(ctx, `SELECT id, uid FROM contacts WHERE account_id = ?`, accountID)
 	if err != nil {
 		return nil, wrap(CodeQuery, "contact uids", err)
 	}
@@ -231,7 +231,7 @@ func (s *Store) ContactUIDs(ctx context.Context, accountID string) (map[string]s
 // Contact 读单个联系人原文。
 func (s *Store) Contact(ctx context.Context, accountID, id string) (string, error) {
 	var raw string
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT raw_json FROM contacts WHERE account_id = ? AND id = ?`, accountID, id).Scan(&raw)
 	if err == sql.ErrNoRows {
 		return "", ErrNotFound
@@ -248,7 +248,7 @@ func (s *Store) SearchCorrespondents(ctx context.Context, query string, limit in
 		return nil, nil
 	}
 	like := "%" + escapeLike(q) + "%"
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		WITH recent AS (
 			SELECT from_json, to_json, cc_json FROM emails ORDER BY received_at DESC LIMIT 5000
 		), addrs AS (
@@ -294,7 +294,7 @@ func (s *Store) SearchRecipients(ctx context.Context, query string, limit int) (
 		return nil, nil
 	}
 	like := "%" + escapeLike(q) + "%"
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT DISTINCT c.display_name, json_extract(e.value, '$.email') AS email
 		FROM contacts c, json_each(c.emails_json) e
 		WHERE LOWER(c.display_name) LIKE ? ESCAPE '\' OR LOWER(json_extract(e.value, '$.email')) LIKE ? ESCAPE '\'

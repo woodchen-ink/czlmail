@@ -44,6 +44,8 @@ type PIMChange struct {
 //
 // 只处理个人账号与共享账号中真正新增的邮件; 标记已读之类的更新不会走到这里。
 func (a *App) onNewMail(accountID string, emails []store.Email) {
+	// 不止收件箱: 归档、文件夹里的新邮件一样会出现在列表里。
+	a.warmAvatars(emails)
 	// 只通知收件箱: 已发送、草稿、被过滤规则移走的邮件都不是"来信"。
 	inbox := ""
 	if st, err := a.currentStore(); err == nil {

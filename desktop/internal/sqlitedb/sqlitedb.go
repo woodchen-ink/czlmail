@@ -15,6 +15,8 @@ type Pragmas struct {
 	Synchronous   string // 如 "NORMAL" / "FULL"
 	BusyTimeoutMs int
 	ForeignKeys   bool
+	// QueryOnly 让连接拒绝一切写入, 用于只读连接池: 万一有写语句误走了读连接, 报错而不是绕过写连接的排队。
+	QueryOnly bool
 }
 
 // Open 打开 path 处的数据库 (不存在时创建)。

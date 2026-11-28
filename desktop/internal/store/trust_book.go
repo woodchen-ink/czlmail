@@ -14,7 +14,7 @@ const TrustedSendersBook = "Trusted Senders"
 // inTrustedBook 检查地址是否在任一账号的信任通讯录里。
 func (s *Store) inTrustedBook(ctx context.Context, addr string) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `
+	err := s.rd.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM contacts c
 		JOIN address_books b ON b.account_id = c.account_id AND b.name = ?
@@ -50,7 +50,7 @@ func (s *Store) TrustedBookEntries(ctx context.Context, address string) ([]Trust
 		query += ` AND LOWER(json_extract(e.value, '$.email')) = ?`
 		args = append(args, NormalizeAddress(address))
 	}
-	rows, err := s.db.QueryContext(ctx, query+` ORDER BY 3`, args...)
+	rows, err := s.rd.QueryContext(ctx, query+` ORDER BY 3`, args...)
 	if err != nil {
 		return nil, wrap(CodeQuery, "list trusted book", err)
 	}
