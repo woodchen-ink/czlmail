@@ -79,7 +79,7 @@ import { main } from "@/wailsjs/go/models";
 import { displayAddressList, fullDate } from "@/lib/format";
 import { printEmail } from "@/lib/print";
 import { useAppearance } from "@/lib/theme";
-import { listen, send, takePendingOpenEmail } from "@/lib/app-bus";
+import { listen, send, takePendingFileEmail, takePendingOpenEmail } from "@/lib/app-bus";
 import { escapeHtml, splitDraftHtml, textToHtml } from "@/lib/html";
 import { emailKey, groupByAccount, parseEmailKey } from "@/lib/email-key";
 import { beginDraftIntent } from "@/lib/draft-transition";
@@ -229,6 +229,9 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     writeSourcePanel(open);
   }, []);
   const [focusMode, setFocusMode] = useState(false);
+  // 本地解析的 .eml (本机文件、邮件里的 .eml 附件), 显示在阅读栏; 见 eml_files.go。
+  // back 是打开前列表里选中的邮件 (点了它的 .eml 附件), 关掉文件邮件后回到它。
+  const [fileEmail, setFileEmail] = useState<{ detail: EmailDetail; name: string; back: string } | null>(null);
   // 窄屏下显示哪一栏。选中的邮件一变 (点了列表、通知或链接打开、删除后跳到下一封) 就进正文;
   // 返回列表时保留选中, 回来还能看到刚才那一行。用渲染期比较而不是 effect, 避免先闪一帧列表。
   const compact = useCompact();
@@ -237,8 +240,14 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
   if (seenKey !== selectedKey) {
     setSeenKey(selectedKey);
     if (selectedKey) setMobileView("detail");
+    // 本地 .eml 显示时列表里没有选中项; 选了别的邮件 (点列表、通知、链接) 就收起它。
+    if (selectedKey && fileEmail) setFileEmail(null);
   }
-  const mobilePane: MobilePane = draft ? "detail" : mobileView === "detail" && !selectedKey ? "list" : mobileView;
+  const mobilePane: MobilePane = draft
+    ? "detail"
+    : mobileView === "detail" && !selectedKey && !fileEmail
+      ? "list"
+      : mobileView;
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [sourceTarget, setSourceTarget] = useState<{ accountId: string; emailId: string } | null>(null);
 
@@ -1333,6 +1342,42 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     [setDraft, composeAccount],
   );
 
+  /** 显示一封本地 .eml: 先让写信面板存好, 再清掉列表选中。 */
+  const selectedRef = useRef(selectedKey);
+  useEffect(() => {
+    selectedRef.current = selectedKey;
+  }, [selectedKey]);
+
+  /**
+   * 显示一封本地 .eml。写信面板开着时不动它 (双击外部 .eml 不该把写到一半的信关掉), 关掉写信面板后显示。
+   * 从文件邮件里再打开里面的 .eml 时, 回去的目标仍是最初那封。
+   */
+  const openFileEmail = useCallback((req: { detail: EmailDetail; name: string }) => {
+    const back = selectedRef.current;
+    setFileEmail((prev) => ({ ...req, back: prev ? prev.back : back }));
+    setSelectedKey("");
+    if (openDraft.current) {
+      toast(t("已打开 {0}，关闭写信面板后显示", req.name));
+      return;
+    }
+    setMobileView("detail");
+  }, []);
+
+  const closeFileEmail = useCallback(() => {
+    const back = fileEmail?.back ?? "";
+    setFileEmail(null);
+    if (back) setSelectedKey(back);
+  }, [fileEmail]);
+
+  useEffect(() => {
+    const pending = takePendingFileEmail();
+    if (pending) queueMicrotask(() => openFileEmail(pending));
+    return listen("openFileEmail", (req) => {
+      takePendingFileEmail();
+      openFileEmail(req);
+    });
+  }, [openFileEmail]);
+
   const menuActions = useMemo<EmailMenuActions>(
     () => ({
       reply: (email, all) => withDetail(email, (d) => startReply(d, all)),
@@ -1426,6 +1471,34 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       };
     },
     [archiveIds, trashIds, moveIds, setLabelIds, junkIds, markReadIds, markReadOnReply, leaveAfterUnread, toggleFlag, taskFlagIds, importEmails, bodyAppearance, setBodyAppearance, setDraft, startReply],
+  );
+
+  /**
+   * 回复、转发本地 .eml: 引用的附件与内嵌图片只在本机内存里 (blob id 以 eml: 开头), 打开写信面板前传到写信账号。
+   * 不走 startReply: 文件里的邮件不在服务器上, 没有会话可找已有的回复草稿, 也不用标已读。
+   */
+  const fileActions = useCallback(
+    (email: EmailDetail): ToolbarActions => {
+      const start = async (make: () => ComposeDraft) => {
+        const current = beginDraftIntent(intent);
+        try {
+          const d = await uploadFileParts(make());
+          if (current()) await setDraft(d);
+        } catch (err) {
+          toast.error(errorMessage(err));
+        }
+      };
+      // 账号表还没读到时打开的文件没有账号, 用平时写信的账号。
+      const acc = email.accountId || composeAccount;
+      return {
+        ...actionsFor(email),
+        reply: () => start(() => replyDraft(acc, email, false)),
+        replyAll: () => start(() => replyDraft(acc, email, true)),
+        forward: () => start(() => forwardDraft(email, acc)),
+        forwardAsAttachment: () => start(() => forwardAsAttachmentDraft(email, acc)),
+      };
+    },
+    [actionsFor, setDraft, composeAccount],
   );
 
   /* ---------- 键盘快捷键 ---------- */
@@ -1881,6 +1954,24 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 }}
                 onSent={reload}
               />
+            ) : fileEmail && !selectedKey ? (
+              <EmailView
+                key={fileEmail.detail.id}
+                accountId={fileEmail.detail.accountId}
+                emailId={fileEmail.detail.id}
+                mailboxes={[]}
+                currentKind=""
+                labels={[]}
+                focusMode={focusMode}
+                bodyMode={bodyMode}
+                bodyAlwaysLight={bodyAppearance === "light"}
+                actions={fileActions}
+                onLoaded={() => {}}
+                revision={revision}
+                onMarkRead={() => {}}
+                active={active}
+                file={{ name: fileEmail.name, onClose: closeFileEmail }}
+              />
             ) : selectedKey ? (
               <EmailView
                 key={selectedKey}
@@ -2109,6 +2200,27 @@ function writeSourcePanel(open: boolean) {
   } catch {
     // 隐私窗口等环境下写不进去, 只是不记忆。
   }
+}
+
+/**
+ * 把草稿里引用的本地 .eml 部件 (附件、内嵌图片) 上传到写信账号, 换成服务器上的 blob。没有这类部件时原样返回。
+ */
+async function uploadFileParts(d: ComposeDraft): Promise<ComposeDraft> {
+  const acc = d.accountId ?? "";
+  const atts = d.attachments ?? [];
+  const inline = d.inlineParts ?? [];
+  const refs = [
+    ...atts.map((a) => main.AttachmentRef.createFrom({ blobId: a.blobId, type: a.type, name: a.name, cid: "" })),
+    ...inline.map((p) => main.AttachmentRef.createFrom({ blobId: p.blobId, type: p.type, name: p.name, cid: p.cid })),
+  ];
+  if (!refs.some((r) => r.blobId.startsWith("eml:"))) return d;
+  const moved = (await api.transferAttachments(acc, acc, refs)) ?? [];
+  if (moved.length !== refs.length) throw new Error(t("没能把邮件原文搬到写信的账号"));
+  return {
+    ...d,
+    attachments: atts.map((a, i) => ({ ...a, blobId: moved[i].blobId })),
+    inlineParts: inline.map((p, i) => ({ ...p, blobId: moved[atts.length + i].blobId })),
+  };
 }
 
 /** 打开已有草稿继续编辑。 */

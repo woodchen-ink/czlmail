@@ -5,12 +5,16 @@
  * 只需约定消息名与负载。
  */
 
+import type { EmailDetail } from "@/lib/api";
+
 export type Module = "mail" | "calendar" | "contacts" | "files" | "notes" | "assistant" | "settings";
 
 export interface AppMessages {
   navigate: { module: Module };
   compose: { to: string; cc?: string; bcc?: string; subject?: string; body?: string };
   openEmail: { accountId: string; emailId: string };
+  /** 在邮件模块里显示一封本地解析的 .eml (本机文件或邮件里的 .eml 附件), name 是文件名。 */
+  openFileEmail: { detail: EmailDetail; name: string };
   /** 打开一篇笔记(笔记模块可能还没挂载, 见 lib/notes/api 的 requestOpenNote)。 */
   openNote: { vaultId: string; id: string };
   /** 打开设置里的某一页。 */
@@ -36,6 +40,20 @@ export function requestOpenEmail(detail: AppMessages["openEmail"]) {
 export function takePendingOpenEmail(): AppMessages["openEmail"] | null {
   const d = pendingOpenEmail;
   pendingOpenEmail = null;
+  return d;
+}
+
+// 同上: 冷启动时双击 .eml 打开程序, 请求早于邮件模块订阅。
+let pendingFileEmail: AppMessages["openFileEmail"] | null = null;
+
+export function requestOpenFileEmail(detail: AppMessages["openFileEmail"]) {
+  pendingFileEmail = detail;
+  send("openFileEmail", detail);
+}
+
+export function takePendingFileEmail(): AppMessages["openFileEmail"] | null {
+  const d = pendingFileEmail;
+  pendingFileEmail = null;
   return d;
 }
 

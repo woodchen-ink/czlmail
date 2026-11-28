@@ -184,12 +184,24 @@ export function IntegrationSection({ active }: { active: boolean }) {
         >
           <StatusDot on={!!status?.defaultCalendar} />
         </Row>
+        {/* macOS 上 .eml 的默认程序在访达「显示简介」里选, 这里不判断。 */}
+        {!mac && (
+          <>
+            <Divider />
+            <Row
+              title={t("打开邮件文件 (.eml)")}
+              desc={status?.defaultEml ? t("已是默认：双击 .eml 文件会在 CZL Mail 里打开") : t("未设置：.eml 文件不会用 CZL Mail 打开")}
+            >
+              <StatusDot on={!!status?.defaultEml} />
+            </Row>
+          </>
+        )}
         <Divider />
         <div className="flex items-center gap-3">
           <p className="text-muted-foreground flex-1 text-xs leading-relaxed">
             {mac
               ? t("把 CZL Mail 设为邮箱链接、.ics 文件与 webcal 订阅的默认打开程序。以后想改回，在「邮件」或「日历」自己的设置里选。")
-              : t("Windows 不允许程序自行修改默认应用。点击右侧按钮打开系统设置，在「CZL Mail」页面把 MAILTO、.ics、WEBCAL 设为 CZL Mail。")}
+              : t("Windows 不允许程序自行修改默认应用。点击右侧按钮打开系统设置，在「CZL Mail」页面把 MAILTO、.ics、WEBCAL、.eml 设为 CZL Mail。")}
           </p>
           <Button
             variant="outline"

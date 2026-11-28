@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3
 	git.sr.ht/~rockorager/go-jmap v0.5.3
+	github.com/emersion/go-message v0.18.2
 	github.com/energye/systray v1.0.3
 	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/modelcontextprotocol/go-sdk v1.8.0

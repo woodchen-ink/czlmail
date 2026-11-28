@@ -205,6 +205,8 @@ export const api = {
   saveAttachment: guard(App.SaveAttachment),
   addAttachments: guard(App.AddAttachments),
   openAttachment: guard(App.OpenAttachment),
+  openEmlFile: guard(App.OpenEmlFile),
+  openEmlAttachment: guard(App.OpenEmlAttachment),
   revealAttachment: guard(App.RevealAttachment),
   downloadAllAttachments: guard(App.DownloadAllAttachments),
 
@@ -355,6 +357,9 @@ const ERROR_MESSAGES: Record<string, () => string> = {
   "2023": () => t("这个账号已经登录过了。"),
   "2024": () => t("这里登录的是另一个账号。要使用另一个账号，请把它作为新的登录添加。"),
   "2441": () => t("附件超过了所选发件人服务器的上传上限。"),
+  "2450": () => t("这封邮件文件已经关闭，请重新打开。"),
+  "2451": () => t("这个文件不是能识别的邮件 (.eml)。"),
+  "2452": () => t("邮件文件太大或读取失败。"),
   "2030": () => t("这个账号没有「已删除」文件夹。"),
   "2031": () => t("这个账号没有「归档」文件夹。"),
   "2033": () => t("标签名不能为空。"),

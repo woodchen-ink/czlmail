@@ -166,6 +166,9 @@ func (a *App) fillMailboxPage(st *store.Store, accountID, mailboxID string, limi
 // GetEmail 读单封邮件。BodyFetched 为 false 时正文尚未缓存,
 // 前端应接着调用 FetchBody。
 func (a *App) GetEmail(accountID, emailID string) (*store.EmailDetail, error) {
+	if isEmlID(emailID) {
+		return a.emlDetail(emailID)
+	}
 	st, err := a.currentStore()
 	if err != nil {
 		return nil, err

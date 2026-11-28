@@ -25,12 +25,14 @@ type IntegrationStatus struct {
 	Autostart       bool   `json:"autostart"`
 	DefaultMail     bool   `json:"defaultMail"`
 	DefaultCalendar bool   `json:"defaultCalendar"`
+	// DefaultEml 表示双击 .eml 用本程序打开 (只在 Windows 上判断)。
+	DefaultEml bool `json:"defaultEml"`
 }
 
 func (a *App) GetIntegrationStatus() IntegrationStatus {
 	return IntegrationStatus{
 		Platform: runtime.GOOS, Supported: platform.IntegrationSupported, Autostart: platform.AutostartEnabled(),
-		DefaultMail: platform.IsDefaultMail(), DefaultCalendar: platform.IsDefaultCalendar(),
+		DefaultMail: platform.IsDefaultMail(), DefaultCalendar: platform.IsDefaultCalendar(), DefaultEml: platform.IsDefaultEml(),
 	}
 }
 
@@ -75,14 +77,14 @@ func (a *App) refreshHandlers() {
 
 // OpenRequest 是一个外部打开请求。
 type OpenRequest struct {
-	// Kind: compose / ics / email / thread
+	// Kind: compose / ics / eml / email / thread
 	Kind    string `json:"kind"`
 	To      string `json:"to"`
 	CC      string `json:"cc"`
 	BCC     string `json:"bcc"`
 	Subject string `json:"subject"`
 	Body    string `json:"body"`
-	// Path 是本地 .ics 文件, 或 webcal 订阅地址(已转换为 https)。
+	// Path 是本地 .ics / .eml 文件, 或 webcal 订阅地址(已转换为 https)。
 	Path string `json:"path"`
 	// AccountID 与 ID 是 czlmail:// 链接指向的邮件或会话。
 	AccountID string `json:"accountId"`
@@ -94,7 +96,7 @@ type openQueue struct {
 	pending []OpenRequest
 }
 
-// handleArgs 解析命令行参数中的 mailto: 与 .ics, 入队并通知界面。
+// handleArgs 解析命令行参数中的 mailto:、czlmail:// 链接、.ics 与 .eml, 入队并通知界面。
 // 首次启动时界面可能还没加载, 请求留在队列里, 由界面加载完成后主动来取。
 func (a *App) handleArgs(args []string) bool {
 	var reqs []OpenRequest
@@ -109,6 +111,12 @@ func (a *App) handleArgs(args []string) bool {
 			}
 		case strings.HasPrefix(lower, "webcal://"), strings.HasPrefix(lower, "webcals://"):
 			reqs = append(reqs, OpenRequest{Kind: "ics", Path: "https://" + arg[strings.Index(arg, "://")+3:]})
+		case strings.HasSuffix(lower, ".eml"):
+			if abs, err := filepath.Abs(arg); err == nil {
+				if _, err := os.Stat(abs); err == nil {
+					reqs = append(reqs, OpenRequest{Kind: "eml", Path: abs})
+				}
+			}
 		case strings.HasSuffix(lower, ".ics"):
 			if abs, err := filepath.Abs(arg); err == nil {
 				if _, err := os.Stat(abs); err == nil {

@@ -13,6 +13,7 @@ func SetAutostart(bool) error                            { return errIntegration
 func RegisterHandlers(func(string, ...any) string) error { return nil }
 func IsDefaultMail() bool                                { return false }
 func IsDefaultCalendar() bool                            { return false }
+func IsDefaultEml() bool                                 { return false }
 func OpenDefaultAppsSettings() error                     { return errIntegrationUnsupported }
 func UnregisterHandlers() error                          { return nil }
 

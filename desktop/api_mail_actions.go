@@ -118,11 +118,7 @@ func (a *App) ViewSource(accountID, emailID string) (string, error) {
 
 // ExportEmail 把邮件原文保存为 .eml, 返回保存的路径; 用户取消时返回空串。
 func (a *App) ExportEmail(accountID, emailID string) (string, error) {
-	st, err := a.currentStore()
-	if err != nil {
-		return "", err
-	}
-	detail, err := st.Email(a.ctx, accountID, emailID)
+	detail, err := a.emailDetail(accountID, emailID)
 	if err != nil {
 		return "", err
 	}
@@ -275,6 +271,9 @@ func readLimited(path string, limit int64) ([]byte, error) {
 }
 
 func (a *App) rawMessage(accountID, emailID string) ([]byte, error) {
+	if isEmlID(emailID) {
+		return a.emlBlob(emailID)
+	}
 	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, err

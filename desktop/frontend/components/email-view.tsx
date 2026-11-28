@@ -5,7 +5,7 @@ import { useI18n } from "@/components/locale-provider";
 import { MobileNavButton } from "@/components/pane-layout";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Languages, Loader2, ShieldCheck, Sparkles, Undo2, X } from "lucide-react";
+import { ChevronDown, FileText, Forward, Languages, Loader2, Reply, ReplyAll, ShieldCheck, Sparkles, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -101,6 +101,10 @@ interface Props {
    * 回复、删除、移动这类操作不在这里做, 翻译、总结、附件照常可用。
    */
   reference?: { onClose: () => void };
+  /**
+   * 本地解析的 .eml (本机文件或邮件里的 .eml 附件): 不在任何邮箱里, 工具条只留回复、全部回复、转发与关闭。
+   */
+  file?: { name: string; onClose: () => void };
 }
 
 export function EmailView({
@@ -119,6 +123,7 @@ export function EmailView({
   onMarkRead,
   active,
   reference,
+  file,
 }: Props) {
   useI18n();
   const [email, setEmail] = useState<EmailDetail | null>(null);
@@ -485,6 +490,8 @@ export function EmailView({
     <div className="flex h-full flex-col">
       {reference ? (
         <ReferenceHeader onClose={reference.onClose} />
+      ) : file ? (
+        <FileHeader name={file.name} onClose={file.onClose} actions={actions(email)} />
       ) : (
         <EmailToolbar
           email={email}
@@ -732,6 +739,34 @@ function ReferenceHeader({ onClose }: { onClose: () => void }) {
         <X className="size-4" />
       </Button>
     </header>
+  );
+}
+
+/** 本地 .eml 的工具条: 关闭与文件名在左, 回复、全部回复、转发在右; 高度同邮件工具条。 */
+function FileHeader({ name, onClose, actions }: { name: string; onClose: () => void; actions: ToolbarActions }) {
+  useI18n();
+  const items = [
+    { icon: Reply, label: t("回复"), onClick: actions.reply },
+    { icon: ReplyAll, label: t("全部回复"), onClick: actions.replyAll },
+    { icon: Forward, label: t("转发"), onClick: actions.forward },
+  ];
+  return (
+    <div className="border-border flex shrink-0 items-center gap-1 border-b px-2 py-1.5">
+      <MobileNavButton kind="back" />
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" aria-label={t("关闭")} title={t("关闭")} onClick={onClose}>
+        <X className="size-4" />
+      </Button>
+      <FileText className="text-muted-foreground size-4 shrink-0" />
+      <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm" title={name}>
+        {name}
+      </span>
+      {items.map(({ icon: Icon, label, onClick }) => (
+        <Button key={label} variant="ghost" size="sm" className="h-8 shrink-0" title={label} aria-label={label} onClick={onClick}>
+          <Icon className="size-4" />
+          <span className="hidden sm:inline">{label}</span>
+        </Button>
+      ))}
+    </div>
   );
 }
 

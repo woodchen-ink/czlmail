@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/context-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api, blobUrl, errorMessage, isPreviewable, type Attachment } from "@/lib/api";
+import { requestOpenFileEmail } from "@/lib/app-bus";
 import { fileSize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +76,14 @@ export function AttachmentList({ accountId, emailId, attachments }: Props) {
 
   const open = (a: Attachment) =>
     run(a.blobId, async () => {
+      // 邮件里转发来的邮件 (.eml) 在应用里打开, 本地解析; 解析不了再交给系统程序。
+      if (a.type === "message/rfc822" || /\.eml$/i.test(a.name ?? "")) {
+        const detail = await api.openEmlAttachment(accountId, emailId, a.blobId).catch(() => null);
+        if (detail) {
+          requestOpenFileEmail({ detail, name: a.name || "email.eml" });
+          return;
+        }
+      }
       const res = await api.openAttachment(accountId, emailId, a.blobId);
       if (res.revealed) toast.warning(t("可执行文件不会直接打开，已在文件夹中选中，请确认来源可信后再运行"));
     });

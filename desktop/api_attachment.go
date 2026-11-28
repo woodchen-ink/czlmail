@@ -55,8 +55,8 @@ func (a *App) serveBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 图片(正文里的 cid 内嵌图片、附件缩略图)走磁盘缓存, 再打开邮件不重新下载。
-	if strings.HasPrefix(contentType, "image/") && previewableTypes[contentType] {
+	// 图片(正文里的 cid 内嵌图片、附件缩略图)走磁盘缓存, 再打开邮件不重新下载。.eml 的部件本来就在内存里。
+	if !isEmlID(blobID) && strings.HasPrefix(contentType, "image/") && previewableTypes[contentType] {
 		data, err := a.cachedBlob(r.Context(), accountID, blobID)
 		if err != nil {
 			http.Error(w, "download failed", http.StatusBadGateway)
@@ -71,13 +71,7 @@ func (a *App) serveBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := a.syncerFor(accountID)
-	if err != nil {
-		http.Error(w, "not signed in", http.StatusServiceUnavailable)
-		return
-	}
-
-	rc, err := s.DownloadBlob(r.Context(), accountID, blobID)
+	rc, err := a.openBlob(accountID, blobID)
 	if err != nil {
 		http.Error(w, "download failed", http.StatusBadGateway)
 		return
@@ -105,9 +99,10 @@ func (a *App) serveBlob(w http.ResponseWriter, r *http.Request) {
 
 // SaveAttachment 把附件保存到用户选择的位置。返回保存路径, 用户取消时返回空串。
 func (a *App) SaveAttachment(accountID, blobID, name string) (string, error) {
-	s, err := a.syncerFor(accountID)
-	if err != nil {
-		return "", err
+	if !isEmlID(blobID) {
+		if _, err := a.syncerFor(accountID); err != nil {
+			return "", err
+		}
 	}
 
 	path, err := a.saveFileDialog(fileDialog{
@@ -121,7 +116,7 @@ func (a *App) SaveAttachment(accountID, blobID, name string) (string, error) {
 		return "", nil
 	}
 
-	rc, err := s.DownloadBlob(a.ctx, accountID, blobID)
+	rc, err := a.openBlob(accountID, blobID)
 	if err != nil {
 		return "", err
 	}

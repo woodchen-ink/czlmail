@@ -139,11 +139,7 @@ func (a *App) localAttachment(accountID, emailID, blobID string) (string, error)
 
 // attachmentPlan 给出邮件附件的落地目录与各附件的文件名(与 Attachments 下标对应)。
 func (a *App) attachmentPlan(accountID, emailID string) (*store.EmailDetail, string, []string, error) {
-	st, err := a.currentStore()
-	if err != nil {
-		return nil, "", nil, err
-	}
-	detail, err := st.Email(a.ctx, accountID, emailID)
+	detail, err := a.emailDetail(accountID, emailID)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -175,15 +171,11 @@ func (a *App) ensureDownloaded(accountID, blobID, path string) (string, error) {
 	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
 		return path, nil
 	}
-	s, err := a.syncerFor(accountID)
-	if err != nil {
-		return "", err
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", fmt.Errorf("2081 create attachment dir: %w", err)
 	}
 
-	rc, err := s.DownloadBlob(a.ctx, accountID, blobID)
+	rc, err := a.openBlob(accountID, blobID)
 	if err != nil {
 		return "", err
 	}

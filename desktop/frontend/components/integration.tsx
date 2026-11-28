@@ -14,10 +14,21 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Switch } from "@/components/ui/switch";
 import { Events, api, errorMessage, onEvent, type Calendar, type IntegrationStatus, type OpenRequest } from "@/lib/api";
 import { supports } from "@/lib/account-features";
-import { requestOpenEmail, send } from "@/lib/app-bus";
+import { requestOpenEmail, requestOpenFileEmail, send } from "@/lib/app-bus";
 import { onFileDrop } from "@/lib/file-drop";
 
 const ONBOARD_KEY = "czlmail.onboarded.integration";
+
+/** 在本地解析 .eml 文件 (双击、打开方式、拖进窗口), 交给邮件模块显示。 */
+async function openEmlPath(path: string) {
+  try {
+    const detail = await api.openEmlFile(path);
+    send("navigate", { module: "mail" });
+    requestOpenFileEmail({ detail, name: path.split(/[\\/]/).pop() || path });
+  } catch (err) {
+    toast.error(errorMessage(err));
+  }
+}
 
 /**
  * 与操作系统的衔接: 处理 mailto / .ics / webcal 打开请求、拖入的 .ics 文件,
@@ -37,6 +48,8 @@ export function Integration() {
           send("compose", { to: r.to, cc: r.cc, bcc: r.bcc, subject: r.subject, body: r.body });
         } else if (r.kind === "ics" && r.path) {
           setIcsSource(r.path);
+        } else if (r.kind === "eml" && r.path) {
+          await openEmlPath(r.path);
         } else if (r.kind === "email" || r.kind === "thread") {
           // czlmail:// 链接与点系统通知。会话链接打开其中最新的一封; 本地没有缓存时提示而不是静默忽略。
           let emailId = r.id;
@@ -60,6 +73,12 @@ export function Integration() {
     drain();
     const off = onEvent(Events.openRequest, drain);
     const offDrop = onFileDrop((paths) => {
+      // 写信面板开着时它先接管 (作为附件), 到不了这里。
+      const eml = paths.find((p) => /\.eml$/i.test(p));
+      if (eml) {
+        openEmlPath(eml);
+        return true;
+      }
       const ics = paths.find((p) => /\.(ics|ical|ifb)$/i.test(p));
       if (!ics) return false;
       setIcsSource(ics);
@@ -223,7 +242,7 @@ function OnboardDialog({
                 {t("点击网页上的邮箱链接、双击 .ics 文件时用 CZL Mail 打开。")}{status.platform === "darwin" ? "" : t("Windows 需要在系统设置里确认。")}
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
-                {t("当前：邮件")}{status.defaultMail ? t("已是默认") : t("未设置")}  {t("· 日历")} {status.defaultCalendar ? t("已是默认") : t("未设置")}
+                {t("当前：邮件{0} · 日历{1}", status.defaultMail ? t("已是默认") : t("未设置"), status.defaultCalendar ? t("已是默认") : t("未设置"))}
               </p>
             </div>
             <Button

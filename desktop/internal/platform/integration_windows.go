@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// Windows 系统集成: 开机自启、注册为邮件(mailto:)与日历(.ics / webcal:)应用。
+// Windows 系统集成: 开机自启、注册为邮件(mailto: / .eml)与日历(.ics / webcal:)应用。
 //
 // 全部写在 HKCU, 不需要管理员权限。Windows 10 起程序不能自己把自己设为默认应用,
 // 只能登记"能处理哪些协议与文件", 再打开系统的默认应用设置页由用户确认。
@@ -21,6 +21,7 @@ const (
 	capabilityKey = `Software\Clients\Mail\CZL Mail\Capabilities`
 	progMailto    = "CZLMail.mailto"
 	progICS       = "CZLMail.ics"
+	progEML       = "CZLMail.eml"
 	progWebcal    = "CZLMail.webcal"
 	// progLink 直接以协议名作为类名: 自有协议不需要用户在默认应用里确认。
 	progLink = LinkScheme
@@ -77,6 +78,7 @@ func RegisterHandlers(t func(string, ...any) string) error {
 	progIDs := []struct{ id, name string }{
 		{progMailto, t("CZL Mail 邮件链接")},
 		{progICS, t("CZL Mail 日历文件")},
+		{progEML, t("CZL Mail 邮件文件")},
 		{progWebcal, t("CZL Mail 日历订阅")},
 		{progLink, "URL:" + t("CZL Mail 邮件链接")},
 	}
@@ -84,7 +86,7 @@ func RegisterHandlers(t func(string, ...any) string) error {
 		if err := setValues(`Software\Classes\`+p.id, map[string]string{"": p.name}); err != nil {
 			return err
 		}
-		if p.id != progICS {
+		if p.id != progICS && p.id != progEML {
 			if err := setValues(`Software\Classes\`+p.id, map[string]string{"URL Protocol": ""}); err != nil {
 				return err
 			}
@@ -107,11 +109,14 @@ func RegisterHandlers(t func(string, ...any) string) error {
 	if err := setValues(capabilityKey+`\URLAssociations`, map[string]string{"mailto": progMailto, "webcal": progWebcal}); err != nil {
 		return err
 	}
-	if err := setValues(capabilityKey+`\FileAssociations`, map[string]string{".ics": progICS}); err != nil {
+	if err := setValues(capabilityKey+`\FileAssociations`, map[string]string{".ics": progICS, ".eml": progEML}); err != nil {
 		return err
 	}
-	// 让 .ics 出现在"打开方式"列表里。
+	// 让 .ics 与 .eml 出现在"打开方式"列表里; 不抢已有的默认程序, 由用户在打开方式或默认应用里选。
 	if err := setValues(`Software\Classes\.ics\OpenWithProgids`, map[string]string{progICS: ""}); err != nil {
+		return err
+	}
+	if err := setValues(`Software\Classes\.eml\OpenWithProgids`, map[string]string{progEML: ""}); err != nil {
 		return err
 	}
 	return setValues(`Software\RegisteredApplications`, map[string]string{appRegName: capabilityKey})
@@ -148,6 +153,7 @@ func defaultFor(kind, name, progID string) bool {
 
 func IsDefaultMail() bool     { return defaultFor("url", "mailto", progMailto) }
 func IsDefaultCalendar() bool { return defaultFor("file", ".ics", progICS) }
+func IsDefaultEml() bool      { return defaultFor("file", ".eml", progEML) }
 
 // OpenDefaultAppsSettings 打开系统默认应用设置, 直接定位到本程序(Windows 11 支持 registeredAppUser 参数)。
 func OpenDefaultAppsSettings() error {
@@ -159,6 +165,7 @@ func UnregisterHandlers() error {
 	keys := []string{
 		`Software\Classes\` + progMailto,
 		`Software\Classes\` + progICS,
+		`Software\Classes\` + progEML,
 		`Software\Classes\` + progWebcal,
 		`Software\Classes\` + progLink,
 		`Software\Clients\Mail\CZL Mail`,
@@ -170,9 +177,11 @@ func UnregisterHandlers() error {
 		_ = k.DeleteValue(appRegName)
 		k.Close()
 	}
-	if k, err := registry.OpenKey(registry.CURRENT_USER, `Software\Classes\.ics\OpenWithProgids`, registry.SET_VALUE); err == nil {
-		_ = k.DeleteValue(progICS)
-		k.Close()
+	for ext, prog := range map[string]string{".ics": progICS, ".eml": progEML} {
+		if k, err := registry.OpenKey(registry.CURRENT_USER, `Software\Classes\`+ext+`\OpenWithProgids`, registry.SET_VALUE); err == nil {
+			_ = k.DeleteValue(prog)
+			k.Close()
+		}
 	}
 	return nil
 }

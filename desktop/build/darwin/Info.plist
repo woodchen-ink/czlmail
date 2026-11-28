@@ -65,7 +65,7 @@
             </dict>
         </array>
 
-        <!-- .ics 进「打开方式」列表; Alternate 表示不抢系统日历的默认, 由用户在设置里指定。 -->
+        <!-- .ics / .eml 进「打开方式」列表; Alternate 表示不抢系统默认程序, 由用户在设置里指定。 -->
         <key>CFBundleDocumentTypes</key>
         <array>
             <dict>
@@ -82,6 +82,23 @@
                 <key>CFBundleTypeExtensions</key>
                 <array>
                     <string>ics</string>
+                </array>
+            </dict>
+            <!-- .eml 同样只进「打开方式」, 不抢「邮件」的默认。 -->
+            <dict>
+                <key>CFBundleTypeName</key>
+                <string>Email Message</string>
+                <key>CFBundleTypeRole</key>
+                <string>Viewer</string>
+                <key>LSHandlerRank</key>
+                <string>Alternate</string>
+                <key>LSItemContentTypes</key>
+                <array>
+                    <string>com.apple.mail.email</string>
+                </array>
+                <key>CFBundleTypeExtensions</key>
+                <array>
+                    <string>eml</string>
                 </array>
             </dict>
         </array>

@@ -31,8 +31,10 @@ import (
 // 绑定方法一律返回 (数据, error): Wails 会把 error 转成前端 Promise 的 reject,
 // 吞掉错误只会让界面停在空列表上而不给任何线索。
 type App struct {
-	notes    noteState
-	opens    openQueue
+	notes noteState
+	opens openQueue
+	// emls 是打开着的 .eml (eml_files.go)。
+	emls     emlRegistry
 	prefetch prefetcher
 	mcp      mcpState
 	images   imageCache

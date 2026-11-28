@@ -193,6 +193,9 @@ func isDefault(calendar bool) bool {
 func IsDefaultMail() bool     { return isDefault(false) }
 func IsDefaultCalendar() bool { return isDefault(true) }
 
+// IsDefaultEml 在 macOS 上不判断: .eml 的默认程序由用户在访达「显示简介」里选, 「设为默认」也不改它 (不抢「邮件」)。
+func IsDefaultEml() bool { return false }
+
 // OpenDefaultAppsSettings 在 macOS 上直接把本程序设为 mailto、webcal 与 .ics 的默认处理程序。
 func OpenDefaultAppsSettings() error {
 	id := bundleID()

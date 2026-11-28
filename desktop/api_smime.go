@@ -168,19 +168,11 @@ func (a *App) smimeSigner(st *store.Store, from string) (func([]byte) ([]byte, e
 // VerifySignature 核对邮件的 S/MIME 签名。不是签名邮件时返回 nil。
 // 需要下载原文, 离线且原文不在服务器可达时返回错误, 界面不显示结果。
 func (a *App) VerifySignature(accountID, emailID string) (*smime.Verification, error) {
-	st, err := a.currentStore()
+	detail, err := a.emailDetail(accountID, emailID)
 	if err != nil {
 		return nil, err
 	}
-	detail, err := st.Email(a.ctx, accountID, emailID)
-	if err != nil {
-		return nil, err
-	}
-	s, err := a.syncerFor(accountID)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := s.RawMessage(a.ctx, accountID, detail.BlobID)
+	raw, err := a.rawMessage(accountID, emailID)
 	if err != nil {
 		return nil, err
 	}

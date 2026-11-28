@@ -20,6 +20,10 @@ import (
 
 // LoadListHeaders 补查正文早已缓存、还没有退订信息的邮件。
 func (a *App) LoadListHeaders(accountID, emailID string) (store.Unsubscribe, error) {
+	if isEmlID(emailID) {
+		// 文件里的邮件不提供退订, 见 emlDetail。
+		return store.Unsubscribe{}, nil
+	}
 	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return store.Unsubscribe{}, err
@@ -29,6 +33,9 @@ func (a *App) LoadListHeaders(accountID, emailID string) (store.Unsubscribe, err
 
 // GetHeaderInfo 取阅读栏「显示详情」要的邮件头信息: 发件认证、垃圾评分、投递地址等。
 func (a *App) GetHeaderInfo(accountID, emailID string) (syncer.HeaderInfo, error) {
+	if isEmlID(emailID) {
+		return a.emlHeaderInfo(emailID)
+	}
 	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return syncer.HeaderInfo{}, err
@@ -40,11 +47,7 @@ func (a *App) GetHeaderInfo(accountID, emailID string) (syncer.HeaderInfo, error
 //
 // 优先级按 RFC 8058: 有一键退订就直接 POST, 用户不必离开客户端; 其次发 mailto 退订邮件; 最后才打开网页。
 func (a *App) Unsubscribe(accountID, emailID string) (string, error) {
-	st, err := a.currentStore()
-	if err != nil {
-		return "", err
-	}
-	d, err := st.Email(a.ctx, accountID, emailID)
+	d, err := a.emailDetail(accountID, emailID)
 	if err != nil {
 		return "", err
 	}
@@ -164,6 +167,10 @@ func inviteAttachment(d *store.EmailDetail) string {
 
 // parseInvite 让服务器解析邀请附件, 返回第一个事件对象。
 func (a *App) parseInvite(accountID, emailID string) (map[string]any, error) {
+	// 邀请交给服务器的 CalendarEvent/parse 解析, 文件里的邮件不在服务器上。
+	if isEmlID(emailID) {
+		return nil, nil
+	}
 	st, err := a.currentStore()
 	if err != nil {
 		return nil, err

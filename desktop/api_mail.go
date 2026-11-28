@@ -13,6 +13,9 @@ import (
 
 // FetchBody 拉取并缓存单封邮件的正文, 返回带正文的完整邮件。
 func (a *App) FetchBody(accountID, emailID string) (*store.EmailDetail, error) {
+	if isEmlID(emailID) {
+		return a.emlDetail(emailID)
+	}
 	s, err := a.syncerFor(accountID)
 	if err != nil {
 		return nil, err

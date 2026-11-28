@@ -90,19 +90,43 @@ func (a *App) signInInfoByID() map[string]SignInInfo {
 // TransferAttachments 把附件 (含内嵌图片) 从一个账号搬到另一个账号: 从原账号下载、上传到目标账号, 返回新的引用。
 // 写信时换到别的登录或别的账号的发件身份用: 草稿与发送都在目标账号里做, 引用的 blob 必须在那里。
 // 文件名、类型与 cid 不变; 有一个搬不过去就整体报错, 调用方保持原样 (面板退回原来的发件人)。
+//
+// 打开的 .eml 文件里的部件 (blob id 以 eml: 开头) 只在本机内存里, 回复、转发它时也经这里上传, 同一账号也要传;
+// 同一账号里已在服务器上的 blob 原样保留。
 func (a *App) TransferAttachments(fromAccountID, toAccountID string, refs []AttachmentRef) ([]AttachmentRef, error) {
-	if fromAccountID == toAccountID || len(refs) == 0 {
-		return refs, nil
+	pick := func(ref AttachmentRef) bool { return fromAccountID != toAccountID || isEmlID(ref.BlobID) }
+	var todo []AttachmentRef
+	for _, ref := range refs {
+		if pick(ref) {
+			todo = append(todo, ref)
+		}
 	}
-	src, err := a.syncerFor(fromAccountID)
-	if err != nil {
-		return nil, err
+	if len(todo) == 0 {
+		return refs, nil
 	}
 	dst, err := a.syncerFor(toAccountID)
 	if err != nil {
 		return nil, err
 	}
-	return transferBlobs(a.ctx, src, fromAccountID, dst, toAccountID, dst.MaxUploadBytes(), refs)
+	moved, err := transferBlobs(a.ctx, appBlobs{a}, fromAccountID, dst, toAccountID, dst.MaxUploadBytes(), todo)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AttachmentRef, len(refs))
+	for i, ref := range refs {
+		out[i] = ref
+		if pick(ref) {
+			out[i], moved = moved[0], moved[1:]
+		}
+	}
+	return out, nil
+}
+
+// appBlobs 按 App.openBlob 取 blob: .eml 的部件从内存取, 其余从服务器下载。
+type appBlobs struct{ a *App }
+
+func (b appBlobs) DownloadBlob(_ context.Context, accountID, blobID string) (io.ReadCloser, error) {
+	return b.a.openBlob(accountID, blobID)
 }
 
 // blobDownloader / blobUploader 是 syncer.Syncer 上搬 blob 用到的两个方法, 单独抽出来便于测试。
