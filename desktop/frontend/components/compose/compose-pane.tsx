@@ -654,7 +654,7 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef, sourc
         <Button variant="ghost" size="icon" className="size-8" aria-label={t("关闭")} onClick={close}>
           <X className="size-4" />
         </Button>
-        <h2 className="flex-1 text-base font-semibold">{draft.replyTo ? t("回复") : t("新邮件")}</h2>
+        <h2 className="flex-1 text-base font-semibold">{draft.replyTo ? t("回复") : draft.forwardOf ? t("转发") : t("新邮件")}</h2>
         {sourcePanel && (
           <Button
             variant="ghost"
