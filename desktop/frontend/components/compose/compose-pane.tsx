@@ -140,6 +140,8 @@ const LANGUAGES = ["简体中文", "English", "Čeština", "日本語", "한국�
  */
 export function ComposePane({ accountId, draft, onClose, onSent, leaveRef, sourcePanel }: Props) {
   useI18n();
+  // 转发 (含多选后作为附件转发): 打开时就带着邮件原文 (.eml) 的也算, 续编草稿箱里的转发同样显示「转发」。
+  const isForward = !!draft.forwardOf || !!draft.attachments?.some((a) => a.type === "message/rfc822");
   // 发件人下拉: 写信账号的身份在前, 有别的登录时再列它们个人账号的身份 (#15)。
   const [groups, setGroups] = useState<ComposeIdentityGroup[]>([]);
   // 发件账号: 起初是写信账号, 选了别的账号的身份后跟着换; 草稿、发送、附件都落在这里。
@@ -654,7 +656,7 @@ export function ComposePane({ accountId, draft, onClose, onSent, leaveRef, sourc
         <Button variant="ghost" size="icon" className="size-8" aria-label={t("关闭")} onClick={close}>
           <X className="size-4" />
         </Button>
-        <h2 className="flex-1 text-base font-semibold">{draft.replyTo ? t("回复") : draft.forwardOf ? t("转发") : t("新邮件")}</h2>
+        <h2 className="flex-1 text-base font-semibold">{draft.replyTo ? t("回复") : isForward ? t("转发") : t("新邮件")}</h2>
         {sourcePanel && (
           <Button
             variant="ghost"

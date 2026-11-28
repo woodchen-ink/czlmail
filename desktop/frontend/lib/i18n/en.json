@@ -1424,5 +1424,6 @@
   "同 Outlook：点旗标标记为待办，再点一下标记为已完成，清除旗标在右键菜单里。其它客户端里待办显示为旗标或星标。关闭时显示为星标。": "Like Outlook: click the flag to flag a message, click again to mark it complete; clear the flag from the context menu. Other mail apps show flagged messages with a flag or a star. When off, a star is shown instead.",
   "原邮件": "Original",
   "隐藏原邮件": "Hide original email",
-  "在左侧显示原邮件": "Show the original email on the left"
+  "在左侧显示原邮件": "Show the original email on the left",
+  "没能把邮件原文搬到写信的账号": "Could not copy the original message to the sending account"
 }

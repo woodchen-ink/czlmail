@@ -8,6 +8,7 @@ import {
   Archive,
   ArrowUpToLine,
   FolderInput,
+  Forward,
   Loader2,
   MailOpen,
   MoreHorizontal,
@@ -72,7 +73,9 @@ import {
   type EmailSummary,
   type MailSyncStatus,
   type Mailbox,
+  type UploadedAttachment,
 } from "@/lib/api";
+import { main } from "@/wailsjs/go/models";
 import { displayAddressList, fullDate } from "@/lib/format";
 import { printEmail } from "@/lib/print";
 import { useAppearance } from "@/lib/theme";
@@ -1278,6 +1281,58 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
     }
   }, []);
 
+  /**
+   * 多选后作为附件转发: 每封的原文 (blob 就是完整的 RFC 5322 原文) 作为一个 .eml 附件放进同一封新邮件。
+   * 写信用选中最多的那个账号 (一样多时用平时写信的账号); 其它账号的原文要先搬过去 (blob 只在所在账号可用), 搬不过去就不开写信面板。
+   */
+  const forwardAsAttachments = useCallback(
+    async (keys: string[]) => {
+      if (keys.length === 0) return;
+      const current = beginDraftIntent(intent);
+      try {
+        const emails = await Promise.all(keys.map((key) => {
+          const { accountId: acc, id } = parseEmailKey(key);
+          return api.getEmail(acc, id);
+        }));
+        if (!current()) return;
+        emails.sort((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime());
+        const count = new Map<string, number>();
+        for (const e of emails) count.set(e.accountId, (count.get(e.accountId) ?? 0) + 1);
+        // 一样多时优先平时写信的账号 (统一视图里是个人账号), 免得发件人变成某个共享邮箱。
+        const target = [...count].sort((a, b) => b[1] - a[1] || Number(b[0] === composeAccount) - Number(a[0] === composeAccount))[0][0];
+        const attachments: UploadedAttachment[] = [];
+        for (const e of emails) {
+          const name = `${e.subject || "email"}.eml`;
+          let blobId = e.blobId;
+          if (e.accountId !== target) {
+            const ref = main.AttachmentRef.createFrom({ blobId, type: "message/rfc822", name, cid: "" });
+            const [moved] = (await api.transferAttachments(e.accountId, target, [ref])) ?? [];
+            if (!current()) return;
+            if (!moved) throw new Error(t("没能把邮件原文搬到写信的账号"));
+            blobId = moved.blobId;
+          }
+          attachments.push({ blobId, type: "message/rfc822", name, size: e.size });
+        }
+        const first = emails[0];
+        await setDraft({
+          accountId: target,
+          to: "",
+          cc: "",
+          // 主题不随界面语言: 收件人看到的是 Fwd: 加第一封的主题, 多封时标出还有几封。
+          subject: withPrefix("Fwd:", first.subject) + (emails.length > 1 ? ` (+${emails.length - 1})` : ""),
+          html: "",
+          attachments,
+          // 发件身份只能取写信账号自己的: 按这些邮件寄到的地址匹配。
+          fromCandidates: emails.filter((e) => e.accountId === target).flatMap(fromCandidatesOf),
+          ...(emails.length === 1 ? { forwardOf: { accountId: first.accountId, emailId: first.id } } : {}),
+        });
+      } catch (err) {
+        toast.error(errorMessage(err));
+      }
+    },
+    [setDraft, composeAccount],
+  );
+
   const menuActions = useMemo<EmailMenuActions>(
     () => ({
       reply: (email, all) => withDetail(email, (d) => startReply(d, all)),
@@ -1286,6 +1341,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
           setDraft(asAttachment ? forwardAsAttachmentDraft(d, email.accountId) : forwardDraft(d, email.accountId));
           markReadOnReply(email);
         }),
+      forwardAsAttachments,
       archive: archiveIds,
       trash: trashIds,
       move: moveIds,
@@ -1296,7 +1352,7 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
       togglePin,
       setLabel: setLabelIds,
     }),
-    [withDetail, startReply, setDraft, markReadOnReply, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, taskFlagIds, togglePin, setLabelIds],
+    [withDetail, startReply, setDraft, markReadOnReply, forwardAsAttachments, archiveIds, trashIds, moveIds, junkIds, markReadIds, toggleFlag, taskFlagIds, togglePin, setLabelIds],
   );
 
   /**
@@ -1689,6 +1745,9 @@ export function MailShell({ active, onSignedOut }: { active: boolean; onSignedOu
                 </BulkBtn>
                 <BulkBtn label={currentKind === "trash" ? t("彻底删除") : t("删除")} onClick={() => trashIds([...checked])}>
                   <Trash2 />
+                </BulkBtn>
+                <BulkBtn label={t("作为附件转发")} onClick={() => forwardAsAttachments([...checked])}>
+                  <Forward />
                 </BulkBtn>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

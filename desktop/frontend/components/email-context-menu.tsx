@@ -52,6 +52,8 @@ import { emailKey, parseEmailKey } from "@/lib/email-key";
 export interface EmailMenuActions {
   reply: (email: EmailSummary, all: boolean) => void;
   forward: (email: EmailSummary, asAttachment: boolean) => void;
+  /** 多选时把选中的邮件都作为附件放进一封新邮件。 */
+  forwardAsAttachments: (keys: string[]) => void;
   archive: (keys: string[]) => void;
   trash: (keys: string[]) => void;
   /** 移动到 accountId 账号的 mailboxId 文件夹; keys 必须都属于这个账号。 */
@@ -134,7 +136,12 @@ export function EmailContextMenu({
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-56">
         {batch ? (
-          <ContextMenuLabel>{t("已选{0}封", keys.length)}</ContextMenuLabel>
+          <>
+            <ContextMenuLabel>{t("已选{0}封", keys.length)}</ContextMenuLabel>
+            <ContextMenuItem onSelect={() => actions.forwardAsAttachments(keys)}>
+              <Paperclip />
+              {t("作为附件转发")}</ContextMenuItem>
+          </>
         ) : (
           <>
             <ContextMenuItem onSelect={() => actions.reply(email, false)}>

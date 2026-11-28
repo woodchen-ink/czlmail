@@ -1424,5 +1424,6 @@
   "同 Outlook：点旗标标记为待办，再点一下标记为已完成，清除旗标在右键菜单里。其它客户端里待办显示为旗标或星标。关闭时显示为星标。": "Jako v Outlooku: kliknutím na praporek zprávu označíte příznakem, dalším kliknutím jako dokončenou, příznak vymažete v místní nabídce. Jiné poštovní programy zobrazí zprávu s příznakem jako praporek nebo hvězdičku. Když je volba vypnutá, zobrazuje se hvězdička.",
   "原邮件": "Původní zpráva",
   "隐藏原邮件": "Skrýt původní zprávu",
-  "在左侧显示原邮件": "Zobrazit původní zprávu vlevo"
+  "在左侧显示原邮件": "Zobrazit původní zprávu vlevo",
+  "没能把邮件原文搬到写信的账号": "Původní zprávu se nepodařilo zkopírovat do účtu, ze kterého se odesílá"
 }
