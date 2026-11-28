@@ -299,7 +299,9 @@ func (a *App) syncAccountSettingsSoon() {
 }
 
 // SyncAccountSettings 立即与个人网盘里的 account-settings.json 合并。
-func (a *App) SyncAccountSettings() error {
+func (a *App) SyncAccountSettings() error { return retryDriveSync(a.syncAccountSettingsOnce) }
+
+func (a *App) syncAccountSettingsOnce() error {
 	driveSyncMu.Lock()
 	defer driveSyncMu.Unlock()
 

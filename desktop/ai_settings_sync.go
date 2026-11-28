@@ -69,7 +69,9 @@ func (a *App) syncAISettingsSoon() {
 }
 
 // SyncAISettings 立即与服务端合并 AI 与 MCP 设置。
-func (a *App) SyncAISettings() error {
+func (a *App) SyncAISettings() error { return retryDriveSync(a.syncAISettingsOnce) }
+
+func (a *App) syncAISettingsOnce() error {
 	driveSyncMu.Lock()
 	defer driveSyncMu.Unlock()
 

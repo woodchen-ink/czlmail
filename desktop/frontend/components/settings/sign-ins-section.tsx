@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 import { SignIn } from "@/components/sign-in";
 import { Card } from "@/components/settings/ui";
+import { SignInSyncRow } from "@/components/settings/sign-in-sync";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,6 +76,7 @@ export function SignInsCard({
   const [removing, setRemoving] = useState<SignInInfo | null>(null);
   const [signingOut, setSigningOut] = useState<SignInInfo | null>(null);
   const [busy, setBusy] = useState("");
+  const [syncState, setSyncState] = useState("");
 
   const load = useCallback(() => {
     api
@@ -289,6 +291,7 @@ export function SignInsCard({
             )}
           </p>
         </div>
+        <SignInSyncRow active={active} onChanged={load} onStatus={setSyncState} />
       </Card>
 
       <Dialog
@@ -384,6 +387,7 @@ export function SignInsCard({
                 "{0} 会从本机移除：停止同步，删除本机保存的登录凭据和这个登录的邮件缓存。服务器上的邮件不受影响，以后可以重新添加。",
                 removing?.username ?? "",
               )}
+              {(syncState === "on" || syncState === "stale") && " " + t("开启了附加登录同步，你的其它设备上也会移除它。")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

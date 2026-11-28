@@ -22,6 +22,7 @@ export type Identity = main.Identity;
 export type ComposeIdentityGroup = main.ComposeIdentityGroup;
 export type SessionStatus = main.SessionStatus;
 export type SignInInfo = main.SignInInfo;
+export type SignInSyncStatus = main.SignInSyncStatus;
 export type AppSettings = main.AppSettings;
 export type ComposeRequest = main.ComposeRequest;
 export type SigningCertificate = smime.Certificate;
@@ -152,6 +153,11 @@ export const api = {
   retrySignIn: guard(App.RetrySignIn),
   signOutOf: guard(App.SignOutOf),
   removeSignIn: guard(App.RemoveSignIn),
+  // 附加登录跨设备同步 (密码用同步口令加密后存进主登录的个人网盘)。
+  getSignInSync: guard(App.GetSignInSync),
+  enableSignInSync: guard(App.EnableSignInSync),
+  resetSignInSync: guard(App.ResetSignInSync),
+  disableSignInSync: guard(App.DisableSignInSync),
 
   listAccounts: guard(App.ListAccounts),
   listMailboxes: guard(App.ListMailboxes),
@@ -403,9 +409,17 @@ const ERROR_MESSAGES: Record<string, () => string> = {
   "2154": () => t("安装更新失败，请稍后重试。"),
   "2155": () => t("应用所在文件夹没有写入权限，已在访达中显示新版本，请手动拖入「应用程序」。"),
   "2162": () => t("这不是模板导出文件。"),
+  "2168": () => t("网盘里的附加登录同步文件已损坏。"),
   "2170": () => t("当前系统不支持这项功能。"),
   "2171": () => t("CZL Mail 不是从应用包运行的，无法开启这项设置。"),
   "2172": () => t("请先把 CZL Mail 拖到「应用程序」文件夹，再开启开机自启。"),
+  "2175": () => t("个人网盘还没同步完，请稍后再试。"),
+  "2176": () => t("个人网盘正在被其它设备更新，请稍后再试。"),
+  "2185": () => t("同步口令不对。"),
+  "2186": () => t("同步口令至少要 8 个字符。"),
+  "2187": () => t("网盘里的同步加密设置已损坏，请重设同步口令。"),
+  "2188": () => t("无法解密同步的密码，请重设同步口令。"),
+  "2189": () => t("同步口令已在其它设备上更改，请输入新口令。"),
   "2191": () => t("文件夹里还有邮件，勾选「同时删除其中的邮件」后再删除"),
   "2192": () => t("请先删除或移走子文件夹"),
   "2193": () => t("文件夹名称不能为空，也不能包含 /"),

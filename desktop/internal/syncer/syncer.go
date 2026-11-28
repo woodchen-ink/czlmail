@@ -82,6 +82,8 @@ type Syncer struct {
 	mu sync.Mutex
 	// fileCAS records successful non-mutating conditional-write probes by account.
 	fileCAS sync.Map
+	// fileNoCAS 记确定不支持 ifInState 的账号 (探测时服务器照常执行了写入), 不再探测。
+	fileNoCAS sync.Map
 	// fileSchema 记各账号服务器的 FileNode 属性写法 (account → 是否新写法), 见 filenode_schema.go。
 	fileSchema sync.Map
 

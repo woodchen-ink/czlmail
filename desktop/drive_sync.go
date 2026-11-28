@@ -7,13 +7,16 @@ import (
 	"io"
 	"sync"
 
-	"github.com/woodchen-ink/czlmail/desktop/internal/jmapx"
 	"github.com/woodchen-ink/czlmail/desktop/internal/store"
 	"github.com/woodchen-ink/czlmail/desktop/internal/syncer"
 )
 
-// 跨设备同步的数据(模板、AI 与 MCP 设置、账户设置)按类别各一个 JSON 文件, 存在个人网盘的 CZL Mail 文件夹里
+// 跨设备同步的数据(模板、AI 与 MCP 设置、账户设置、标签、附加登录)按类别各一个 JSON 文件, 存在个人网盘的 CZL Mail 文件夹里
 // (服务端的文件存储, 同时可经 WebDAV 访问)。这里是读写这些文件的公共部分。
+//
+// 每次同步: 网盘缓存先追上服务器, 记下版本号, 读缓存里的文件合并, 再带这个版本号条件写回 (syncer.SetFilesIfInState)。
+// 两台设备同时写时后写的那台被拒, 由 retryDriveSync 重读重合并, 不会盖掉先写的内容 (以前后写的直接覆盖,
+// 别的设备刚重设的同步口令会被冲掉)。
 
 const driveSyncFolder = "CZL Mail"
 
@@ -30,8 +33,25 @@ type driveSyncFile struct {
 	s         *syncer.Syncer
 	accountID string
 	name      string
-	folder    *store.FileNode
-	file      *store.FileNode
+	// state 是读到这份内容时网盘的版本号, 写回时作 ifInState。
+	state  string
+	folder *store.FileNode
+	file   *store.FileNode
+}
+
+// driveSyncAttempts 是网盘在读写之间变了时整轮重来的次数上限。
+const driveSyncAttempts = 3
+
+// retryDriveSync 运行一轮网盘同步 (读、合并、条件写), 写入因网盘变了被拒时整轮重来。
+// 每轮重新拿锁、重新读: 合并以对方刚写的内容为准再做一次。
+func retryDriveSync(once func() error) error {
+	var err error
+	for range driveSyncAttempts {
+		if err = once(); !errors.Is(err, syncer.ErrFilesChanged) {
+			return err
+		}
+	}
+	return err
 }
 
 // openDriveSyncFile 定位个人网盘里的 CZL Mail/<name>, 返回文件句柄与当前内容(不存在时为 nil)。
@@ -55,7 +75,12 @@ func (a *App) openDriveSyncFile(ctx context.Context, name string) (*driveSyncFil
 	if !s.SupportsFiles(accountID) {
 		return nil, nil, errNoDriveSync
 	}
-	f := &driveSyncFile{s: s, accountID: accountID, name: name}
+	// 先让缓存追上服务器: 刚登录的设备缓存里还没有网盘的文件, 别的设备刚写的内容也要读到最新的。
+	state, err := s.CatchUpFiles(ctx, accountID)
+	if err != nil {
+		return nil, nil, err
+	}
+	f := &driveSyncFile{s: s, accountID: accountID, name: name, state: state}
 	f.folder, _ = st.FileNodeByName(ctx, accountID, "", driveSyncFolder)
 	if f.folder != nil {
 		f.file, _ = st.FileNodeByName(ctx, accountID, f.folder.ID, name)
@@ -78,31 +103,32 @@ func (a *App) openDriveSyncFile(ctx context.Context, name string) (*driveSyncFil
 // exists 报告远端文件是否已存在。
 func (f *driveSyncFile) exists() bool { return f.file != nil }
 
-// write 上传新内容, 文件或文件夹不存在时创建。
+// write 上传新内容, 文件或文件夹不存在时创建。每一步都带读到时的版本号: 网盘在这之间变了 (包括别的设备
+// 先建出了同名文件夹或文件) 时报 syncer.ErrFilesChanged, 由 retryDriveSync 重来。
 func (f *driveSyncFile) write(ctx context.Context, data []byte) error {
 	blobID, _, _, err := f.s.UploadBlobType(ctx, f.accountID, "application/json", bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
 	if f.file != nil {
-		_, err = f.s.SetPIM(ctx, f.accountID, jmapx.FileNode, nil,
-			map[string]map[string]any{f.file.ID: {"blobId": blobID, "type": "application/json"}}, nil, nil)
+		_, f.state, err = f.s.SetFilesIfInState(ctx, f.accountID, f.state, nil,
+			map[string]map[string]any{f.file.ID: {"blobId": blobID, "type": "application/json"}})
 		return err
 	}
 	folderID := ""
 	if f.folder != nil {
 		folderID = f.folder.ID
 	} else {
-		created, err := f.s.SetPIM(ctx, f.accountID, jmapx.FileNode,
-			map[string]any{"dir": map[string]any{"parentId": nil, "name": driveSyncFolder}}, nil, nil, nil)
+		created, state, err := f.s.SetFilesIfInState(ctx, f.accountID, f.state,
+			map[string]any{"dir": map[string]any{"parentId": nil, "name": driveSyncFolder}}, nil)
 		if err != nil {
 			return err
 		}
-		folderID = created["dir"]
+		folderID, f.state = created["dir"], state
 	}
-	_, err = f.s.SetPIM(ctx, f.accountID, jmapx.FileNode, map[string]any{"file": map[string]any{
+	_, f.state, err = f.s.SetFilesIfInState(ctx, f.accountID, f.state, map[string]any{"file": map[string]any{
 		"parentId": folderID, "name": f.name, "blobId": blobID, "type": "application/json",
-	}}, nil, nil, nil)
+	}}, nil)
 	return err
 }
 
@@ -112,4 +138,5 @@ func (a *App) syncDriveSoon() {
 	a.syncAISettingsSoon()
 	a.syncAccountSettingsSoon()
 	a.syncMessageTagsSoon()
+	a.syncSignInsSoon()
 }

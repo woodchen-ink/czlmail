@@ -67,3 +67,14 @@ func TestUntitledPlaceholderNotUploaded(t *testing.T) {
 		}
 	}
 }
+
+// 过期的墓碑不写进文件, 也不能每轮都算作"要上传": 否则每次写网盘都触发下一轮同步, 一直写下去。
+func TestMergeTemplatesExpiredTombstoneIsQuiet(t *testing.T) {
+	now := time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC)
+	old := now.Add(-tombstoneTTL - time.Hour).Unix()
+	local := []store.SyncedTemplate{{Template: store.Template{ID: "gone", UpdatedAt: old}, DeletedAt: old}}
+	merged, changes, remoteChanged := mergeTemplates(local, nil, now)
+	if remoteChanged || len(changes) != 0 || len(merged) != 0 {
+		t.Fatalf("merged = %v, changes = %v, remoteChanged = %v", merged, changes, remoteChanged)
+	}
+}

@@ -299,7 +299,9 @@ func (a *App) syncMessageTagsSoon() {
 }
 
 // SyncMessageTags 立即与个人网盘里的 message-tags.json 合并。
-func (a *App) SyncMessageTags() error {
+func (a *App) SyncMessageTags() error { return retryDriveSync(a.syncMessageTagsOnce) }
+
+func (a *App) syncMessageTagsOnce() error {
 	driveSyncMu.Lock()
 	defer driveSyncMu.Unlock()
 

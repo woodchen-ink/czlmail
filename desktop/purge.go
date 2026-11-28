@@ -74,6 +74,7 @@ func purgeAll() error {
 		}
 	}
 	ignoreNotFound(&errs, keychain.Delete(config.KeyringService, aiKeyringKey))
+	ignoreNotFound(&errs, keychain.Delete(config.KeyringService, signInSyncKeyEntry))
 
 	if err := platform.SetAutostart(false); err != nil && platform.IntegrationSupported {
 		errs = append(errs, err)

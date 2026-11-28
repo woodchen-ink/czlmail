@@ -95,7 +95,11 @@ func (a *App) SignInAgainWithPassword(id, mailHost, username, password string) e
 	if err != nil {
 		return err
 	}
-	return a.passwordSignIn(si, false, mailHost, username, password)
+	if err := a.passwordSignIn(si, false, mailHost, username, password); err != nil {
+		return err
+	}
+	a.recordSignIn(id)
+	return nil
 }
 
 // SignInAgainOAuth 用浏览器授权重新登录某个登录。
@@ -104,7 +108,11 @@ func (a *App) SignInAgainOAuth(id, mailHost, idp, clientID string) error {
 	if err != nil {
 		return err
 	}
-	return a.oauthSignIn(si, false, mailHost, idp, clientID)
+	if err := a.oauthSignIn(si, false, mailHost, idp, clientID); err != nil {
+		return err
+	}
+	a.recordSignIn(id)
+	return nil
 }
 
 // RetrySignIn 用已保存的凭据再连一次某个登录。
@@ -187,10 +195,15 @@ func (a *App) signOutOf(si *signIn) error {
 	return errors.Join(append(errs, err)...)
 }
 
-// RemoveSignIn 移除一个附加登录及其本机缓存与凭据。主登录用 SignOut。
+// RemoveSignIn 移除一个附加登录及其本机缓存与凭据。主登录用 SignOut。开启了附加登录同步时别的设备也移除它。
 func (a *App) RemoveSignIn(id string) error {
 	if _, err := a.signInByID(id); err != nil {
 		return err
+	}
+	if f, err := config.LoadFile(); err == nil && id != accountid.Primary {
+		if cfg, ok := f.SignIn(id); ok {
+			a.recordSignInRemoved(cfg)
+		}
 	}
 	err := a.removeSignIn(id)
 	if _, e := a.settleSignedOutPrimary(); e != nil {
@@ -260,6 +273,7 @@ func (a *App) addSignIn(run func(si *signIn) error) (string, error) {
 	}
 	a.log.Info("sign-in added", "signin", id)
 	a.emit(EventAccountsChanged)
+	a.recordSignIn(id)
 	return id, nil
 }
 

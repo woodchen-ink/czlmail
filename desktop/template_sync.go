@@ -63,7 +63,9 @@ func (a *App) syncTemplatesSoon() {
 }
 
 // SyncTemplates 立即与服务端合并模板。
-func (a *App) SyncTemplates() error {
+func (a *App) SyncTemplates() error { return retryDriveSync(a.syncTemplatesOnce) }
+
+func (a *App) syncTemplatesOnce() error {
 	driveSyncMu.Lock()
 	defer driveSyncMu.Unlock()
 
@@ -93,21 +95,22 @@ func (a *App) SyncTemplates() error {
 	}
 	merged, localChanges, remoteChanged := mergeTemplates(local, remote, time.Now())
 
-	if len(localChanges) > 0 {
-		if err := st.WithTx(ctx, func(tx *sql.Tx) error {
-			for _, t := range localChanges {
-				// 同步文件里没有名字的模板在本机补一个界面语言的名字, 上传时 templateToEntry 再还原为空。
-				if t.Name == "" {
-					t.Name = a.t(untitledTemplate)
-				}
-				if err := store.PutSyncedTemplate(ctx, tx, t); err != nil {
-					return err
-				}
+	// 过期的墓碑每轮都清: 只在有远端改动时清的话, 本机留着的过期墓碑会让 mergeTemplates 每轮都认为要上传。
+	if err := st.WithTx(ctx, func(tx *sql.Tx) error {
+		for _, t := range localChanges {
+			// 同步文件里没有名字的模板在本机补一个界面语言的名字, 上传时 templateToEntry 再还原为空。
+			if t.Name == "" {
+				t.Name = a.t(untitledTemplate)
 			}
-			return store.PurgeDeletedTemplates(ctx, tx, time.Now().Add(-tombstoneTTL))
-		}); err != nil {
-			return err
+			if err := store.PutSyncedTemplate(ctx, tx, t); err != nil {
+				return err
+			}
 		}
+		return store.PurgeDeletedTemplates(ctx, tx, time.Now().Add(-tombstoneTTL))
+	}); err != nil {
+		return err
+	}
+	if len(localChanges) > 0 {
 		a.emit(EventTemplatesChanged)
 	}
 
@@ -133,6 +136,8 @@ func mergeTemplates(local []store.SyncedTemplate, remote []templateEntry, now ti
 	seenRemote := map[string]bool{}
 	var localChanges []store.SyncedTemplate
 	remoteChanged := false
+	cutoff := now.Add(-tombstoneTTL).Unix()
+	expired := func(t store.SyncedTemplate) bool { return t.DeletedAt > 0 && t.DeletedAt < cutoff }
 
 	for _, r := range remote {
 		seenRemote[r.ID] = true
@@ -147,16 +152,16 @@ func mergeTemplates(local []store.SyncedTemplate, remote []templateEntry, now ti
 			remoteChanged = true
 		}
 	}
-	for id := range byID {
-		if !seenRemote[id] {
+	// 远端没有的本机条目要传上去, 过期的墓碑除外 (它不会写进文件, 每轮都算"要上传"就会一直写)。
+	for id, t := range byID {
+		if !seenRemote[id] && !expired(t) {
 			remoteChanged = true
 		}
 	}
 
 	var out []templateEntry
-	cutoff := now.Add(-tombstoneTTL).Unix()
 	for _, t := range byID {
-		if t.DeletedAt > 0 && t.DeletedAt < cutoff {
+		if expired(t) {
 			if seenRemote[t.ID] {
 				remoteChanged = true
 			}
